@@ -1,38 +1,61 @@
 .App {
   text-align: center;
+  
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+.Header {
+display: flex;
+flex-direction: row;
+justify-content: space-between;
+align-items: start;
+padding: 1vh 1.5vmin 0 1.5vmin;
+z-index: 50;
+position: fixed;
+width: 100%;
+height: 8vh;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+.title-container {
+  /* title */
+
+/* Auto layout */
+display: flex;
+flex-direction: column;
+justify-content: center;
+align-items: flex-center;
+
+
+/* Inside auto layout */
+flex: none;
+order: 0;
+flex-grow: 0;
+
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+.headerLine {
+  width: 38vh;
+  height: auto;
 }
 
-.App-link {
-  color: #61dafb;
+.headerTitle {
+  width: 16vh;
+  font-family: 'BrunoAceSC', sans-serif;
+  font-size: 2.25vmin;
+  text-align: center;
+  @apply text-text dark:text-background;  /* Using Tailwind classes for theme support */
+}
+:root {
+  --color-blue: #0002FB;
+  --color-purple: #8A05FF;
+  --color-magenta: #FF009D;
+  --color-text: #333233;
+  --color-bg: #F2EEE4;
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.dark {
+  --color-blue: #00FBD1;
+  --color-purple: #D505FF;
+  --color-magenta: #FF0051;
+  --color-text: #F2EEE4;
+  --color-bg: #333233;
 }
