@@ -24,7 +24,7 @@ Quest-Net is a real-time collaborative web application designed for tabletop rol
 * Interact with other party members and field entities
 * View real-time updates of the game environment
 
-[Screenshot: Player view showing character sheet and inventory]
+![image](https://github.com/user-attachments/assets/a42c3743-7467-49df-a75d-7f19cc568fe4)
 
 ## Game Elements
 
@@ -54,7 +54,7 @@ Quest-Net is a real-time collaborative web application designed for tabletop rol
 * Image catalog for quick access to frequently used visuals
 * Automatic image optimization for efficient sharing
 
-[Screenshot: Entity management and visual system interface]
+![image](https://github.com/user-attachments/assets/af4a1d60-7ac5-475a-9e12-fb6be82fb5eb)
 
 ## How It Works
 
@@ -79,7 +79,7 @@ Quest-Net uses a peer-to-peer architecture powered by Trystero's MQTT implementa
    * Enter the room code provided by your DM
    * Select or create your character
 
-[Screenshot: Main menu showing create/join options]
+![image](https://github.com/user-attachments/assets/20d147b0-0c77-4ab9-a545-76079bd6cdbb)
 
 ## Technical Implementation
 
