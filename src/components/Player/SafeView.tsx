@@ -111,7 +111,7 @@ export function SafeView({
         padding: '1vh 1vh 1vh 1vh',
       }}>
         {/* Column 1, Row 1: Character Sheet & Stats */}
-        <div className="rounded-lg p-2 min-h-0">
+        <div className="rounded-lg pl-2 min-h-0">
           <div className="h-full overflow-auto">
           {selectedCharacter && (
             <CharacterSheet 
@@ -139,7 +139,7 @@ export function SafeView({
         </div>
 
         {/* Column 2, Row 1: Party Members */}
-        <div className="rounded-lg p-2 min-h-0">
+        <div className=" min-h-0">
           <div className="h-full max-w-[58vw]">
             <PartyList
               characters={otherPartyMembers}
@@ -173,7 +173,7 @@ export function SafeView({
 
               <CoolTabsContent value="settings" className="flex-1 overflow-auto">
                 {selectedCharacter && (
-                  <div className="p-4">
+                  <div className="h-full flex items-center justify-center p-4">
                     <CharacterEditor
                       character={selectedCharacter}
                       onSave={() => {}} // Not used in edit mode

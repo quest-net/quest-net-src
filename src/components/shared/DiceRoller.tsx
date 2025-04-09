@@ -16,8 +16,12 @@ const DICE_TYPES: DiceType[] = [
     { sides: 20, lightColor: '#0002fb', darkColor: '#00FBD1', shape: 'hexagon' }
   ];
 
-export default function DiceRoller() {
-  const [isExpanded, setIsExpanded] = useState(false);
+  interface DiceRollerProps {
+    onRoll?: (result: number, maxValue: number) => void;
+  }
+
+  export default function DiceRoller({ onRoll }: DiceRollerProps) {
+    const [isExpanded, setIsExpanded] = useState(false);
   const [collapseTimer, setCollapseTimer] = useState<NodeJS.Timeout>();
   const [lastRoll, setLastRoll] = useState<number | null>(null);
   const [isRolling, setIsRolling] = useState(false);
@@ -58,14 +62,21 @@ export default function DiceRoller() {
       if (count >= intervals) {
         clearInterval(rollInterval);
         setIsRolling(false);
-        if (sides === 2) {
-          setLastRoll(Math.random() < 0.5 ? 1 : 2);
-        } else {
-          setLastRoll(Math.floor(Math.random() * sides) + 1);
+        
+        // Generate final roll result
+        const finalResult = sides === 2 
+          ? Math.random() < 0.5 ? 1 : 2
+          : Math.floor(Math.random() * sides) + 1;
+        
+        setLastRoll(finalResult);
+
+        // Notify parent of roll result
+        if (onRoll) {
+          onRoll(finalResult, sides);
         }
       }
     }, duration / intervals);
-  }, [isRolling]);
+  }, [isRolling, onRoll]);
 
   useEffect(() => {
     return () => {
@@ -77,7 +88,7 @@ export default function DiceRoller() {
 
   const renderDice = (dice: DiceType, index: number, totalDice: number, reverseIndex: number) => {
     // Responsive size classes for different screen sizes
-    const sizeClasses = "w-12 h-12 sm:w-15 sm:h-15 md:w-16 md:h-16 lg:w-17 lg:h-17 xl:h-18 xl:w-18 2xl:h-19 2xl:w-19 3xl:h-20 3xl:w-20 4xl:w-21 4xl:h-21";
+    const sizeClasses = "h-12 w-12 2xl:h-16 2xl:w-16 3xl:h-20 3xl:w-20";
     const viewBoxSize = {
       base: 48,
       sm: 64,

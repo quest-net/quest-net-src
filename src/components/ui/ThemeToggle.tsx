@@ -42,7 +42,7 @@ export function SlidingToggle() {
     <button
       onClick={toggleTheme}
       className={`
-        relative inline-flex h-8 w-20 items-center rounded-[0.9rem]
+        relative inline-flex h-[1.5rem] w-[4rem] 2xl:h-8 2xl:w-20 items-center rounded-[0.9rem]
         border-2 border-[#333233] dark:border-[#F2EEE4]
         bg-[#F2EEE4] dark:bg-[#333233]
         transition-colors duration-1000
@@ -51,16 +51,16 @@ export function SlidingToggle() {
     >
       <span 
         className={`
-          ${isDark ? 'translate-x-12' : 'translate-x-1 -rotate-[360deg]'}
+          ${isDark ? 'translate-x-[2.4rem] 2xl:translate-x-12' : 'translate-x-1 -rotate-[360deg]'}
           inline-flex items-center justify-center
-          h-6 w-6 transform
+          w-[1.15rem] h-[1.15rem] 2xl:h-6 2xl:w-6 transform
           rounded-full
           border border-[#333233] dark:border-[#F2EEE4]
           bg-[#333233] dark:bg-[#F2EEE4]
           transition duration-1000
         `}
       >
-        <div className="relative w-4 h-4">
+        <div className="relative w-3 h-3 2xl:w-4 2xl:h-4">
           {/* Light mode star */}
           <svg
             className={`

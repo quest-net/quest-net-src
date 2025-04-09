@@ -20,7 +20,7 @@ export function CharacterSelect({ party, playerId, onSelect, onCreateNew }: Char
     <div className="fixed inset-0 w-full h-full -z-10 overflow-hidden pointer-events-none">
       <Sphere className=" absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80vh] h-[80vh] opacity-80 scale-[2] fill-[#333233] dark:fill-[#F2EEE4]" />
     </div>
-      <div className="max-w-[75%] px-8">
+      <div className="max-w-[75%] px-0 max-h-[70%]">
         <h2 className="text-4xl font-['Mohave'] font-bold text-center">
           Select Your Character
         </h2>
@@ -36,7 +36,7 @@ export function CharacterSelect({ party, playerId, onSelect, onCreateNew }: Char
               <BasicObjectView
                 name={character.name}
                 imageId={character.image}
-                size="xl"
+                size="size=lg 3xl:size=xl"
                 border={hoveredCharacter === character.id ? {
                   width: 4
                 } : undefined}
@@ -48,7 +48,7 @@ export function CharacterSelect({ party, playerId, onSelect, onCreateNew }: Char
           {/* Create New Character Option */}
           <BasicObjectView
             name="Create New Character"
-            size="xl"
+            size="size=lg 3xl:size=xl"
             action={{
               onClick: onCreateNew,
               icon: 'arrow'

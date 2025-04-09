@@ -3,10 +3,7 @@ import { joinRoom, Room } from 'trystero/mqtt';
 import { EventEmitter } from 'events';
 
 const config = {
-  appId: 'quest-net',
-  relayUrls: [
-    'wss://test.mosquitto.org:8081'
-  ]
+  appId: 'quest-net'
 };
 
 

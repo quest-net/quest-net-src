@@ -1,5 +1,5 @@
 import type { Room } from 'trystero/nostr';
-import type { GameState } from '../../../types/game';
+import type { GameState, Character } from '../../../types/game';
 
 // These must be 12 bytes or less for Trystero
 export const ItemActions = {
@@ -13,6 +13,7 @@ interface ItemActionPayload {
   actorId: string;
   actorType: 'character' | 'globalEntity' | 'fieldEntity';
   slotIndex: number;
+  isEquipped?: boolean;
 }
 
 export function setupItemHandlers(
@@ -22,19 +23,48 @@ export function setupItemHandlers(
 ) {
   // Handle item use requests from players
   const [_, getItemUse] = room.makeAction<ItemActionPayload>(ItemActions.USE);
-  getItemUse(({ itemId, actorId, actorType, slotIndex }) => {
-    console.log('DM received item use request:', { itemId, actorId, actorType, slotIndex });
-    
-    const actor = actorType === 'character'
-      ? gameState.party.find(c => c.id === actorId)
-      : actorType === 'globalEntity'
-      ? gameState.globalCollections.entities.find(e => e.id === actorId)
-      : gameState.field.find(e => e.id === actorId);
+getItemUse(({ itemId, actorId, actorType, slotIndex, isEquipped }) => {
+  console.log('DM received item use request:', { itemId, actorId, actorType, slotIndex, isEquipped });
+  
+  const actor = actorType === 'character'
+    ? gameState.party.find(c => c.id === actorId)
+    : actorType === 'globalEntity'
+    ? gameState.globalCollections.entities.find(e => e.id === actorId)
+    : gameState.field.find(e => e.id === actorId);
 
-    if (!actor) {
-      console.error('Actor not found:', { actorId, actorType });
+  if (!actor) {
+    console.error('Actor not found:', { actorId, actorType });
+    return;
+  }
+
+  // Handle equipped items
+  if (isEquipped && actorType === 'character') {
+    const character = actor as Character;
+    const equippedItem = character.equipment[slotIndex];
+    if (!equippedItem?.usesLeft) {
+      console.error('Equipment slot or uses not found:', { equippedItem });
       return;
     }
+
+    const newUsesLeft = equippedItem.usesLeft - 1;
+    if (newUsesLeft < 0) {
+      console.error('No uses left');
+      return;
+    }
+
+    onGameStateChange({
+      ...gameState,
+      party: gameState.party.map(char =>
+        char.id === actorId ? {
+          ...char,
+          equipment: char.equipment.map((item, index) =>
+            index === slotIndex ? { ...item, usesLeft: newUsesLeft } : item
+          )
+        } : char
+      )
+    });
+    return;
+  }
 
     const itemSlot = actor.inventory[slotIndex];
     if (!itemSlot?.[0].usesLeft) {

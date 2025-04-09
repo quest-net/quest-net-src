@@ -34,7 +34,7 @@ export default function TransferModal({
     const recipients = recipientType === 'character' ? party : field;
     
     return (
-      <div className="relative h-[40vh] w-full">
+      <div className="relative h-[45vh] w-full">
         {/* Background */}
         <div className="absolute inset-0 pointer-events-none -z-10 overflow-hidden">
           {recipientType === 'character' ? (
@@ -44,25 +44,26 @@ export default function TransferModal({
           )}
         </div>
 
-        {/* Recipients Grid */}
-        <div className="absolute inset-0 overflow-y-auto scrollable">
-          <div className="grid grid-cols-2 gap-4 p-4">
+        {/* Recipients List */}
+        <div className="absolute inset-0 overflow-y-auto scrollable border-2 border-grey dark:border-offwhite rounded-lg">
+          <div className="flex flex-wrap justify-center items-start gap-4 p-2 min-h-full">
             {recipients.map(recipient => (
-              <BasicObjectView
-                key={recipient.id}
-                name={recipient.name}
-                imageId={recipient.image}
-                id={`recipient-${recipient.id}`}
-                size="lg"
-                onClick={() => setSelectedRecipientId(recipient.id)}
-                border={{
-                  width: selectedRecipientId === recipient.id ? 4 : 2,
-                  color: selectedRecipientId === recipient.id ? 'var(--color-blue)' : undefined
-                }}
-              />
+              <div className="flex-none" key={recipient.id}>
+                <BasicObjectView
+                  name={recipient.name}
+                  imageId={recipient.image}
+                  id={`recipient-${recipient.id}`}
+                  size="size=sm 2xl:size=md 3xl:size=lg"
+                  onClick={() => setSelectedRecipientId(recipient.id)}
+                  border={{
+                    width: selectedRecipientId === recipient.id ? 4 : 2,
+                    color: selectedRecipientId === recipient.id ? 'var(--color-blue)' : undefined
+                  }}
+                />
+              </div>
             ))}
             {recipients.length === 0 && (
-              <div className="col-span-2 flex items-center justify-center h-40">
+              <div className="flex items-center justify-center h-40">
                 <span className="text-grey dark:text-offwhite text-xl font-['Mohave']">
                   No {recipientType === 'character' ? 'characters' : 'entities'} available
                 </span>
@@ -93,12 +94,12 @@ export default function TransferModal({
             <CatalogTabsTrigger value="fieldEntity">Field Entities</CatalogTabsTrigger>
           </CatalogTabsList>
 
-          <div className="mt-6">
+          <div className="mt-0">
             {renderRecipients()}
           </div>
         </CatalogTabs>
 
-        <div className="flex justify-end gap-4 mt-6">
+        <div className="flex justify-end gap-4 mt-4">
           <button
             onClick={onClose}
             className="px-6 py-2 text-grey dark:text-offwhite border-2 border-grey dark:border-offwhite rounded-lg hover:bg-grey/10 dark:hover:bg-offwhite/10 transition-colors font-['Mohave']"

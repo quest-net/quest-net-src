@@ -103,16 +103,16 @@ const PartyManagementControls = ({ onHealHP, onHealMP, onRefillItemUses, onRefil
       <div className="flex items-center gap-4">
         <button
           onClick={onRefillItemUses}
-          className="flex items-center gap-2 px-4 py-1.5 bg-blue dark:bg-cyan text-white dark:text-grey 
-                   font-['Mohave'] rounded hover:opacity-90 transition-opacity"
+          className="flex items-center gap-2 px-4 py-1.5 border-2 border-blue dark:border-cyan bg-transparent text-blue dark:text-cyan
+                   font-['Mohave'] rounded-lg hover:bg-white/20 active:bg-blue dark:active:bg-cyan active:text-white dark:active:text-black transition-opacity"
         >
           <Repeat size={16} />
           Refill Item Uses
         </button>
         <button
           onClick={onRefillSkillUses}
-          className="flex items-center gap-2 px-4 py-1.5 bg-blue dark:bg-cyan text-white dark:text-grey 
-                   font-['Mohave'] rounded hover:opacity-90 transition-opacity"
+          className="flex items-center gap-2 px-4 py-1.5 border-2 border-blue dark:border-cyan bg-transparent text-blue dark:text-cyan
+                   font-['Mohave'] rounded-lg hover:bg-white/20 active:bg-blue dark:active:bg-cyan active:text-white dark:active:text-black transition-opacity"
         >
           <Repeat size={16} />
           Refill Skill Uses

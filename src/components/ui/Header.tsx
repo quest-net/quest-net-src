@@ -8,9 +8,10 @@ interface HeaderProps {
   connectionStatus?: ConnectionStatusType;
   peers?: string[];
   errorMessage?: string;
+  onRoll?: (result: number, maxValue: number) => void;
 }
 
-export function Header({ roomId, connectionStatus, peers = [], errorMessage }: HeaderProps) {
+export function Header({ roomId, connectionStatus, peers = [], errorMessage, onRoll }: HeaderProps) {
   const getStatusColor = () => {
     switch (connectionStatus) {
       case 'connected':
@@ -78,7 +79,7 @@ export function Header({ roomId, connectionStatus, peers = [], errorMessage }: H
     if (!roomId) {
       return <SlidingToggle/>;
     }
-    return <DiceRoller/>;
+    return <DiceRoller onRoll={onRoll} />;
   };
 
   return (
@@ -101,8 +102,7 @@ export function Header({ roomId, connectionStatus, peers = [], errorMessage }: H
           
         </div>
       </div>
-      
-      {getRightElement()}
+        {getRightElement()}
     </div>
   );
 }

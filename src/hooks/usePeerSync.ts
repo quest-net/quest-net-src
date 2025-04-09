@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, useEffect } from 'react';
 import { selfId } from 'trystero';
 import type { Room } from '../types/room';
 import { GameState, GameImage, SerializableSaveState, initialGameState, Item, Skill, Character, Entity } from '../types/game';
@@ -60,7 +60,16 @@ interface TransitSaveState extends Omit<SerializableSaveState, 'gameState'> {
 export function usePeerSync(isRoomCreator: boolean) {
   const [gameState, setGameState] = useState<GameState>(initialGameState);
   const gameStateRef = useRef<GameState>(initialGameState);
+  const isStateInitialized = useRef<boolean>(false);
   const sendGameStateRef = useRef<(state: SerializableSaveState, target?: string | string[]) => void>();
+
+  // Update ref whenever state changes
+  useEffect(() => {
+    gameStateRef.current = gameState;
+    if (gameState !== initialGameState) {
+      isStateInitialized.current = true;
+    }
+  }, [gameState]);
 
   const getRequiredImageIds = (state: GameState, playerId: string): Set<string> => {
     const requiredIds = new Set<string>();
@@ -475,16 +484,37 @@ export function usePeerSync(isRoomCreator: boolean) {
       if (!isRoomCreator) {
         requestGameState({ from: selfId }, peerId);
       } else {
+        // Add delay and state check
         setTimeout(async () => {
-          const currentSendGameState = sendGameStateRef.current;
-          if (currentSendGameState) {
-            const transitState = await prepareStateForTransit(gameStateRef.current, peerId);
-            currentSendGameState({
-              gameState: transitState,
-              lastModified: Date.now(),
-              roomCreator: selfId
-            }, peerId);
+          console.log('[usePeerSync] Checking state before sending to new peer:', {
+            isInitialized: isStateInitialized.current,
+            currentState: gameStateRef.current
+          });
+
+          if (!isStateInitialized.current) {
+            console.warn('[usePeerSync] State not yet initialized, waiting...');
+            // Wait a bit longer and check again
+            setTimeout(async () => {
+              if (gameStateRef.current !== initialGameState) {
+                const transitState = await prepareStateForTransit(gameStateRef.current, peerId);
+                sendGameStateRef.current?.({
+                  gameState: transitState,
+                  lastModified: Date.now(),
+                  roomCreator: selfId
+                }, peerId);
+              } else {
+                console.error('[usePeerSync] Failed to send initialized state to peer');
+              }
+            }, 2000);
+            return;
           }
+
+          const transitState = await prepareStateForTransit(gameStateRef.current, peerId);
+          sendGameStateRef.current?.({
+            gameState: transitState,
+            lastModified: Date.now(),
+            roomCreator: selfId
+          }, peerId);
         }, 1000);
       }
     });
@@ -499,9 +529,13 @@ export function usePeerSync(isRoomCreator: boolean) {
 
   return {
     gameState,
-    setGameState,
+    setGameState: useCallback((newState: GameState) => {
+      gameStateRef.current = newState;
+      isStateInitialized.current = true;
+      setGameState(newState);
+    }, []),
     handleGameStateChange,
     initializePeerSync,
-    broadcastGameState,
+    broadcastGameState
   };
 }

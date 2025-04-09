@@ -63,6 +63,33 @@ export interface Entity extends InteractiveActor {
   // Entities have the base interactive properties but no equipment
 }
 
+export interface BattleMapPosition {
+  x: number;
+  y: number;
+  lastMoveFrom?: {
+    x: number;
+    y: number;
+  };
+}
+
+export const DEFAULT_CHARACTER_POSITIONS: BattleMapPosition[] = [
+  { x: 10, y: 20 },
+  { x: 10, y: 30 },
+  { x: 10, y: 40 },
+  { x: 20, y: 20 },
+  { x: 20, y: 30 },
+  { x: 20, y: 40 }
+];
+
+export const DEFAULT_ENTITY_POSITIONS: BattleMapPosition[] = [
+  { x: 40, y: 20 },
+  { x: 40, y: 30 },
+  { x: 40, y: 40 },
+  { x: 50, y: 20 },
+  { x: 50, y: 30 },
+  { x: 50, y: 40 }
+];
+
 export interface GameImage extends GameObject {
   createdAt: number;
   hash?: string;         // For verification
@@ -86,11 +113,16 @@ export interface GlobalCollections {
   images: GameImage[];
   entities: Entity[];
 }
+
 export interface CombatState {
   isActive: boolean;
   currentTurn: number;
   initiativeSide: 'party' | 'enemies';
+  positions: {
+    [actorId: string]: BattleMapPosition;
+  };
 }
+
 export interface AudioTrack {
   id: string;          
   youtubeId: string;   
@@ -128,7 +160,8 @@ export const initialGameState: GameState = {
   combat: {
     isActive: false,
     currentTurn: 0,
-    initiativeSide: 'party'
+    initiativeSide: 'party',
+    positions: {}
   },
   field: [],
   display: {
@@ -197,6 +230,7 @@ export interface PlayerViewProps {
   activeTab?: 'equipment' | 'inventory' | 'skills' | 'settings';
   onTabChange?: (tab: 'equipment' | 'inventory' | 'skills' | 'settings') => void;
   connectionStatus?: ConnectionStatusType;
+  localVolume?: number;
 }
 
 // Helper type for inventory management

@@ -35,28 +35,22 @@ export function CharacterSheet({
 
   return (
     <div className="h-full flex items-center">
-      <div className="w-full flex gap-2">
+      <div className="w-full flex gap-0 2xl:gap-2">
         {/* Left side - Large character image */}
         <div className="flex-none">
-          <BasicObjectView
+        <BasicObjectView
             name=""
             imageId={character.image}
-            size="lg"
-            className="3xl:hidden" // Hide on 1440px and up
+            size="size=lg 3xl:size=xl"
           />
-          <BasicObjectView
-            name=""
-            imageId={character.image}
-            size="xl"
-            className="hidden 3xl:block" // Show only on 1440px and up
-          />
+          
         </div>
 
         {/* Right side - Name, buttons, and stats */}
         <div className="flex-1 flex flex-col justify-center">
           {/* Name and action buttons */}
           <div className="flex items-center justify-between mb-4 ml-4">
-            <h2 className="text-2xl font-bold bg-grey dark:bg-offwhite text-offwhite dark:text-grey px-8 py-2 rounded-md mr-2 font-['BrunoAceSC']">
+            <h2 className="xl:text-lg 2xl:text-xl 3xl:text-2xl font-bold bg-grey dark:bg-offwhite text-offwhite dark:text-grey px-4 2xl:px-6 3xl:px-8 py-2 rounded-md mr-2 font-['BrunoAceSC']">
               {character.name}
             </h2>
             {showActions && (
@@ -86,16 +80,28 @@ export function CharacterSheet({
               </div>
             )}
           </div>
-
+          <div className="flex-none hidden xl:block 3xl:hidden">
           {/* Stats */}
-          <StatGauges
-            character={character}
-            gameState={gameState}
-            onGameStateChange={onGameStateChange}
-            editable={true}
-            size="medium"
-            showSideLabels={true}
-          />
+            <StatGauges
+              character={character}
+              gameState={gameState}
+              onGameStateChange={onGameStateChange}
+              editable={true}
+              size="small"
+              showSideLabels={true}
+            />
+          </div>
+          <div className="flex-none hidden xl:hidden 3xl:block">
+          {/* Stats */}
+            <StatGauges
+              character={character}
+              gameState={gameState}
+              onGameStateChange={onGameStateChange}
+              editable={true}
+              size="medium"
+              showSideLabels={true}
+            />
+          </div>
         </div>
       </div>
 

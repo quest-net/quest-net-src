@@ -12,7 +12,7 @@ interface TabButtonProps {
 const TabButton = ({ icon, title, onClick, upsideDown = false, className = '' }: TabButtonProps) => {
   return (
     <button 
-      className="relative aspect-[4/3] min-w-[80px] w-full max-w-[100px] group"
+      className="relative aspect-[4/3] min-w-[60px] 2xl:min-w-[70px] 3xl:min-w-[80px] w-full max-w-[100px] group"
       title={title}
       onClick={onClick}
     >
@@ -30,8 +30,10 @@ const TabButton = ({ icon, title, onClick, upsideDown = false, className = '' }:
               stroke-blue 
               dark:stroke-cyan
               stroke-[3]
-              group-hover:fill-grey/10
-              dark:group-hover:fill-offwhite/10
+              group-hover:fill-white/20
+              dark:group-hover:fill-offwhite/20
+              group-active:fill-blue
+              dark:group-active:fill-cyan
               transition-colors
               drop-shadow-lg
             `}
@@ -40,7 +42,7 @@ const TabButton = ({ icon, title, onClick, upsideDown = false, className = '' }:
       </div>
 
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="w-9 h-9 text-blue dark:text-cyan scale-[1]">
+        <div className="w-7 h-7 2xl:w-9 2xl:h-9 text-blue dark:text-cyan scale-[1] dark:group-active:text-grey group-active:text-offwhite">
           {React.isValidElement(icon) && 
             React.cloneElement(icon as React.ReactElement<SVGProps<SVGSVGElement>>, {
               className: `w-full h-full ${(icon.props as SVGProps<SVGSVGElement>).className || ''}`

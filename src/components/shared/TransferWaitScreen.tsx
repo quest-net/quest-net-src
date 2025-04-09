@@ -31,7 +31,7 @@ export default function TransferWaitScreen({
             <BasicObjectView
               name={item.name}
               imageId={item.image}
-              size="lg"
+              size="size=md 2xl:size=lg"
             />
             <span className="mt-2 text-xl font-['Mohave']">Your Item</span>
           </div>

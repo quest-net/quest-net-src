@@ -10,6 +10,8 @@ import { ItemEditor } from '../DungeonMaster/ItemEditor';
 import { Plus, Minus, RefreshCw } from 'lucide-react';
 import TransferModal from './TransferModal';
 import TransferWaitScreen from './TransferWaitScreen';
+import GridMenu, { ActionType } from '../ui/GridMenu';
+
 
 interface ItemViewProps {
   item: Item;
@@ -55,6 +57,64 @@ export const ItemView: React.FC<ItemViewProps> = ({
 
   const isViewingFromCatalog = !actorId && inventorySlotIndex === undefined;
   const canEditItem = isRoomCreator && isViewingFromCatalog;
+
+
+    // Get available actions for QuarterCircleMenu
+    const getAvailableActions = (): ActionType[] => {
+      const actions: ActionType[] = [];
+    
+      if (canEditItem) {
+        actions.push('edit', 'delete');
+      }
+    
+      if (actorId) {
+        // Add use action if item has uses, regardless of equipped status
+        if (item.uses !== undefined && (item.usesLeft === undefined || item.usesLeft > 0)) {
+          actions.push('use');
+        }
+    
+        if (isEquipped) {
+          actions.push('unequip');
+        } else {
+          if (item.isEquippable && actorType === 'character') {
+            actions.push('equip');
+          }
+          if (actorType === 'character' && !isRoomCreator) {
+            actions.push('transfer');
+          }
+          actions.push('discard');
+        }
+      }
+    
+      return actions;
+    };
+
+  // Handle menu actions
+  const handleMenuAction = (action: ActionType) => {
+    switch (action) {
+      case 'edit':
+        setShowEditor(true);
+        break;
+      case 'delete':
+        setConfirmDelete(true);
+        break;
+      case 'use':
+        handleUse();
+        break;
+      case 'equip':
+        handleEquip();
+        break;
+      case 'unequip':
+        handleUnequip();
+        break;
+      case 'transfer':
+        setShowTransferModal(true);
+        break;
+      case 'discard':
+        handleDiscard();
+        break;
+    }
+  };
 
   const determineActorType = (actorId: string): 'character' | 'globalEntity' | 'fieldEntity' | undefined => {
     if (gameState.party.some(c => c.id === actorId)) {
@@ -110,13 +170,16 @@ export const ItemView: React.FC<ItemViewProps> = ({
   }, [gameState, item.id, actorId, actorType, inventorySlotIndex, isEquipped, equipmentIndex]);
 
   const handleUse = async () => {
-    if (!actorId || !itemActions || inventorySlotIndex === undefined) return;
+    if (!actorId || !itemActions) return;
     
     const type = actorType || determineActorType(actorId);
     if (!type) return;
-
+  
     try {
-      await itemActions.useItem(item.id, actorId, type, inventorySlotIndex);
+      // If item is equipped, use the equipment index, otherwise use inventory index
+      const slotIndex = isEquipped ? equipmentIndex! : inventorySlotIndex!;
+      await itemActions.useItem(item.id, actorId, type, slotIndex, isEquipped);
+      
       if (item.uses !== undefined && item.usesLeft !== undefined && item.usesLeft <= 1) {
         onClose?.();
       }
@@ -249,157 +312,101 @@ export const ItemView: React.FC<ItemViewProps> = ({
   const availableParty = gameState.party.filter(c => c.id !== actorId);
 
   return (
-    <div className="pr-4">
-      <div className="flex justify-between items-start mb-4">
-        <div className="flex-1">
-          <BasicObjectView 
-            name={item.name}
-            imageId={item.image}
-            size="lg"
-            className="mb-4"
-          />
+    <div className="flex flex-col h-full w-full gap-2 p-0">
+      
+      {/* Uses and Tags Section */}
+      <div className="grid grid-cols-2 gap-4 items-center">
+        {/* Uses Section */}
+        <div className="flex items-center gap-2">
+          <div className="font-['Mohave'] text-lg">
+            {item.uses !== undefined ? (
+              <span>Uses: {item.usesLeft ?? item.uses} / {item.uses}</span>
+            ) : (
+              <span>Unlimited Uses</span>
+            )}
+          </div>
           
-          <div className="prose dark:prose-invert max-w-none">
-            <p>{item.description}</p>
-          </div>
+          {isRoomCreator && inventorySlotIndex !== undefined && item.uses !== undefined && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleDecreaseUses()}
+                className="p-1 rounded-full hover:bg-grey/10 dark:hover:bg-offwhite/10"
+                title="Decrease uses"
+              >
+                <Minus size={16} />
+              </button>
+              
+              <input
+                type="number"
+                value={customUses ?? ''}
+                onChange={e => setCustomUses(e.target.value ? Number(e.target.value) : undefined)}
+                placeholder={item.uses.toString()}
+                className="w-16 px-2 py-1 rounded border dark:bg-grey font-['Mohave']"
+              />
+              
+              <button
+                onClick={() => handleRestoreUses()}
+                className="p-1 rounded-full hover:bg-grey/10 dark:hover:bg-offwhite/10"
+                title="Set uses"
+              >
+                <RefreshCw size={16} />
+              </button>
 
-          <div className="mt-4 space-y-2">
-            {item.uses !== undefined && (
-              <div className="flex items-center gap-4">
-                <div className="text-sm">
-                  Uses: {item.usesLeft ?? item.uses} / {item.uses}
-                </div>
-                
-                {isRoomCreator && inventorySlotIndex !== undefined && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleDecreaseUses}
-                      className="p-1 rounded-full hover:bg-grey/10 dark:hover:bg-offwhite/10"
-                      title="Decrease uses"
-                    >
-                      <Minus size={16} />
-                    </button>
-                    
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        value={customUses ?? ''}
-                        onChange={e => setCustomUses(e.target.value ? Number(e.target.value) : undefined)}
-                        placeholder={item.uses.toString()}
-                        className="w-16 px-2 py-1 rounded border dark:bg-grey"
-                      />
-                      <button
-                        onClick={handleRestoreUses}
-                        className="p-1 rounded-full hover:bg-grey/10 dark:hover:bg-offwhite/10"
-                        title="Set uses"
-                      >
-                        <RefreshCw size={16} />
-                      </button>
-                    </div>
-
-                    <button
-                      onClick={handleIncreaseUses}
-                      className="p-1 rounded-full hover:bg-grey/10 dark:hover:bg-offwhite/10"
-                      title="Increase uses"
-                    >
-                      <Plus size={16} />
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-            {item.isEquippable && actorType === 'character' && (
-              <div className="text-sm">Equippable Item</div>
-            )}
-            {item.tags && item.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2 mt-2">
-                {item.tags.map(tag => (
-                  <span 
-                    key={tag}
-                    className="px-2 py-1 bg-grey/10 dark:bg-offwhite/10 rounded-full text-xs"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+              <button
+                onClick={() => handleIncreaseUses()}
+                className="p-1 rounded-full hover:bg-grey/10 dark:hover:bg-offwhite/10"
+                title="Increase uses"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Action Buttons */}
-        <div className="flex flex-col gap-2 ml-4">
-          {canEditItem && (
-            <>
-              <button
-                onClick={() => setShowEditor(true)}
-                className="px-3 py-1 bg-blue dark:bg-cyan text-white dark:text-grey rounded-md 
-                      hover:bg-blue/90 dark:hover:bg-cyan/90 transition-colors"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors"
-              >
-                Delete
-              </button>
-            </>
-          )}
+        
 
-          {/* Item action buttons */}
-          {actorId && (
-            <>
-              {isEquipped ? (
-                // Unequip button for equipped items
-                <button
-                  onClick={handleUnequip}
-                  className="px-3 py-1 bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors"
-                >
-                  Unequip
-                </button>
-              ) : (
-                // Regular inventory item buttons
-                <>
-                  {item.uses !== undefined && 
-                   (item.usesLeft === undefined || item.usesLeft > 0) && (
-                    <button
-                      onClick={handleUse}
-                      className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
-                    >
-                      Use
-                    </button>
-                  )}
-                  {item.isEquippable && actorType === 'character' && (
-                    <button
-                      onClick={handleEquip}
-                      className="px-3 py-1 bg-purple-500 text-white rounded-md hover:bg-purple-600 transition-colors"
-                    >
-                      Equip
-                    </button>
-                  )}
-                  {actorType === 'character' && !isRoomCreator && !isEquipped && (
-                    <button
-                      onClick={() => setShowTransferModal(true)}
-                      className="px-3 py-1 bg-blue dark:bg-cyan text-white dark:text-grey rounded-md 
-                                hover:opacity-90 transition-colors"
-                    >
-                      Transfer
-                    </button>
-                  )}
-                  <button
-                    onClick={handleDiscard}
-                    className="px-3 py-1 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
-                  >
-                    Discard
-                  </button>
-                </>
-              )}
-            </>
-          )}
+        {/* Tags Section */}
+        <div className="flex flex-wrap gap-2 justify-end items-center">
+          {item.tags?.map(tag => (
+            <span 
+              key={tag}
+              className="px-3 py-1 bg-grey/10 dark:bg-offwhite/10 rounded-full 
+                       font-['Mohave'] text-sm"
+            >
+              {tag}
+            </span>
+          ))}
         </div>
       </div>
+      
 
-      {/* Editor Modal */}
+      
+
+      {/* Image Section */}
+      <div className="flex justify-center items-center flex-grow">
+        <BasicObjectView 
+          name=""
+          imageId={item.image}
+          size="size=lg 3xl:size=xl"
+        />
+      </div>
+
+      {/* Description Section */}
+      <div className="border-2 border-grey dark:border-offwhite rounded-lg p-2 min-h-[6rem] max-h-[7rem] overflow-y-auto">
+        <p className="font-['Mohave'] text-md 2xl:text-lg text-left leading-relaxed">
+          {item.description}
+        </p>
+      </div>
+
+      {/* Grid Menu Section */}
+      <div className="h-16 mb-4">
+        <GridMenu
+          onSelect={handleMenuAction}
+          availableActions={getAvailableActions()}
+        />
+      </div>
+
+      {/* Modals */}
       {showEditor && (
         <Modal
           isOpen={showEditor}
@@ -414,11 +421,10 @@ export const ItemView: React.FC<ItemViewProps> = ({
         </Modal>
       )}
 
-      {/* New transfer-related modals */}
       <TransferModal
         isOpen={showTransferModal}
         onClose={() => setShowTransferModal(false)}
-        party={availableParty}
+        party={gameState.party.filter(c => c.id !== actorId)}
         field={gameState.field}
         onTransfer={handleTransferInitiate}
       />
@@ -430,25 +436,28 @@ export const ItemView: React.FC<ItemViewProps> = ({
         recipientName={transferRecipientName}
       />
 
-      {/* Delete Confirmation Modal */}
       {confirmDelete && (
         <Modal
           isOpen={confirmDelete}
           onClose={() => setConfirmDelete(false)}
           title="Confirm Delete"
         >
-          <div className="p-4">
-            <p>Are you sure you want to delete this item? This cannot be undone and will remove it from all inventories.</p>
+          <div className="p-0">
+            <p className="font-['Mohave']">
+              Are you sure you want to delete this item? This cannot be undone and will remove it from all inventories.
+            </p>
             <div className="flex justify-end gap-2 mt-4">
               <button
                 onClick={() => setConfirmDelete(false)}
-                className="px-3 py-1 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
+                className="px-3 py-1 bg-gray-500 text-white rounded-md hover:bg-gray-600 
+                         transition-colors font-['Mohave']"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDelete}
-                className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition-colors"
+                className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 
+                         transition-colors font-['Mohave']"
               >
                 Delete
               </button>
@@ -458,4 +467,4 @@ export const ItemView: React.FC<ItemViewProps> = ({
       )}
     </div>
   );
-};
+}

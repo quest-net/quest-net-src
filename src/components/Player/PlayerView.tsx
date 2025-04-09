@@ -28,7 +28,8 @@ export function PlayerView({
   onShowSkills,
   activeTab = 'equipment',
   onTabChange,
-  connectionStatus
+  connectionStatus,
+  localVolume = 100
 }: PlayerViewProps) {
   // State
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
@@ -210,7 +211,8 @@ export function PlayerView({
     onShowEquipment,
     onShowSkills,
     activeTab,
-    onTabChange
+    onTabChange,
+    localVolume
   };
 
   // Determine which view to show based on field entities
@@ -218,7 +220,7 @@ export function PlayerView({
   
   return (
     <>
-      <AudioPlayer gameState={gameState} isDM={false} />
+      <AudioPlayer gameState={gameState} isDM={false} localVolume={localVolume} />
       {hasFieldEntities ? (
         <ThreatView {...viewProps} />
       ) : (
