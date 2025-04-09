@@ -55,14 +55,17 @@ export function EquipmentPanel({
   }, [gameState, actorId]);
 
   const renderEquipmentGrid = () => (
-    <div className="grid p-[1vw] grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-[1.1vw] auto-rows-max">
+    <div className="flex flex-wrap justify-evenly content-start gap-6 px-6 py-4">
       {currentEquipment.map((item, index) => (
-        <div key={`${item.id}-${index}`} className="relative">
+        <div 
+          key={`${item.id}-${index}`} 
+          className="flex-grow-0 flex-shrink-0"
+        >
           <BasicObjectView
             name={item.name}
             imageId={item.image}
             id={item.id}
-            size="md"
+            size="size=sm 2xl:size=md"
             onClick={() => setSelectedItem({ item, index })}
           />
         </div>
@@ -76,22 +79,36 @@ export function EquipmentPanel({
         <div
           key={`${item.id}-${index}`}
           onClick={() => setSelectedItem({ item, index })}
-          className="flex items-center p-4 border-2 border-grey dark:border-offwhite rounded-lg hover:bg-grey/10 dark:hover:bg-offwhite/10 cursor-pointer"
+          className="flex items-center justify-between p-4 pb-6 font-['Mohave'] text-lg border-b-2 border-grey dark:border-offwhite hover:bg-grey/10 dark:hover:bg-offwhite/10 cursor-pointer"
         >
-          <BasicObjectView
-            name={item.name}
-            imageId={item.image}
-            id={item.id}
-            size="sm"
-          />
-          <div className="ml-4">
-            <h4 className="font-medium">{item.name}</h4>
-            {item.uses !== undefined && (
-              <p className="text-sm text-grey dark:text-offwhite/80">
-                Uses: {item.usesLeft ?? item.uses} / {item.uses}
-              </p>
-            )}
+          <div className="flex items-center">
+            <BasicObjectView
+              name=""
+              imageId={item.image}
+              id={item.id}
+              size="sm"
+            />
+            <div className="ml-8 flex flex-col items-start">
+              <h4 className="font-medium font-['BrunoAceSC']">{item.name}</h4>
+              {item.uses !== undefined && (
+                <div className="text-md flex items-center gap-2">
+                  <span className="text-blue dark:text-cyan">Uses: {item.usesLeft ?? item.uses}</span>
+                  <span className="text-grey dark:text-offwhite">/</span>
+                  <span className="text-blue dark:text-cyan">{item.uses}</span>
+                </div>
+              )}
+            </div>
           </div>
+          
+          {item.uses !== undefined && (
+            <div className="flex items-center">
+              <div className="w-12 h-12 rotate-45 border-2 border-blue dark:border-cyan bg-offwhite dark:bg-grey rounded flex items-center justify-center">
+                <div className="-rotate-45 text-blue dark:text-cyan font-medium">
+                  {`${item.usesLeft}/${item.uses}`}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       ))}
     </div>
@@ -168,7 +185,7 @@ export function EquipmentPanel({
     <Modal
       isOpen={true}
       onClose={onClose || (() => {})}
-      className="max-w-4xl"
+      className="max-w-4xl min-w-[42vw]"
     >
       {content}
 
@@ -177,6 +194,7 @@ export function EquipmentPanel({
           isOpen={!!selectedItem}
           onClose={() => setSelectedItem(null)}
           title={selectedItem.item.name}
+          className="max-w-[33vw]"
         >
           <ItemView
             item={selectedItem.item}

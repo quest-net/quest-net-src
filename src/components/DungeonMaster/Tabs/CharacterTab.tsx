@@ -99,13 +99,19 @@ const handlePartyHealMP = (amount: number) => {
 const handleRefillItemUses = () => {
   const updatedParty = gameState.party.map(char => ({
     ...char,
+    // Reset uses for inventory items
     inventory: char.inventory.map(([item, count]) => [
       {
         ...item,
         usesLeft: item.uses // Reset to maximum uses if item has uses defined
       },
       count
-    ] as [typeof item, number]) // Assert the tuple type
+    ] as [typeof item, number]),
+    // Reset uses for equipped items
+    equipment: char.equipment.map(item => ({
+      ...item,
+      usesLeft: item.uses // Reset to maximum uses if item has uses defined
+    }))
   }));
 
   onGameStateChange({

@@ -27,26 +27,19 @@ const PartyList = ({
   if (layout === 'horizontal') {
     return (
       <div className="w-full h-full flex items-center justify-center">
-        <div className="flex overflow-x-auto gap-8 snap-x mx-auto">
+        <div className="flex h-full overflow-x-auto gap-4 2xl:gap-8 snap-x mx-auto">
           {characters.map(character => (
             <div 
               key={character.id}
-              className="flex-none snap-start"
+              className="flex-none mt-6 2xl:mt-6 3xl:mt-12"
             >
               <div className="w-48 flex flex-col">
                 <div className="flex-none">
                 <BasicObjectView
-                    name={character.name}
-                    imageId={character.image}
-                    size="md" // Default size for smaller screens
-                    className="3xl:hidden" // Hide on 1440p and up
-                  />
-                  <BasicObjectView
-                    name={character.name}
-                    imageId={character.image}
-                    size="lg" // Larger size for 1440p
-                    className="hidden 3xl:block" // Show only on 1440p and up
-                  />
+                name={character.name}
+                imageId={character.image}
+                size="size=sm 2xl:size=md 3xl:size=lg" // Default size for smaller screens
+              />
                 </div>
                 <div className="flex-none">
                   <StatGauges
@@ -74,20 +67,13 @@ const PartyList = ({
           className="flex items-center gap-2 "
         >
           <div className="flex-none">
-          <BasicObjectView
-                    name={character.name}
-                    imageId={character.image}
-                    size="md" // Default size for smaller screens
-                    className="3xl:hidden" // Hide on 1440p and up
-                  />
-                  <BasicObjectView
-                    name={character.name}
-                    imageId={character.image}
-                    size="lg" // Larger size for 1440p
-                    className="hidden 3xl:block" // Show only on 1440p and up
-                  />
+            <BasicObjectView
+              name={character.name}
+              imageId={character.image}
+              size="size=sm 2xl:size=md 3xl:size=lg"
+              />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 hidden xl:hidden 2xl:block">
             <StatGauges
               character={character}
               gameState={gameState}
@@ -97,6 +83,17 @@ const PartyList = ({
               showSideLabels={true}
             />
           </div>
+          <div className="flex-1 hidden xl:block 2xl:hidden">
+            <StatGauges
+              character={character}
+              gameState={gameState}
+              onGameStateChange={onGameStateChange}
+              editable={false}
+              size="small"
+              showSideLabels={true}
+            />
+          </div>
+          
         </div>
       ))}
     </div>

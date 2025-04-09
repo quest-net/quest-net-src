@@ -10,6 +10,7 @@ import { Field } from './Field';
 import { useCharacterActions } from '../../actions/characterActions';
 import { useItemActions } from '../../actions/itemActions';
 import { useSkillActions } from '../../actions/skillActions';
+import BattleMap from '../shared/BattleMap';
 
 interface ThreatViewProps extends PlayerViewProps {
   selectedCharacter: any;
@@ -53,8 +54,8 @@ const handleStatChange = async (statType: 'hp' | 'mp' | 'sp', newValue: number) 
 };
   return (
     <div className="grid h-[88vh] w-full" style={{
-        gridTemplateColumns: '25fr 15fr 40fr 20fr',
-        gridTemplateRows: '3fr 7fr',
+        gridTemplateColumns: '28fr 12fr 40fr 20fr',
+        gridTemplateRows: '35fr 65fr',
         gap: '0',
         padding: '1vh',
       }}>
@@ -87,24 +88,14 @@ const handleStatChange = async (statType: 'hp' | 'mp' | 'sp', newValue: number) 
         )}
       </div>
 
-      {/* Column 3-4, Row 1: Combat Information */}
-      <div style={{ gridColumn: '3 / 4', gridRow: '1' }} className="rounded-lg p-2">
-        {gameState.combat && gameState.combat.isActive && (
-          <div className="flex justify-center items-center h-full">
-            <div 
-              className={`
-                text-4xl font-['BrunoAceSC'] text-center
-                transition-colors duration-300 border-2 border-grey dark:border-offwhite px-24 py-12 rounded-3xl
-                ${gameState.combat.initiativeSide === 'party' 
-                  ? 'text-blue dark:text-cyan' 
-                  : 'text-purple dark:text-pink'
-                }
-              `}
-            >
-              Turn {gameState.combat.currentTurn}
-            </div>
-          </div>
-        )}
+      {/* Column 3-4, Row 1: Battle Map */}
+      <div style={{ gridColumn: '3 / 4', gridRow: '1' }} className="rounded-lg p-2 py-4">
+        <BattleMap
+          gameState={gameState}
+          onGameStateChange={onGameStateChange}
+          room={room}
+          isRoomCreator={false}
+        />
       </div>
 
       {/* Column 1, Row 2: Party Members */}

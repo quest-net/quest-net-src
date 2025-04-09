@@ -289,10 +289,14 @@ export function EnvironmentDisplay({ gameState }: ImageDisplayProps) {
         ) : !envImageUrl ? (
           <DefaultImage className="fill-grey dark:fill-offwhite display-none"/>
         ) : (
-          <img
-            src={envImageUrl}
-            alt="Environment"
-            className="max-w-full max-h-full object-contain relative z-10"
+          <div 
+            className="w-full h-full relative z-10"
+            style={{
+              backgroundImage: `url(${envImageUrl})`,
+              backgroundPosition: 'center',
+              backgroundRepeat: 'no-repeat',
+              backgroundSize: 'contain'
+            }}
           />
         )}
       </div>

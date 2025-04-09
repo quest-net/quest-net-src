@@ -226,22 +226,9 @@ export function CatalogTab({
                   <div className="flex-none">
                   <BasicObjectView
                     name={recipient.name}
-                    className="hidden 3xl:block"
                     imageId={recipient.image}
                     id={`recipient-${recipient.id}`}
-                    size="xl"
-                    onClick={() => handleRecipientSelect(recipient.id)}
-                    border={{
-                      width: selectedRecipientIds.has(recipient.id) ? 4 : 2,
-                      color: selectedRecipientIds.has(recipient.id) ? 'var(--color-blue)' : undefined
-                    }}
-                  />
-                  <BasicObjectView
-                    name={recipient.name}
-                    className="3xl:hidden"
-                    imageId={recipient.image}
-                    id={`recipient-${recipient.id}`}
-                    size="lg"
+                    size="size=md xl:size=md 2xl:size=lg 3xl:size=xl"
                     onClick={() => handleRecipientSelect(recipient.id)}
                     border={{
                       width: selectedRecipientIds.has(recipient.id) ? 4 : 2,
@@ -401,6 +388,7 @@ export function CatalogTab({
           isOpen={showCreateItem}
           onClose={() => setShowCreateItem(false)}
           title="Create New Item"
+          className="min-w-[42vw] max-w-[42vw]"
         >
           <ItemEditor
             onSubmit={handleCreateItem}
@@ -414,6 +402,7 @@ export function CatalogTab({
           isOpen={showCreateSkill}
           onClose={() => setShowCreateSkill(false)}
           title="Create New Skill"
+          className="min-w-[42vw] max-w-[42vw]"
         >
           <SkillEditor
             onSubmit={handleCreateSkill}

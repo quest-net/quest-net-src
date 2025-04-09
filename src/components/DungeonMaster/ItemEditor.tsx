@@ -220,7 +220,7 @@ export const ItemEditor: React.FC<ItemEditorProps> = ({item, onSubmit, onCancel 
                 value={uses ?? ''}
                 onChange={(e) => setUses(e.target.value ? Number(e.target.value) : undefined)}
                 className="w-full p-2 border-2 rounded-md border-grey dark:border-offwhite bg-transparent"
-                min="0"
+                min="1"
                 placeholder="Unlimited"
               />
             </div>

@@ -133,16 +133,14 @@ export default function EntityView({
       </div>
 
       {/* Inventory and Skills Tabs */}
-      <div className="flex-1 flex flex-col min-h-0">
-        <CoolTabs defaultValue="inventory" className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col">
+        <CoolTabs defaultValue="inventory" className=" flex flex-col">
           <CoolTabsList>
-            <CoolTabsTrigger value="inventory" tabType="inventory">Inventory</CoolTabsTrigger>
-            <CoolTabsTrigger value="skills" tabType="skills">Skills</CoolTabsTrigger>
+            <CoolTabsTrigger value="inventory" tabType="inventory"/>
+            <CoolTabsTrigger value="skills" tabType="skills"/>
           </CoolTabsList>
-
-          <div className="flex-1 min-h-0 w-full overflow-hidden">
-            <CoolTabsContent value="inventory" className="h-full w-full">
-              <div className="h-full p-2 overflow-auto">
+            <CoolTabsContent value="inventory" className="flex-1 overflow-auto">
+              <div className="h-[35vh]">
                 <InventoryPanel
                   inventory={entity.inventory}
                   room={room}
@@ -157,7 +155,7 @@ export default function EntityView({
             </CoolTabsContent>
 
             <CoolTabsContent value="skills" className="h-full w-full">
-              <div className="h-full p-2 overflow-auto">
+              <div className="h-[35vh]">
                 <SkillsPanel
                   skills={entity.skills}
                   room={room}
@@ -170,7 +168,6 @@ export default function EntityView({
                 />
               </div>
             </CoolTabsContent>
-          </div>
         </CoolTabs>
       </div>
 

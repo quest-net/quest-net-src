@@ -9,6 +9,7 @@ import { useGamePersistence } from './hooks/useGamePersistence';
 import { roomManager } from './services/RoomManager';
 import type { ConnectionStatusType } from './types/connection';
 import { DMTabType, PlayerTabType, AllTabTypes, ModalControls, CatalogControls } from './services/NavigationManager';
+import { DiceNotificationStack, DiceNotificationStackHandle } from './components/ui/DiceNotificationStack';
 
 interface GameRoomProps {
   onConnectionUpdate: (
@@ -17,9 +18,10 @@ interface GameRoomProps {
     error: string,
     roomId: string
   ) => void;
+  onSetDiceRollHandler: (handler: (result: number, maxValue: number) => void) => void;
 }
 
-function GameRoom({ onConnectionUpdate }: GameRoomProps) {
+function GameRoom({ onConnectionUpdate, onSetDiceRollHandler }: GameRoomProps) {
   const [hasJoinedRoom, setHasJoinedRoom] = useState(false);
   const [roomId, setRoomId] = useState('');
   const [isRoomCreator, setIsRoomCreator] = useState(false);
@@ -30,7 +32,11 @@ function GameRoom({ onConnectionUpdate }: GameRoomProps) {
   const [showSkillsModal, setShowSkillsModal] = useState(false);
   const [modalControls, setModalControls] = useState<ModalControls | undefined>();
   const [catalogControls, setCatalogControls] = useState<CatalogControls | undefined>();
-
+  const notificationStackRef = React.useRef<DiceNotificationStackHandle>(null);
+  const [localVolume, setLocalVolume] = useState(() => {
+    const saved = localStorage.getItem('player-volume');
+    return saved ? parseInt(saved, 10) : 100;
+  });
   const {
     peers,
     connectionStatus,
@@ -43,6 +49,64 @@ function GameRoom({ onConnectionUpdate }: GameRoomProps) {
   const {
     saveGameState
   } = useGamePersistence(roomId, isRoomCreator);
+  // Handler for volume changes
+  const handleLocalVolumeChange = useCallback((volume: number) => {
+    setLocalVolume(volume);
+  }, []);
+  // Set up dice roll action when room is available
+  useEffect(() => {
+    if (room) {
+      // Create the action for broadcasting dice rolls
+      const [sendDiceRoll, getDiceRoll] = room.makeAction<{
+        result: number;
+        maxValue: number;
+        characterName: string;
+      }>('diceRoll');
+
+      // Listen for dice rolls from other peers
+      getDiceRoll((data) => {
+        notificationStackRef.current?.addNotification({
+          characterName: data.characterName,
+          result: data.result,
+          maxValue: data.maxValue
+        });
+      });
+
+      // Handler for dice rolls from our own UI
+      const handleDiceRoll = (result: number, maxValue: number) => {
+        
+        // Only broadcast if we're not the DM and have a selected character
+        if (!isRoomCreator) {
+          const playerCharacter = gameState.party.find(c => c.playerId === selfId);
+          if (playerCharacter) {
+            const rollData = {
+              result,
+              maxValue,
+              characterName: playerCharacter.name
+            };
+            sendDiceRoll(rollData);
+            // Add to our own notification stack too
+            notificationStackRef.current?.addNotification(rollData);
+          } else {
+          }
+        } else {
+          notificationStackRef.current?.addNotification({
+            characterName: 'DM',
+            result,
+            maxValue
+          });
+        }
+      };
+
+      // Register the handler with App
+      onSetDiceRollHandler(handleDiceRoll);
+
+      return () => {
+        // Clean up by setting handler to undefined when component unmounts
+        onSetDiceRollHandler(() => {});
+      };
+    }
+  }, [room, isRoomCreator, gameState, onSetDiceRollHandler]);
 
   const handleJoinRoom = (id: string, isHost: boolean) => {
     setRoomId(id);
@@ -104,7 +168,9 @@ function GameRoom({ onConnectionUpdate }: GameRoomProps) {
   }
 
   return (
-    <GameInterface
+    <>
+      <DiceNotificationStack ref={notificationStackRef} />
+      <GameInterface
       roomId={roomId}
       peers={peers}
       connectionStatus={connectionStatus}
@@ -114,6 +180,7 @@ function GameRoom({ onConnectionUpdate }: GameRoomProps) {
       onLeaveRoom={handleLeaveRoom}
       onSaveGame={() => saveGameState(gameState)}
       activeTab={isRoomCreator ? dmActiveTab : playerActiveTab}
+      onLocalVolumeChange={!isRoomCreator ? handleLocalVolumeChange : undefined}
       onTabChange={(tab: AllTabTypes) => {
         if (isRoomCreator) {
           setDmActiveTab(tab as DMTabType);
@@ -155,9 +222,11 @@ function GameRoom({ onConnectionUpdate }: GameRoomProps) {
           activeTab={playerActiveTab}
           onTabChange={setPlayerActiveTab}
           connectionStatus={connectionStatus}
+          localVolume={localVolume}
         />
       )}
     </GameInterface>
+    </>
   );
 }
 

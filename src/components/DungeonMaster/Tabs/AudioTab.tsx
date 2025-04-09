@@ -167,18 +167,18 @@ export function AudioTab({ gameState, onGameStateChange }: DMViewProps) {
       </div>
       <div className="w-1/2 flex flex-col pr-16">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl px-8 py-2 rounded-full bg-blue dark:bg-cyan text-offwhite dark:text-grey font-['BrunoAceSC']">Playlist</h2>
+          <h2 className="text-xl px-8 py-2 rounded-lg bg-grey dark:bg-offwhite text-offwhite dark:text-grey font-['BrunoAceSC']">Playlist</h2>
           <button
             onClick={() => setShowAddTrackModal(true)}
             className="px-4 py-2 rounded-full 
             bg-offwhite dark:bg-grey
             text-blue dark:text-cyan 
             border-2 border-blue dark:border-cyan border-b-4
-            active:border-b-2 active:translate-y-0.5
+            active:border-b-2
             active:bg-blue dark:active:bg-cyan
             active:text-offwhite dark:active:text-grey
-            transition-all duration-75
-            flex items-center gap-2"
+            transition-all duration-75 text-lg
+            flex items-center gap-2 font-['Mohave']" 
             >
             <Plus className="w-5 h-5" />
             Add Track
@@ -274,23 +274,23 @@ export function AudioTab({ gameState, onGameStateChange }: DMViewProps) {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Track Name (Optional)</label>
+            <label className="block text-md font-medium mb-1 font-['Mohave']">Track Name (Optional)</label>
             <input
               type="text"
               value={newTrackName}
               onChange={(e) => setNewTrackName(e.target.value)}
               placeholder="Enter track name..."
-              className="w-full px-4 py-2 rounded-lg border-2 border-grey dark:border-offwhite bg-transparent"
+              className=" font-['Mohave'] w-full px-4 py-2 rounded-lg border-2 border-grey dark:border-offwhite bg-transparent"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">YouTube URL</label>
+            <label className="block text-md font-medium mb-1 font-['Mohave']">YouTube URL</label>
             <input
               type="text"
               value={newTrackUrl}
               onChange={(e) => setNewTrackUrl(e.target.value)}
               placeholder="https://youtube.com/watch?v=..."
-              className="w-full px-4 py-2 rounded-lg border-2 border-grey dark:border-offwhite bg-transparent"
+              className=" font-['Mohave'] w-full px-4 py-2 rounded-lg border-2 border-grey dark:border-offwhite bg-transparent"
             />
           </div>
           {error && (
@@ -301,14 +301,14 @@ export function AudioTab({ gameState, onGameStateChange }: DMViewProps) {
           <div className="flex justify-end gap-2 mt-4">
             <button
               onClick={() => setShowAddTrackModal(false)}
-              className="px-4 py-2 rounded-lg border-2 border-grey dark:border-offwhite hover:bg-grey/10 dark:hover:bg-offwhite/10"
+              className="font-['Mohave'] px-4 py-2 rounded-lg border-2 border-grey dark:border-offwhite hover:bg-grey/10 dark:hover:bg-offwhite/10"
             >
               Cancel
             </button>
             <button
               onClick={handleAddTrack}
               disabled={isLoading}
-              className="px-4 py-2 rounded-lg bg-blue hover:bg-blue-600 dark:bg-cyan dark:hover:bg-cyan-600 text-white dark:text-grey disabled:opacity-50"
+              className=" font-['Mohave'] px-4 py-2 rounded-lg bg-blue hover:bg-blue-600 dark:bg-cyan dark:hover:bg-cyan-600 text-white dark:text-grey disabled:opacity-50"
             >
               {isLoading ? 'Adding...' : 'Add Track'}
             </button>

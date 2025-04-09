@@ -14,9 +14,14 @@ declare global {
 interface AudioPlayerProps {
   gameState: GameState;
   isDM?: boolean;
+  localVolume?: number; // New prop for player-specific volume
 }
 
-export function AudioPlayer({ gameState, isDM = false }: AudioPlayerProps) {
+export function AudioPlayer({ 
+  gameState, 
+  isDM = false, 
+  localVolume = 100  // Default to 100% of DM's volume
+}: AudioPlayerProps) {
   const playerRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const playerElementId = useRef(`youtube-player-${Math.random().toString(36).substr(2, 9)}`);
@@ -95,8 +100,11 @@ export function AudioPlayer({ gameState, isDM = false }: AudioPlayerProps) {
         events: {
           onReady: () => {
             console.log('YouTube player ready');
+            // Calculate and set initial volume
+            const baseVolume = gameState.audio.volume;
+            const effectiveVolume = (isDM ? baseVolume : (baseVolume * localVolume / 100)) / 5;
             if (playerRef.current?.setVolume) {
-              playerRef.current.setVolume(gameState.audio.volume);
+              playerRef.current.setVolume(effectiveVolume);
             }
           },
           onStateChange: (event: any) => {
@@ -144,16 +152,18 @@ export function AudioPlayer({ gameState, isDM = false }: AudioPlayerProps) {
     }
   }, [gameState.audio.currentTrackId]);
 
-  // Handle volume changes
+  // Handle volume changes - now considers both DM volume and local volume
   useEffect(() => {
     if (!playerRef.current?.setVolume) return;
 
     try {
-      playerRef.current.setVolume(gameState.audio.volume);
+      const baseVolume = gameState.audio.volume;
+      const effectiveVolume = isDM ? baseVolume : (baseVolume * localVolume / 100);
+      playerRef.current.setVolume(effectiveVolume);
     } catch (error) {
       console.error('Error setting volume:', error);
     }
-  }, [gameState.audio.volume]);
+  }, [gameState.audio.volume, localVolume, isDM]);
 
   return (
     <div 

@@ -1,5 +1,5 @@
 import type { Room } from 'trystero/nostr';
-import type { Item, GameState, InventorySlot } from '../types/game';
+import type { Item, GameState, InventorySlot, Character } from '../types/game';
 import { selfId } from 'trystero';
 import { ItemActions } from '../components/DungeonMaster/handlers/setupItemHandlers';
 
@@ -73,14 +73,37 @@ export function setupItemActions(
     },
 
     // For DM to directly modify inventory without going through action system
-    useItemDirect: (actorId: string, actorType: 'character' | 'globalEntity' | 'fieldEntity', slotIndex: number) => {
+    useItemDirect: (actorId: string, actorType: 'character' | 'globalEntity' | 'fieldEntity', slotIndex: number, isEquipped?: boolean) => {
       const actor = actorType === 'character'
         ? gameState.party.find(c => c.id === actorId)
         : actorType === 'globalEntity'
         ? gameState.globalCollections.entities.find(e => e.id === actorId)
         : gameState.field.find(e => e.id === actorId);
-
+    
       if (!actor) return false;
+    
+      // Handle equipped items
+      if (isEquipped && actorType === 'character') {
+        const character = actor as Character;
+        const equippedItem = character.equipment[slotIndex];
+        if (!equippedItem?.usesLeft) return false;
+    
+        const newUsesLeft = equippedItem.usesLeft - 1;
+        if (newUsesLeft < 0) return false;
+    
+        onGameStateChange({
+          ...gameState,
+          party: gameState.party.map(char =>
+            char.id === actorId ? {
+              ...char,
+              equipment: char.equipment.map((item, index) =>
+                index === slotIndex ? { ...item, usesLeft: newUsesLeft } : item
+              )
+            } : char
+          )
+        });
+        return true;
+      }
 
       const itemSlot = actor.inventory[slotIndex];
       if (!itemSlot?.[0].usesLeft) return false;
@@ -282,11 +305,11 @@ export function setupItemActions(
   return {
     ...dmActions,
 
-    useItem: (itemId: string, actorId: string, actorType: 'character' | 'globalEntity' | 'fieldEntity', slotIndex: number) => {
+    useItem: (itemId: string, actorId: string, actorType: 'character' | 'globalEntity' | 'fieldEntity', slotIndex: number, isEquipped: boolean) => {
       if (isRoomCreator) {
-        return dmActions?.useItemDirect(actorId, actorType, slotIndex);
+        return dmActions?.useItemDirect(actorId, actorType, slotIndex, isEquipped);
       }
-      return sendItemUse({ itemId, actorId, actorType, slotIndex });
+      return sendItemUse({ itemId, actorId, actorType, slotIndex, isEquipped });
     },
 
     equipItem: (itemId: string, actorId: string, actorType: 'character' | 'globalEntity' | 'fieldEntity', slotIndex: number) => {

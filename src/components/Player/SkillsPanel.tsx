@@ -63,14 +63,17 @@ export function SkillsPanel({
   }, [gameState]);
 
   const renderSkillGrid = () => (
-    <div className="grid p-[1vw] grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-[1.10vw] auto-rows-max">
+    <div className="flex flex-wrap justify-evenly content-start gap-6 px-6 py-4">
       {currentSkills.map((skill) => (
-        <div key={skill.id} className="relative">
+        <div 
+          key={skill.id} 
+          className="flex-grow-0 flex-shrink-0"
+        >
           <BasicObjectView
             name={skill.name}
             imageId={skill.image}
             id={skill.id}
-            size="md"
+            size="size=sm 2xl:size=md"
             onClick={() => setSelectedSkill(skill)}
             action={{
               content: skill.usesLeft ?? skill.uses ?? '∞',
@@ -83,27 +86,35 @@ export function SkillsPanel({
   );
 
   const renderSkillList = () => (
-    <div className="space-y-2 p-[1vw]">
+    <div className="space-y-2 p-6">
       {currentSkills.map((skill) => (
         <div
           key={skill.id}
           onClick={() => setSelectedSkill(skill)}
-          className="flex items-center p-4 border-2 border-grey dark:border-offwhite rounded-lg hover:bg-grey/10 dark:hover:bg-offwhite/10 cursor-pointer"
+          className="flex items-center justify-between p-4 pb-6 font-['Mohave'] text-lg border-b-2 border-grey dark:border-offwhite hover:bg-grey/10 dark:hover:bg-offwhite/10 cursor-pointer"
         >
-          <BasicObjectView
-            name={skill.name}
-            imageId={skill.image}
-            id={skill.id}
-            size="sm"
-            action={{
-              content: skill.usesLeft ?? skill.uses ?? '∞',
-              onClick: () => setSelectedSkill(skill)
-            }}
-          />
-          <div className="ml-4">
-            <h4 className="font-medium">{skill.name}</h4>
-            <div className="text-sm text-gray dark:text-offwhite/80">
-              SP Cost: {skill.spCost} • Damage: {skill.damage}
+          <div className="flex items-center">
+            <BasicObjectView
+              name=""
+              imageId={skill.image}
+              id={skill.id}
+              size="sm"
+            />
+            <div className="ml-8 flex flex-col items-start">
+              <h4 className="font-medium font-['BrunoAceSC']">{skill.name}</h4>
+              <div className="text-md flex items-center gap-2">
+                <span className="text-blue dark:text-cyan">SP Cost: {skill.spCost}</span>
+                <span className="text-grey dark:text-offwhite">|</span>
+                <span className="text-magenta dark:text-red">Damage: {skill.damage}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex items-center">
+            <div className="w-12 h-12 rotate-45 border-2 border-blue dark:border-cyan bg-offwhite dark:bg-grey rounded flex items-center justify-center">
+              <div className="-rotate-45 text-blue dark:text-cyan font-medium">
+                {skill.usesLeft ?? skill.uses ?? '∞'}
+              </div>
             </div>
           </div>
         </div>
@@ -180,7 +191,7 @@ export function SkillsPanel({
     <Modal
       isOpen={true}
       onClose={onClose || (() => {})}
-      className="max-w-4xl"
+      className="max-w-4xl min-w-[48vw]"
     >
       {content}
 
@@ -189,6 +200,7 @@ export function SkillsPanel({
           isOpen={!!selectedSkill}
           onClose={() => setSelectedSkill(null)}
           title={selectedSkill.name}
+          className="max-w-[33vw]"
         >
           <SkillView
             skill={selectedSkill}

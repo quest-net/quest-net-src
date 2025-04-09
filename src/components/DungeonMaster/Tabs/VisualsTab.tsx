@@ -465,7 +465,15 @@ export const VisualsTab = React.memo(({ gameState, onGameStateChange, room, isRo
               <span className="text-md font-bold font-['Mohave']">Show Focus Image</span>
             </label>
 
-            <label className="flex items-center gap-2 cursor-pointer px-4 py-2 bg-blue hover:bg-blue-600 text-white dark:bg-cyan dark:hover:bg-cyan-600 dark:text-grey rounded-md transition-colors">
+            <label className="px-4 py-2 rounded-full 
+            bg-offwhite dark:bg-grey
+            text-blue dark:text-cyan 
+            border-2 border-blue dark:border-cyan border-b-4
+            active:border-b-2
+            active:bg-blue dark:active:bg-cyan
+            active:text-offwhite dark:active:text-grey
+            transition-all duration-75 text-lg
+            flex items-center gap-2 font-['Mohave']">
               <Upload className="w-5 h-5" />
               <span className="font-medium font-['Mohave']">Upload Images</span>
               <input
@@ -503,7 +511,7 @@ export const VisualsTab = React.memo(({ gameState, onGameStateChange, room, isRo
           </div>
 
           {/* Bottom Buttons */}
-          <div className="p-32 grid grid-cols-2 gap-16">
+          <div className="p-24 3xl:p-32 grid grid-cols-2 gap-16">
             <button
               onClick={() => {
                 onGameStateChange({

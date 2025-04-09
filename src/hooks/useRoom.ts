@@ -25,25 +25,34 @@ export function useRoom(roomId: string, isRoomCreator: boolean) {
     setPeers(newPeers);
   }, []);
 
-  // Function to load game state from local storage if available
-  const loadGameStateFromLocalStorage = useCallback(() => {
+  // Modified to return a promise so we can await it
+  const loadGameStateFromLocalStorage = useCallback(async () => {
+    if (!isRoomCreator) {
+      console.log(`[useRoom] Not DM, waiting for state from host`);
+      setGameState(initialGameState);
+      return initialGameState;
+    }
+
     const savedStateKey = `gameState_${roomId}`;
     const savedStateJSON = localStorage.getItem(savedStateKey);
     
     if (savedStateJSON) {
       try {
         const savedState = JSON.parse(savedStateJSON);
-        console.log(`[useRoom] Loaded game state for room ${roomId}`);
+        console.log(`[useRoom] DM loaded game state for room ${roomId}:`, savedState.gameState);
         setGameState(savedState.gameState);
+        return savedState.gameState;
       } catch (error) {
         console.error(`[useRoom] Failed to load saved state for room ${roomId}:`, error);
         setGameState(initialGameState);
+        return initialGameState;
       }
     } else {
       console.log(`[useRoom] No saved state found for room ${roomId}, using initial state`);
       setGameState(initialGameState);
+      return initialGameState;
     }
-  }, [roomId, setGameState]);
+  }, [roomId, setGameState, isRoomCreator]);
 
   useEffect(() => {
     if (!roomId) {
@@ -51,52 +60,56 @@ export function useRoom(roomId: string, isRoomCreator: boolean) {
       return;
     }
 
-    try {
-      console.log(`[useRoom] Connecting to room: ${roomId}`);
-      setConnectionStatus(ConnectionStatus.CONNECTING);
-      
-      const newRoom = roomManager.joinRoom(roomId);
-      setRoom(newRoom);
-      
-      // Initialize peer sync
-      initializePeerSync(newRoom);
-      
-      // Set initial peers
-      const initialPeers = roomManager.getConnectedPeers();
-      setPeers(initialPeers);
-      
-      setConnectionStatus(ConnectionStatus.CONNECTED);
-      setErrorMessage('');
+    const initializeRoom = async () => {
+      try {
+        console.log(`[useRoom] Connecting to room: ${roomId}`);
+        setConnectionStatus(ConnectionStatus.CONNECTING);
+        
+        // Create the room first
+        const newRoom = roomManager.joinRoom(roomId);
+        setRoom(newRoom);
+        
+        // IMPORTANT: Load the state before initializing peer sync
+        console.log(`[useRoom] Loading saved state before peer initialization`);
+        const loadedState = await loadGameStateFromLocalStorage();
+        console.log(`[useRoom] State loaded successfully:`, loadedState);
+        
+        // Now initialize peer sync with the loaded state
+        console.log(`[useRoom] Initializing peer sync`);
+        initializePeerSync(newRoom);
+        
+        // Set up initial peers
+        const initialPeers = roomManager.getConnectedPeers();
+        setPeers(initialPeers);
+        
+        setConnectionStatus(ConnectionStatus.CONNECTED);
+        setErrorMessage('');
 
-      console.log(`[useRoom] Connected to room: ${roomId}`);
-      console.log(`[useRoom] Initial peers:`, initialPeers);
-      console.log(`[useRoom] Self ID:`, selfId);
+        console.log(`[useRoom] Connected to room: ${roomId}`);
+        console.log(`[useRoom] Initial peers:`, initialPeers);
+        console.log(`[useRoom] Self ID:`, selfId);
 
-      // Listen for peer updates
-      roomManager.events.on('peersChanged', handlePeersChanged);
+        // Listen for peer updates
+        roomManager.events.on('peersChanged', handlePeersChanged);
 
-      // Load saved game state if it exists
-      loadGameStateFromLocalStorage();
+      } catch (err) {
+        console.error('[useRoom] Error joining room:', err);
+        setConnectionStatus(ConnectionStatus.ERROR);
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to connect');
+      }
+    };
 
-      return () => {
-        roomManager.events.off('peersChanged', handlePeersChanged);
-      };
-    } catch (err) {
-      console.error('[useRoom] Error joining room:', err);
-      setConnectionStatus(ConnectionStatus.ERROR);
-      setErrorMessage(err instanceof Error ? err.message : 'Failed to connect');
-    }
-  }, [roomId, initializePeerSync, handlePeersChanged, loadGameStateFromLocalStorage]);
+    initializeRoom();
 
-  // Cleanup on unmount
-  useEffect(() => {
+    // Cleanup on unmount
     return () => {
       if (roomId) {
         console.log(`[useRoom] Cleaning up room: ${roomId}`);
+        roomManager.events.off('peersChanged', handlePeersChanged);
         roomManager.leaveRoom();
       }
     };
-  }, [roomId]);
+  }, [roomId, initializePeerSync, handlePeersChanged, loadGameStateFromLocalStorage]);
 
   return {
     peers,

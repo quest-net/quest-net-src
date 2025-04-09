@@ -40,8 +40,10 @@ function TabButton({ icon, title, onClick, upsideDown = false }: TabButtonProps)
               stroke-blue 
               dark:stroke-cyan
               stroke-[3]
-              group-hover:fill-grey/10
-              dark:group-hover:fill-offwhite/10
+              group-hover:fill-offwhite/80
+              dark:group-hover:fill-grey/80
+              group-active:fill-blue
+              dark:group-active:fill-cyan
               transition-colors
               drop-shadow-lg
             `}
@@ -50,7 +52,14 @@ function TabButton({ icon, title, onClick, upsideDown = false }: TabButtonProps)
       </div>
 
       <div className="absolute inset-0 flex items-center justify-center">
-        <div className="w-9 h-9 text-blue dark:text-cyan scale-[1.75]">
+        <div className={`
+          w-9 h-9 
+          text-blue dark:text-cyan 
+          scale-[1.75]
+          group-active:text-offwhite
+          dark:group-active:text-grey
+          transition-colors
+        `}>
           {React.isValidElement(icon) && 
             React.cloneElement(icon as React.ReactElement<SVGProps<SVGSVGElement>>, {
               className: `w-full h-full ${(icon.props as SVGProps<SVGSVGElement>).className || ''}`

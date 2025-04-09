@@ -250,7 +250,7 @@ export default function StatGauges({
   };
 
   return (
-    <div className="space-y-4 w-full max-w-4xl px-4 py-2 rounded-lg transition-colors">
+    <div className="space-y-2 2xl:space-y-4 w-full max-w-4xl px-4 py-0 rounded-lg transition-colors">
       <StatGauge
         current={character.hp}
         max={character.maxHp}

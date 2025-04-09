@@ -39,7 +39,7 @@ export default function TransferRequestModal({
     >
       <div className="flex flex-col items-center relative min-h-[40vh]">
 
-        <p className="text-2xl font-['Mohave'] text-center mb-8">
+        <p className="text-2xl font-['Mohave'] text-center mb-4">
           <span className="font-['BrunoAceSC'] text-blue dark:text-cyan">{senderName}</span>
           {' '}wants to transfer an item to you:
         </p>
@@ -49,12 +49,12 @@ export default function TransferRequestModal({
           <BasicObjectView
             name={item.name}
             imageId={item.image}
-            size="xl"
+            size="size=lg 2xl:size=xl"
           />
         </div>
 
         {/* Item details */}
-        <div className="bg-grey/10 dark:bg-offwhite/10 rounded-lg p-4 mb-8 max-w-xl">
+        <div className="bg-grey/10 dark:bg-offwhite/10 rounded-lg p-4 mb-4 max-w-xl">
           <h3 className="text-xl font-['BrunoAceSC'] mb-2">{item.name}</h3>
           <p className="font-['Mohave'] text-grey dark:text-offwhite/80">
             {item.description}

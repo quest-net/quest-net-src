@@ -100,7 +100,7 @@ export function EncounterTab({ gameState, onGameStateChange, room }: EncounterTa
             }}
           />
         </div>
-        <h2 className="text-xl font-bold font-['BrunoAceSC'] mb-8">Entities</h2>
+        <h2 className="text-xl font-bold font-['BrunoAceSC'] mb-8 rounded-lg mx-6 bg-grey text-offwhite dark:bg-offwhite dark:text-grey">Entities</h2>
         <div className="flex flex-wrap gap-8 justify-center">
           <BasicObjectView
             name="Create New Entity"
@@ -130,8 +130,8 @@ export function EncounterTab({ gameState, onGameStateChange, room }: EncounterTa
   
       {/* Field Section - Right Side */}
       <div className="relative overflow-y-auto scrollable field-entities-container p-8 border-2 border-grey dark:border-offwhite rounded-xl mt-8 mb-8">
-        <div className="absolute inset-0 pointer-events-none -z-10 overflow-hidden">
-          <Field className="absolute scale-[200%] -bottom-1/2 -left-0 w-full h-full fill-grey/20 dark:fill-offwhite/20" />
+        <div className="absolute inset-0 pointer-events-none -z-10 overflow-hidden rounded-xl">
+            <Field className="absolute w-[200%] h-[250%] -translate-x-1/4 -translate-y-1/4 fill-grey/20 dark:fill-offwhite/20" />
         </div>
         <h2 className="text-xl font-bold font-['BrunoAceSC'] mb-12">Field</h2>
         <div className="flex flex-wrap gap-[4vh] justify-center">
@@ -203,6 +203,7 @@ export function EncounterTab({ gameState, onGameStateChange, room }: EncounterTa
           isOpen={!!entityToView}
           onClose={() => setEntityToView(null)}
           title={entityToView.name}
+          className="min-w-[42vw] max-w-[42vw]"
         >
           <EntityView
             entity={entityToView}

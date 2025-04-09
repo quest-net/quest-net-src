@@ -43,7 +43,7 @@ interface NotebookProps {
       {/* Toggle Button */}
       <button
         onClick={() => setIsVisible(!isVisible)}
-        className="w-32 h-32 flex items-center justify-center bg-grey dark:bg-offwhite text-white dark:text-grey shadow-md"
+        className="w-24 h-24 2xl:w-32 2xl:h-32 flex items-center justify-center bg-grey dark:bg-offwhite text-white dark:text-grey shadow-md"
         style={{
           clipPath: 'polygon(0 100%, 100% 100%, 100% 0)',
           WebkitClipPath: 'polygon(0 100%, 100% 100%, 100% 0)',
@@ -52,7 +52,16 @@ interface NotebookProps {
       >
         <NotebookIcon
           size={48}
-          className="absolute"
+          className="absolute hidden xl:hidden 2xl:block"
+          style={{
+            bottom: '25%',
+            right: '25%',
+            transform: 'translate(33%, 33%)',
+          }}
+        />
+        <NotebookIcon
+          size={32}
+          className="absolute hidden xl:block 2xl:hidden"
           style={{
             bottom: '25%',
             right: '25%',

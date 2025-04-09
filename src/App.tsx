@@ -11,7 +11,7 @@ function App() {
   const [connectionError, setConnectionError] = React.useState<string>('');
   const [currentRoomId, setCurrentRoomId] = React.useState<string>('');
 
-  // Use useCallback to memoize the handler
+  // Handle connection updates from GameRoom
   const handleConnectionUpdate = useCallback((
     status: ConnectionStatusType,
     peers: string[],
@@ -22,20 +22,32 @@ function App() {
     setConnectionPeers(peers);
     setConnectionError(error);
     setCurrentRoomId(roomId);
-  }, []); // Empty dependency array since we don't use any external values
+  }, []);
+
+  // Reference to GameRoom's handleRoll function
+  const [handleDiceRoll, setHandleDiceRoll] = React.useState<((result: number, maxValue: number) => void) | undefined>();
+
+  // Callback for GameRoom to set its dice roll handler
+  const setDiceRollHandler = useCallback((handler: (result: number, maxValue: number) => void) => {
+    setHandleDiceRoll(() => handler);
+  }, []);
 
   return (
     <>
-    <CustomCursor scale={window.innerWidth > 1920 ? 1.2 : 1} />
-    <div className="App">
-      <Header 
-        roomId={currentRoomId}
-        connectionStatus={connectionStatus}
-        peers={connectionPeers}
-        errorMessage={connectionError}
-      />
-      <GameRoom onConnectionUpdate={handleConnectionUpdate} />
-    </div>
+      <CustomCursor scale={window.innerWidth > 1920 ? 1.2 : 1} />
+      <div className="App">
+        <Header 
+          roomId={currentRoomId}
+          connectionStatus={connectionStatus}
+          peers={connectionPeers}
+          errorMessage={connectionError}
+          onRoll={handleDiceRoll}
+        />
+        <GameRoom 
+          onConnectionUpdate={handleConnectionUpdate} 
+          onSetDiceRollHandler={setDiceRollHandler}
+        />
+      </div>
     </>
   );
 }

@@ -1,10 +1,11 @@
-import React, { ReactNode} from 'react';
+import React, { ReactNode, useState, useEffect} from 'react';
 import type { ConnectionStatusType } from '../types/connection';
 import { SlidingToggle } from './ui/ThemeToggle';
 import { SearchBar } from './shared/SearchBar';
 import { GameState } from '../types/game';
 import { NavigationManager, DMTabType, PlayerTabType, AllTabTypes, ModalControls, CatalogControls } from '../services/NavigationManager';
 import AutoSave from './DungeonMaster/AutoSave';
+import { Volume2 } from 'lucide-react';
 
 interface GameInterfaceProps {
   roomId: string;
@@ -24,7 +25,42 @@ interface GameInterfaceProps {
   onShowEquipment?: (show: boolean) => void;
   onShowSkills?: (show: boolean) => void;
   children: ReactNode;
+  onLocalVolumeChange?: (volume: number) => void;
 }
+
+// Volume control component
+const VolumeControl = ({ value, onChange }: { value: number; onChange: (value: number) => void }) => {
+  return (
+    <div className="flex items-center gap-2 px-3 py-0.5 border-r-2 border-y-2 border-grey dark:border-offwhite bg-offwhite dark:bg-grey rounded-r-md">
+      <Volume2 className="w-4 h-4 text-grey dark:text-offwhite" />
+      <input
+        type="range"
+        min="0"
+        max="100"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-20 h-1 rounded-full appearance-none bg-grey dark:bg-offwhite
+          [&::-webkit-slider-thumb]:appearance-none
+          [&::-webkit-slider-thumb]:w-3
+          [&::-webkit-slider-thumb]:h-3
+          [&::-webkit-slider-thumb]:rounded-full
+          [&::-webkit-slider-thumb]:bg-grey
+          [&::-webkit-slider-thumb]:dark:bg-offwhite
+          [&::-webkit-slider-thumb]:cursor-pointer
+          [&::-moz-range-thumb]:w-3
+          [&::-moz-range-thumb]:h-3
+          [&::-moz-range-thumb]:rounded-full
+          [&::-moz-range-thumb]:bg-grey
+          [&::-moz-range-thumb]:dark:bg-offwhite
+          [&::-moz-range-thumb]:cursor-pointer
+          [&::-moz-range-thumb]:border-none"
+      />
+      <span className="text-[1.5vmin] text-grey dark:text-offwhite min-w-[2.5em]">
+        {value}%
+      </span>
+    </div>
+  );
+};
 
 export function GameInterface({ 
   roomId,
@@ -43,8 +79,21 @@ export function GameInterface({
   onShowInventory,
   onShowEquipment,
   onShowSkills,
+  onLocalVolumeChange,
   children
 }: GameInterfaceProps) {
+
+  const [localVolume, setLocalVolume] = useState(() => {
+    const saved = localStorage.getItem('player-volume');
+    return saved ? parseInt(saved, 10) : 100;
+  });
+
+  // Save local volume to localStorage and notify parent when it changes
+  useEffect(() => {
+    localStorage.setItem('player-volume', localVolume.toString());
+    onLocalVolumeChange?.(localVolume);
+  }, [localVolume, onLocalVolumeChange]);
+
 
   const handleSearchSelect = (result: {
     id: string;
@@ -90,7 +139,14 @@ export function GameInterface({
             >
               Leave Room
             </button>
-            <AutoSave onSave={onSaveGame} isRoomCreator={isRoomCreator} />
+            {isRoomCreator ? (
+              <AutoSave onSave={onSaveGame} isRoomCreator={isRoomCreator} />
+            ) : (
+              <VolumeControl 
+                value={localVolume}
+                onChange={setLocalVolume}
+              />
+            )}
           </div>
           <SearchBar 
             gameState={gameState}

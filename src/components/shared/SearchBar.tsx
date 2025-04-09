@@ -123,7 +123,7 @@ export function SearchBar({
   };
 
   return (
-    <div ref={searchRef} className="relative flex-1 max-w-xl mx-auto">
+    <div ref={searchRef} className="relative flex-1 max-w-xl mx-auto pr-12">
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-grey dark:text-offwhite h-4 w-4" />
         <input
@@ -136,7 +136,7 @@ export function SearchBar({
           onFocus={() => setShowResults(true)}
           placeholder={placeholder}
           className={`
-            w-full px-10 py-2 text-sm rounded-full
+            w-full px-10 3xl:py-2 py-[0.25rem] text-sm rounded-full
             bg-white dark:bg-black
             text-gray-900 dark:text-gray-100
             border-2 border-grey dark:border-offwhite

@@ -1,13 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { MoreVertical } from 'lucide-react';
-import { ChevronsRight, Minus, Plus } from 'lucide-react';
+import { MoreVertical, ChevronsRight, Minus, Plus } from 'lucide-react';
 import { imageManager } from '../../services/ImageManager';
+
+type Size = 'sm' | 'md' | 'lg' | 'xl';
+
+interface ResponsiveSizeConfig {
+  default: Size;
+  xl?: Size;
+  '2xl'?: Size;
+  '3xl'?: Size;
+}
 
 interface BasicObjectViewProps {
   name: string;
   imageId?: string;
   id?: string;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size: Size | ResponsiveSizeConfig | string;
   className?: string;
   border?: {
     color?: string;
@@ -18,6 +26,8 @@ interface BasicObjectViewProps {
     icon?: 'plus' | 'arrow' | 'minus';
     content?: string | number;
     disabled?: boolean;
+    lightColor?: string;
+    darkColor?: string;
   };
   onClick?: () => void;
   onEdit?: () => void;
@@ -69,7 +79,7 @@ const BasicObjectView = ({
   name, 
   imageId, 
   id,
-  size = 'md',
+  size: initialSize = 'md',
   className = '',
   border,
   action,
@@ -77,6 +87,62 @@ const BasicObjectView = ({
   onEdit
 }: BasicObjectViewProps) => {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [currentSize, setCurrentSize] = useState<Size>('md');
+
+  // Parse size configuration
+  useEffect(() => {
+    const parseSizeConfig = () => {
+      if (typeof initialSize === 'string') {
+        if (initialSize in sizeClasses) {
+          setCurrentSize(initialSize as Size);
+        } else {
+          // Parse string format "size=sm 2xl:size=md"
+          const parts = initialSize.split(' ');
+          let newSize: Size = 'md';
+
+          parts.forEach(part => {
+            if (part.includes(':')) {
+              const [breakpoint, sizeStr] = part.split(':');
+              const size = sizeStr.replace('size=', '') as Size;
+              
+              // Check if we meet the breakpoint condition
+              if (breakpoint === '2xl' && window.innerWidth >= 1536 || 
+                  breakpoint === 'xl' && window.innerWidth >= 1280 ||
+                  breakpoint === '3xl' && window.innerWidth >= 1920) {
+                newSize = size;
+              }
+            } else {
+              const defaultSize = part.replace('size=', '') as Size;
+              newSize = defaultSize;
+            }
+          });
+
+          setCurrentSize(newSize);
+        }
+      } else if (typeof initialSize === 'object') {
+        let newSize = initialSize.default;
+
+        if (window.innerWidth >= 1920 && initialSize['3xl']) {
+          newSize = initialSize['3xl'];
+        } else if (window.innerWidth >= 1536 && initialSize['2xl']) {
+          newSize = initialSize['2xl'];
+        } else if (window.innerWidth >= 1280 && initialSize.xl) {
+          newSize = initialSize.xl;
+        }
+
+        setCurrentSize(newSize);
+      }
+    };
+
+    parseSizeConfig();
+
+    const handleResize = () => {
+      parseSizeConfig();
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [initialSize]);
 
   useEffect(() => {
     let mounted = true;
@@ -117,7 +183,7 @@ const BasicObjectView = ({
     if (!action?.icon) return null;
     
     const iconProps = {
-      className: iconSizeClasses[size],
+      className: iconSizeClasses[currentSize],
       strokeWidth: 3
     };
     
@@ -138,17 +204,43 @@ const BasicObjectView = ({
     
     if (action.content !== undefined) {
       return (
-        <div className={`${textSizeClasses[size]} -rotate-45 font-medium`}>
+        <div className={`${textSizeClasses[currentSize]} -rotate-45 font-medium`}>
           {action.content}
         </div>
       );
     }
 
     return (
-      <div className={`-rotate-45 ${iconSizeClasses[size]}`}>
+      <div className={`-rotate-45 ${iconSizeClasses[currentSize]}`}>
         {renderActionIcon()}
       </div>
     );
+  };
+
+  // Generate action button colors
+  const getActionButtonColors = () => {
+    if (action?.lightColor && action?.darkColor) {
+      return `
+        border-${action.lightColor}
+        dark:border-${action.darkColor}
+        text-${action.lightColor}
+        dark:text-${action.darkColor}
+        disabled:border-${action.lightColor}
+        disabled:text-${action.lightColor}
+        dark:disabled:border-${action.darkColor}
+        dark:disabled:text-${action.darkColor}
+      `;
+    }
+    return `
+      border-blue
+      dark:border-cyan
+      text-blue
+      dark:text-cyan
+      disabled:border-grey
+      disabled:text-grey
+      dark:disabled:border-offwhite
+      dark:disabled:text-offwhite
+    `;
   };
 
   return (
@@ -157,7 +249,7 @@ const BasicObjectView = ({
         onClick={onClick}
         className={`
           relative
-          ${sizeClasses[size]}
+          ${sizeClasses[currentSize]}
           rounded-lg
           border-2
           border-grey
@@ -186,13 +278,13 @@ const BasicObjectView = ({
                 dark:bg-offwhite/60
                 rounded-t-md
               ">
-                <p className="
+                <p className={`
                   text-offwhite
                   dark:text-grey
-                  text-md
+                  ${nameSizeClasses[currentSize]}
                   truncate
                   font-medium
-                ">
+                `}>
                   {name}
                 </p>
               </div>
@@ -219,7 +311,7 @@ const BasicObjectView = ({
                 text-lg
                 font-['Mohave']
                 text-center
-                ${nameSizeClasses[size]}
+                ${nameSizeClasses[currentSize]}
                 break-words
               `}>
                 {name}
@@ -239,7 +331,7 @@ const BasicObjectView = ({
               absolute
               top-1
               right-0
-              ${editButtonSizeClasses[size]}
+              ${editButtonSizeClasses[currentSize]}
               rounded-lg
               bg-transparent
               hover:bg-black
@@ -265,23 +357,17 @@ const BasicObjectView = ({
               }}
               disabled={action.disabled}
               className={`
-                ${buttonSizeClasses[size]}
+                ${buttonSizeClasses[currentSize]}
                 rotate-45
-                border-blue
-                dark:border-cyan
+                ${getActionButtonColors()}
                 bg-offwhite
                 dark:bg-grey
-                text-blue
-                dark:text-cyan
                 rounded
                 flex
                 items-center
                 justify-center
                 hover:border-4
-                disabled:border-grey
-                disabled:text-grey
-                dark:disabled:border-offwhite
-                dark:disabled:text-offwhite
+                disabled:border-2
                 disabled:cursor-not-allowed
                 transition-opacity
                 border-2

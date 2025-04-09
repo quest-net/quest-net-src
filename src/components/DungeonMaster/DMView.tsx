@@ -14,7 +14,9 @@ import { setupCharacterHandlers } from './handlers/setupCharacterHandlers';
 import { setupEquipmentHandlers } from './handlers/setupEquipmentHandlers';
 import { setupSkillHandlers } from './handlers/setupSkillHandlers';
 import { setupTransferHandlers } from './handlers/setupTransferHandlers';
+import { setupCombatHandlers } from './handlers/setupCombatHandlers';
 import type { ModalControls, CatalogControls, CatalogContentType } from '../../services/NavigationManager';
+import { setupCombatActions } from '../../actions/combatActions';
 
 type TabType = 'characters' | 'visuals' | 'audio' | 'catalog' | 'encounter' | 'battle' | 'settings';
 
@@ -112,6 +114,7 @@ export function DMView({
     setupEquipmentHandlers(room, gameState, onGameStateChange);
     setupSkillHandlers(room, gameState, onGameStateChange);
     setupTransferHandlers(room, gameState, onGameStateChange);
+    setupCombatHandlers(room,gameState,onGameStateChange);
 
     return () => {
     };

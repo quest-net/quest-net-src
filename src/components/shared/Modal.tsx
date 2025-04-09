@@ -55,8 +55,8 @@ const Modal = ({ isOpen, onClose, children, title, className = '' }: ModalProps)
         </button>
 
         {/* Inner content container - no z-index needed */}
-        <div className={`relative bg-offwhite dark:bg-grey rounded-lg p-6 w-full min-w-[40vw] max-w-[50vw]
-          max-h-[90vh] overflow-hidden flex flex-col z-20 modal-content ${className}`}
+        <div className={`relative bg-offwhite dark:bg-grey rounded-lg p-6 w-full min-w-[33vw] max-w-[33vw]
+           max-h-[73vh] overflow-hidden flex flex-col z-20 modal-content ${className}`}
         >
           {title && (
             <div className="flex items-center mb-4">
