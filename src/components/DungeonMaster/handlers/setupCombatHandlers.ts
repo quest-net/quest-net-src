@@ -1,3 +1,5 @@
+// src/components/DungeonMaster/handlers/setupCombatHandlers.ts
+
 import type { Room } from 'trystero/nostr';
 import type { GameState, BattleMapPosition } from '../../../types/game';
 import { DEFAULT_CHARACTER_POSITIONS, DEFAULT_ENTITY_POSITIONS } from '../../../types/game';
@@ -115,11 +117,12 @@ export function setupCombatHandlers(
       }
     });
 
-    // Place field entities
-    gameState.field.forEach(entity => {
+    // Place field entities (now EntityReference objects)
+    gameState.field.forEach(entityRef => {
       const position = findAvailablePosition(false);
       if (position) {
-        positions[entity.id] = position;
+        // Use the entity reference's instanceId for combat positioning
+        positions[entityRef.instanceId] = position;
       }
     });
 

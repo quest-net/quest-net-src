@@ -204,17 +204,27 @@ export function EnvironmentDisplay({ gameState }: ImageDisplayProps) {
 
   // Cleanup effect
   useEffect(() => {
-    return () => {
-      if (envImageUrl) {
-        cleanupImageUrl(envImageUrl);
+  // Only cleanup on component unmount, not when URLs change
+  return () => {
+    // Clean up any remaining URLs when component unmounts
+    if (envImageUrl) {
+      try {
+        URL.revokeObjectURL(envImageUrl);
+      } catch (err) {
+        console.error('Failed to clean up environment image URL on unmount:', err);
       }
-      if (focusImageUrl) {
-        cleanupImageUrl(focusImageUrl);
+    }
+    if (focusImageUrl) {
+      try {
+        URL.revokeObjectURL(focusImageUrl);
+      } catch (err) {
+        console.error('Failed to clean up focus image URL on unmount:', err);
       }
-      envIsDownloading.current = false;
-      focusIsDownloading.current = false;
-    };
-  }, [envImageUrl, focusImageUrl, cleanupImageUrl]);
+    }
+    envIsDownloading.current = false;
+    focusIsDownloading.current = false;
+  };
+}, []);
 
   const renderLoadingState = (type: string) => (
     <div className="flex flex-col items-center">

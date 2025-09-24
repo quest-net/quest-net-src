@@ -1,11 +1,17 @@
 import React, { useState } from 'react';
-import { Character, DMViewProps } from '../../../types/game';
+import { Character, DMViewProps, ItemReference } from '../../../types/game';
 import { CharacterEditor } from '../../../components/shared/CharacterEditor';
 import { CharacterList } from '../CharacterList';
 import Modal from '../../shared/Modal';
 import {ReactComponent as Char} from '../../ui/char.svg';
 import {ReactComponent as Accent} from '../../ui/accent_lines.svg';
 import PartyManagementControls from '../PartyManagementControls';
+import { 
+  restoreItemReferenceUses, 
+  restoreSkillReferenceUses,
+  getCatalogItem,
+  getCatalogSkill
+} from '../../../utils/referenceHelpers';
 
 interface CharacterTabProps extends DMViewProps {
   selectedCharacterForInventory: string | null;
@@ -72,68 +78,68 @@ export function CharacterTab({
     });
     setShowEditor(false);
   };
-  // Add handlers in CharacterTab component
-const handlePartyHealHP = (amount: number) => {
-  const updatedParty = gameState.party.map(char => ({
-    ...char,
-    hp: Math.min(char.maxHp, char.hp + amount)
-  }));
 
-  onGameStateChange({
-    ...gameState,
-    party: updatedParty
-  });
-};
+  // ✅ UPDATED: Party healing functions (these work fine as they don't touch references)
+  const handlePartyHealHP = (amount: number) => {
+    const updatedParty = gameState.party.map(char => ({
+      ...char,
+      hp: Math.min(char.maxHp, char.hp + amount)
+    }));
 
-const handlePartyHealMP = (amount: number) => {
-  const updatedParty = gameState.party.map(char => ({
-    ...char,
-    mp: Math.min(char.maxMp, char.mp + amount)
-  }));
+    onGameStateChange({
+      ...gameState,
+      party: updatedParty
+    });
+  };
 
-  onGameStateChange({
-    ...gameState,
-    party: updatedParty
-  });
-};
-const handleRefillItemUses = () => {
-  const updatedParty = gameState.party.map(char => ({
-    ...char,
-    // Reset uses for inventory items
-    inventory: char.inventory.map(([item, count]) => [
-      {
-        ...item,
-        usesLeft: item.uses // Reset to maximum uses if item has uses defined
-      },
-      count
-    ] as [typeof item, number]),
-    // Reset uses for equipped items
-    equipment: char.equipment.map(item => ({
-      ...item,
-      usesLeft: item.uses // Reset to maximum uses if item has uses defined
-    }))
-  }));
+  const handlePartyHealMP = (amount: number) => {
+    const updatedParty = gameState.party.map(char => ({
+      ...char,
+      mp: Math.min(char.maxMp, char.mp + amount)
+    }));
 
-  onGameStateChange({
-    ...gameState,
-    party: updatedParty
-  });
-};
+    onGameStateChange({
+      ...gameState,
+      party: updatedParty
+    });
+  };
 
-const handleRefillSkillUses = () => {
-  const updatedParty = gameState.party.map(char => ({
-    ...char,
-    skills: char.skills.map(skill => ({
-      ...skill,
-      usesLeft: skill.uses // Reset to maximum uses if skill has uses defined
-    }))
-  }));
+  // ✅ FIXED: Updated to work with ItemReference system
+  const handleRefillItemUses = () => {
+    const updatedParty = gameState.party.map(char => ({
+      ...char,
+      // ✅ FIXED: Reset uses for inventory items using ItemReference with proper type casting
+      inventory: char.inventory.map(([itemRef, count]) => [
+        restoreItemReferenceUses(itemRef, gameState),
+        count
+      ] as [ItemReference, number]), // ✅ Cast as InventorySlot tuple type
+      // ✅ FIXED: Reset uses for equipped items using ItemReference
+      equipment: char.equipment.map(itemRef => 
+        restoreItemReferenceUses(itemRef, gameState)
+      )
+    }));
 
-  onGameStateChange({
-    ...gameState,
-    party: updatedParty
-  });
-};
+    onGameStateChange({
+      ...gameState,
+      party: updatedParty
+    });
+  };
+
+  // ✅ FIXED: Updated to work with SkillReference system
+  const handleRefillSkillUses = () => {
+    const updatedParty = gameState.party.map(char => ({
+      ...char,
+      // ✅ FIXED: Reset uses for skills using SkillReference
+      skills: char.skills.map(skillRef => 
+        restoreSkillReferenceUses(skillRef, gameState)
+      )
+    }));
+
+    onGameStateChange({
+      ...gameState,
+      party: updatedParty
+    });
+  };
 
   return (
     <div className="flex flex-col h-full">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { imageManager } from '../../../services/ImageManager';
 import type { GameImage, GameState } from '../../../types/game';
 import type { Room } from 'trystero/nostr';
@@ -41,7 +41,7 @@ interface VirtualizedImageGridProps {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   selectorType: 'environment' | 'focus';
-  searchTargetId?: string; // New prop for search targeting
+  searchTargetId?: string;
 }
 
 interface SortableImageProps {
@@ -52,15 +52,15 @@ interface SortableImageProps {
   selectorType: 'environment' | 'focus';
 }
 
-// Sortable Image Component with Virtualization
 const SortableImage = React.memo(({ 
   image, 
   selectedId, 
   onSelect, 
   onDelete, 
-  selectorType,
-  isVisible 
-}: SortableImageProps & { isVisible: boolean }) => {
+  selectorType
+}: SortableImageProps) => {
+  const [imageSrc, setImageSrc] = useState<string>('');
+
   const {
     attributes,
     listeners,
@@ -68,6 +68,27 @@ const SortableImage = React.memo(({
     transform,
     isDragging,
   } = useSortable({ id: image.id });
+
+  // Load image immediately when component mounts
+  useEffect(() => {
+    imageManager.getImage(image.id)
+      .then(file => {
+        if (file) {
+          const url = URL.createObjectURL(file);
+          setImageSrc(url);
+        }
+      })
+      .catch(error => {
+        console.error(`Failed to load image ${image.id}:`, error);
+      });
+
+    // Cleanup on unmount
+    return () => {
+      if (imageSrc && imageSrc.startsWith('blob:')) {
+        URL.revokeObjectURL(imageSrc);
+      }
+    };
+  }, [image.id]);
 
   const style = {
     transform: isDragging ? 
@@ -90,10 +111,15 @@ const SortableImage = React.memo(({
     >
       <div className="relative w-full h-full" onClick={() => onSelect(image.id)}>
         <img
-          src={image.thumbnail}
+          src={imageSrc}
           alt={image.name}
           className="w-full h-full object-cover"
+          style={{ 
+            backgroundColor: '#f3f4f6',
+            minHeight: '100%'
+          }}
         />
+        
         <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity">
           <span className="text-white opacity-0 group-hover:opacity-100 text-sm text-center px-2">
             {selectedId === image.id ? 'Current Selection' : 'Select Image'}
@@ -127,7 +153,7 @@ const SortableImage = React.memo(({
   );
 });
 
-// Image Grid with Virtualization and Pagination
+// Virtualized Grid with Improved Search Navigation
 const VirtualizedImageGrid = React.memo(({ 
   images, 
   selectedId, 
@@ -139,21 +165,43 @@ const VirtualizedImageGrid = React.memo(({
   const [page, setPage] = useState(0);
   const [intersectionRef, setIntersectionRef] = useState<HTMLDivElement | null>(null);
 
-  // Calculate required pages for searched image
+  // ✅ OPTIMIZED: Improved search navigation
   useEffect(() => {
     if (searchTargetId) {
       const imageIndex = images.findIndex(img => img.id === searchTargetId);
       if (imageIndex !== -1) {
         const requiredPage = Math.floor(imageIndex / IMAGES_PER_PAGE);
+        
+        // Always expand to show the target image
         setPage(Math.max(requiredPage, page));
+        
+        // ✅ IMPROVED: Wait for DOM to update, then scroll and highlight
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const targetElement = document.getElementById(`${selectorType}-image-${searchTargetId}`);
+            if (targetElement) {
+              targetElement.scrollIntoView({ 
+                behavior: 'smooth', 
+                block: 'center' 
+              });
+              
+              // Add highlight animation
+              targetElement.classList.add('search-highlight');
+              setTimeout(() => {
+                targetElement.classList.remove('search-highlight');
+              }, 10000);
+            }
+          });
+        });
       }
     }
-  }, [searchTargetId, images, page]);
+  }, [searchTargetId, images, selectorType, page]);
 
   const visibleImages = useMemo(() => {
     return images.slice(0, (page + 1) * IMAGES_PER_PAGE);
   }, [images, page]);
 
+  // Intersection observer for pagination
   useEffect(() => {
     if (!intersectionRef) return;
 
@@ -180,7 +228,6 @@ const VirtualizedImageGrid = React.memo(({
           onSelect={onSelect}
           onDelete={onDelete}
           selectorType={selectorType}
-          isVisible={true}
         />
       ))}
       {visibleImages.length < images.length && (
@@ -267,7 +314,10 @@ export const VisualsTab = React.memo(({ gameState, onGameStateChange, room, isRo
   const [error, setError] = useState<string>('');
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const [searchTargetId, setSearchTargetId] = useState<string>();
+
   useImageSync(room, isRoomCreator, gameState);
+
+  // ✅ OPTIMIZED: Removed bulk image loading - now handled per-image lazily
 
   // Listen for search navigation events
   useEffect(() => {

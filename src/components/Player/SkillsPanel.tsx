@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import type { Room } from 'trystero/nostr';
-import { Skill, GameState } from '../../types/game';
+import { SkillReference, GameState } from '../../types/game';
 import { useSkillActions } from '../../actions/skillActions';
 import BasicObjectView from '../ui/BasicObjectView';
 import Modal from '../shared/Modal';
 import { SkillView } from '../shared/SkillView';
 import { Sparkle, Grid, List } from 'lucide-react';
+import { 
+  getCatalogSkill, 
+  getSkillReferenceName,
+  getSkillReferenceUsesLeft,
+  skillReferenceHasUses,
+  isValidSkillReference 
+} from '../../utils/referenceHelpers';
 
 interface SkillsPanelProps {
-  skills: Skill[];
+  skills: SkillReference[];  // Now expects SkillReference[] instead of Skill[]
   onClose?: () => void;
   isRoomCreator?: boolean;
   actorId?: string;
@@ -30,7 +37,7 @@ export function SkillsPanel({
   actorType,
   onClose
 }: SkillsPanelProps) {
-  const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
+  const [selectedSkill, setSelectedSkill] = useState<{ skillRef: SkillReference; index: number } | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const skillActions = useSkillActions(room, gameState, onGameStateChange, isRoomCreator);
 
@@ -44,7 +51,9 @@ export function SkillsPanel({
       case 'globalEntity':
         return gameState.globalCollections.entities.find(e => e.id === actorId)?.skills ?? initialSkills;
       case 'fieldEntity':
-        return gameState.field.find(e => e.id === actorId)?.skills ?? initialSkills;
+        return gameState.field.find(e => e.instanceId === actorId)?.skills ?? initialSkills;
+      default:
+        return initialSkills;
     }
   };
 
@@ -53,72 +62,93 @@ export function SkillsPanel({
   // Update selected skill when gameState changes
   useEffect(() => {
     if (selectedSkill) {
-      const updatedSkill = currentSkills.find(s => s.id === selectedSkill.id);
-      if (updatedSkill) {
-        setSelectedSkill(updatedSkill);
+      const updatedSkillRef = currentSkills[selectedSkill.index];
+      if (updatedSkillRef && isValidSkillReference(updatedSkillRef, gameState)) {
+        setSelectedSkill({
+          skillRef: updatedSkillRef,
+          index: selectedSkill.index
+        });
       } else {
         setSelectedSkill(null);
       }
     }
-  }, [gameState]);
+  }, [gameState, selectedSkill?.index]);
 
   const renderSkillGrid = () => (
     <div className="flex flex-wrap justify-evenly content-start gap-6 px-6 py-4">
-      {currentSkills.map((skill) => (
-        <div 
-          key={skill.id} 
-          className="flex-grow-0 flex-shrink-0"
-        >
-          <BasicObjectView
-            name={skill.name}
-            imageId={skill.image}
-            id={skill.id}
-            size="size=sm 2xl:size=md"
-            onClick={() => setSelectedSkill(skill)}
-            action={{
-              content: skill.usesLeft ?? skill.uses ?? '∞',
-              onClick: () => setSelectedSkill(skill)
-            }}
-          />
-        </div>
-      ))}
+      {currentSkills.map((skillRef, index) => {
+        const catalogSkill = getCatalogSkill(skillRef.catalogId, gameState);
+        if (!catalogSkill) return null;
+
+        const skillName = getSkillReferenceName(skillRef, gameState);
+        const hasUses = skillReferenceHasUses(skillRef, gameState);
+        const usesLeft = getSkillReferenceUsesLeft(skillRef, gameState);
+
+        return (
+          <div 
+            key={`${skillRef.catalogId}-${index}`} 
+            className="flex-grow-0 flex-shrink-0"
+          >
+            <BasicObjectView
+              name={skillName}
+              imageId={catalogSkill.image}
+              id={skillRef.catalogId}
+              size="size=sm 2xl:size=md"
+              onClick={() => setSelectedSkill({ skillRef, index })}
+              action={{
+                content: hasUses ? (usesLeft ?? catalogSkill.uses ?? '∞') : '∞',
+                onClick: () => setSelectedSkill({ skillRef, index })
+              }}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 
   const renderSkillList = () => (
     <div className="space-y-2 p-6">
-      {currentSkills.map((skill) => (
-        <div
-          key={skill.id}
-          onClick={() => setSelectedSkill(skill)}
-          className="flex items-center justify-between p-4 pb-6 font-['Mohave'] text-lg border-b-2 border-grey dark:border-offwhite hover:bg-grey/10 dark:hover:bg-offwhite/10 cursor-pointer"
-        >
-          <div className="flex items-center">
-            <BasicObjectView
-              name=""
-              imageId={skill.image}
-              id={skill.id}
-              size="sm"
-            />
-            <div className="ml-8 flex flex-col items-start">
-              <h4 className="font-medium font-['BrunoAceSC']">{skill.name}</h4>
-              <div className="text-md flex items-center gap-2">
-                <span className="text-blue dark:text-cyan">SP Cost: {skill.spCost}</span>
-                <span className="text-grey dark:text-offwhite">|</span>
-                <span className="text-magenta dark:text-red">Damage: {skill.damage}</span>
+      {currentSkills.map((skillRef, index) => {
+        const catalogSkill = getCatalogSkill(skillRef.catalogId, gameState);
+        if (!catalogSkill) return null;
+
+        const skillName = getSkillReferenceName(skillRef, gameState);
+        const hasUses = skillReferenceHasUses(skillRef, gameState);
+        const usesLeft = getSkillReferenceUsesLeft(skillRef, gameState);
+
+        return (
+          <div
+            key={`${skillRef.catalogId}-${index}`}
+            onClick={() => setSelectedSkill({ skillRef, index })}
+            className="flex items-center justify-between p-4 pb-6 font-['Mohave'] text-lg border-b-2 border-grey dark:border-offwhite hover:bg-grey/10 dark:hover:bg-offwhite/10 cursor-pointer"
+          >
+            <div className="flex items-center">
+              <BasicObjectView
+                name=""
+                imageId={catalogSkill.image}
+                id={skillRef.catalogId}
+                size="sm"
+              />
+              <div className="ml-8 flex flex-col items-start">
+                <h4 className="font-medium font-['BrunoAceSC']">{skillName}</h4>
+                <div className="text-md flex items-center gap-2">
+                  <span className="text-blue dark:text-cyan">SP Cost: {catalogSkill.spCost}</span>
+                  <span className="text-grey dark:text-offwhite">|</span>
+                  <span className="text-magenta dark:text-red">Damage: {catalogSkill.damage}</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex items-center">
+              <div className="w-12 h-12 rotate-45 border-2 border-blue dark:border-cyan bg-offwhite dark:bg-grey rounded flex items-center justify-center">
+                <div className="-rotate-45 text-blue dark:text-cyan font-medium">
+                  {hasUses ? (usesLeft ?? catalogSkill.uses ?? '∞') : '∞'}
+                </div>
               </div>
             </div>
           </div>
-          
-          <div className="flex items-center">
-            <div className="w-12 h-12 rotate-45 border-2 border-blue dark:border-cyan bg-offwhite dark:bg-grey rounded flex items-center justify-center">
-              <div className="-rotate-45 text-blue dark:text-cyan font-medium">
-                {skill.usesLeft ?? skill.uses ?? '∞'}
-              </div>
-            </div>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 
@@ -140,6 +170,15 @@ export function SkillsPanel({
           >
             {viewMode === 'grid' ? <List size={20} /> : <Grid size={20} />}
           </button>
+          
+          {isModal && onClose && (
+            <button
+              onClick={onClose}
+              className="text-lg font-bold hover:bg-grey/10 dark:hover:bg-offwhite/10 px-2 py-1 rounded-md transition-colors"
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
 
@@ -169,10 +208,11 @@ export function SkillsPanel({
           <Modal
             isOpen={!!selectedSkill}
             onClose={() => setSelectedSkill(null)}
-            title={selectedSkill.name}
+            title={getSkillReferenceName(selectedSkill.skillRef, gameState)}
           >
             <SkillView
-              skill={selectedSkill}
+              skillReference={selectedSkill.skillRef}
+              skillIndex={selectedSkill.index}
               onClose={() => setSelectedSkill(null)}
               gameState={gameState}
               onGameStateChange={onGameStateChange}
@@ -199,11 +239,12 @@ export function SkillsPanel({
         <Modal
           isOpen={!!selectedSkill}
           onClose={() => setSelectedSkill(null)}
-          title={selectedSkill.name}
+          title={getSkillReferenceName(selectedSkill.skillRef, gameState)}
           className="max-w-[33vw]"
         >
           <SkillView
-            skill={selectedSkill}
+            skillReference={selectedSkill.skillRef}
+            skillIndex={selectedSkill.index}
             onClose={() => setSelectedSkill(null)}
             gameState={gameState}
             onGameStateChange={onGameStateChange}

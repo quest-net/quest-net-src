@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { DMViewProps, Entity } from "../../../types/game";
+import { DMViewProps, Entity, EntityReference } from "../../../types/game";
 import StatGauges from '../../Player/StatGauges';
-import { ChevronLeft, ChevronRight,Minus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus } from 'lucide-react';
 import { useCombatActions } from '../../../actions/combatActions';
 import BasicObjectView from '../../ui/BasicObjectView';
 import EntityView from '../../shared/EntityView';
@@ -9,12 +9,14 @@ import Modal from '../../shared/Modal';
 import { ReactComponent as NPCBackground } from '../../ui/npc.svg';
 import { ReactComponent as CharBackground } from '../../ui/char.svg';
 import BattleMap from '../../shared/BattleMap';
+import { getCatalogEntity } from '../../../utils/referenceHelpers';
 
 interface BattleTabProps extends DMViewProps {}
 
 export function BattleTab({ gameState, onGameStateChange, room, isRoomCreator }: BattleTabProps) {
   const [selectedInitiative, setSelectedInitiative] = useState<'party' | 'enemies'>('party');
-  const [entityToView, setEntityToView] = useState<Entity | null>(null);
+  // ✅ UPDATED: Changed to store instanceId instead of full entity
+  const [entityToView, setEntityToView] = useState<string | null>(null);
   
   const isInCombat = gameState.combat?.isActive ?? false;
   const currentTurn = gameState.combat?.currentTurn ?? 0;
@@ -34,72 +36,114 @@ export function BattleTab({ gameState, onGameStateChange, room, isRoomCreator }:
     combatActions.previousTurn();
   };
 
-  const renderCombatant = (actor: Entity, type: 'party' | 'enemy') => (
-    <div 
-      key={actor.id} 
-      id={actor.id}
-      className={`
-        border-0 rounded-xl p-2 mb-4 
-        ${isInCombat && initiativeSide === (type === 'party' ? 'party' : 'enemies') ? 
-          'border-blue dark:border-cyan' : 
-          'border-grey dark:border-offwhite'
-        }
-      `}
-    >
-      <div className="flex items-center gap-2">
-        <div className="flex-shrink-0">
-          <BasicObjectView
-            name={actor.name}
-            imageId={actor.image}
-            size="size=md xl:size=sm 2xl:size=md 3xl:size=lg"
-            onClick={type === 'enemy' ? () => setEntityToView(actor) : undefined}
-          />
-        </div>
-        <div className="flex-1 flex items-center gap-0">
-          <div className="flex-1">
-            <StatGauges
-              character={actor}
-              gameState={gameState}
-              onGameStateChange={onGameStateChange}
-              size="medium"
-              showSideLabels={true}
+  // ✅ UPDATED: Support both Character and EntityReference with unified interface
+  const renderCombatant = (actor: Entity | EntityReference, type: 'party' | 'enemy') => {
+    // Determine if this is a character (Entity) or field entity (EntityReference)
+    const isEntityReference = 'instanceId' in actor;
+    const isCharacter = type === 'party';
+
+    // Get display properties and StatGauges-compatible object
+    let displayId: string, displayName: string, displayImage: string | undefined;
+    let statGaugesActor: Entity;
+    
+    if (isEntityReference) {
+      // Field entity - resolve from catalog and merge with instance data
+      const catalogEntity = getCatalogEntity(actor.catalogId, gameState);
+      displayId = actor.instanceId;
+      displayName = catalogEntity?.name || 'Unknown Entity';
+      displayImage = catalogEntity?.image;
+      
+      // ✅ FIXED: Create Entity-compatible object for StatGauges
+      statGaugesActor = {
+        ...catalogEntity!,
+        hp: actor.hp,
+        sp: actor.sp,
+        // Use instanceId as id for StatGauges (it needs an id field)
+        id: actor.instanceId
+      };
+    } else {
+      // Character - direct access
+      displayId = actor.id;
+      displayName = actor.name;
+      displayImage = actor.image;
+      statGaugesActor = actor;
+    }
+
+    return (
+      <div
+        key={displayId} // ✅ Fixed: Use instanceId for EntityReference
+        id={displayId}
+        className={`
+          border-0 rounded-xl p-2 mb-4 
+          ${isInCombat && initiativeSide === (type === 'party' ? 'party' : 'enemies') ? 
+            'border-blue dark:border-cyan' : 
+            'border-grey dark:border-offwhite'
+          }
+        `}
+      >
+        <div className="flex items-center gap-2">
+          <div className="flex-shrink-0">
+            <BasicObjectView
+              name={displayName}
+              imageId={displayImage}
+              size="size=md xl:size=sm 2xl:size=md 3xl:size=lg"
+              onClick={type === 'enemy' ? () => setEntityToView(displayId) : undefined}
             />
           </div>
-          {type === 'enemy' && (
-            <button
-              onClick={() => {
-                onGameStateChange({
-                  ...gameState,
-                  field: gameState.field.filter(e => e.id !== actor.id)
-                });
-              }}
-              className="
-                w-12 h-12
-                rotate-45
-                border-2
-                border-magenta
-                dark:border-red
-                text-red
-                dark:text-red
-                bg-offwhite
-                dark:bg-grey
-                rounded
-                flex
-                items-center
-                justify-center
-                hover:border-4
-                transition-all
-              "
-            >
-              <div className="-rotate-45">
-                <Minus className="w-6 h-6" strokeWidth={3} />
-              </div>
-            </button>
-          )}
+          <div className="flex-1 flex items-center gap-0">
+            <div className="flex-1">
+              <StatGauges
+                character={statGaugesActor} // ✅ FIXED: Use resolved Entity-compatible object
+                gameState={gameState}
+                onGameStateChange={onGameStateChange}
+                size="medium"
+                showSideLabels={true}
+                room={room}
+                isRoomCreator={true}
+              />
+            </div>
+            {type === 'enemy' && (
+              <button
+                onClick={() => {
+                  onGameStateChange({
+                    ...gameState,
+                    // ✅ FIXED: Use instanceId for EntityReference filtering
+                    field: gameState.field.filter(e => e.instanceId !== displayId)
+                  });
+                }}
+                className="
+                  w-12 h-12
+                  rotate-45
+                  border-2
+                  border-magenta
+                  dark:border-red
+                  text-red
+                  dark:text-red
+                  bg-offwhite
+                  dark:bg-grey
+                  rounded
+                  flex
+                  items-center
+                  justify-center
+                  hover:border-4
+                  transition-all
+                "
+              >
+                <div className="-rotate-45">
+                  <Minus className="w-6 h-6" strokeWidth={3} />
+                </div>
+              </button>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
+
+  // ✅ Helper function to get EntityReference for modal
+  const getEntityReferenceForModal = (instanceId: string): EntityReference | undefined => {
+    return gameState.field.find(e => e.instanceId === instanceId);
+  };
 
   return (
     <>
@@ -126,36 +170,35 @@ export function BattleTab({ gameState, onGameStateChange, room, isRoomCreator }:
               Party Initiative
             </button>
           </div>
-          </div>
+        </div>
 
-          <div className="flex justify-center">
-            {!isInCombat ? (
-              <button 
-                onClick={handleBattleStart}
-                className="px-6 py-2 m-6 bg-grey hover:bg-magenta dark:bg-offwhite dark:hover:bg-red
-                          text-offwhite font-['BrunoAceSC'] dark:text-grey rounded-md text-4xl font-medium transition-colors"
-              >
-                Start Battle
-              </button>
-            ) : null}
-          </div>
-
-          <div className="flex justify-center">
-            <button
-              onClick={() => !isInCombat && setSelectedInitiative('enemies')}
-              disabled={isInCombat}
-              className={`
-                px-6 py-2 m-6 rounded-xl border-2 shadow-lg border-purple dark:border-pink transition-colors text-lg font-['Mohave'] font-bold
-                ${(isInCombat ? initiativeSide : selectedInitiative) === 'enemies'
-                  ? 'bg-purple dark:bg-pink text-white dark:text-grey'
-                  : 'text-grey dark:text-offwhite'
-                }
-              `}
+        <div className="flex justify-center">
+          {!isInCombat ? (
+            <button 
+              onClick={handleBattleStart}
+              className="px-6 py-2 m-6 bg-grey hover:bg-magenta dark:bg-offwhite dark:hover:bg-red
+                        text-offwhite font-['BrunoAceSC'] dark:text-grey rounded-md text-4xl font-medium transition-colors"
             >
-              Enemy Initiative
+              Start Battle
             </button>
-          </div>
-        
+          ) : null}
+        </div>
+
+        <div className="flex justify-center">
+          <button
+            onClick={() => !isInCombat && setSelectedInitiative('enemies')}
+            disabled={isInCombat}
+            className={`
+              px-6 py-2 m-6 rounded-xl border-2 shadow-lg border-purple dark:border-pink transition-colors text-lg font-['Mohave'] font-bold
+              ${(isInCombat ? initiativeSide : selectedInitiative) === 'enemies'
+                ? 'bg-purple dark:bg-pink text-white dark:text-grey'
+                : 'text-grey dark:text-offwhite'
+              }
+            `}
+          >
+            Enemy Initiative
+          </button>
+        </div>
 
         {/* Party Members Column */}
         <div style={{ gridColumn: '1', gridRow: '2' }} 
@@ -247,20 +290,20 @@ export function BattleTab({ gameState, onGameStateChange, room, isRoomCreator }:
             />
           </div>
           <div className="space-y-4 bg-offwhite/80 dark:bg-grey/80">
-            {gameState.field.map(entity => renderCombatant(entity, 'enemy'))}
+            {/* ✅ UPDATED: Field entities are now EntityReference[] */}
+            {gameState.field.map(entityRef => renderCombatant(entityRef, 'enemy'))}
           </div>
         </div>
       </div>
 
-      {/* Entity View Modal */}
-      {entityToView && (
+      {/* ✅ UPDATED: Entity View Modal using new dual-interface */}
+      {entityToView && getEntityReferenceForModal(entityToView) && (
         <Modal
           isOpen={true}
           onClose={() => setEntityToView(null)}
-          title={entityToView.name}
         >
           <EntityView
-            entity={entityToView}
+            entityReference={getEntityReferenceForModal(entityToView)!} // ✅ Safe to use ! since we checked above
             onClose={() => setEntityToView(null)}
             gameState={gameState}
             onGameStateChange={onGameStateChange}

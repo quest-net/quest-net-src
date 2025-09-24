@@ -22,10 +22,18 @@ export const ItemEditor: React.FC<ItemEditorProps> = ({item, onSubmit, onCancel 
 
   useEffect(() => {
     if (item?.image) {
-      const thumbnail = imageManager.getThumbnail(item.image);
-      if (thumbnail) {
-        setImagePreview(thumbnail);
-      }
+      // Load the full image for preview
+      imageManager.getImage(item.image).then(file => {
+        if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setImagePreview(reader.result as string);
+          };
+          reader.readAsDataURL(file);
+        }
+      }).catch(err => {
+        console.error('Failed to load item image:', err);
+      });
     }
   }, [item?.image]);
 
@@ -83,7 +91,12 @@ export const ItemEditor: React.FC<ItemEditorProps> = ({item, onSubmit, onCancel 
       setIsUploadingImage(true);
       const imageData = await imageManager.addImage(file,'item');
       setImage(imageData.id);
-      setImagePreview(imageData.thumbnail);
+      // Create preview from the uploaded file
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
       setIsUploadingImage(false);
     } catch (error) {
       console.error('Error uploading image:', error);

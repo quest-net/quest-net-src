@@ -7,7 +7,6 @@ type ImageCategory = 'item' | 'skill' | 'character' | 'entity' | 'gallery';
 interface StoredImage {
   id: string;
   file: File;
-  thumbnail: string;
   metadata: {
     name: string;
     size: number;
@@ -19,7 +18,6 @@ interface StoredImage {
 interface IndexedDBImage {
   id: string;
   fileData: Blob;
-  thumbnail: string;
   metadata: {
     name: string;
     size: number;
@@ -31,7 +29,7 @@ interface IndexedDBImage {
 class ImageManager {
   private imageCache: Map<string, StoredImage> = new Map();
   private pendingDownloads: Map<string, Promise<File | null>> = new Map();
-  private peerImageCache: Map<string, Set<string>> = new Map(); // NEW: Track which peers have which images
+  private peerImageCache: Map<string, Set<string>> = new Map(); // Track which peers have which images
 
   private async compressImage(file: File, quality: number = 0.9): Promise<File> {
     return new Promise((resolve, reject) => {
@@ -75,7 +73,7 @@ class ImageManager {
     });
   }
 
-  // NEW: Methods for peer image tracking
+  // Methods for peer image tracking
   markImageAsKnownByPeer(imageId: string, peerId: string) {
     if (!this.peerImageCache.has(peerId)) {
       this.peerImageCache.set(peerId, new Set());
@@ -98,7 +96,7 @@ class ImageManager {
 
   private async openIndexedDB(): Promise<IDBDatabase> {
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open('ImageLibrary', 2);
+      const request = indexedDB.open('ImageLibrary', 3); // Bump version to remove thumbnail index
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
@@ -112,10 +110,10 @@ class ImageManager {
         
         const store = db.createObjectStore('images', { keyPath: 'id' });
         store.createIndex('metadata', 'metadata', { unique: false });
-        store.createIndex('thumbnail', 'thumbnail', { unique: false });
       };
     });
   }
+
   async waitForPendingDownloads(imageIds: string[]): Promise<void> {
     const downloads = imageIds
       .map(id => this.pendingDownloads.get(id))
@@ -125,6 +123,7 @@ class ImageManager {
       await Promise.all(downloads);
     }
   }
+
   async addImage(
     file: File, 
     category: 'item' | 'skill' | 'character' | 'entity' | 'gallery' = 'gallery',
@@ -134,14 +133,10 @@ class ImageManager {
     
     // Process the image using ImageProcessor
     const processedFile = await imageProcessor.processImage(file, category);
-    
-    // Create thumbnail as before
-    const thumbnail = await this.createThumbnail(processedFile);
   
     const storedImage: StoredImage = {
       id: imageId,
       file: processedFile,
-      thumbnail,
       metadata: {
         name: file.name,
         size: processedFile.size,
@@ -158,7 +153,6 @@ class ImageManager {
       const imageData = {
         id: imageId,
         fileData: processedFile,
-        thumbnail,
         metadata: storedImage.metadata
       };
       
@@ -177,7 +171,6 @@ class ImageManager {
         createdAt: Date.now(),
         size: processedFile.size,
         type: processedFile.type,
-        thumbnail,
         hash: await this.computeHash(processedFile)
       };
     } catch (err) {
@@ -200,7 +193,6 @@ class ImageManager {
         const storedImage: StoredImage = {
           id: imageData.id,
           file: processedFile,
-          thumbnail: imageData.thumbnail,
           metadata: {
             name: file.name,
             size: processedFile.size,
@@ -218,7 +210,6 @@ class ImageManager {
         const imageToStore = {
           id: imageData.id,
           fileData: processedFile,
-          thumbnail: imageData.thumbnail,
           metadata: storedImage.metadata
         };
 
@@ -253,11 +244,8 @@ class ImageManager {
   async getImage(id: string): Promise<File | null> {
     const cached = this.imageCache.get(id);
     if (cached) {
-      
       return cached.file;
     }
-  
-    
 
     try {
       const db = await this.openIndexedDB();
@@ -278,7 +266,6 @@ class ImageManager {
             this.imageCache.set(id, {
               id,
               file,
-              thumbnail: result.thumbnail,
               metadata: result.metadata
             });
             
@@ -293,35 +280,6 @@ class ImageManager {
       console.error('Failed to load image:', err);
       return null;
     }
-  }
-
-  private async createThumbnail(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
-
-      reader.onload = (e) => {
-        img.onload = () => {
-          const scale = Math.min(256 / img.width, 256 / img.height);
-          canvas.width = img.width * scale;
-          canvas.height = img.height * scale;
-
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            const thumbnail = canvas.toDataURL('image/jpeg', 0.7);
-            resolve(thumbnail);
-          } else {
-            reject(new Error('Could not get canvas context'));
-          }
-        };
-        img.onerror = reject;
-        img.src = e.target?.result as string;
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
   }
 
   private async computeHash(file: File): Promise<string> {
@@ -341,7 +299,6 @@ class ImageManager {
         createdAt: cached.metadata.lastModified,
         size: cached.metadata.size,
         type: cached.metadata.type,
-        thumbnail: cached.thumbnail,
         hash: await this.computeHash(cached.file)
       };
     }
@@ -367,7 +324,6 @@ class ImageManager {
               createdAt: result.metadata.lastModified,
               size: result.metadata.size,
               type: result.metadata.type,
-              thumbnail: result.thumbnail,
               hash: await this.computeHash(file)
             });
           } else {
@@ -400,10 +356,6 @@ class ImageManager {
       console.error('Failed to delete image:', err);
       return false;
     }
-  }
-
-  getThumbnail(id: string): string | undefined {
-    return this.imageCache.get(id)?.thumbnail;
   }
 }
 

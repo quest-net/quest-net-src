@@ -17,7 +17,9 @@ import { ReactComponent as CharBackground } from '../../ui/char.svg';
 import {ReactComponent as FieldBackground} from '../../ui/field.svg';
 import type { CatalogControls, CatalogContentType, CatalogRecipientType } from '../../../services/NavigationManager';
 import TransferAnimationManager, { TransferAnimationManagerRef } from '../../ui/TransferAnimation';
+import { getCatalogEntity } from '../../../utils/referenceHelpers';
 
+type Room = any; // Define proper Room type
 
 interface CatalogTabProps {
   gameState: GameState;
@@ -52,18 +54,19 @@ export function CatalogTab({
   contentType,
   onContentTypeChange
 }: CatalogTabProps) {
-  // Existing state
+  // Updated state - using catalog IDs instead of full objects
   const [selectedRecipientIds, setSelectedRecipientIds] = useState<Set<string>>(new Set());
   const [selectedRecipientType, setSelectedRecipientType] = useState<CatalogRecipientType>('character');
   const [showCreateItem, setShowCreateItem] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+  const [selectedItem, setSelectedItem] = useState<string | null>(null); // ✅ Changed to catalog ID
   const [showCreateSkill, setShowCreateSkill] = useState(false);
-  const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
+  const [selectedSkill, setSelectedSkill] = useState<string | null>(null); // ✅ Changed to catalog ID
 
   // Add ref for animation manager
   const transferAnimationRef = useRef<TransferAnimationManagerRef>(null);
   // Add ref for storing clicked item element
   const actionSourceRef = useRef<HTMLElement | null>(null);
+  
   // Setup catalog controls
   useEffect(() => {
     if (onCatalogControlsReady) {
@@ -107,6 +110,7 @@ export function CatalogTab({
     
     selectedRecipientIds.forEach(recipientId => {
       const recipientElement = document.getElementById(`recipient-${recipientId}`);
+      
       if (recipientElement) {
         const targetBounds = recipientElement.getBoundingClientRect();
         
@@ -140,7 +144,7 @@ export function CatalogTab({
       
       let recipient;
       
-      // Find the recipient based on the type
+      // ✅ FIXED: Updated field entity lookup to use instanceId for EntityReference
       switch (selectedRecipientType) {
         case 'character':
           recipient = gameState.party.find(c => c.id === recipientId);
@@ -149,29 +153,32 @@ export function CatalogTab({
           recipient = gameState.globalCollections.entities.find(e => e.id === recipientId);
           break;
         case 'fieldEntity':
-          recipient = gameState.field.find(e => e.id === recipientId);
+          recipient = gameState.field.find(e => e.instanceId === recipientId); // ✅ Fixed: using instanceId
           break;
       }
 
-
       if (recipient) {
-        // Check if the recipient already has this skill
-        const hasSkill = recipient.skills.some(existingSkill => existingSkill.id === skill.id);
+        // ✅ FIXED: All recipients now have SkillReference[], so use catalogId for all
+        const hasSkill = recipient.skills?.some(skillRef => skillRef.catalogId === skill.id) || false;
         
         if (!hasSkill && skillActions?.grantSkill) {
           skillActions.grantSkill(skill.id, recipientId, selectedRecipientType);
         }
       }
+      
       if (recipient && recipientElement) {
-        const hasSkill = recipient.skills.some(existingSkill => existingSkill.id === skill.id);
+        // ✅ FIXED: Consistent skill checking using catalogId
+        const hasSkill = recipient.skills?.some(skillRef => skillRef.catalogId === skill.id) || false;
+        
         const targetBounds = recipientElement.getBoundingClientRect();
-        if (!hasSkill)
-        transferAnimationRef.current?.addAnimation(
-          sourceBounds.x + sourceBounds.width/2,
-          sourceBounds.y - sourceBounds.height/2,
-          targetBounds.x + targetBounds.width/2,
-          targetBounds.y - targetBounds.height/2
-        );
+        if (!hasSkill) {
+          transferAnimationRef.current?.addAnimation(
+            sourceBounds.x + sourceBounds.width/2,
+            sourceBounds.y - sourceBounds.height/2,
+            targetBounds.x + targetBounds.width/2,
+            targetBounds.y - targetBounds.height/2
+          );
+        }
       }
     });
   };
@@ -201,6 +208,7 @@ export function CatalogTab({
   const renderRecipientList = () => {
     let recipients: { id: string; name: string; image?: string }[] = [];
     
+    // ✅ FIXED: Updated field entity handling for EntityReference
     switch (selectedRecipientType) {
       case 'character':
         recipients = gameState.party;
@@ -209,187 +217,217 @@ export function CatalogTab({
         recipients = gameState.globalCollections.entities;
         break;
       case 'fieldEntity':
-        recipients = gameState.field;
+        // ✅ Fixed: Map EntityReference to display format with catalog name resolution
+        recipients = gameState.field.map(entityRef => {
+          const catalogEntity = getCatalogEntity(entityRef.catalogId, gameState);
+          return {
+            id: entityRef.instanceId, // ✅ Use instanceId for targeting
+            name: catalogEntity?.name || 'Unknown Entity',
+            image: catalogEntity?.image
+          };
+        });
         break;
     }
 
     return (
       <div className="h-full w-full flex flex-col">
-      <div className="flex-1 min-h-0 relative">
-        <div className="absolute inset-0 border-[length:3px] rounded-xl border-grey dark:border-offwhite">
-          <div className="relative h-full w-full overflow-y-auto scrollable p-2 py-4">
-            <RecipientsBackground type={selectedRecipientType} />
-            
-            <div className="grid grid-cols-2 gap-4">
-              {recipients.map(recipient => (
-                <div key={recipient.id}>
-                  <div className="flex-none">
-                  <BasicObjectView
-                    name={recipient.name}
-                    imageId={recipient.image}
-                    id={`recipient-${recipient.id}`}
-                    size="size=md xl:size=md 2xl:size=lg 3xl:size=xl"
-                    onClick={() => handleRecipientSelect(recipient.id)}
-                    border={{
-                      width: selectedRecipientIds.has(recipient.id) ? 4 : 2,
-                      color: selectedRecipientIds.has(recipient.id) ? 'var(--color-blue)' : undefined
-                    }}
-                  />
-                </div>
-                </div>
-              ))}
-              {recipients.length === 0 && (
-                <div className="col-span-2 flex items-center justify-center h-full">
-                  <span className="font-bold text-xl text-grey font-['Mohave']">
-                    No {selectedRecipientType === 'character' ? 'characters' : 'entities'} available
-                  </span>
-                </div>
-              )}
+        <div className="flex-1 min-h-0 relative">
+          <div className="absolute inset-0 border-[length:3px] rounded-xl border-grey dark:border-offwhite">
+            <div className="relative h-full w-full overflow-y-auto scrollable p-2 py-4">
+              <RecipientsBackground type={selectedRecipientType} />
+              
+              <div className="grid grid-cols-2 gap-4">
+                {recipients.map(recipient => (
+                  <div key={recipient.id}>
+                    <div className="flex-none">
+                      <BasicObjectView
+                        name={recipient.name}
+                        imageId={recipient.image}
+                        id={`recipient-${recipient.id}`}
+                        size="size=md xl:size=md 2xl:size=lg 3xl:size=xl"
+                        onClick={() => handleRecipientSelect(recipient.id)}
+                        border={{
+                          width: selectedRecipientIds.has(recipient.id) ? 4 : 2,
+                          color: selectedRecipientIds.has(recipient.id) ? 'var(--color-blue)' : undefined
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+                {recipients.length === 0 && (
+                  <div className="col-span-2 flex items-center justify-center h-full">
+                    <span className="font-bold text-xl text-grey font-['Mohave']">
+                      No {selectedRecipientType === 'character' ? 'characters' : 'entities'} available
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  );
-};
+    );
+  };
 
   return (
     <>
       <TransferAnimationManager ref={transferAnimationRef} />
-    <div className="grid h-full w-full" style={{
-      gridTemplateColumns: '26fr 74fr',
-      gridTemplateRows: '1fr',
-      gap: '0',
-      padding: '1vh'
-    }}>
-      {/* Recipients Section - Top 30% */}
-      <div className="w-full flex flex-col p-2 pt-6">
-        <CatalogTabs 
-          value={selectedRecipientType} 
-          onValueChange={(value) => {
-            setSelectedRecipientType(value as CatalogRecipientType);
-            setSelectedRecipientIds(new Set());
-          }}
-          className="flex-1 flex flex-col"
-        >
-          <CatalogTabsList className="flex-shrink-0">
-            <CatalogTabsTrigger value="character">
-              Characters
-            </CatalogTabsTrigger>
-            <CatalogTabsTrigger value="globalEntity">
-              Global Entities
-            </CatalogTabsTrigger>
-            <CatalogTabsTrigger value="fieldEntity">
-              Field Entities
-            </CatalogTabsTrigger>
-          </CatalogTabsList>
+      <div className="grid h-full w-full" style={{
+        gridTemplateColumns: '26fr 74fr',
+        gridTemplateRows: '1fr',
+        gap: '0',
+        padding: '1vh'
+      }}>
+        {/* Recipients Section - Top 30% */}
+        <div className="w-full flex flex-col p-2 pt-6">
+          <CatalogTabs 
+            value={selectedRecipientType} 
+            onValueChange={(value) => {
+              setSelectedRecipientType(value as CatalogRecipientType);
+              setSelectedRecipientIds(new Set());
+            }}
+            className="flex-1 flex flex-col"
+          >
+            <CatalogTabsList className="flex-shrink-0">
+              <CatalogTabsTrigger value="character">
+                Characters
+              </CatalogTabsTrigger>
+              <CatalogTabsTrigger value="globalEntity">
+                Global Entities
+              </CatalogTabsTrigger>
+              <CatalogTabsTrigger value="fieldEntity">
+                Field Entities
+              </CatalogTabsTrigger>
+            </CatalogTabsList>
 
-          <div className="flex-1 min-h-0 px-2">
-            {renderRecipientList()}
-          </div>
-        </CatalogTabs>
-      </div>
+            <div className="flex-1 min-h-0 px-2">
+              {renderRecipientList()}
+            </div>
+          </CatalogTabs>
+        </div>
 
-      {/* Items/Skills Section */}
-      <div className="w-full min-h-0 p-2">
-        <CoolTabs 
-          value={contentType} 
-          onValueChange={(value) => onContentTypeChange(value as CatalogContentType)} 
-          className="h-full flex flex-col"
-        >
-          <CoolTabsList className="flex-shrink-0">
-            <CoolTabsTrigger value="items" tabType="inventory">Items</CoolTabsTrigger>
-            <CoolTabsTrigger value="skills" tabType="skills">Skills</CoolTabsTrigger>
-          </CoolTabsList>
+        {/* Items/Skills Section */}
+        <div className="w-full min-h-0 p-2">
+          <CoolTabs 
+            value={contentType} 
+            onValueChange={(value) => onContentTypeChange(value as CatalogContentType)} 
+            className="h-full flex flex-col"
+          >
+            <CoolTabsList className="flex-shrink-0">
+              <CoolTabsTrigger value="items" tabType="inventory">Items</CoolTabsTrigger>
+              <CoolTabsTrigger value="skills" tabType="skills">Skills</CoolTabsTrigger>
+            </CoolTabsList>
 
-          <div className="flex-1 min-h-0">
-            <CoolTabsContent value="items" className="h-full">
-              <div className="relative h-full overflow-y-auto scrollable">
-              <div className="absolute bottom-[0] right-0 pointer-events-none -z-10">
-                <Treasure className="fill-grey/40 dark:fill-offwhite/40" />
-              </div>
-                <div className="flex flex-wrap justify-center gap-12 p-4 items-start content-start min-w-0">
-                  <BasicObjectView
-                    name="Create New Item"
-                    size="md"
-                    id="create-new-item"
-                    action={{
-                      onClick: () => setShowCreateItem(true),
-                      icon: 'arrow'
-                    }}
-                  />
-                  {gameState.globalCollections.items.map(item => (
+            <div className="flex-1 min-h-0">
+              <CoolTabsContent value="items" className="h-full">
+                <div className="relative h-full overflow-y-auto scrollable">
+                  <div className="absolute bottom-[0] right-0 pointer-events-none -z-10">
+                    <Treasure className="fill-grey/40 dark:fill-offwhite/40" />
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-12 p-4 items-start content-start min-w-0">
                     <BasicObjectView
-                      key={item.id}
-                      id={item.id}
-                      name={item.name}
-                      imageId={item.image}
+                      name="Create New Item"
                       size="md"
-                      onClick={() => setSelectedItem(item)}
+                      id="create-new-item"
                       action={{
-                        onClick: (e: React.MouseEvent<HTMLElement>) => {
-                          // Store the button element
-                          actionSourceRef.current = e.currentTarget;
-                          handleGiveItem(item);
-                        },
-                        icon: 'plus',
-                        disabled: selectedRecipientIds.size === 0
+                        onClick: () => setShowCreateItem(true),
+                        icon: 'arrow'
                       }}
                     />
-                  ))}
+                    {gameState.globalCollections.items.map(item => (
+                      <BasicObjectView
+                        key={item.id}
+                        id={item.id}
+                        name={item.name}
+                        imageId={item.image}
+                        size="md"
+                        onClick={() => setSelectedItem(item.id)} // ✅ Changed to use catalog ID
+                        action={{
+                          onClick: (e: React.MouseEvent<HTMLElement>) => {
+                            // Store the button element
+                            actionSourceRef.current = e.currentTarget;
+                            handleGiveItem(item);
+                          },
+                          icon: 'plus',
+                          disabled: selectedRecipientIds.size === 0
+                        }}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </CoolTabsContent>
+              </CoolTabsContent>
 
-            <CoolTabsContent value="skills" className="h-full">
-              <div className="relative h-full overflow-y-auto scrollable">
-              <div className="absolute bottom-[0] right-0 pointer-events-none -z-10">
-                <Key className="fill-grey/40 dark:fill-offwhite/40" />
-              </div>
-                <div className="flex flex-wrap justify-center gap-12 p-4 items-start content-start min-w-0">
-                  <BasicObjectView
-                    name="Create New Skill"
-                    id="create-new-skill"
-                    size="md"
-                    action={{
-                      onClick: () => setShowCreateSkill(true),
-                      icon: 'arrow'
-                    }}
-                  />
-                  {gameState.globalCollections.skills.map(skill => (
+              <CoolTabsContent value="skills" className="h-full">
+                <div className="relative h-full overflow-y-auto scrollable">
+                  <div className="absolute bottom-[0] right-0 pointer-events-none -z-10">
+                    <Key className="fill-grey/40 dark:fill-offwhite/40" />
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-12 p-4 items-start content-start min-w-0">
                     <BasicObjectView
-                      key={skill.id}
-                      id={skill.id}
-                      name={skill.name}
-                      imageId={skill.image}
+                      name="Create New Skill"
+                      id="create-new-skill"
                       size="md"
-                      onClick={() => setSelectedSkill(skill)}
                       action={{
-                        onClick: (e: React.MouseEvent<HTMLElement>) => {
-                          // Store the button element
-                          actionSourceRef.current = e.currentTarget;
-                          handleGrantSkill(skill);
-                        },
-                        icon: 'plus',
-                        disabled: selectedRecipientIds.size === 0
+                        onClick: () => setShowCreateSkill(true),
+                        icon: 'arrow'
                       }}
                     />
-                  ))}
+                    {gameState.globalCollections.skills.map(skill => (
+                      <BasicObjectView
+                        key={skill.id}
+                        id={skill.id}
+                        name={skill.name}
+                        imageId={skill.image}
+                        size="md"
+                        onClick={() => setSelectedSkill(skill.id)} // ✅ Changed to use catalog ID
+                        action={{
+                          onClick: (e: React.MouseEvent<HTMLElement>) => {
+                            // Store the button element
+                            actionSourceRef.current = e.currentTarget;
+                            handleGrantSkill(skill);
+                          },
+                          icon: 'plus',
+                          disabled: selectedRecipientIds.size === 0
+                        }}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </CoolTabsContent>
-          </div>
-        </CoolTabs>
+              </CoolTabsContent>
+            </div>
+          </CoolTabs>
+        </div>
       </div>
 
-      {/* Modals */}
+      {/* ✅ UPDATED: Modal interfaces now use catalogId and include isOpen prop */}
+      {selectedItem && (
+        <Modal isOpen={true} onClose={() => setSelectedItem(null)}>
+          <ItemView
+            catalogId={selectedItem} // ✅ Using catalogId instead of full object
+            gameState={gameState}
+            onClose={() => setSelectedItem(null)}
+            isRoomCreator={true}
+            room={room}
+            onGameStateChange={onGameStateChange}
+          />
+        </Modal>
+      )}
+
+      {selectedSkill && (
+        <Modal isOpen={true} onClose={() => setSelectedSkill(null)}>
+          <SkillView
+            catalogId={selectedSkill} // ✅ Using catalogId instead of full object
+            gameState={gameState}
+            onClose={() => setSelectedSkill(null)}
+            isRoomCreator={true}
+            room={room}
+            onGameStateChange={onGameStateChange}
+          />
+        </Modal>
+      )}
+
       {showCreateItem && (
-        <Modal
-          isOpen={showCreateItem}
-          onClose={() => setShowCreateItem(false)}
-          title="Create New Item"
-          className="min-w-[42vw] max-w-[42vw]"
-        >
+        <Modal isOpen={true} onClose={() => setShowCreateItem(false)}>
           <ItemEditor
             onSubmit={handleCreateItem}
             onCancel={() => setShowCreateItem(false)}
@@ -398,53 +436,13 @@ export function CatalogTab({
       )}
 
       {showCreateSkill && (
-        <Modal
-          isOpen={showCreateSkill}
-          onClose={() => setShowCreateSkill(false)}
-          title="Create New Skill"
-          className="min-w-[42vw] max-w-[42vw]"
-        >
+        <Modal isOpen={true} onClose={() => setShowCreateSkill(false)}>
           <SkillEditor
             onSubmit={handleCreateSkill}
             onCancel={() => setShowCreateSkill(false)}
           />
         </Modal>
       )}
-
-      {selectedItem && (
-        <Modal
-          isOpen={!!selectedItem}
-          onClose={() => setSelectedItem(null)}
-          title={selectedItem.name}
-        >
-          <ItemView
-            item={selectedItem}
-            onClose={() => setSelectedItem(null)}
-            gameState={gameState}
-            onGameStateChange={onGameStateChange}
-            room={room}
-            isRoomCreator={true}
-          />
-        </Modal>
-      )}
-
-      {selectedSkill && (
-        <Modal
-          isOpen={!!selectedSkill}
-          onClose={() => setSelectedSkill(null)}
-          title={selectedSkill.name}
-        >
-          <SkillView
-            skill={selectedSkill}
-            onClose={() => setSelectedSkill(null)}
-            gameState={gameState}
-            onGameStateChange={onGameStateChange}
-            room={room}
-            isRoomCreator={true}
-          />
-        </Modal>
-      )}
-    </div>
     </>
   );
 }

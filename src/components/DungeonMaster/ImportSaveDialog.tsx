@@ -1,8 +1,9 @@
 import React, { useCallback, useRef, useState } from 'react';
 import { Upload } from 'lucide-react';
-import type { GameState, Item, Skill, Character, Entity, InventorySlot } from '../../types/game';
+import type { GameState, Item, Skill, Character, Entity, EntityReference, ItemReference, SkillReference } from '../../types/game';
 import { imageManager } from '../../services/ImageManager';
 import { imageProcessor } from '../../services/ImageProcessor';
+import { getCatalogEntity } from '../../utils/referenceHelpers';
 
 type ImportMode = 'merge' | 'replace';
 
@@ -21,7 +22,6 @@ interface BundledSaveFile {
         type: string;
         size: number;
       };
-      thumbnail: string;
     };
   };
 }
@@ -33,125 +33,26 @@ const ImportSaveDialog = ({ gameState, onImport }: ImportSaveDialogProps) => {
   const [importMode, setImportMode] = useState<ImportMode>('merge');
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [pendingImportData, setPendingImportData] = useState<string | null>(null);
-  const [updateInstances, setUpdateInstances] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
 
-// Helper function to update instances of an item based on template
-const updateItemInstances = (
-  state: GameState,
-  templateId: string,
-  template: Item
-): GameState => {
-  // Create a copy of the template without usage-specific fields
-  const templateBase = {
-    ...template,
-    usesLeft: undefined // Don't override instance-specific uses
-  };
-
-  // Update party inventories and equipment
-  const updatedParty = state.party.map((character) => ({
-    ...character,
-    inventory: character.inventory.map((slot): InventorySlot => 
-      slot[0].id === templateId ? [{ ...slot[0], ...templateBase }, slot[1]] : slot
-    ),
-    equipment: character.equipment.map(item =>
-      item.id === templateId ? { ...item, ...templateBase } : item
-    )
-  }));
-
-  // Update global entity inventories
-  const updatedEntities = state.globalCollections.entities.map((entity) => ({
-    ...entity,
-    inventory: entity.inventory.map((slot): InventorySlot =>
-      slot[0].id === templateId ? [{ ...slot[0], ...templateBase }, slot[1]] : slot
-    )
-  }));
-
-  // Update field entity inventories
-  const updatedField = state.field.map((entity) => ({
-    ...entity,
-    inventory: entity.inventory.map((slot): InventorySlot =>
-      slot[0].id === templateId ? [{ ...slot[0], ...templateBase }, slot[1]] : slot
-    )
-  }));
-
-  return {
-    ...state,
-    party: updatedParty,
-    globalCollections: {
-      ...state.globalCollections,
-      entities: updatedEntities
-    },
-    field: updatedField
-  };
-};
-
-  // Helper function to update instances of a skill based on template
-  const updateSkillInstances = (
-    state: GameState,
-    templateId: string,
-    template: Skill
-  ): GameState => {
-    // Create a copy of the template without usage-specific fields
-    const templateBase = {
-      ...template,
-      usesLeft: undefined // Don't override instance-specific uses
-    };
-
-    // Update party skills
-    const updatedParty = state.party.map((character: Character) => ({
-      ...character,
-      skills: character.skills.map(skill =>
-        skill.id === templateId ? { ...skill, ...templateBase } : skill
-      )
-    }));
-
-    // Update global entity skills
-    const updatedEntities = state.globalCollections.entities.map((entity: Entity) => ({
-      ...entity,
-      skills: entity.skills.map(skill =>
-        skill.id === templateId ? { ...skill, ...templateBase } : skill
-      )
-    }));
-
-    // Update field entity skills
-    const updatedField = state.field.map((entity: Entity) => ({
-      ...entity,
-      skills: entity.skills.map(skill =>
-        skill.id === templateId ? { ...skill, ...templateBase } : skill
-      )
-    }));
-
-    return {
-      ...state,
-      party: updatedParty,
-      globalCollections: {
-        ...state.globalCollections,
-        entities: updatedEntities
-      },
-      field: updatedField
-    };
-  };
+  // ✅ REMOVED: updateItemInstances and updateSkillInstances functions
+  // In the reference system, there are no "instances" to update - all data comes from catalog templates
+  // ItemReference and SkillReference objects only contain catalogId + instance-specific data (usesLeft, etc.)
 
   const mergeGameStates = (current: GameState, imported: GameState, mode: ImportMode): GameState => {
     if (mode === 'replace') {
-      return {
-        ...imported,
-        party: imported.party.map(char => ({
-          ...char,
-          playerId: undefined
-        }))
-      };
+      return imported;
     }
 
-    let mergedState = {
+    // Merge mode
+    const mergedState: GameState = {
       ...current,
       party: [
         ...current.party,
-        ...imported.party.filter(char => 
+        ...imported.party.filter(char =>
           !current.party.some(c => c.id === char.id)
-        ).map(char => ({ ...char, playerId: undefined }))
+        )
       ],
       globalCollections: {
         ...current.globalCollections,
@@ -185,27 +86,28 @@ const updateItemInstances = (
             !current.globalCollections.images.some(i => i.id === image.id)
           )
         ]
+      },
+      // ✅ UPDATED: Handle EntityReference[] field merging
+      field: [
+        ...current.field,
+        ...imported.field.filter(entityRef => 
+          !current.field.some(e => e.instanceId === entityRef.instanceId)
+        )
+      ],
+      audio: {
+        ...current.audio,
+        playlist: [
+          ...current.audio.playlist,
+          ...imported.audio.playlist.filter(track => 
+            !current.audio.playlist.some(t => t.id === track.id)
+          )
+        ]
       }
     };
 
-    // Update existing items and skills if updateInstances is true
-    if (updateInstances) {
-      // Update instances for modified items
-      imported.globalCollections.items.forEach(importedItem => {
-        const existingItem = current.globalCollections.items.find(i => i.id === importedItem.id);
-        if (existingItem) {
-          mergedState = updateItemInstances(mergedState, importedItem.id, importedItem);
-        }
-      });
-
-      // Update instances for modified skills
-      imported.globalCollections.skills.forEach(importedSkill => {
-        const existingSkill = current.globalCollections.skills.find(s => s.id === importedSkill.id);
-        if (existingSkill) {
-          mergedState = updateSkillInstances(mergedState, importedSkill.id, importedSkill);
-        }
-      });
-    }
+    // ✅ REMOVED: Instance update logic since references automatically use catalog templates
+    // The reference system doesn't need to update instances - all references automatically
+    // reflect the current catalog state when resolved
 
     return mergedState;
   };
@@ -235,7 +137,7 @@ const updateItemInstances = (
           setImportProgress(`Importing images (${processedImages + 1}/${totalImages})...`);
           
           try {
-            // Determine image category based on how it's used in the game state
+            // ✅ UPDATED: Determine image category with EntityReference support
             let category: 'item' | 'skill' | 'character' | 'entity' | 'gallery' = 'gallery';
             
             // Check if image is used by any items
@@ -250,9 +152,15 @@ const updateItemInstances = (
             else if (importedState.party.some(char => char.image === imageId)) {
               category = 'character';
             }
-            // Check if image is used by any entities
-            else if ([...importedState.globalCollections.entities, ...importedState.field]
-                .some(entity => entity.image === imageId)) {
+            // ✅ UPDATED: Check if image is used by any catalog entities or EntityReference field entities
+            else if (importedState.globalCollections.entities.some(entity => entity.image === imageId)) {
+              category = 'entity';
+            }
+            // ✅ UPDATED: Check EntityReference field entities by resolving from catalog
+            else if (importedState.field.some(entityRef => {
+              const catalogEntity = getCatalogEntity(entityRef.catalogId, importedState);
+              return catalogEntity?.image === imageId;
+            })) {
               category = 'entity';
             }
         
@@ -314,71 +222,52 @@ const updateItemInstances = (
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const fileContent = await file.text();
-    
-    if (importMode === 'replace') {
-      setPendingImportData(fileContent);
+    try {
+      const content = await file.text();
+      setPendingImportData(content);
       setShowConfirmation(true);
-    } else {
-      processImportData(fileContent);
+    } catch (err) {
+      setError('Failed to read save file.');
+    }
+  };
+
+  const handleConfirmImport = () => {
+    if (pendingImportData) {
+      setShowConfirmation(false);
+      processImportData(pendingImportData);
+    }
+  };
+
+  const handleCancelImport = () => {
+    setShowConfirmation(false);
+    setPendingImportData(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
   return (
-    <div>
-      <input
-        type="file"
-        accept=".json"
-        onChange={handleFileChange}
-        ref={fileInputRef}
-        className="hidden"
-        id="save-file-input"
-      />
-      
+    <div className="space-y-4">
       <div className="relative">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 mb-2">
-            <input
-              type="checkbox"
-              id="update-instances"
-              checked={updateInstances}
-              onChange={(e) => setUpdateInstances(e.target.checked)}
-              className="form-checkbox h-4 w-4 text-blue dark:text-cyan rounded border-grey dark:border-offwhite"
-            />
-            <label htmlFor="update-instances" className="text-sm">
-              Update existing item/skill instances
-            </label>
-          </div>
-          
-          <button
-            onClick={() => {
-              fileInputRef.current?.click();
-              setImportMode('merge');
-            }}
+        <label
+          htmlFor="import-file"
+          className={`inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-md 
+            hover:bg-green-700 transition-colors gap-2 cursor-pointer
+            ${isImporting ? 'opacity-50 cursor-not-allowed' : ''}`}
+        >
+          <Upload className="w-4 h-4" />
+          Import Save File
+          <input
+            id="import-file"
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleFileChange}
             disabled={isImporting}
-            className={`inline-flex items-center px-4 py-2 bg-blue dark:bg-cyan text-white dark:text-grey rounded-t-md 
-              hover:bg-blue-700 dark:hover:bg-cyan-700 transition-colors gap-2
-              ${isImporting ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            <Upload className="w-4 h-4" />
-            Add to Save
-          </button>
-          <button
-            onClick={() => {
-              fileInputRef.current?.click();
-              setImportMode('replace');
-            }}
-            disabled={isImporting}
-            className={`inline-flex items-center px-4 py-2 bg-blue dark:bg-cyan text-white border-t-2 border-offwhite dark:border-grey dark:text-grey rounded-b-md 
-              hover:bg-blue-700 dark:hover:bg-cyan-700 transition-colors gap-2
-              ${isImporting ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            <Upload className="w-4 h-4" />
-            Replace Save
-          </button>
-        </div>
+            className="hidden"
+          />
+        </label>
 
-        {/* Status messages */}
         {importProgress && (
           <div className="absolute top-full left-0 mt-2 p-3 bg-blue-100 border border-blue-400 text-blue-700 rounded-md">
             {importProgress}
@@ -396,42 +285,69 @@ const updateItemInstances = (
             {success}
           </div>
         )}
+      </div>
 
-        {/* Confirmation Modal */}
-        {showConfirmation && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-grey p-6 rounded-lg max-w-md w-full">
-              <h3 className="text-lg font-bold mb-4">Replace Existing Save?</h3>
-              <p className="mb-6">This will replace your current save with the imported data. This action cannot be undone. Are you sure you want to continue?</p>
-              <div className="flex justify-end gap-4">
-                <button
-                  onClick={() => {
-                    setShowConfirmation(false);
-                    setPendingImportData(null);
-                    if (fileInputRef.current) {
-                      fileInputRef.current.value = '';
-                    }
-                  }}
-                  className="px-4 py-2 bg-grey dark:bg-offwhite text-offwhite dark:text-grey rounded-md hover:bg-grey-700 dark:hover:bg-offwhite-700 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    setShowConfirmation(false);
-                    if (pendingImportData) {
-                      processImportData(pendingImportData);
-                    }
-                  }}
-                  className="px-4 py-2 bg-blue dark:bg-cyan text-white dark:text-grey rounded-md hover:bg-blue-700 dark:hover:bg-cyan-700 transition-colors"
-                >
-                  Replace
-                </button>
-              </div>
+      {/* Import Mode Selection */}
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+          Import Mode:
+        </label>
+        <div className="flex gap-4">
+          <label className="flex items-center">
+            <input
+              type="radio"
+              value="merge"
+              checked={importMode === 'merge'}
+              onChange={(e) => setImportMode(e.target.value as ImportMode)}
+              className="mr-2"
+            />
+            Merge (keep existing data)
+          </label>
+          <label className="flex items-center">
+            <input
+              type="radio"
+              value="replace"
+              checked={importMode === 'replace'}
+              onChange={(e) => setImportMode(e.target.value as ImportMode)}
+              className="mr-2"
+            />
+            Replace (overwrite all data)
+          </label>
+        </div>
+      </div>
+
+      {/* Confirmation Dialog */}
+      {showConfirmation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold mb-4">Confirm Import</h3>
+            <p className="mb-6">
+              {importMode === 'merge' 
+                ? 'This will merge the imported save data with your current game state. Existing data will be preserved.'
+                : 'This will replace your current game state with the imported save data. All existing data will be lost.'
+              }
+            </p>
+            <div className="flex gap-4 justify-end">
+              <button
+                onClick={handleCancelImport}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmImport}
+                className={`px-4 py-2 text-white rounded-md ${
+                  importMode === 'merge' 
+                    ? 'bg-green-600 hover:bg-green-700' 
+                    : 'bg-red-600 hover:bg-red-700'
+                }`}
+              >
+                {importMode === 'merge' ? 'Merge' : 'Replace'}
+              </button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

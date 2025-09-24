@@ -1,6 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Character, Entity, isCharacter, GameState } from '../../types/game';
 import { Plus, Minus } from 'lucide-react';
+import { useCharacterActions } from '../../actions/characterActions';
+import type { Room } from 'trystero/nostr';
 
 type CharacterStatType = 'hp' | 'mp' | 'sp';
 type EntityStatType = 'hp' | 'sp';
@@ -12,7 +14,8 @@ interface BaseStatGaugesProps {
   onGameStateChange: (newState: GameState) => void;
   size?: GaugeSize;
   showSideLabels?: boolean;
-  
+  room?: Room;
+  isRoomCreator?: boolean;
 }
 
 interface CharacterStatGaugesProps extends BaseStatGaugesProps {
@@ -89,7 +92,7 @@ interface StatGaugeProps {
   showSideLabels?: boolean;
 }
 
-const StatGauge = ({
+const StatGauge: React.FC<StatGaugeProps> = ({
   current,
   max,
   label,
@@ -97,60 +100,34 @@ const StatGauge = ({
   type,
   onIncrement,
   onDecrement,
-  editable,
+  editable = true,
   size = 'medium',
-  showSideLabels
-}: StatGaugeProps) => {
+  showSideLabels = true
+}) => {
   const [isHovered, setIsHovered] = useState(false);
-  const percentage = Math.min(100, Math.max(0, (current / max) * 100));
+  
   const { gauge, text, icon, gap, button } = sizeClasses[size];
-
-  const colors = useMemo(() => {
-    const colorMap = {
-      hp: {
-        light: {
-          from: '#FF009D',
-          to: '#FF66C4',
-          text: 'text-magenta'
-        },
-        dark: {
-          from: '#FF0051',
-          to: '#FF4D86',
-          text: 'text-red'
-        }
-      },
-      mp: {
-        light: {
-          from: '#8A05FF',
-          to: '#B24FFF',
-          text: 'text-purple'
-        },
-        dark: {
-          from: '#D505FF',
-          to: '#E14FFF',
-          text: 'text-pink'
-        }
-      },
-      sp: {
-        light: {
-          from: '#0002FB',
-          to: '#4D4EFC',
-          text: 'text-blue'
-        },
-        dark: {
-          from: '#00FBD1',
-          to: '#4DFCE6',
-          text: 'text-cyan'
-        }
-      }
-    };
-    return colorMap[type];
-  }, [type]);
+  const percentage = max > 0 ? Math.min(100, (current / max) * 100) : 0;
+  
+  const colors = {
+    hp: {
+      light: { from: '#ef4444', to: '#dc2626' },
+      dark: { from: '#f87171', to: '#ef4444' }
+    },
+    mp: {
+      light: { from: '#3b82f6', to: '#2563eb' },
+      dark: { from: '#60a5fa', to: '#3b82f6' }
+    },
+    sp: {
+      light: { from: '#f59e0b', to: '#d97706' },
+      dark: { from: '#fbbf24', to: '#f59e0b' }
+    }
+  };
   
   return (
-    <div className={`flex items-center ${gap} w-full`}>
-      {showSideLabels && sideLabel && (
-        <span className={`${text} font-bold font-['Mohave'] w-4 text-right ${colors.light.text} dark:${colors.dark.text}`}>
+    <div className={`flex items-center ${gap} transition-colors`}>
+      {showSideLabels && (
+        <span className={`${text} font-bold text-grey dark:text-offwhite transition-colors min-w-max`}>
           {sideLabel}
         </span>
       )}
@@ -179,10 +156,10 @@ const StatGauge = ({
             style={{
               width: `${percentage}%`,
               background: `linear-gradient(to right, var(--gradient-from), var(--gradient-to))`,
-              '--gradient-from': `var(--${type}-gradient-from, ${colors.light.from})`,
-              '--gradient-to': `var(--${type}-gradient-to, ${colors.light.to})`,
-              '--dark-gradient-from': colors.dark.from,
-              '--dark-gradient-to': colors.dark.to
+              '--gradient-from': `var(--${type}-gradient-from, ${colors[type].light.from})`,
+              '--gradient-to': `var(--${type}-gradient-to, ${colors[type].light.to})`,
+              '--dark-gradient-from': colors[type].dark.from,
+              '--dark-gradient-to': colors[type].dark.to
             } as React.CSSProperties}
           />
         </div>
@@ -223,36 +200,76 @@ export default function StatGauges({
   gameState,
   onGameStateChange,
   size = 'medium',
-  showSideLabels = true
+  showSideLabels = true,
+  room,
+  isRoomCreator = false
 }: StatGaugesProps) {
+  const characterActions = useCharacterActions(room, gameState, onGameStateChange, isRoomCreator);
+
+  // Optimistic updates state - only for characters that need DM validation
+  const [optimisticChanges, setOptimisticChanges] = useState<{
+    hp?: number;
+    mp?: number;
+    sp?: number;
+  }>({});
+
+  // Clear optimistic changes when actual character stats change
+  useEffect(() => {
+    setOptimisticChanges({});
+  }, [character.hp, character.sp, isCharacter(character) ? character.mp : undefined]);
+
+  // Get current stat with optimistic overlay
+  const getOptimisticStat = (statType: CharacterStatType | EntityStatType): number => {
+    const baseStat = getCurrentStat(character, statType);
+    const optimisticChange = optimisticChanges[statType as keyof typeof optimisticChanges];
+    return optimisticChange !== undefined ? optimisticChange : baseStat;
+  };
+
   const handleStatChange = (statType: CharacterStatType | EntityStatType, delta: number) => {
+    // For characters, use optimistic updates + action system
+    if (isCharacter(character)) {
+      const currentValue = getCurrentStat(character, statType);
+      const maxValue = getMaxStat(character, statType);
+      const newValue = Math.min(maxValue, Math.max(0, currentValue + delta));
+      
+      if (newValue === currentValue) return;
+
+      // Apply optimistic update immediately
+      setOptimisticChanges(prev => ({
+        ...prev,
+        [statType]: newValue
+      }));
+
+      // Send action to DM for validation
+      characterActions?.adjustCharacterStat(character.id, statType as CharacterStatType, delta);
+      return;
+    }
+
+    // For entities, keep the direct state modification since only DMs can edit entities
+    // and there's no player action needed for entity stat changes
     const current = getCurrentStat(character, statType);
     const max = getMaxStat(character, statType);
     const newValue = Math.min(max, Math.max(0, current + delta));
     
     if (newValue === current) return;
 
-    if (isCharacter(character)) {
-      onGameStateChange({
-        ...gameState,
-        party: gameState.party.map(char =>
-          char.id === character.id ? { ...char, [statType]: newValue } : char
-        )
-      });
-    } else {
-      onGameStateChange({
-        ...gameState,
-        field: gameState.field.map(entity =>
-          entity.id === character.id ? { ...entity, [statType]: newValue } : entity
-        )
-      });
-    }
+    // Update field entity using instanceId
+    const instanceId = character.id;
+    
+    onGameStateChange({
+      ...gameState,
+      field: gameState.field.map(entityRef =>
+        entityRef.instanceId === instanceId 
+          ? { ...entityRef, [statType]: newValue } 
+          : entityRef
+      )
+    });
   };
 
   return (
     <div className="space-y-2 2xl:space-y-4 w-full max-w-4xl px-4 py-0 rounded-lg transition-colors">
       <StatGauge
-        current={character.hp}
+        current={getOptimisticStat('hp')}
         max={character.maxHp}
         label="Health"
         sideLabel="HP"
@@ -266,7 +283,7 @@ export default function StatGauges({
       
       {isCharacter(character) && (
         <StatGauge
-          current={character.mp}
+          current={getOptimisticStat('mp')}
           max={character.maxMp}
           label="Mana"
           sideLabel="MP"
@@ -280,7 +297,7 @@ export default function StatGauges({
       )}
       
       <StatGauge
-        current={character.sp}
+        current={getOptimisticStat('sp')}
         max={character.maxSp}
         label="Special"
         sideLabel="SP"

@@ -1,15 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { Room } from 'trystero/nostr';
-import { Skill, GameState } from '../../types/game';
+import { Skill, GameState, SkillReference } from '../../types/game';
 import { useSkillActions } from '../../actions/skillActions';
 import BasicObjectView from '../ui/BasicObjectView';
 import Modal from '../shared/Modal';
 import { SkillEditor } from '../DungeonMaster/SkillEditor';
 import { Plus, Minus, RefreshCw } from 'lucide-react';
 import GridMenu, { ActionType } from '../ui/GridMenu';
+import { 
+  getCatalogSkill, 
+  getSkillReferenceName,
+  getSkillReferenceUsesLeft,
+  skillReferenceHasUses,
+  isValidSkillReference 
+} from '../../utils/referenceHelpers';
 
 interface SkillViewProps {
-  skill: Skill;
+  // Either catalog viewing OR instance viewing
+  catalogId?: string;                    // For DM catalog mode
+  skillReference?: SkillReference;       // For instance viewing
+  skillIndex?: number;                   // Index in actor's skills array (for instance mode)
   onClose?: () => void;
   isRoomCreator?: boolean;
   actorId?: string;
@@ -20,7 +30,9 @@ interface SkillViewProps {
 }
 
 export const SkillView: React.FC<SkillViewProps> = ({
-  skill: initialSkill,
+  catalogId,
+  skillReference: initialSkillReference,
+  skillIndex,
   onClose,
   isRoomCreator = false,
   actorId,
@@ -31,32 +43,70 @@ export const SkillView: React.FC<SkillViewProps> = ({
 }) => {
   const [showEditor, setShowEditor] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [skill, setSkill] = useState(initialSkill);
+  const [skillReference, setSkillReference] = useState<SkillReference | null>(initialSkillReference || null);
   const [customUses, setCustomUses] = useState<number | undefined>(undefined);
 
   const skillActions = useSkillActions(room, gameState, onGameStateChange, isRoomCreator);
-  const isViewingFromCatalog = !actorId;
 
-  // Keep skill state in sync with game state
+  // Determine which catalog ID to use for lookups
+  const effectiveCatalogId = catalogId || skillReference?.catalogId;
+  
+  // Get catalog skill for display data
+  const catalogSkill = effectiveCatalogId ? getCatalogSkill(effectiveCatalogId, gameState) : null;
+  
+  // Context detection
+  const isViewingFromCatalog = !!catalogId && !skillReference;
+  const isViewingInstance = !!skillReference;
+
+  // Instance-specific data (only available when viewing an instance)
+  const instanceUsesLeft = skillReference ? getSkillReferenceUsesLeft(skillReference, gameState) : undefined;
+  const hasUses = skillReferenceHasUses(skillReference || { catalogId: effectiveCatalogId || '' }, gameState);
+
+  // Keep skillReference state in sync with game state for instances
   useEffect(() => {
-    if (actorId && actorType) {
-      const actor = actorType === 'character'
-        ? gameState.party.find(c => c.id === actorId)
-        : actorType === 'globalEntity'
-        ? gameState.globalCollections.entities.find(e => e.id === actorId)
-        : gameState.field.find(e => e.id === actorId);
+    if (!isViewingInstance || !actorId || !actorType || skillIndex === undefined) return;
 
-      const updatedSkill = actor?.skills.find(s => s.id === skill.id);
-      if (updatedSkill) {
-        setSkill(updatedSkill);
-      }
-    } else {
-      const catalogSkill = gameState.globalCollections.skills.find(s => s.id === skill.id);
-      if (catalogSkill) {
-        setSkill(catalogSkill);
-      }
+    let updatedReference: SkillReference | undefined;
+
+    switch (actorType) {
+      case 'character':
+        const character = gameState.party.find(c => c.id === actorId);
+        updatedReference = character?.skills?.[skillIndex];
+        break;
+      case 'globalEntity':
+        const globalEntity = gameState.globalCollections.entities.find(e => e.id === actorId);
+        updatedReference = globalEntity?.skills?.[skillIndex];
+        break;
+      case 'fieldEntity':
+        const fieldEntity = gameState.field.find(e => e.instanceId === actorId);
+        updatedReference = fieldEntity?.skills?.[skillIndex];
+        break;
     }
-  }, [gameState, skill.id, actorId, actorType]);
+
+    if (updatedReference && isValidSkillReference(updatedReference, gameState)) {
+      setSkillReference(updatedReference);
+    }
+  }, [gameState, actorId, actorType, skillIndex, isViewingInstance]);
+
+  // Validation - moved after hooks
+  if (!effectiveCatalogId || !catalogSkill) {
+    return (
+      <div className="p-4 text-center">
+        <p className="text-red-500">Error: Invalid skill reference or catalog ID</p>
+        <button onClick={onClose} className="mt-2 px-4 py-2 bg-gray-500 text-white rounded">
+          Close
+        </button>
+      </div>
+    );
+  }
+
+  // Helper function to determine actorType if not provided
+  const determineActorType = (actorId: string): 'character' | 'globalEntity' | 'fieldEntity' | null => {
+    if (gameState.party.find(c => c.id === actorId)) return 'character';
+    if (gameState.globalCollections.entities.find(e => e.id === actorId)) return 'globalEntity';
+    if (gameState.field.find(e => e.instanceId === actorId)) return 'fieldEntity';
+    return null;
+  };
 
   // Get available actions for GridMenu
   const getAvailableActions = (): ActionType[] => {
@@ -66,8 +116,8 @@ export const SkillView: React.FC<SkillViewProps> = ({
       actions.push('edit', 'delete');
     }
 
-    if (actorId) {
-      if (skill.uses === undefined || skill.usesLeft! > 0) {
+    if (isViewingInstance && actorId) {
+      if (!hasUses || (instanceUsesLeft !== undefined && instanceUsesLeft > 0)) {
         actions.push('use');
       }
       actions.push('forget');
@@ -95,50 +145,93 @@ export const SkillView: React.FC<SkillViewProps> = ({
   };
 
   const handleUseSkill = async () => {
-    if (!actorId || !skillActions || !actorType) return;
-    await skillActions.useSkill(skill.id, actorId, actorType);
+    if (!actorId || !skillActions) return;
+    const type = actorType || determineActorType(actorId);
+    if (!type) return;
+
+    try {
+      await skillActions.useSkill(effectiveCatalogId, actorId, type);
+    } catch (error) {
+      console.error('Failed to use skill:', error);
+    }
   };
 
   const handleForgetSkill = async () => {
-    if (!actorId || !skillActions || !actorType) return;
-    await skillActions.removeSkill(skill.id, actorId, actorType);
-    onClose?.();
+    if (!actorId || !skillActions) return;
+    const type = actorType || determineActorType(actorId);
+    if (!type) return;
+
+    try {
+      await skillActions.removeSkill(effectiveCatalogId, actorId, type);
+      onClose?.();
+    } catch (error) {
+      console.error('Failed to forget skill:', error);
+    }
   };
 
   const handleDelete = async () => {
     if (!isRoomCreator || !skillActions?.deleteSkill) return;
     try {
-      await skillActions.deleteSkill(skill.id);
+      await skillActions.deleteSkill(effectiveCatalogId);
       onClose?.();
     } catch (error) {
       console.error('Failed to delete skill:', error);
     }
   };
 
-  const handleRestoreUses = async () => {
-    if (!isRoomCreator || !skillActions || !actorId || !actorType) return;
-    if (skill.uses === undefined) return;
+  const handleUpdate = async (updates: Omit<Skill, 'id'>) => {
+    if (!skillActions?.updateSkill) return;
+    try {
+      await skillActions.updateSkill(effectiveCatalogId, updates);
+      setShowEditor(false);
+    } catch (error) {
+      console.error('Failed to update skill:', error);
+    }
+  };
 
-    const newUses = customUses !== undefined ? customUses : skill.uses;
-    await skillActions.restoreSkillUses(skill.id, actorId, actorType, newUses);
+  const handleRestoreUses = async () => {
+    if (!isRoomCreator || !skillActions || !actorId) return;
+    if (!hasUses) return;
+
+    const type = actorType || determineActorType(actorId);
+    if (!type) return;
+
+    const newUses = customUses !== undefined ? customUses : (catalogSkill.uses ?? 0);
+    await skillActions.restoreSkillUses(effectiveCatalogId, actorId, type, newUses);
     setCustomUses(undefined);
   };
 
   const handleIncreaseUses = async () => {
-    if (!isRoomCreator || !skillActions || !actorId || !actorType) return;
-    if (skill.uses === undefined || skill.usesLeft === undefined) return;
+    if (!isRoomCreator || !skillActions || !actorId) return;
+    if (!hasUses || instanceUsesLeft === undefined) return;
 
-    const newUses = Math.min(skill.uses, skill.usesLeft + 1);
-    await skillActions.restoreSkillUses(skill.id, actorId, actorType, newUses);
+    const type = actorType || determineActorType(actorId);
+    if (!type) return;
+
+    const newUses = Math.min(catalogSkill.uses || 0, instanceUsesLeft + 1);
+    await skillActions.restoreSkillUses(effectiveCatalogId, actorId, type, newUses);
   };
 
   const handleDecreaseUses = async () => {
-    if (!isRoomCreator || !skillActions || !actorId || !actorType) return;
-    if (skill.usesLeft === undefined) return;
+    if (!isRoomCreator || !skillActions || !actorId) return;
+    if (instanceUsesLeft === undefined) return;
 
-    const newUses = Math.max(0, skill.usesLeft - 1);
-    await skillActions.restoreSkillUses(skill.id, actorId, actorType, newUses);
+    const type = actorType || determineActorType(actorId);
+    if (!type) return;
+
+    const newUses = Math.max(0, instanceUsesLeft - 1);
+    await skillActions.restoreSkillUses(effectiveCatalogId, actorId, type, newUses);
   };
+
+  // Display data comes from catalog, instance data from reference
+  const displayName = catalogSkill.name;
+  const displayDescription = catalogSkill.description;
+  const displayImage = catalogSkill.image;
+  const displayTags = catalogSkill.tags;
+  const displayUses = catalogSkill.uses;
+  const displayUsesLeft = instanceUsesLeft ?? displayUses; // Instance first, then catalog default
+  const displayDamage = catalogSkill.damage;
+  const displaySpCost = catalogSkill.spCost;
 
   return (
     <div className="flex flex-col h-full w-full gap-2 p-0">
@@ -147,53 +240,48 @@ export const SkillView: React.FC<SkillViewProps> = ({
         {/* Uses Section */}
         <div className="flex items-center gap-2">
           <div className="font-['Mohave'] text-lg">
-            {skill.uses !== undefined ? (
-              <span>Uses: {skill.usesLeft ?? skill.uses} / {skill.uses}</span>
+            {hasUses ? (
+              <span>Uses: {displayUsesLeft ?? '∞'}/{displayUses ?? '∞'}</span>
             ) : (
-              <span>Unlimited Uses</span>
+              <span>Uses: ∞</span>
             )}
+            {isRoomCreator && isViewingInstance && <span className="ml-2 text-blue dark:text-cyan">(Instance)</span>}
+            {isRoomCreator && isViewingFromCatalog && <span className="ml-2 text-blue dark:text-cyan">(Catalog)</span>}
           </div>
           
-          {isRoomCreator && skill.uses !== undefined && (
-            <div className="flex items-center gap-2">
+          {/* DM Usage Controls */}
+          {isRoomCreator && hasUses && isViewingInstance && (
+            <div className="flex items-center gap-1 ml-4">
               <button
                 onClick={handleDecreaseUses}
-                className="p-1 rounded-full hover:bg-grey/10 dark:hover:bg-offwhite/10"
-                title="Decrease uses"
+                disabled={instanceUsesLeft === undefined || instanceUsesLeft <= 0}
+                className="w-8 h-8 rounded-full bg-grey/20 dark:bg-offwhite/20 hover:bg-grey/40 dark:hover:bg-offwhite/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
               >
-                <Minus size={16} />
+                <Minus className="w-4 h-4" />
               </button>
               
-              <input
-                type="number"
-                value={customUses ?? ''}
-                onChange={e => setCustomUses(e.target.value ? Number(e.target.value) : undefined)}
-                placeholder={skill.uses.toString()}
-                className="w-16 px-2 py-1 rounded border dark:bg-grey font-['Mohave']"
-              />
+              <button
+                onClick={handleIncreaseUses}
+                disabled={instanceUsesLeft === undefined || instanceUsesLeft >= (catalogSkill.uses || 0)}
+                className="w-8 h-8 rounded-full bg-grey/20 dark:bg-offwhite/20 hover:bg-grey/40 dark:hover:bg-offwhite/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
               
               <button
                 onClick={handleRestoreUses}
-                className="p-1 rounded-full hover:bg-grey/10 dark:hover:bg-offwhite/10"
-                title="Set uses"
+                className="w-8 h-8 rounded-full bg-grey/20 dark:bg-offwhite/20 hover:bg-grey/40 dark:hover:bg-offwhite/40 flex items-center justify-center transition-colors ml-2"
+                title="Restore to full uses"
               >
-                <RefreshCw size={16} />
-              </button>
-
-              <button
-                onClick={handleIncreaseUses}
-                className="p-1 rounded-full hover:bg-grey/10 dark:hover:bg-offwhite/10"
-                title="Increase uses"
-              >
-                <Plus size={16} />
+                <RefreshCw className="w-4 h-4" />
               </button>
             </div>
           )}
         </div>
 
         {/* Tags Section */}
-        <div className="flex flex-wrap gap-2 justify-end items-center">
-          {skill.tags?.map(tag => (
+        <div className="flex flex-wrap gap-2 justify-end">
+          {displayTags?.map(tag => (
             <span 
               key={tag}
               className="px-3 py-1 bg-grey/10 dark:bg-offwhite/10 rounded-full 
@@ -205,11 +293,18 @@ export const SkillView: React.FC<SkillViewProps> = ({
         </div>
       </div>
 
+      {/* Header Section */}
+      <div className="flex-shrink-0">
+        <h3 className="text-2xl 2xl:text-3xl 3xl:text-4xl font-bold font-['BrunoAceSC'] text-grey dark:text-offwhite mb-2">
+          {displayName}
+        </h3>
+      </div>
+
       {/* Image Section */}
       <div className="flex flex-col justify-center items-center flex-grow gap-0">
         <BasicObjectView 
           name=""
-          imageId={skill.image}
+          imageId={displayImage}
           size="size=lg 3xl:size=xl"
         />
         
@@ -217,11 +312,11 @@ export const SkillView: React.FC<SkillViewProps> = ({
         <div className="flex flex-row items-center justify-center pt-1 gap-2">
           <div className="text-sm font-['Mohave'] uppercase tracking-wider">Damage</div>
           <div className="font-['BrunoAceSC'] text-3xl bg-clip-text bg-gradient-to-r from-blue to-purple dark:from-cyan dark:to-magenta text-transparent">
-            {skill.damage}
+            {displayDamage}
           </div>
           <div className="text-sm font-['Mohave'] uppercase tracking-wider">| SP Cost</div>
           <div className="font-['BrunoAceSC'] text-3xl bg-clip-text bg-gradient-to-r from-blue to-purple dark:from-cyan dark:to-magenta text-transparent">
-            {skill.spCost}
+            {displaySpCost}
           </div>
         </div>
       </div>
@@ -229,7 +324,7 @@ export const SkillView: React.FC<SkillViewProps> = ({
       {/* Description Section */}
       <div className="border-2 border-grey dark:border-offwhite rounded-lg p-2 min-h-[6rem] max-h-[7rem] overflow-y-auto">
         <p className="font-['Mohave'] text-lg text-left leading-relaxed">
-          {skill.description}
+          {displayDescription}
         </p>
       </div>
 
@@ -242,19 +337,15 @@ export const SkillView: React.FC<SkillViewProps> = ({
       </div>
 
       {/* Modals */}
-      {showEditor && (
+      {showEditor && catalogSkill && (
         <Modal
           isOpen={showEditor}
           onClose={() => setShowEditor(false)}
           title="Edit Skill"
         >
           <SkillEditor
-            skill={skill}
-            onSubmit={async (updates) => {
-              if (!skillActions?.updateSkill) return;
-              await skillActions.updateSkill(skill.id, updates);
-              setShowEditor(false);
-            }}
+            skill={catalogSkill}
+            onSubmit={handleUpdate}
             onCancel={() => setShowEditor(false)}
           />
         </Modal>

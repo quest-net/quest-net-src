@@ -55,11 +55,7 @@ export function EntityEditor({
         return;
       }
 
-      // First try to get the thumbnail which is faster
-      const thumbnail = imageManager.getThumbnail(entity.image);
-      if (thumbnail && mounted) {
-        setImagePreview(thumbnail);
-      }
+      //Load the image for preview
 
       try {
         // Then load the full image
@@ -112,7 +108,12 @@ export function EntityEditor({
       const imageData = await imageManager.addImage(file,'entity');
       
       // Update the form and preview with the new image
-      setImagePreview(imageData.thumbnail);
+      // Create preview from the uploaded file
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
       setForm(prev => ({ ...prev, image: imageData.id }));
     } catch (error) {
       console.error('Error uploading image:', error);

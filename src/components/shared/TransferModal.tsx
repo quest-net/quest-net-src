@@ -2,15 +2,18 @@ import React, { useState } from 'react';
 import { CatalogTabs, CatalogTabsList, CatalogTabsTrigger } from '../ui/CatalogTabs';
 import BasicObjectView from '../ui/BasicObjectView';
 import Modal from './Modal';
-import type { Character, Entity } from '../../types/game';
+import type { Character, EntityReference, GameState } from '../../types/game';
 import {ReactComponent as CharBackground} from '../ui/char.svg';
 import {ReactComponent as FieldBackground} from '../ui/field.svg';
+import { getCatalogEntity } from '../../utils/referenceHelpers';
 
+// ✅ UPDATED: Interface now accepts EntityReference[] and GameState for catalog resolution
 interface TransferModalProps {
   isOpen: boolean;
   onClose: () => void;
   party: Character[];
-  field: Entity[];
+  field: EntityReference[];  // ✅ Changed from Entity[] to EntityReference[]
+  gameState: GameState;      // ✅ Added for catalog resolution
   onTransfer: (recipientId: string, recipientType: 'character' | 'fieldEntity') => void;
 }
 
@@ -19,6 +22,7 @@ export default function TransferModal({
   onClose,
   party,
   field,
+  gameState,
   onTransfer
 }: TransferModalProps) {
   const [recipientType, setRecipientType] = useState<'character' | 'fieldEntity'>('character');
@@ -31,48 +35,93 @@ export default function TransferModal({
   };
 
   const renderRecipients = () => {
-    const recipients = recipientType === 'character' ? party : field;
-    
-    return (
-      <div className="relative h-[45vh] w-full">
-        {/* Background */}
-        <div className="absolute inset-0 pointer-events-none -z-10 overflow-hidden">
-          {recipientType === 'character' ? (
+    // ✅ UPDATED: Handle both Character[] and EntityReference[] with proper resolution
+    if (recipientType === 'character') {
+      const recipients = party;
+      
+      return (
+        <div className="relative h-[45vh] w-full">
+          {/* Background */}
+          <div className="absolute inset-0 pointer-events-none -z-10 overflow-hidden">
             <CharBackground className="absolute bottom-0 scale-[150%] rotate-[20deg] left-0 h-full fill-grey/20 dark:fill-offwhite/20" />
-          ) : (
-            <FieldBackground className="absolute -bottom-[50%] left-[95%] scale-[480%] h-full fill-grey/20 dark:fill-offwhite/20" />
-          )}
-        </div>
+          </div>
 
-        {/* Recipients List */}
-        <div className="absolute inset-0 overflow-y-auto scrollable border-2 border-grey dark:border-offwhite rounded-lg">
-          <div className="flex flex-wrap justify-center items-start gap-4 p-2 min-h-full">
-            {recipients.map(recipient => (
-              <div className="flex-none" key={recipient.id}>
-                <BasicObjectView
-                  name={recipient.name}
-                  imageId={recipient.image}
-                  id={`recipient-${recipient.id}`}
-                  size="size=sm 2xl:size=md 3xl:size=lg"
-                  onClick={() => setSelectedRecipientId(recipient.id)}
-                  border={{
-                    width: selectedRecipientId === recipient.id ? 4 : 2,
-                    color: selectedRecipientId === recipient.id ? 'var(--color-blue)' : undefined
-                  }}
-                />
-              </div>
-            ))}
-            {recipients.length === 0 && (
-              <div className="flex items-center justify-center h-40">
-                <span className="text-grey dark:text-offwhite text-xl font-['Mohave']">
-                  No {recipientType === 'character' ? 'characters' : 'entities'} available
-                </span>
-              </div>
-            )}
+          {/* Recipients List */}
+          <div className="absolute inset-0 overflow-y-auto scrollable border-2 border-grey dark:border-offwhite rounded-lg">
+            <div className="flex flex-wrap justify-center items-start gap-4 p-2 min-h-full">
+              {recipients.map(recipient => (
+                <div className="flex-none" key={recipient.id}>
+                  <BasicObjectView
+                    name={recipient.name}
+                    imageId={recipient.image}
+                    id={`recipient-${recipient.id}`}
+                    size="size=sm 2xl:size=md 3xl:size=lg"
+                    onClick={() => setSelectedRecipientId(recipient.id)}
+                    border={{
+                      width: selectedRecipientId === recipient.id ? 4 : 2,
+                      color: selectedRecipientId === recipient.id ? 'var(--color-blue)' : undefined
+                    }}
+                  />
+                </div>
+              ))}
+              {recipients.length === 0 && (
+                <div className="flex items-center justify-center h-40">
+                  <span className="text-grey dark:text-offwhite text-xl font-['Mohave']">
+                    No characters available
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-    );
+      );
+    } else {
+      // ✅ FIXED: Field entities with EntityReference resolution
+      const recipients = field;
+      
+      return (
+        <div className="relative h-[45vh] w-full">
+          {/* Background */}
+          <div className="absolute inset-0 pointer-events-none -z-10 overflow-hidden">
+            <FieldBackground className="absolute -bottom-[50%] left-[95%] scale-[480%] h-full fill-grey/20 dark:fill-offwhite/20" />
+          </div>
+
+          {/* Recipients List */}
+          <div className="absolute inset-0 overflow-y-auto scrollable border-2 border-grey dark:border-offwhite rounded-lg">
+            <div className="flex flex-wrap justify-center items-start gap-4 p-2 min-h-full">
+              {recipients.map(entityRef => {
+                // ✅ FIXED: Resolve EntityReference properties from catalog
+                const catalogEntity = getCatalogEntity(entityRef.catalogId, gameState);
+                if (!catalogEntity) return null; // Skip invalid references
+                
+                return (
+                  <div className="flex-none" key={entityRef.instanceId}>
+                    <BasicObjectView
+                      name={catalogEntity.name}
+                      imageId={catalogEntity.image}
+                      id={`recipient-${entityRef.instanceId}`}
+                      size="size=sm 2xl:size=md 3xl:size=lg"
+                      onClick={() => setSelectedRecipientId(entityRef.instanceId)} // ✅ Use instanceId
+                      border={{
+                        width: selectedRecipientId === entityRef.instanceId ? 4 : 2,
+                        color: selectedRecipientId === entityRef.instanceId ? 'var(--color-blue)' : undefined
+                      }}
+                    />
+                  </div>
+                );
+              })}
+              {recipients.length === 0 && (
+                <div className="flex items-center justify-center h-40">
+                  <span className="text-grey dark:text-offwhite text-xl font-['Mohave']">
+                    No entities available
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
   };
 
   return (

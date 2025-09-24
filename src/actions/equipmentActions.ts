@@ -1,5 +1,7 @@
+// src/actions/equipmentActions.ts
+
 import type { Room } from 'trystero/nostr';
-import type { GameState, InventorySlot } from '../types/game';
+import type { GameState, InventorySlot, ItemReference } from '../types/game';
 import { selfId } from 'trystero';
 import { EquipmentActions } from '../components/DungeonMaster/handlers/setupEquipmentHandlers';
 
@@ -18,11 +20,12 @@ export function setupEquipmentActions(
       const character = gameState.party.find(c => c.id === characterId);
       if (!character) return false;
 
-      const equippedItem = character.equipment[equipmentIndex];
-      if (!equippedItem) return false;
+      const equippedItemRef = character.equipment[equipmentIndex];
+      if (!equippedItemRef) return false;
 
-      // Create new inventory slot for the unequipped item
-      const newInventorySlot: InventorySlot = [{ ...equippedItem }, 1];
+      // Create new inventory slot for the unequipped item reference
+      // We preserve the ItemReference with its current usesLeft value
+      const newInventorySlot: InventorySlot = [{ ...equippedItemRef }, 1];
 
       onGameStateChange({
         ...gameState,
@@ -44,6 +47,7 @@ export function setupEquipmentActions(
   return {
     ...dmActions,
 
+    // Player action: Unequip an item (sends P2P message with itemId for handler to process)
     unequipItem: (characterId: string, equipmentIndex: number, itemId: string) => {
       if (isRoomCreator) {
         return dmActions?.unequipDirect(characterId, equipmentIndex);

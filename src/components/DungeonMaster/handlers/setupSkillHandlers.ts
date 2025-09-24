@@ -1,5 +1,8 @@
+// src/components/DungeonMaster/handlers/setupSkillHandlers.ts
+
 import type { Room } from 'trystero/nostr';
-import type { GameState } from '../../../types/game';
+import type { GameState, Character, Entity, EntityReference, SkillReference } from '../../../types/game';
+import { getCatalogSkill } from '../../../utils/referenceHelpers';
 
 // These must be 12 bytes or less for Trystero
 export const SkillActions = {
@@ -23,34 +26,57 @@ export function setupSkillHandlers(
   getSkillUse(({ skillId, actorId, actorType }) => {
     console.log('DM received skill use request:', { skillId, actorId, actorType });
     
-    const actor = actorType === 'character'
-      ? gameState.party.find(c => c.id === actorId)
-      : actorType === 'globalEntity'
-      ? gameState.globalCollections.entities.find(e => e.id === actorId)
-      : gameState.field.find(e => e.id === actorId);
+    // Find actor based on type with proper typing
+    let actor: Character | Entity | EntityReference | null = null;
+    
+    if (actorType === 'character') {
+      actor = gameState.party.find(c => c.id === actorId) || null;
+    } else if (actorType === 'globalEntity') {
+      actor = gameState.globalCollections.entities.find(e => e.id === actorId) || null;
+    } else {
+      // ✅ FIXED: For field entities, use instanceId instead of catalogId
+      actor = gameState.field.find(e => e.instanceId === actorId) || null;
+    }
 
     if (!actor) {
       console.error('Actor not found:', { actorId, actorType });
       return;
     }
 
-    const skill = actor.skills.find(s => s.id === skillId);
-    if (!skill) {
+    // Find the skill reference
+    const skillRef = actor.skills.find(s => s.catalogId === skillId);
+    if (!skillRef) {
       console.error('Skill not found:', skillId);
       return;
     }
 
+    // Get catalog skill for damage/cost data
+    const catalogSkill = getCatalogSkill(skillRef.catalogId, gameState);
+    if (!catalogSkill) {
+      console.error('Catalog skill not found:', skillId);
+      return;
+    }
+
+    // Check SP requirement
+    if (actor.sp < catalogSkill.spCost) {
+      console.error('Insufficient SP for skill:', { required: catalogSkill.spCost, current: actor.sp });
+      return;
+    }
+
     // Handle uses if applicable
-    if (skill.uses !== undefined) {
-      if (skill.usesLeft === undefined || skill.usesLeft <= 0) {
+    if (catalogSkill.uses !== undefined) {
+      const usesLeft = skillRef.usesLeft ?? catalogSkill.uses;
+      if (usesLeft <= 0) {
         console.error('No uses left for skill:', skillId);
         return;
       }
-      skill.usesLeft--;
     }
 
-    // Calculate new SP, ensuring it doesn't go below 0
-    const newSp = Math.max(0, actor.sp - skill.spCost);
+    // Calculate new SP and uses
+    const newSp = Math.max(0, actor.sp - catalogSkill.spCost);
+    const newUsesLeft = catalogSkill.uses !== undefined 
+      ? Math.max(0, (skillRef.usesLeft ?? catalogSkill.uses) - 1)
+      : undefined;
 
     // Update the appropriate collection based on actor type
     const newState = { ...gameState };
@@ -61,29 +87,33 @@ export function setupSkillHandlers(
           ...char,
           sp: newSp,
           skills: char.skills.map(s =>
-            s.id === skillId ? skill : s
+            s.catalogId === skillId ? { ...s, usesLeft: newUsesLeft } : s
           )
         } : char
       );
     } else if (actorType === 'globalEntity') {
-      newState.globalCollections.entities = gameState.globalCollections.entities.map(entity =>
-        entity.id === actorId ? {
-          ...entity,
-          sp: newSp,
-          skills: entity.skills.map(s =>
-            s.id === skillId ? skill : s
-          )
-        } : entity
-      );
+      newState.globalCollections = {
+        ...newState.globalCollections,
+        entities: newState.globalCollections.entities.map(entity =>
+          entity.id === actorId ? {
+            ...entity,
+            sp: newSp,
+            skills: entity.skills.map(s =>
+              s.catalogId === skillId ? { ...s, usesLeft: newUsesLeft } : s
+            )
+          } : entity
+        )
+      };
     } else {
-      newState.field = gameState.field.map(entity =>
-        entity.id === actorId ? {
-          ...entity,
+      // ✅ FIXED: Use instanceId for field entity updates
+      newState.field = gameState.field.map(entityRef =>
+        entityRef.instanceId === actorId ? {
+          ...entityRef,
           sp: newSp,
-          skills: entity.skills.map(s =>
-            s.id === skillId ? skill : s
+          skills: entityRef.skills.map(s =>
+            s.catalogId === skillId ? { ...s, usesLeft: newUsesLeft } : s
           )
-        } : entity
+        } : entityRef
       );
     }
 
@@ -101,22 +131,26 @@ export function setupSkillHandlers(
       newState.party = gameState.party.map(char =>
         char.id === actorId ? {
           ...char,
-          skills: char.skills.filter(s => s.id !== skillId)
+          skills: char.skills.filter(s => s.catalogId !== skillId)
         } : char
       );
     } else if (actorType === 'globalEntity') {
-      newState.globalCollections.entities = gameState.globalCollections.entities.map(entity =>
-        entity.id === actorId ? {
-          ...entity,
-          skills: entity.skills.filter(s => s.id !== skillId)
-        } : entity
-      );
+      newState.globalCollections = {
+        ...newState.globalCollections,
+        entities: newState.globalCollections.entities.map(entity =>
+          entity.id === actorId ? {
+            ...entity,
+            skills: entity.skills.filter(s => s.catalogId !== skillId)
+          } : entity
+        )
+      };
     } else {
-      newState.field = gameState.field.map(entity =>
-        entity.id === actorId ? {
-          ...entity,
-          skills: entity.skills.filter(s => s.id !== skillId)
-        } : entity
+      // ✅ FIXED: Use instanceId for field entity updates
+      newState.field = gameState.field.map(entityRef =>
+        entityRef.instanceId === actorId ? {
+          ...entityRef,
+          skills: entityRef.skills.filter(s => s.catalogId !== skillId)
+        } : entityRef
       );
     }
 

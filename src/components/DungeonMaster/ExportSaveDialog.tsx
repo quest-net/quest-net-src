@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Download, Image } from 'lucide-react';
-import type { GameState, Item, Entity, Character, SerializableCharacter } from '../../types/game';
+import type { GameState, Item, Entity, Character, SerializableCharacter, EntityReference, ItemReference, SkillReference, Skill } from '../../types/game';
 import { imageManager } from '../../services/ImageManager';
+import { getCatalogEntity, getCatalogItem, getCatalogSkill } from '../../utils/referenceHelpers';
 
 interface ExportSaveDialogProps {
   gameState: GameState;
@@ -17,7 +18,6 @@ interface BundledSaveFile {
         type: string;
         size: number;
       };
-      thumbnail: string;
     };
   };
 }
@@ -44,27 +44,53 @@ const ExportSaveDialog = ({ gameState }: ExportSaveDialogProps) => {
     });
   };
 
-  // Helper function to clean image references from an item
+  // ✅ UPDATED: Helper function to clean image references from an ItemReference
+  const cleanItemReferenceImages = (itemRef: ItemReference): ItemReference => ({
+    ...itemRef,
+    // ItemReference doesn't have image property - images are in catalog
+  });
+
+  // ✅ UPDATED: Helper function to clean image references from a SkillReference  
+  const cleanSkillReferenceImages = (skillRef: SkillReference): SkillReference => ({
+    ...skillRef,
+    // SkillReference doesn't have image property - images are in catalog
+  });
+
+  // Helper function to clean image references from an item (catalog)
   const cleanItemImages = (item: Item): Item => ({
     ...item,
     image: undefined
   });
 
-  // Helper function to clean image references from an entity
+  // Helper function to clean image references from a skill (catalog)
+  const cleanSkillImages = (skill: Skill): Skill => ({
+    ...skill,
+    image: undefined
+  });
+
+  // Helper function to clean image references from an entity (catalog)
   const cleanEntityImages = (entity: Entity): Entity => ({
     ...entity,
     image: undefined,
-    inventory: entity.inventory.map(([item, count]) => [cleanItemImages(item), count]),
-    skills: entity.skills.map(skill => ({ ...skill, image: undefined }))
+    inventory: entity.inventory.map(([itemRef, count]) => [cleanItemReferenceImages(itemRef), count]),
+    skills: entity.skills.map(skillRef => cleanSkillReferenceImages(skillRef))
   });
 
-  // Helper function to clean image references from a character
+  // ✅ UPDATED: Helper function to clean image references from an EntityReference
+  const cleanEntityReferenceImages = (entityRef: EntityReference): EntityReference => ({
+    ...entityRef,
+    // EntityReference doesn't have image property - images are in catalog
+    inventory: entityRef.inventory.map(([itemRef, count]) => [cleanItemReferenceImages(itemRef), count]),
+    skills: entityRef.skills.map(skillRef => cleanSkillReferenceImages(skillRef))
+  });
+
+  // ✅ UPDATED: Helper function to clean image references from a character
   const cleanCharacterImages = (character: SerializableCharacter): SerializableCharacter => ({
     ...character,
     image: undefined,
-    inventory: character.inventory.map(([item, count]) => [cleanItemImages(item), count]),
-    equipment: character.equipment.map(item => cleanItemImages(item)),
-    skills: character.skills.map(skill => ({ ...skill, image: undefined }))
+    inventory: character.inventory.map(([itemRef, count]) => [cleanItemReferenceImages(itemRef), count]),
+    equipment: character.equipment.map(itemRef => cleanItemReferenceImages(itemRef)),
+    skills: character.skills.map(skillRef => cleanSkillReferenceImages(skillRef))
   });
 
   const stripPlayerIds = (state: GameState): GameState => {
@@ -77,7 +103,7 @@ const ExportSaveDialog = ({ gameState }: ExportSaveDialogProps) => {
     };
   };
 
-  // Helper function to clean all image references from the game state
+  // ✅ UPDATED: Helper function to clean all image references from the game state
   const cleanGameStateImages = (state: GameState): GameState => {
     return {
       ...state,
@@ -85,11 +111,11 @@ const ExportSaveDialog = ({ gameState }: ExportSaveDialogProps) => {
       globalCollections: {
         ...state.globalCollections,
         items: state.globalCollections.items.map(cleanItemImages),
-        skills: state.globalCollections.skills.map(skill => ({ ...skill, image: undefined })),
+        skills: state.globalCollections.skills.map(cleanSkillImages),
         entities: state.globalCollections.entities.map(cleanEntityImages),
         images: [], // Clear all images from global collections
       },
-      field: state.field.map(cleanEntityImages),
+      field: state.field.map(cleanEntityReferenceImages), // ✅ Updated to handle EntityReference[]
       display: {
         ...state.display,
         environmentImageId: undefined,
@@ -139,18 +165,59 @@ const ExportSaveDialog = ({ gameState }: ExportSaveDialogProps) => {
         images: {}
       };
 
+      // ✅ UPDATED: Collect image IDs with proper EntityReference resolution
       const imageIds = Array.from(new Set([
         ...gameState.globalCollections.images.map(img => img.id),
         ...gameState.party.map(char => char.image).filter(Boolean),
-        ...gameState.party.flatMap(char => 
-          char.inventory.map(([item]) => item.image)
-            .concat(char.equipment.map(item => item.image))
-            .concat(char.skills.map(skill => skill.image))
-        ).filter(Boolean),
+        // ✅ UPDATED: Handle ItemReference and SkillReference in character inventories/equipment/skills
+        ...gameState.party.flatMap(char => {
+          const itemImages: (string | undefined)[] = [];
+          
+          // Resolve ItemReference images from catalog
+          char.inventory.forEach(([itemRef]) => {
+            const catalogItem = getCatalogItem(itemRef.catalogId, gameState);
+            if (catalogItem?.image) itemImages.push(catalogItem.image);
+          });
+          
+          char.equipment.forEach(itemRef => {
+            const catalogItem = getCatalogItem(itemRef.catalogId, gameState);
+            if (catalogItem?.image) itemImages.push(catalogItem.image);
+          });
+          
+          // Resolve SkillReference images from catalog
+          char.skills.forEach(skillRef => {
+            const catalogSkill = getCatalogSkill(skillRef.catalogId, gameState);
+            if (catalogSkill?.image) itemImages.push(catalogSkill.image);
+          });
+        
+          return itemImages;
+        }).filter(Boolean),
         ...gameState.globalCollections.items.map(item => item.image).filter(Boolean),
         ...gameState.globalCollections.skills.map(skill => skill.image).filter(Boolean),
         ...gameState.globalCollections.entities.map(entity => entity.image).filter(Boolean),
-        ...gameState.field.map(entity => entity.image).filter(Boolean)
+        // ✅ UPDATED: Handle EntityReference field entities - resolve images from catalog
+        ...gameState.field.map(entityRef => {
+          const catalogEntity = getCatalogEntity(entityRef.catalogId, gameState);
+          return catalogEntity?.image;
+        }).filter(Boolean),
+        // ✅ UPDATED: Handle EntityReference inventory and skill images
+        ...gameState.field.flatMap(entityRef => {
+          const itemImages: (string | undefined)[] = [];
+          
+          // Resolve ItemReference images from field entity inventories
+          entityRef.inventory.forEach(([itemRef]) => {
+            const catalogItem = getCatalogItem(itemRef.catalogId, gameState);
+            if (catalogItem?.image) itemImages.push(catalogItem.image);
+          });
+          
+          // Resolve SkillReference images from field entity skills
+          entityRef.skills.forEach(skillRef => {
+            const catalogSkill = getCatalogSkill(skillRef.catalogId, gameState);
+            if (catalogSkill?.image) itemImages.push(catalogSkill.image);
+          });
+          
+          return itemImages;
+        }).filter(Boolean)
       ] as string[]));
 
       let processedImages = 0;
@@ -173,8 +240,7 @@ const ExportSaveDialog = ({ gameState }: ExportSaveDialogProps) => {
                   name: file.name,
                   type: file.type,
                   size: file.size
-                },
-                thumbnail: imageData.thumbnail
+                }
               };
               
               processedImages++;

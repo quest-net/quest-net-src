@@ -1,23 +1,24 @@
+// src/hooks/usePeerSync.ts
+
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { selfId } from 'trystero';
 import type { Room } from '../types/room';
-import { GameState, GameImage, SerializableSaveState, initialGameState, Item, Skill, Character, Entity } from '../types/game';
+import { GameState, GameImage, SerializableSaveState, initialGameState, Item, Skill, Character, Entity, EntityReference } from '../types/game';
 import { imageManager } from '../services/ImageManager';
 import { roomManager } from '../services/RoomManager';
 import { isStateUpdateSafe } from '../utils/gameStateSafety';
+import { getCatalogItem, getCatalogSkill, getCatalogEntity } from '../utils/referenceHelpers';
 
 type ImageCategory = 'item' | 'skill' | 'character' | 'entity' | 'gallery';
 
 interface ImageTransitData {
   data: string;
   originalId: string;
-  thumbnail: string;
 }
 
-interface TransitGameImage extends Omit<GameImage, 'thumbnail'> {
+interface TransitGameImage extends GameImage {
   data?: string;
   originalId?: string;
-  thumbnail: string;
 }
 
 interface TransitCharacter extends Character {
@@ -34,12 +35,17 @@ interface TransitEntity extends Omit<Entity, 'image'> {
   imageData?: ImageTransitData;
 }
 
-interface TransitSkill extends Omit<Skill, 'image'>{
+interface TransitSkill extends Omit<Skill, 'image'> {
   image?: string;
   imageData?: ImageTransitData;
 }
 
-interface TransitGameState extends Omit<GameState, 'party'> {
+// EntityReference transit type - same as EntityReference but with imageData for entity images
+interface TransitEntityReference extends EntityReference {
+  imageData?: ImageTransitData;
+}
+
+interface TransitGameState extends Omit<GameState, 'party' | 'field'> {
   party: TransitCharacter[];
   globalCollections: {
     items: TransitItem[];
@@ -48,7 +54,7 @@ interface TransitGameState extends Omit<GameState, 'party'> {
     images: TransitGameImage[];
     entities: TransitEntity[];
   };
-  field: TransitEntity[];
+  field: TransitEntityReference[];
 }
 
 interface TransitSaveState extends Omit<SerializableSaveState, 'gameState'> {
@@ -80,19 +86,22 @@ export function usePeerSync(isRoomCreator: boolean) {
       // Add character's own image
       if (playerChar.image) requiredIds.add(playerChar.image);
       
-      // Add images from their inventory items
-      playerChar.inventory.forEach(([item]) => {
-        if (item.image) requiredIds.add(item.image);
+      // Add images from their inventory items (now references)
+      playerChar.inventory.forEach(([itemRef]) => {
+        const catalogItem = getCatalogItem(itemRef.catalogId, state);
+        if (catalogItem?.image) requiredIds.add(catalogItem.image);
       });
       
-      // Add images from their equipment
-      playerChar.equipment.forEach(item => {
-        if (item.image) requiredIds.add(item.image);
+      // Add images from their equipment (now references)
+      playerChar.equipment.forEach(itemRef => {
+        const catalogItem = getCatalogItem(itemRef.catalogId, state);
+        if (catalogItem?.image) requiredIds.add(catalogItem.image);
       });
       
-      // Add images from their skills
-      playerChar.skills.forEach(skill => {
-        if (skill.image) requiredIds.add(skill.image);
+      // Add images from their skills (now references)
+      playerChar.skills.forEach(skillRef => {
+        const catalogSkill = getCatalogSkill(skillRef.catalogId, state);
+        if (catalogSkill?.image) requiredIds.add(catalogSkill.image);
       });
     }
     
@@ -101,9 +110,10 @@ export function usePeerSync(isRoomCreator: boolean) {
       if (char.image) requiredIds.add(char.image);
     });
   
-    // Add currently visible field entities
-    state.field.forEach(entity => {
-      if (entity.image) requiredIds.add(entity.image);
+    // Add currently visible field entities (now references)
+    state.field.forEach(entityRef => {
+      const catalogEntity = getCatalogEntity(entityRef.catalogId, state);
+      if (catalogEntity?.image) requiredIds.add(catalogEntity.image);
     });
   
     // Current environment/focus images if visible
@@ -132,9 +142,8 @@ export function usePeerSync(isRoomCreator: boolean) {
 
       try {
         const file = await imageManager.getImage(obj.image);
-        const thumbnail = imageManager.getThumbnail(obj.image);
         
-        if (file && thumbnail) {
+        if (file) {
           const dataUrl = await new Promise<string>((resolve) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result as string);
@@ -145,7 +154,6 @@ export function usePeerSync(isRoomCreator: boolean) {
             ...obj,
             imageData: {
               data: dataUrl,
-              thumbnail,
               originalId: obj.image
             }
           };
@@ -157,16 +165,15 @@ export function usePeerSync(isRoomCreator: boolean) {
       return obj;
     };
 
-    const processedImages = await Promise.all(
-      state.globalCollections.images
-        .filter(img => requiredImages.has(img.id))
-        .map(async (img) => {
-          if (shouldIncludeImageData(img.id)) {
+    // Process entity references for field
+    const processedField: TransitEntityReference[] = await Promise.all(
+      state.field.map(async (entityRef): Promise<TransitEntityReference> => {
+        const catalogEntity = getCatalogEntity(entityRef.catalogId, state);
+        if (catalogEntity?.image && shouldIncludeImageData(catalogEntity.image)) {
           try {
-            const file = await imageManager.getImage(img.id);
-            const thumbnail = imageManager.getThumbnail(img.id);
+            const file = await imageManager.getImage(catalogEntity.image);
             
-            if (file && thumbnail) {
+            if (file) {
               const dataUrl = await new Promise<string>((resolve) => {
                 const reader = new FileReader();
                 reader.onloadend = () => resolve(reader.result as string);
@@ -174,100 +181,98 @@ export function usePeerSync(isRoomCreator: boolean) {
               });
 
               return {
-                ...img,
-                data: dataUrl,
-                thumbnail,
-                originalId: img.id
+                ...entityRef,
+                imageData: {
+                  data: dataUrl,
+                  originalId: catalogEntity.image
+                }
               };
             }
           } catch (err) {
-            console.error(`Failed to prepare image for transit:`, err);
+            console.error(`Failed to prepare entity image for transit:`, err);
           }
         }
-        return {
-          ...img,
-          thumbnail: imageManager.getThumbnail(img.id) || ''
-        };
+        return entityRef;
       })
     );
 
-    const [processedItems, processedSkills, processedParty, processedEntities, processedField] = await Promise.all([
+    const processedImages = await Promise.all(
+      state.globalCollections.images
+        .filter(img => requiredImages.has(img.id))
+        .map(async (img) => {
+          if (shouldIncludeImageData(img.id)) {
+            try {
+              const file = await imageManager.getImage(img.id);
+              
+              if (file) {
+                const dataUrl = await new Promise<string>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.readAsDataURL(file);
+                });
+
+                return {
+                  ...img,
+                  data: dataUrl,
+                  originalId: img.id
+                };
+              }
+            } catch (err) {
+              console.error(`Failed to prepare image for transit:`, err);
+            }
+          }
+          return img;
+        })
+    );
+
+    const [processedItems, processedSkills, processedParty, processedEntities] = await Promise.all([
       Promise.all(state.globalCollections.items.map(processObjectWithImage)),
       Promise.all(state.globalCollections.skills.map(processObjectWithImage)),
       Promise.all(state.party.map(processObjectWithImage)),
-      Promise.all(state.globalCollections.entities.map(processObjectWithImage)),
-      Promise.all(state.field.map(processObjectWithImage))
+      Promise.all(state.globalCollections.entities.map(processObjectWithImage))
     ]);
 
     return {
       ...state,
       party: processedParty,
       globalCollections: {
-        ...state.globalCollections,
-        images: processedImages,
         items: processedItems,
         skills: processedSkills,
+        statusEffects: state.globalCollections.statusEffects,
+        images: processedImages,
         entities: processedEntities
       },
       field: processedField
     };
   };
-  const clearPlayerAssignment = useCallback(async (peerId: string) => {
-    if (!isRoomCreator) return; // Only DM should clear assignments
 
-    const updatedState = {
+  const clearPlayerAssignment = useCallback(async (playerId: string) => {
+    const newState = {
       ...gameStateRef.current,
-      party: gameStateRef.current.party.map(character => {
-        if (character.playerId === peerId) {
-          console.log(`[usePeerSync] Clearing player assignment for character ${character.name} (${character.id})`);
-          return {
-            ...character,
-            playerId: undefined
-          };
-        }
-        return character;
-      })
+      party: gameStateRef.current.party.map(char => 
+        char.playerId === playerId 
+          ? { ...char, playerId: undefined }
+          : char
+      )
     };
+    gameStateRef.current = newState;
+    setGameState(newState);
+  }, []);
 
-    gameStateRef.current = updatedState;
-    setGameState(updatedState);
-
-    // Safely store the current sendGameState reference
-    const sendGameState = sendGameStateRef.current;
-    if (sendGameState) {
-      const remainingPeers = roomManager.getConnectedPeers();
-      // Use Promise.all to handle multiple async operations
-      await Promise.all(remainingPeers.map(async (peerId) => {
-        const transitState = await prepareStateForTransit(updatedState, peerId);
-        sendGameState({
-          gameState: transitState,
-          lastModified: Date.now(),
-          roomCreator: selfId
-        }, peerId);
-      }));
-    }
-  }, [isRoomCreator]);
-  
-  const processReceivedState = async (receivedState: TransitGameState): Promise<GameState> => {
-
-    // If we're the DM, check for dangerous state changes
-    if (isRoomCreator) {
-      const safetyCheck = isStateUpdateSafe(gameStateRef.current, receivedState);
+  const processReceivedState = useCallback(async (receivedState: TransitGameState): Promise<GameState> => {
+    // Check for unsafe state updates
+    const safetyCheck = isStateUpdateSafe(gameStateRef.current, receivedState);
+    if (!safetyCheck.isSafe) {
+      console.error(
+        `[usePeerSync] Unsafe state update detected! Disconnecting.`,
+        '\nMetrics:', safetyCheck.metrics,
+        '\nReason:', safetyCheck.reason
+      );
       
-      if (!safetyCheck.isSafe) {
-        console.error(
-          `[SAFETY ALERT] Dangerous gamestate change detected (${safetyCheck.metrics.overallDiffPercentage.toFixed(1)}% change). Disconnecting.`,
-          '\nMetrics:', safetyCheck.metrics,
-          '\nReason:', safetyCheck.reason
-        );
-        
-        // Leave the room immediately
-        roomManager.leaveRoom();
-        
-        // Return current state unchanged
-        return gameStateRef.current;
-      }
+      roomManager.leaveRoom();
+      return gameStateRef.current;
     }
+
     const processObjectWithImage = async <T extends { image?: string, imageData?: ImageTransitData }>(
       obj: T
     ): Promise<Omit<T, 'imageData'>> => {
@@ -282,8 +287,7 @@ export function usePeerSync(isRoomCreator: boolean) {
           type: 'image/png'
         });
     
-        if (obj.imageData.originalId && obj.imageData.thumbnail) {
-          // Determine the category based on object type
+        if (obj.imageData.originalId) {
           let category: ImageCategory = 'gallery';
           if ('damage' in obj) category = 'skill';
           else if ('isEquippable' in obj) category = 'item';
@@ -298,10 +302,9 @@ export function usePeerSync(isRoomCreator: boolean) {
               description: 'Received image',
               createdAt: Date.now(),
               size: file.size,
-              type: file.type,
-              thumbnail: obj.imageData.thumbnail
+              type: file.type
             },
-            category // Pass the determined category
+            category
           );
     
           imageManager.markImageAsKnownByPeer(obj.imageData.originalId, selfId);
@@ -320,12 +323,48 @@ export function usePeerSync(isRoomCreator: boolean) {
       return rest;
     };
 
-    const [processedParty, processedItems, processedSkills, processedEntities, processedField, processedImages] = await Promise.all([
+    // Process field entity references separately (they have different structure)
+    const processedField: EntityReference[] = await Promise.all(
+      receivedState.field.map(async (entityRef): Promise<EntityReference> => {
+        if (entityRef.imageData) {
+          // Process the image data for entity references
+          try {
+            const response = await fetch(entityRef.imageData.data);
+            const blob = await response.blob();
+            const file = new File([blob], `entity-${entityRef.imageData.originalId}.png`, {
+              type: 'image/png'
+            });
+
+            await imageManager.addReceivedImage(
+              file,
+              {
+                id: entityRef.imageData.originalId,
+                name: file.name,
+                description: 'Received entity image',
+                createdAt: Date.now(),
+                size: file.size,
+                type: file.type
+              },
+              'entity'
+            );
+
+            imageManager.markImageAsKnownByPeer(entityRef.imageData.originalId, selfId);
+          } catch (err) {
+            console.error('Failed to process entity reference image:', err);
+          }
+        }
+
+        // Return the entity reference without imageData
+        const { imageData, ...cleanEntityRef } = entityRef;
+        return cleanEntityRef;
+      })
+    );
+
+    const [processedParty, processedItems, processedSkills, processedEntities, processedImages] = await Promise.all([
       Promise.all(receivedState.party.map(processObjectWithImage)),
       Promise.all(receivedState.globalCollections.items.map(processObjectWithImage)),
       Promise.all(receivedState.globalCollections.skills.map(processObjectWithImage)),
       Promise.all(receivedState.globalCollections.entities.map(processObjectWithImage)),
-      Promise.all(receivedState.field.map(processObjectWithImage)),
       Promise.all(receivedState.globalCollections.images.map(async (image) => {
         if ('data' in image && image.data && image.originalId) {
           try {
@@ -336,42 +375,40 @@ export function usePeerSync(isRoomCreator: boolean) {
             });
 
             let category: ImageCategory = 'gallery';
-            // Dynamically determine category for global collections
-            if (receivedState.globalCollections.items.some(item => item.image === image.originalId)) {
+
+            // Check environment image first as it should maintain high resolution
+            if (receivedState.display.environmentImageId === image.id || 
+                receivedState.display.focusImageId === image.id) {
+              category = 'gallery';
+            }
+            // Check items
+            else if (receivedState.globalCollections.items.some(item => item.image === image.id)) {
               category = 'item';
-            } else if (receivedState.globalCollections.skills.some(skill => skill.image === image.originalId)) {
+            }
+            // Check skills
+            else if (receivedState.globalCollections.skills.some(skill => skill.image === image.id)) {
               category = 'skill';
-            } else if (receivedState.party.some(char => char.image === image.originalId)) {
+            }
+            // Check characters
+            else if (receivedState.party.some(char => char.image === image.id)) {
               category = 'character';
-            } else if (
-              [...receivedState.globalCollections.entities, ...receivedState.field].some(
-                entity => entity.image === image.originalId
-              )
-            ) {
+            }
+            // Check entities
+            else if (receivedState.globalCollections.entities.some(entity => entity.image === image.id) ||
+                     receivedState.field.some(entityRef => {
+                       const catalogEntity = getCatalogEntity(entityRef.catalogId, receivedState);
+                       return catalogEntity?.image === image.id;
+                     })) {
               category = 'entity';
             }
 
-            await imageManager.addReceivedImage(file, {
-              id: image.originalId,
-              name: image.name,
-              description: image.description,
-              createdAt: image.createdAt,
-              size: file.size,
-              type: file.type,
-              thumbnail: image.thumbnail
-            }, category);
-
+            const gameImage = await imageManager.addReceivedImage(file, image, category);
             imageManager.markImageAsKnownByPeer(image.originalId, selfId);
-
-            const { data, ...imageWithoutData } = image;
-            return {
-              ...imageWithoutData,
-              id: image.originalId
-            };
-          } catch (error) {
-            console.error('Failed to process collection image:', error);
-            const { data, ...imageWithoutData } = image;
-            return imageWithoutData;
+            return gameImage;
+          } catch (err) {
+            console.error('Failed to process received image:', err);
+            const { data, originalId, ...cleanImage } = image;
+            return cleanImage;
           }
         }
         return image;
@@ -382,15 +419,15 @@ export function usePeerSync(isRoomCreator: boolean) {
       ...receivedState,
       party: processedParty,
       globalCollections: {
-        ...receivedState.globalCollections,
-        images: processedImages,
         items: processedItems,
         skills: processedSkills,
+        statusEffects: receivedState.globalCollections.statusEffects,
+        images: processedImages,
         entities: processedEntities
       },
       field: processedField
     };
-  };
+  }, []);
 
   const broadcastGameState = useCallback(async () => {
     if (isRoomCreator && sendGameStateRef.current) {
@@ -444,11 +481,9 @@ export function usePeerSync(isRoomCreator: boolean) {
     getGameState(async (state, peerId) => {
       const processedState = await processReceivedState(state.gameState);
       
-      // Acknowledge only required images
       const requiredImages = getRequiredImageIds(processedState, selfId);
       const imageIds = new Set<string>();
     
-      // Only acknowledge images we actually need right now
       processedState.globalCollections.images
         .filter(img => requiredImages.has(img.id))
         .forEach(img => imageIds.add(img.id));
@@ -473,7 +508,6 @@ export function usePeerSync(isRoomCreator: boolean) {
       }
     });
 
-    // Enhanced disconnect handling with proper async handling
     roomManager.events.on('peerDisconnected', async (peerId) => {
       console.log(`[usePeerSync] Peer disconnected: ${peerId}`);
       imageManager.clearPeerData(peerId);
@@ -484,7 +518,6 @@ export function usePeerSync(isRoomCreator: boolean) {
       if (!isRoomCreator) {
         requestGameState({ from: selfId }, peerId);
       } else {
-        // Add delay and state check
         setTimeout(async () => {
           console.log('[usePeerSync] Checking state before sending to new peer:', {
             isInitialized: isStateInitialized.current,
@@ -493,7 +526,6 @@ export function usePeerSync(isRoomCreator: boolean) {
 
           if (!isStateInitialized.current) {
             console.warn('[usePeerSync] State not yet initialized, waiting...');
-            // Wait a bit longer and check again
             setTimeout(async () => {
               if (gameStateRef.current !== initialGameState) {
                 const transitState = await prepareStateForTransit(gameStateRef.current, peerId);
@@ -525,7 +557,7 @@ export function usePeerSync(isRoomCreator: boolean) {
         clearPlayerAssignment(peerId).catch(console.error);
       });
     };
-  }, [isRoomCreator, clearPlayerAssignment]);
+  }, [isRoomCreator, clearPlayerAssignment, processReceivedState]);
 
   return {
     gameState,

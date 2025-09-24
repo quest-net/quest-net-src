@@ -1,3 +1,5 @@
+// src/components/DungeonMaster/handlers/setupTransferHandlers.ts
+
 import type { Room } from 'trystero/nostr';
 import type { GameState } from '../../../types/game';
 import type { 
@@ -7,6 +9,7 @@ import type {
   TransferNotificationPayload 
 } from '../../../types/transfer';
 import { TransferActions } from '../../../types/transfer';
+import { getCatalogItem } from '../../../utils/referenceHelpers';
 
 export function setupTransferHandlers(
   room: Room,
@@ -31,13 +34,21 @@ export function setupTransferHandlers(
       return;
     }
 
-    const itemSlotIndex = fromCharacter.inventory.findIndex(([item]) => item.id === itemId);
+    // Find item slot by catalogId (now working with ItemReference)
+    const itemSlotIndex = fromCharacter.inventory.findIndex(([itemRef]) => itemRef.catalogId === itemId);
     if (itemSlotIndex === -1) {
       console.error('Item not found in inventory:', itemId);
       return;
     }
 
-    const [item] = fromCharacter.inventory[itemSlotIndex];
+    const [itemRef] = fromCharacter.inventory[itemSlotIndex];
+
+    // Get catalog item for notification
+    const catalogItem = getCatalogItem(itemRef.catalogId, gameState);
+    if (!catalogItem) {
+      console.error('Catalog item not found:', itemId);
+      return;
+    }
 
     // Find recipient and determine if confirmation is needed
     let requiresConfirmation = false;
@@ -60,15 +71,18 @@ export function setupTransferHandlers(
           itemId,
           fromId,
           fromPlayerId: playerId,
-          item
+          item: catalogItem // Send catalog item for display
         }, recipientPlayerId); // Send only to recipient player
       }
     } else {
-      const toEntity = gameState.field.find(e => e.id === toId);
+      // Field entity lookup now uses instanceId
+      const toEntity = gameState.field.find(e => e.instanceId === toId);
       if (!toEntity) {
         console.error('Recipient entity not found:', toId);
         return;
       }
+      // Field entities don't require confirmation
+      requiresConfirmation = false;
     }
 
     // Record the transfer intent
@@ -137,7 +151,7 @@ export function setupTransferHandlers(
     pendingTransfers.delete(transferId);
   });
 
-  // Helper function to execute transfers
+  // Helper function to execute transfers with reference system
   function executeTransfer(transfer: TransferIntent) {
     const newState = { ...gameState };
     
@@ -145,7 +159,7 @@ export function setupTransferHandlers(
     const fromCharacter = newState.party.find(c => c.id === transfer.fromId);
     if (!fromCharacter) return;
 
-    // Get the item being transferred
+    // Get the item slot being transferred (now ItemReference)
     const itemSlot = fromCharacter.inventory[transfer.inventorySlotIndex];
     if (!itemSlot) return;
 
@@ -160,7 +174,8 @@ export function setupTransferHandlers(
       if (!toCharacter) return;
       toCharacter.inventory.push(itemSlot);
     } else {
-      const toEntity = newState.field.find(e => e.id === transfer.toId);
+      // Field entity lookup now uses instanceId
+      const toEntity = newState.field.find(e => e.instanceId === transfer.toId);
       if (!toEntity) return;
       toEntity.inventory.push(itemSlot);
     }

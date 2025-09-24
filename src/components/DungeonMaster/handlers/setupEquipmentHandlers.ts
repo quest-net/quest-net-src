@@ -1,5 +1,7 @@
+// src/components/DungeonMaster/handlers/setupEquipmentHandlers.ts
+
 import type { Room } from 'trystero/nostr';
-import type { GameState, Item } from '../../../types/game';
+import type { GameState, ItemReference, InventorySlot } from '../../../types/game';
 
 // These must be 12 bytes or less for Trystero
 export const EquipmentActions = {
@@ -29,17 +31,16 @@ export function setupEquipmentHandlers(
       return;
     }
 
-    // Get the item being unequipped
-    const equippedItem = character.equipment[equipmentIndex];
-    if (!equippedItem) {
+    // Get the item reference being unequipped
+    const equippedItemRef = character.equipment[equipmentIndex];
+    if (!equippedItemRef) {
       console.error('Equipment slot not found:', equipmentIndex);
       return;
     }
 
-    // Create a new inventory slot for the unequipped item
-    // Note: We always create a new slot even if there's an identical item
-    // in the inventory to preserve item instances
-    const newInventorySlot: [Item, number] = [{ ...equippedItem }, 1];
+    // Create a new inventory slot for the unequipped item reference
+    // We preserve the ItemReference with its current usesLeft value
+    const newInventorySlot: InventorySlot = [{ ...equippedItemRef }, 1];
 
     // Update the game state
     onGameStateChange({
@@ -49,9 +50,9 @@ export function setupEquipmentHandlers(
 
         return {
           ...char,
-          // Remove the item from equipment
+          // Remove the item reference from equipment
           equipment: char.equipment.filter((_, index) => index !== equipmentIndex),
-          // Add the item to inventory as a new slot
+          // Add the item reference to inventory as a new slot
           inventory: [...char.inventory, newInventorySlot]
         };
       })

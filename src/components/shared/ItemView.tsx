@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Room } from 'trystero/nostr';
-import { Item, GameState, Character } from '../../types/game';
+import { Item, GameState, Character, ItemReference, EntityReference } from '../../types/game';
 import BasicObjectView from '../ui/BasicObjectView';
 import Modal from './Modal';
 import { useItemActions } from '../../actions/itemActions';
@@ -11,12 +11,21 @@ import { Plus, Minus, RefreshCw } from 'lucide-react';
 import TransferModal from './TransferModal';
 import TransferWaitScreen from './TransferWaitScreen';
 import GridMenu, { ActionType } from '../ui/GridMenu';
-
+import { 
+  getCatalogItem, 
+  getCatalogEntity,
+  getItemReferenceName, 
+  getItemReferenceUsesLeft,
+  itemReferenceHasUses,
+  isValidItemReference 
+} from '../../utils/referenceHelpers';
 
 interface ItemViewProps {
-  item: Item;
-  inventorySlotIndex?: number;
-  equipmentIndex?: number;
+  // Either catalog viewing OR instance viewing
+  catalogId?: string;                    // For DM catalog mode
+  itemReference?: ItemReference;         // For instance viewing
+  inventorySlotIndex?: number;          // Required when itemReference provided for inventory items
+  equipmentIndex?: number;              // Required when itemReference provided for equipped items
   isEquipped?: boolean;
   onClose?: () => void;
   isRoomCreator?: boolean;
@@ -28,24 +37,25 @@ interface ItemViewProps {
 }
 
 export const ItemView: React.FC<ItemViewProps> = ({
-    item: initialItem,
-    inventorySlotIndex,
-    equipmentIndex,
-    isEquipped = false,
-    onClose,
-    isRoomCreator = false,
-    actorId,
-    actorType,
-    room,
-    gameState,
-    onGameStateChange,
-  }) => {
+  catalogId,
+  itemReference: initialItemReference,
+  inventorySlotIndex,
+  equipmentIndex,
+  isEquipped = false,
+  onClose,
+  isRoomCreator = false,
+  actorId,
+  actorType,
+  room,
+  gameState,
+  onGameStateChange,
+}) => {
   const [showEditor, setShowEditor] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [item, setItem] = useState(initialItem);
+  const [itemReference, setItemReference] = useState<ItemReference | null>(initialItemReference || null);
   const [customUses, setCustomUses] = useState<number | undefined>(undefined);
 
-  // New transfer-related state
+  // Transfer-related state
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showTransferWait, setShowTransferWait] = useState(false);
   const [transferRecipientName, setTransferRecipientName] = useState<string>('');
@@ -54,172 +64,178 @@ export const ItemView: React.FC<ItemViewProps> = ({
   const equipmentActions = useEquipmentActions(room, gameState, onGameStateChange, isRoomCreator);
   const transferActions = useTransferActions(room, gameState, onGameStateChange, isRoomCreator);
 
+  // Determine which catalog ID to use for lookups
+  const effectiveCatalogId = catalogId || itemReference?.catalogId;
+  
+  // Get catalog item for display data
+  const catalogItem = effectiveCatalogId ? getCatalogItem(effectiveCatalogId, gameState) : null;
+  
+  // Context detection
+  const isViewingFromCatalog = !!catalogId && !itemReference;
+  const isViewingInstance = !!itemReference;
 
-  const isViewingFromCatalog = !actorId && inventorySlotIndex === undefined;
-  const canEditItem = isRoomCreator && isViewingFromCatalog;
+  // Instance-specific data (only available when viewing an instance)
+  const instanceUsesLeft = itemReference ? getItemReferenceUsesLeft(itemReference, gameState) : undefined;
+  const hasUses = itemReferenceHasUses(itemReference || { catalogId: effectiveCatalogId || '' }, gameState);
 
+  // Keep itemReference state in sync with game state for instances
+  useEffect(() => {
+    if (!isViewingInstance || !actorId || !actorType) return;
 
-    // Get available actions for QuarterCircleMenu
-    const getAvailableActions = (): ActionType[] => {
-      const actions: ActionType[] = [];
-    
-      if (canEditItem) {
-        actions.push('edit', 'delete');
+    let updatedReference: ItemReference | undefined;
+
+    if (inventorySlotIndex !== undefined) {
+      // Update from inventory
+      let actor: any;
+      switch (actorType) {
+        case 'character':
+          actor = gameState.party.find(c => c.id === actorId);
+          break;
+        case 'globalEntity':
+          actor = gameState.globalCollections.entities.find(e => e.id === actorId);
+          break;
+        case 'fieldEntity':
+          actor = gameState.field.find(e => e.instanceId === actorId);
+          break;
       }
-    
-      if (actorId) {
-        // Add use action if item has uses, regardless of equipped status
-        if (item.uses !== undefined && (item.usesLeft === undefined || item.usesLeft > 0)) {
-          actions.push('use');
-        }
-    
-        if (isEquipped) {
-          actions.push('unequip');
-        } else {
-          if (item.isEquippable && actorType === 'character') {
-            actions.push('equip');
-          }
-          if (actorType === 'character' && !isRoomCreator) {
-            actions.push('transfer');
-          }
-          actions.push('discard');
-        }
+      
+      const inventorySlot = actor?.inventory?.[inventorySlotIndex];
+      if (inventorySlot) {
+        updatedReference = inventorySlot[0]; // First element is ItemReference
       }
-    
-      return actions;
-    };
+    } else if (equipmentIndex !== undefined && actorType === 'character') {
+      // Update from equipment
+      const character = gameState.party.find(c => c.id === actorId);
+      updatedReference = character?.equipment?.[equipmentIndex];
+    }
+
+    if (updatedReference && isValidItemReference(updatedReference, gameState)) {
+      setItemReference(updatedReference);
+    }
+  }, [gameState, actorId, actorType, inventorySlotIndex, equipmentIndex, isViewingInstance]);
+
+  // Validation - moved after hooks
+  if (!effectiveCatalogId || !catalogItem) {
+    return (
+      <div className="p-4 text-center">
+        <p className="text-red-500">Error: Invalid item reference or catalog ID</p>
+        <button onClick={onClose} className="mt-2 px-4 py-2 bg-gray-500 text-white rounded">
+          Close
+        </button>
+      </div>
+    );
+  }
+
+  // Helper function to determine actorType if not provided
+  const determineActorType = (actorId: string): 'character' | 'globalEntity' | 'fieldEntity' | null => {
+    if (gameState.party.find(c => c.id === actorId)) return 'character';
+    if (gameState.globalCollections.entities.find(e => e.id === actorId)) return 'globalEntity';
+    if (gameState.field.find(e => e.instanceId === actorId)) return 'fieldEntity';
+    return null;
+  };
+
+  // Get available actions for GridMenu
+  const getAvailableActions = (): ActionType[] => {
+    const actions: ActionType[] = [];
+
+    if (isRoomCreator && isViewingFromCatalog) {
+      actions.push('edit', 'delete');
+    }
+
+    if (isViewingInstance && actorId) {
+      if (!hasUses || (instanceUsesLeft !== undefined && instanceUsesLeft > 0)) {
+        actions.push('use');
+      }
+
+      if (isEquipped && equipmentIndex !== undefined) {
+        actions.push('unequip');
+      } else if (!isEquipped && inventorySlotIndex !== undefined) {
+        if (catalogItem.isEquippable && actorType === 'character') {
+          actions.push('equip');
+        }
+        actions.push('transfer', 'discard');
+      }
+
+
+    }
+
+    return actions;
+  };
 
   // Handle menu actions
-  const handleMenuAction = (action: ActionType) => {
+  const handleMenuAction = async (action: ActionType) => {
     switch (action) {
+      case 'use':
+        await handleUse();
+        break;
+      case 'equip':
+        await handleEquip();
+        break;
+      case 'unequip':
+        await handleUnequip();
+        break;
+      case 'transfer':
+        setShowTransferModal(true);
+        break;
+      case 'discard':
+        await handleDiscard();
+        break;
       case 'edit':
         setShowEditor(true);
         break;
       case 'delete':
         setConfirmDelete(true);
         break;
-      case 'use':
-        handleUse();
-        break;
-      case 'equip':
-        handleEquip();
-        break;
-      case 'unequip':
-        handleUnequip();
-        break;
-      case 'transfer':
-        setShowTransferModal(true);
-        break;
-      case 'discard':
-        handleDiscard();
-        break;
     }
   };
 
-  const determineActorType = (actorId: string): 'character' | 'globalEntity' | 'fieldEntity' | undefined => {
-    if (gameState.party.some(c => c.id === actorId)) {
-      return 'character';
-    }
-    if (gameState.globalCollections.entities.some(e => e.id === actorId)) {
-      return 'globalEntity';
-    }
-    if (gameState.field.some(e => e.id === actorId)) {
-      return 'fieldEntity';
-    }
-    return undefined;
-  };
-
-  useEffect(() => {
-    // Force refresh of the view when gameState changes
-    const slot = getCurrentSlot();
-    if (slot) {
-      setItem(slot[0]);
-    }
-  }, [gameState]);
-
-  // Get current inventory slot if viewing from inventory
-  const getCurrentSlot = () => {
-    if (!actorId || (inventorySlotIndex === undefined && !isEquipped) || !actorType) return undefined;
-  
-    const actor = actorType === 'character'
-      ? gameState.party.find(c => c.id === actorId)
-      : actorType === 'globalEntity'
-      ? gameState.globalCollections.entities.find(e => e.id === actorId)
-      : gameState.field.find(e => e.id === actorId);
-
-    if (!actor) return undefined;
-    
-    if (isEquipped && actorType === 'character') {
-      const characterActor = actor as Character;
-      return equipmentIndex !== undefined ? [characterActor.equipment[equipmentIndex], 1] as [Item, number] : undefined;
-    }
-    
-    return actor.inventory[inventorySlotIndex!];
-  };
-
-  useEffect(() => {
-    const slot = getCurrentSlot();
-    if (slot) {
-      setItem(slot[0]);
-    } else if (!actorId) {
-      const catalogItem = gameState.globalCollections.items.find(i => i.id === item.id);
-      if (catalogItem) {
-        setItem(catalogItem);
-      }
-    }
-  }, [gameState, item.id, actorId, actorType, inventorySlotIndex, isEquipped, equipmentIndex]);
-
+  // Action handlers - now using catalogId
   const handleUse = async () => {
-    if (!actorId || !itemActions) return;
+    if (!itemActions?.useItem || !actorId) return;
+    
+    // ✅ FIXED: Allow usage from either inventory or equipment
+    const slotIndex = isEquipped ? equipmentIndex : inventorySlotIndex;
+    if (slotIndex === undefined) return;
     
     const type = actorType || determineActorType(actorId);
     if (!type) return;
-  
+
     try {
-      // If item is equipped, use the equipment index, otherwise use inventory index
-      const slotIndex = isEquipped ? equipmentIndex! : inventorySlotIndex!;
-      await itemActions.useItem(item.id, actorId, type, slotIndex, isEquipped);
-      
-      if (item.uses !== undefined && item.usesLeft !== undefined && item.usesLeft <= 1) {
-        onClose?.();
-      }
+      await itemActions.useItem(effectiveCatalogId, actorId, type, slotIndex, isEquipped);
     } catch (error) {
       console.error('Failed to use item:', error);
     }
   };
 
   const handleEquip = async () => {
-    if (!actorId || !itemActions || inventorySlotIndex === undefined || !actorType) return;
-    if (actorType !== 'character') return;
+    if (!itemActions?.equipItem || !actorId || inventorySlotIndex === undefined) return;
+    const type = actorType || determineActorType(actorId);
+    if (type !== 'character') return;
 
     try {
-      await itemActions.equipItem(item.id, actorId, actorType, inventorySlotIndex);
-      onClose?.();
+      await itemActions.equipItem(effectiveCatalogId, actorId, type, inventorySlotIndex);
     } catch (error) {
       console.error('Failed to equip item:', error);
     }
   };
 
   const handleUnequip = async () => {
-    if (!actorId || !equipmentActions) return;
-    
+    if (!equipmentActions?.unequipItem || !actorId || equipmentIndex === undefined) return;
+
     try {
-      await equipmentActions.unequipItem(actorId, equipmentIndex!, item.id);
-      onClose?.();
+      await equipmentActions.unequipItem(actorId, equipmentIndex, effectiveCatalogId);
     } catch (error) {
       console.error('Failed to unequip item:', error);
     }
   };
 
   const handleDiscard = async () => {
-    if (!actorId || !itemActions || inventorySlotIndex === undefined) return;
-    
+    if (!itemActions?.discardItem || !actorId || inventorySlotIndex === undefined) return;
     const type = actorType || determineActorType(actorId);
     if (!type) return;
-  
+
     try {
-      await itemActions.discardItem(item.id, actorId, type, inventorySlotIndex);
-      onClose?.();
+      await itemActions.discardItem(effectiveCatalogId, actorId, type, inventorySlotIndex);
     } catch (error) {
       console.error('Failed to discard item:', error);
     }
@@ -228,7 +244,7 @@ export const ItemView: React.FC<ItemViewProps> = ({
   const handleDelete = async () => {
     if (!isRoomCreator || !itemActions?.deleteItem) return;
     try {
-      await itemActions.deleteItem(item.id);
+      await itemActions.deleteItem(effectiveCatalogId);
       onClose?.();
     } catch (error) {
       console.error('Failed to delete item:', error);
@@ -238,7 +254,7 @@ export const ItemView: React.FC<ItemViewProps> = ({
   const handleUpdate = async (updates: Omit<Item, 'id'>) => {
     if (!itemActions?.updateItem) return;
     try {
-      await itemActions.updateItem(item.id, updates);
+      await itemActions.updateItem(effectiveCatalogId, updates);
       setShowEditor(false);
     } catch (error) {
       console.error('Failed to update item:', error);
@@ -246,128 +262,160 @@ export const ItemView: React.FC<ItemViewProps> = ({
   };
 
   const handleRestoreUses = async () => {
-    if (!isRoomCreator || !itemActions?.restoreItemUses || inventorySlotIndex === undefined || !actorId) return;
-    if (item.uses === undefined) return;
+    if (!isRoomCreator || !itemActions?.restoreItemUses) return;
+    if (!hasUses) return;
+    
+    // ✅ FIXED: Allow restoration for both inventory and equipped items
+    const slotIndex = isEquipped ? equipmentIndex : inventorySlotIndex;
+    if (slotIndex === undefined || !actorId) return;
   
     const type = actorType || determineActorType(actorId);
     if (!type) return;
   
-    const newUses = customUses !== undefined ? customUses : item.uses;
-    await itemActions.restoreItemUses(item.id, actorId, type, inventorySlotIndex, newUses);
+    const newUses = customUses !== undefined ? customUses : (catalogItem.uses ?? 0);
+    await itemActions.restoreItemUses(effectiveCatalogId, actorId, type, slotIndex, newUses);
     setCustomUses(undefined);
   };
   
   const handleIncreaseUses = async () => {
-    if (!isRoomCreator || !itemActions?.restoreItemUses || inventorySlotIndex === undefined || !actorId) return;
-    if (item.uses === undefined || item.usesLeft === undefined) return;
+    if (!isRoomCreator || !itemActions?.restoreItemUses) return;
+    if (!hasUses || instanceUsesLeft === undefined) return;
+    
+    // ✅ FIXED: Allow use increase for both inventory and equipped items
+    const slotIndex = isEquipped ? equipmentIndex : inventorySlotIndex;
+    if (slotIndex === undefined || !actorId) return;
   
     const type = actorType || determineActorType(actorId);
     if (!type) return;
   
-    const newUses = Math.min(item.uses, item.usesLeft + 1);
-    await itemActions.restoreItemUses(item.id, actorId, type, inventorySlotIndex, newUses);
+    const newUses = Math.min(catalogItem.uses || 0, instanceUsesLeft + 1);
+    await itemActions.restoreItemUses(effectiveCatalogId, actorId, type, slotIndex, newUses);
   };
   
   const handleDecreaseUses = async () => {
-    if (!isRoomCreator || !itemActions?.restoreItemUses || inventorySlotIndex === undefined || !actorId) return;
-    if (item.usesLeft === undefined) return;
+    if (!isRoomCreator || !itemActions?.restoreItemUses) return;
+    if (instanceUsesLeft === undefined) return;
+    
+    // ✅ FIXED: Allow use decrease for both inventory and equipped items
+    const slotIndex = isEquipped ? equipmentIndex : inventorySlotIndex;
+    if (slotIndex === undefined || !actorId) return;
   
     const type = actorType || determineActorType(actorId);
     if (!type) return;
   
-    const newUses = Math.max(0, item.usesLeft - 1);
-    await itemActions.restoreItemUses(item.id, actorId, type, inventorySlotIndex, newUses);
+    const newUses = Math.max(0, instanceUsesLeft - 1);
+    await itemActions.restoreItemUses(effectiveCatalogId, actorId, type, slotIndex, newUses);
   };
 
-  // New transfer handlers
+  // Transfer handlers
   const handleTransferInitiate = (recipientId: string, recipientType: 'character' | 'fieldEntity') => {
     if (!actorId || !transferActions || inventorySlotIndex === undefined) return;
     
     const recipient = recipientType === 'character'
       ? gameState.party.find(c => c.id === recipientId)
-      : gameState.field.find(e => e.id === recipientId);
-
-    if (!recipient) return;
+      : gameState.field.find(e => e.instanceId === recipientId);
     
-    setTransferRecipientName(recipient.name);
-    setShowTransferModal(false);
-    setShowTransferWait(true);
+    if (!recipient) return;
 
-    transferActions.requestTransfer(
-      item.id,
-      actorId,
-      recipientId,
-      recipientType,
-      inventorySlotIndex
-    );
+    // Get recipient name - handle different types properly
+    let recipientName: string;
+    if (recipientType === 'character') {
+      recipientName = (recipient as Character).name;
+    } else {
+      // For EntityReference, get name from catalog
+      const entityRef = recipient as EntityReference;
+      recipientName = getCatalogEntity(entityRef.catalogId, gameState)?.name || 'Unknown Entity';
+    }
+
+    setTransferRecipientName(recipientName);
+    setShowTransferModal(false);
+    
+    // Check if recipient requires confirmation (has a playerId)
+    const requiresConfirmation = recipientType === 'character' && 'playerId' in recipient && !!recipient.playerId;
+    
+    if (requiresConfirmation) {
+      setShowTransferWait(true);
+      transferActions.requestTransfer(effectiveCatalogId, actorId, recipientId, recipientType, inventorySlotIndex);
+    } else {
+      // Execute transfer immediately for NPCs/field entities
+      if (transferActions.executeTransferDirect) {
+        const transfer = {
+          id: crypto.randomUUID(),
+          itemId: effectiveCatalogId,
+          fromId: actorId,
+          toId: recipientId,
+          toType: recipientType,
+          inventorySlotIndex,
+          requiresConfirmation: false,
+          timestamp: Date.now()
+        };
+        transferActions.executeTransferDirect(transfer);
+        onClose?.();
+      }
+    }
   };
 
   const handleTransferCancel = () => {
-    if (!transferActions) return;
     setShowTransferWait(false);
-    // Add transfer cancellation logic here when implemented
+    setTransferRecipientName('');
   };
 
-  // Filter out the current character from transfer recipients
-  const availableParty = gameState.party.filter(c => c.id !== actorId);
+  // Display data comes from catalog, instance data from reference
+  const displayDescription = catalogItem.description;
+  const displayImage = catalogItem.image;
+  const displayTags = catalogItem.tags;
+  const displayUses = catalogItem.uses;
+  const displayUsesLeft = instanceUsesLeft ?? displayUses; // Instance first, then catalog default
 
   return (
     <div className="flex flex-col h-full w-full gap-2 p-0">
-      
       {/* Uses and Tags Section */}
       <div className="grid grid-cols-2 gap-4 items-center">
         {/* Uses Section */}
         <div className="flex items-center gap-2">
           <div className="font-['Mohave'] text-lg">
-            {item.uses !== undefined ? (
-              <span>Uses: {item.usesLeft ?? item.uses} / {item.uses}</span>
+            {hasUses ? (
+              <span>Uses: {displayUsesLeft ?? '∞'}/{displayUses ?? '∞'}</span>
             ) : (
-              <span>Unlimited Uses</span>
+              <span>Uses: ∞</span>
             )}
+            {isRoomCreator && isViewingInstance && <span className="ml-2 text-blue dark:text-cyan">(Instance)</span>}
+            {isRoomCreator && isViewingFromCatalog && <span className="ml-2 text-blue dark:text-cyan">(Catalog)</span>}
           </div>
           
-          {isRoomCreator && inventorySlotIndex !== undefined && item.uses !== undefined && (
-            <div className="flex items-center gap-2">
+          {/* DM Usage Controls */}
+          {isRoomCreator && hasUses && isViewingInstance && (
+            <div className="flex items-center gap-1 ml-4">
               <button
-                onClick={() => handleDecreaseUses()}
-                className="p-1 rounded-full hover:bg-grey/10 dark:hover:bg-offwhite/10"
-                title="Decrease uses"
+                onClick={handleDecreaseUses}
+                disabled={instanceUsesLeft === undefined || instanceUsesLeft <= 0}
+                className="w-8 h-8 rounded-full bg-grey/20 dark:bg-offwhite/20 hover:bg-grey/40 dark:hover:bg-offwhite/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
               >
-                <Minus size={16} />
+                <Minus className="w-4 h-4" />
               </button>
               
-              <input
-                type="number"
-                value={customUses ?? ''}
-                onChange={e => setCustomUses(e.target.value ? Number(e.target.value) : undefined)}
-                placeholder={item.uses.toString()}
-                className="w-16 px-2 py-1 rounded border dark:bg-grey font-['Mohave']"
-              />
+              <button
+                onClick={handleIncreaseUses}
+                disabled={instanceUsesLeft === undefined || instanceUsesLeft >= (catalogItem.uses || 0)}
+                className="w-8 h-8 rounded-full bg-grey/20 dark:bg-offwhite/20 hover:bg-grey/40 dark:hover:bg-offwhite/40 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
               
               <button
-                onClick={() => handleRestoreUses()}
-                className="p-1 rounded-full hover:bg-grey/10 dark:hover:bg-offwhite/10"
-                title="Set uses"
+                onClick={handleRestoreUses}
+                className="w-8 h-8 rounded-full bg-grey/20 dark:bg-offwhite/20 hover:bg-grey/40 dark:hover:bg-offwhite/40 flex items-center justify-center transition-colors ml-2"
+                title="Restore to full uses"
               >
-                <RefreshCw size={16} />
-              </button>
-
-              <button
-                onClick={() => handleIncreaseUses()}
-                className="p-1 rounded-full hover:bg-grey/10 dark:hover:bg-offwhite/10"
-                title="Increase uses"
-              >
-                <Plus size={16} />
+                <RefreshCw className="w-4 h-4" />
               </button>
             </div>
           )}
         </div>
 
-        
-
         {/* Tags Section */}
-        <div className="flex flex-wrap gap-2 justify-end items-center">
-          {item.tags?.map(tag => (
+        <div className="flex flex-wrap gap-2 justify-end">
+          {displayTags?.map(tag => (
             <span 
               key={tag}
               className="px-3 py-1 bg-grey/10 dark:bg-offwhite/10 rounded-full 
@@ -378,15 +426,12 @@ export const ItemView: React.FC<ItemViewProps> = ({
           ))}
         </div>
       </div>
-      
-
-      
 
       {/* Image Section */}
       <div className="flex justify-center items-center flex-grow">
         <BasicObjectView 
           name=""
-          imageId={item.image}
+          imageId={displayImage}
           size="size=lg 3xl:size=xl"
         />
       </div>
@@ -394,7 +439,7 @@ export const ItemView: React.FC<ItemViewProps> = ({
       {/* Description Section */}
       <div className="border-2 border-grey dark:border-offwhite rounded-lg p-2 min-h-[6rem] max-h-[7rem] overflow-y-auto">
         <p className="font-['Mohave'] text-md 2xl:text-lg text-left leading-relaxed">
-          {item.description}
+          {displayDescription}
         </p>
       </div>
 
@@ -407,14 +452,14 @@ export const ItemView: React.FC<ItemViewProps> = ({
       </div>
 
       {/* Modals */}
-      {showEditor && (
+      {showEditor && catalogItem && (
         <Modal
           isOpen={showEditor}
           onClose={() => setShowEditor(false)}
           title="Edit Item"
         >
           <ItemEditor
-            item={item}
+            item={catalogItem}
             onSubmit={handleUpdate}
             onCancel={() => setShowEditor(false)}
           />
@@ -426,13 +471,14 @@ export const ItemView: React.FC<ItemViewProps> = ({
         onClose={() => setShowTransferModal(false)}
         party={gameState.party.filter(c => c.id !== actorId)}
         field={gameState.field}
+        gameState={gameState}
         onTransfer={handleTransferInitiate}
       />
 
       <TransferWaitScreen
         isOpen={showTransferWait}
         onCancel={handleTransferCancel}
-        item={item}
+        item={catalogItem}
         recipientName={transferRecipientName}
       />
 
@@ -449,15 +495,13 @@ export const ItemView: React.FC<ItemViewProps> = ({
             <div className="flex justify-end gap-2 mt-4">
               <button
                 onClick={() => setConfirmDelete(false)}
-                className="px-3 py-1 bg-gray-500 text-white rounded-md hover:bg-gray-600 
-                         transition-colors font-['Mohave']"
+                className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
               >
                 Cancel
               </button>
               <button
                 onClick={handleDelete}
-                className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 
-                         transition-colors font-['Mohave']"
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
               >
                 Delete
               </button>
@@ -467,4 +511,4 @@ export const ItemView: React.FC<ItemViewProps> = ({
       )}
     </div>
   );
-}
+};

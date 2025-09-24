@@ -9,13 +9,13 @@ export const CharacterActions = {
   CREATE: 'charCreate',
   UPDATE: 'charUpdate',
   DELETE: 'charDelete',
-  SELECT: 'charSelect'
+  SELECT: 'charSelect',
+  ADJUST_STAT: 'charAdjStat'
 } as const;
 
 interface CharacterImageData {
   data: string;
   originalId: string;
-  thumbnail: string;
   metadata: {
     name: string;
     type: string;
@@ -46,6 +46,13 @@ interface CharacterSelectPayload {
   playerId: string;
 }
 
+interface CharacterAdjustStatPayload {
+  characterId: string;
+  statType: 'hp' | 'mp' | 'sp';
+  delta: number;
+  playerId: string;
+}
+
 export function setupCharacterHandlers(
   room: Room,
   gameState: GameState,
@@ -71,8 +78,7 @@ export function setupCharacterHandlers(
         description: `Character image`,
         createdAt: Date.now(),
         size: imageData.metadata.size,
-        type: imageData.metadata.type,
-        thumbnail: imageData.thumbnail
+        type: imageData.metadata.type
       }, "character");
 
       return imageData.originalId;
@@ -154,6 +160,46 @@ export function setupCharacterHandlers(
           ? { ...char, playerId }
           : char.playerId === playerId
           ? { ...char, playerId: undefined }
+          : char
+      )
+    });
+  });
+
+  // Handle character stat adjustment requests
+  const [_____, getCharAdjustStat] = room.makeAction<CharacterAdjustStatPayload>(CharacterActions.ADJUST_STAT);
+  getCharAdjustStat(({ characterId, statType, delta, playerId }) => {
+    console.log(`DM received stat adjustment request from ${playerId} for character ${characterId}:`, { statType, delta });
+    
+    // Find the character
+    const character = gameState.party.find(c => c.id === characterId);
+    if (!character) {
+      console.error('Character not found:', characterId);
+      return;
+    }
+
+    // Calculate new value based on stat type, applying bounds checking, testing
+    let newValue: number;
+    switch (statType) {
+      case 'hp':
+        newValue = Math.min(character.maxHp, Math.max(0, character.hp + delta));
+        break;
+      case 'mp':
+        newValue = Math.min(character.maxMp, Math.max(0, character.mp + delta));
+        break;
+      case 'sp':
+        newValue = Math.min(character.maxSp, Math.max(0, character.sp + delta));
+        break;
+      default:
+        console.error('Invalid stat type:', statType);
+        return;
+    }
+
+    // Update the character's stat
+    onGameStateChange({
+      ...gameState,
+      party: gameState.party.map(char =>
+        char.id === characterId 
+          ? { ...char, [statType]: newValue }
           : char
       )
     });

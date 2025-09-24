@@ -38,7 +38,7 @@ export function setupTransferActions(
         if (!toCharacter) return false;
         toCharacter.inventory.push(itemSlot);
       } else {
-        const toEntity = newState.field.find(e => e.id === transfer.toId);
+        const toEntity = newState.field.find(e => e.instanceId === transfer.toId);
         if (!toEntity) return false;
         toEntity.inventory.push(itemSlot);
       }

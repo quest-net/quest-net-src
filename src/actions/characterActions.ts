@@ -9,7 +9,6 @@ import { imageManager } from '../services/ImageManager';
 interface CharacterImageData {
   data: string;
   originalId: string;
-  thumbnail: string;
   metadata: {
     name: string;
     type: string;
@@ -38,7 +37,6 @@ async function prepareImageData(imageId: string): Promise<CharacterImageData | u
     return {
       data: base64,
       originalId: imageId,
-      thumbnail: imageData.thumbnail,
       metadata: {
         name: file.name,
         type: file.type,
@@ -62,6 +60,7 @@ export function setupCharacterActions(
   const [sendCharUpdate] = room.makeAction(CharacterActions.UPDATE);
   const [sendCharDelete] = room.makeAction(CharacterActions.DELETE);
   const [sendCharSelect] = room.makeAction(CharacterActions.SELECT);
+  const [sendCharAdjustStat] = room.makeAction(CharacterActions.ADJUST_STAT);
 
   // DM-only actions
   const dmActions = isRoomCreator ? {
@@ -105,6 +104,38 @@ export function setupCharacterActions(
             : char
         )
       });
+    },
+    adjustCharacterStatDirect: (characterId: string, statType: 'hp' | 'mp' | 'sp', delta: number) => {
+      // Find the character
+      const character = gameState.party.find(c => c.id === characterId);
+      if (!character) return false;
+
+      // Calculate new value based on stat type, applying bounds checking
+      let newValue: number;
+      switch (statType) {
+        case 'hp':
+          newValue = Math.min(character.maxHp, Math.max(0, character.hp + delta));
+          break;
+        case 'mp':
+          newValue = Math.min(character.maxMp, Math.max(0, character.mp + delta));
+          break;
+        case 'sp':
+          newValue = Math.min(character.maxSp, Math.max(0, character.sp + delta));
+          break;
+        default:
+          return false;
+      }
+
+      onGameStateChange({
+        ...gameState,
+        party: gameState.party.map(char =>
+          char.id === characterId 
+            ? { ...char, [statType]: newValue }
+            : char
+        )
+      });
+      
+      return true;
     }
   } : undefined;
 
@@ -169,6 +200,19 @@ export function setupCharacterActions(
         characterId,
         playerId: selfId
       });
+    },
+    adjustCharacterStat: (characterId: string, statType: 'hp' | 'mp' | 'sp', delta: number) => {
+      if (isRoomCreator) {
+        return dmActions?.adjustCharacterStatDirect(characterId, statType, delta);
+      }
+      
+      console.log(`Sending stat adjustment request for character ${characterId} from ${selfId}:`, { statType, delta });
+      return sendCharAdjustStat({
+        characterId,
+        statType,
+        delta,
+        playerId: selfId
+      });
     }
   };
 }
@@ -185,7 +229,8 @@ export function useCharacterActions(
       createCharacter: () => Promise.resolve(),
       updateCharacter: () => Promise.resolve(),
       deleteCharacter: () => Promise.resolve(),
-      selectCharacter: () => Promise.resolve()
+      selectCharacter: () => Promise.resolve(),
+      adjustCharacterStat: () => Promise.resolve()
     };
   }
 

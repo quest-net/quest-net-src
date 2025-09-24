@@ -31,6 +31,7 @@ interface BasicObjectViewProps {
   };
   onClick?: () => void;
   onEdit?: () => void;
+  tooltip?: string;
 }
 
 const sizeClasses = {
@@ -84,10 +85,12 @@ const BasicObjectView = ({
   border,
   action,
   onClick,
-  onEdit
+  onEdit,
+  tooltip
 }: BasicObjectViewProps) => {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [currentSize, setCurrentSize] = useState<Size>('md');
+  const [showTooltip, setShowTooltip] = useState(false);
 
   // Parse size configuration
   useEffect(() => {
@@ -150,11 +153,6 @@ const BasicObjectView = ({
     const loadImage = async () => {
       if (!imageId) return;
 
-      const thumbnail = imageManager.getThumbnail(imageId);
-      if (thumbnail && mounted) {
-        setImageUrl(thumbnail);
-      }
-
       try {
         const imageData = await imageManager.getImage(imageId);
         if (imageData && mounted) {
@@ -173,6 +171,17 @@ const BasicObjectView = ({
       mounted = false;
     };
   }, [imageId]);
+
+  // Tooltip handlers
+  const handleMouseEnter = () => {
+    if (tooltip) {
+      setShowTooltip(true);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setShowTooltip(false);
+  };
 
   const borderStyles = border ? {
     borderColor: border.color,
@@ -244,7 +253,10 @@ const BasicObjectView = ({
   };
 
   return (
-    <div id={id} className={`relative inline-block ${action ? 'overflow-visible' : 'overflow-hidden'} ${onClick ? 'cursor-pointer hover:scale-105' : ''}`}>
+    <div id={id} className={`relative inline-block ${action ? 'overflow-visible' : 'overflow-hidden'} ${onClick ? 'cursor-pointer hover:scale-105' : ''}`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      >
       <div 
         onClick={onClick}
         className={`
@@ -378,6 +390,17 @@ const BasicObjectView = ({
           </div>
         )}
       </div>
+      {/* NEW: Tooltip */}
+      {tooltip && showTooltip && (
+        <div className="absolute z-50 px-3 py-2 text-sm bg-black dark:bg-white text-white dark:text-black rounded-lg shadow-lg pointer-events-none
+                        bottom-full left-1/2 transform -translate-x-1/2 -translate-y-2 whitespace-nowrap">
+          {tooltip}
+          {/* Tooltip arrow */}
+          <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 
+                          border-l-4 border-r-4 border-t-4 border-transparent border-t-black dark:border-t-white">
+          </div>
+        </div>
+      )}
     </div>
   );
 };

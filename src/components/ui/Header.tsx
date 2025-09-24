@@ -9,9 +9,10 @@ interface HeaderProps {
   peers?: string[];
   errorMessage?: string;
   onRoll?: (result: number, maxValue: number) => void;
+  version: string;
 }
 
-export function Header({ roomId, connectionStatus, peers = [], errorMessage, onRoll }: HeaderProps) {
+export function Header({ roomId, connectionStatus, peers = [], errorMessage, onRoll, version }: HeaderProps) {
   const getStatusColor = () => {
     switch (connectionStatus) {
       case 'connected':
@@ -88,6 +89,12 @@ export function Header({ roomId, connectionStatus, peers = [], errorMessage, onR
         <div className="flex flex-col items-start">
           <div className="flex flex-row items-center">
             <h1 className="headerTitle">Quest-Net</h1>
+            <span 
+            className="ml-2 text-s font-mono text-gray-500 dark:text-gray-400 rounded"
+            title="App Version"
+          >
+            v{version}
+          </span>
             {getConnectionStatusDisplay()}
           </div>
           <svg 

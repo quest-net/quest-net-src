@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import type { Room } from 'trystero/nostr';
-import { GameState, Item } from '../../types/game';
+import { GameState, Equipment, ItemReference } from '../../types/game';
 import { Grid, List, Swords } from 'lucide-react';
 import BasicObjectView from '../ui/BasicObjectView';
 import { ItemView } from '../shared/ItemView';
 import Modal from '../shared/Modal';
 import { useEquipmentActions } from '../../actions/equipmentActions';
+import { 
+  getCatalogItem, 
+  getItemReferenceName,
+  getItemReferenceUsesLeft,
+  itemReferenceHasUses,
+  isValidItemReference 
+} from '../../utils/referenceHelpers';
 
 interface EquipmentPanelProps {
-  equipment: Item[];
+  equipment: Equipment;  // Now expects ItemReference[] instead of Item[]
   onClose?: () => void;
   room?: Room;
   gameState: GameState;
@@ -28,9 +35,9 @@ export function EquipmentPanel({
   isModal = true,
   isRoomCreator = false
 }: EquipmentPanelProps) {
-  const [selectedItem, setSelectedItem] = useState<{ item: Item; index: number } | null>(null);
+  const [selectedItem, setSelectedItem] = useState<{ itemRef: ItemReference; index: number } | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [currentEquipment, setCurrentEquipment] = useState(initialEquipment);
+  const [currentEquipment, setCurrentEquipment] = useState<Equipment>(initialEquipment);
   const equipmentActions = useEquipmentActions(room, gameState, onGameStateChange, isRoomCreator);
 
   useEffect(() => {
@@ -40,10 +47,10 @@ export function EquipmentPanel({
         setCurrentEquipment(character.equipment);
         
         if (selectedItem) {
-          const updatedItem = character.equipment[selectedItem.index];
-          if (updatedItem) {
+          const updatedItemRef = character.equipment[selectedItem.index];
+          if (updatedItemRef && isValidItemReference(updatedItemRef, gameState)) {
             setSelectedItem({
-              item: updatedItem,
+              itemRef: updatedItemRef,
               index: selectedItem.index
             });
           } else {
@@ -56,61 +63,83 @@ export function EquipmentPanel({
 
   const renderEquipmentGrid = () => (
     <div className="flex flex-wrap justify-evenly content-start gap-6 px-6 py-4">
-      {currentEquipment.map((item, index) => (
-        <div 
-          key={`${item.id}-${index}`} 
-          className="flex-grow-0 flex-shrink-0"
-        >
-          <BasicObjectView
-            name={item.name}
-            imageId={item.image}
-            id={item.id}
-            size="size=sm 2xl:size=md"
-            onClick={() => setSelectedItem({ item, index })}
-          />
-        </div>
-      ))}
+      {currentEquipment.map((itemRef, index) => {
+        const catalogItem = getCatalogItem(itemRef.catalogId, gameState);
+        if (!catalogItem) return null;
+
+        const itemName = getItemReferenceName(itemRef, gameState);
+        const hasUses = itemReferenceHasUses(itemRef, gameState);
+        const usesLeft = getItemReferenceUsesLeft(itemRef, gameState);
+
+        return (
+          <div 
+            key={`${itemRef.catalogId}-${index}`} 
+            className="flex-grow-0 flex-shrink-0"
+          >
+            <BasicObjectView
+              name={itemName}
+              imageId={catalogItem.image}
+              id={itemRef.catalogId}
+              size="size=sm 2xl:size=md"
+              onClick={() => setSelectedItem({ itemRef, index })}
+              action={hasUses && usesLeft !== undefined ? {
+                content: `${usesLeft}/${catalogItem.uses}`,
+                onClick: () => setSelectedItem({ itemRef, index })
+              } : undefined}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 
   const renderEquipmentList = () => (
     <div className="space-y-2 p-[1vw]">
-      {currentEquipment.map((item, index) => (
-        <div
-          key={`${item.id}-${index}`}
-          onClick={() => setSelectedItem({ item, index })}
-          className="flex items-center justify-between p-4 pb-6 font-['Mohave'] text-lg border-b-2 border-grey dark:border-offwhite hover:bg-grey/10 dark:hover:bg-offwhite/10 cursor-pointer"
-        >
-          <div className="flex items-center">
-            <BasicObjectView
-              name=""
-              imageId={item.image}
-              id={item.id}
-              size="sm"
-            />
-            <div className="ml-8 flex flex-col items-start">
-              <h4 className="font-medium font-['BrunoAceSC']">{item.name}</h4>
-              {item.uses !== undefined && (
-                <div className="text-md flex items-center gap-2">
-                  <span className="text-blue dark:text-cyan">Uses: {item.usesLeft ?? item.uses}</span>
-                  <span className="text-grey dark:text-offwhite">/</span>
-                  <span className="text-blue dark:text-cyan">{item.uses}</span>
-                </div>
-              )}
-            </div>
-          </div>
-          
-          {item.uses !== undefined && (
+      {currentEquipment.map((itemRef, index) => {
+        const catalogItem = getCatalogItem(itemRef.catalogId, gameState);
+        if (!catalogItem) return null;
+
+        const itemName = getItemReferenceName(itemRef, gameState);
+        const hasUses = itemReferenceHasUses(itemRef, gameState);
+        const usesLeft = getItemReferenceUsesLeft(itemRef, gameState);
+
+        return (
+          <div
+            key={`${itemRef.catalogId}-${index}`}
+            onClick={() => setSelectedItem({ itemRef, index })}
+            className="flex items-center justify-between p-4 pb-6 font-['Mohave'] text-lg border-b-2 border-grey dark:border-offwhite hover:bg-grey/10 dark:hover:bg-offwhite/10 cursor-pointer"
+          >
             <div className="flex items-center">
-              <div className="w-12 h-12 rotate-45 border-2 border-blue dark:border-cyan bg-offwhite dark:bg-grey rounded flex items-center justify-center">
-                <div className="-rotate-45 text-blue dark:text-cyan font-medium">
-                  {`${item.usesLeft}/${item.uses}`}
-                </div>
+              <BasicObjectView
+                name=""
+                imageId={catalogItem.image}
+                id={itemRef.catalogId}
+                size="sm"
+              />
+              <div className="ml-8 flex flex-col items-start">
+                <h4 className="font-medium font-['BrunoAceSC']">{itemName}</h4>
+                {hasUses && (
+                  <div className="text-md flex items-center gap-2">
+                    <span className="text-blue dark:text-cyan">Uses: {usesLeft ?? catalogItem.uses}</span>
+                    <span className="text-grey dark:text-offwhite">/</span>
+                    <span className="text-blue dark:text-cyan">{catalogItem.uses}</span>
+                  </div>
+                )}
               </div>
             </div>
-          )}
-        </div>
-      ))}
+            
+            {hasUses && (
+              <div className="flex items-center">
+                <div className="w-12 h-12 rotate-45 border-2 border-blue dark:border-cyan bg-offwhite dark:bg-grey rounded flex items-center justify-center">
+                  <div className="-rotate-45 text-blue dark:text-cyan font-medium">
+                    {usesLeft ?? catalogItem.uses}/{catalogItem.uses}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 
@@ -128,15 +157,25 @@ export function EquipmentPanel({
         <div className="flex items-center gap-4">
           <button
             onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-            className="p-2 rounded-md hover:bg-grey/10 dark:hover:bg-offwhite/10 transition-colors"
+            className="p-2 hover:bg-grey/10 dark:hover:bg-offwhite/10 rounded-md transition-colors"
+            title={`Switch to ${viewMode === 'grid' ? 'list' : 'grid'} view`}
           >
-            {viewMode === 'grid' ? <List size={20} /> : <Grid size={20} />}
+            {viewMode === 'grid' ? <List className="w-5 h-5" /> : <Grid className="w-5 h-5" />}
           </button>
+          
+          {isModal && onClose && (
+            <button
+              onClick={onClose}
+              className="text-lg font-bold hover:bg-grey/10 dark:hover:bg-offwhite/10 px-2 py-1 rounded-md transition-colors"
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Content - Scrollable with fixed height container */}
-      <div className="flex-1 overflow-y-auto scrollable min-h-0 relative">
+      {/* Content - Scrollable */}
+      <div className="flex-1 relative min-h-0">
         {currentEquipment.length === 0 ? (
           <div className="h-full flex items-center justify-center text-gray-500">
             No items equipped
@@ -161,10 +200,10 @@ export function EquipmentPanel({
           <Modal
             isOpen={!!selectedItem}
             onClose={() => setSelectedItem(null)}
-            title={selectedItem.item.name}
+            title={getItemReferenceName(selectedItem.itemRef, gameState)}
           >
             <ItemView
-              item={selectedItem.item}
+              itemReference={selectedItem.itemRef}
               onClose={() => setSelectedItem(null)}
               gameState={gameState}
               onGameStateChange={onGameStateChange}
@@ -193,11 +232,11 @@ export function EquipmentPanel({
         <Modal
           isOpen={!!selectedItem}
           onClose={() => setSelectedItem(null)}
-          title={selectedItem.item.name}
+          title={getItemReferenceName(selectedItem.itemRef, gameState)}
           className="max-w-[33vw]"
         >
           <ItemView
-            item={selectedItem.item}
+            itemReference={selectedItem.itemRef}
             onClose={() => setSelectedItem(null)}
             gameState={gameState}
             onGameStateChange={onGameStateChange}

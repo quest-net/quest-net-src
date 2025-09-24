@@ -132,6 +132,7 @@ export function SafeView({
                   }
                 }
               }}
+              room={room}
               showActions={false}
             />
           )}
@@ -146,6 +147,7 @@ export function SafeView({
               gameState={gameState}
               onGameStateChange={onGameStateChange}
               layout="horizontal"
+              room={room}
             />
           </div>
         </div>

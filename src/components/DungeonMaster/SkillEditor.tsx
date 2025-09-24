@@ -31,10 +31,18 @@ export const SkillEditor: React.FC<SkillEditorProps> = ({ skill, onSubmit, onCan
       setUses(skillData.uses);
 
       if (skillData.image) {
-        const thumbnail = imageManager.getThumbnail(skillData.image);
-        if (thumbnail) {
-          setImagePreview(thumbnail);
-        }
+        // Load the full image for preview
+        imageManager.getImage(skillData.image).then(file => {
+          if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              setImagePreview(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+          }
+        }).catch(err => {
+          console.error('Failed to load skill image:', err);
+        });
       }
     }
   }, [skill]);
@@ -57,7 +65,12 @@ export const SkillEditor: React.FC<SkillEditorProps> = ({ skill, onSubmit, onCan
     try {
       setIsUploading(true);
       const imageData = await imageManager.addImage(file,'skill');
-      setImagePreview(imageData.thumbnail);
+       // Create preview from the uploaded file
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
       setForm(prev => ({ ...prev, image: imageData.id }));
       setErrors(prev => {
         const { image, ...rest } = prev;
@@ -123,8 +136,7 @@ export const SkillEditor: React.FC<SkillEditorProps> = ({ skill, onSubmit, onCan
     onSubmit({
       ...form,
       tags,
-      uses,
-      usesLeft: uses
+      uses
     });
   };
 

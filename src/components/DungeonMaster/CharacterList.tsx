@@ -112,12 +112,6 @@ export function CharacterList({
       
       for (const character of party) {
         if (character.image) {
-          const thumbnail = imageManager.getThumbnail(character.image);
-          if (thumbnail) {
-            newImages[character.id] = thumbnail;
-            continue;
-          }
-
           try {
             const file = await imageManager.getImage(character.image);
             if (file) {
@@ -185,6 +179,8 @@ export function CharacterList({
                 onGameStateChange={onGameStateChange}
                 size="large"
                 showSideLabels={true}
+                room={room}
+                isRoomCreator={true}
               />
               <div className="flex-1 flex items-center justify-center -space-x-8">
                 <TabButton
@@ -230,8 +226,8 @@ export function CharacterList({
           isRoomCreator={true}
           gameState={gameState}
           onGameStateChange={onGameStateChange}
-          actorId={selectedCharacterForInventory}
           actorType="character"
+          actorId={selectedCharacterForInventory}
           isModal={true}
         />
       )}
@@ -241,8 +237,8 @@ export function CharacterList({
           equipment={party.find(c => c.id === selectedCharacterForEquipment)?.equipment || []}
           onClose={onCloseEquipmentModal}
           room={room}
-          gameState={gameState}
           isRoomCreator={true}
+          gameState={gameState}
           onGameStateChange={onGameStateChange}
           actorId={selectedCharacterForEquipment}
           isModal={true}
@@ -255,11 +251,11 @@ export function CharacterList({
           onClose={onCloseSkillsModal}
           room={room}
           gameState={gameState}
-          isRoomCreator={true}
           onGameStateChange={onGameStateChange}
-          actorType="character"
           actorId={selectedCharacterForSkills}
+          actorType="character"
           isModal={true}
+          isRoomCreator={true}
         />
       )}
     </div>

@@ -32,7 +32,6 @@ export function CharacterSheet({
   const [showEquipment, setShowEquipment] = useState(false);
   const [showSkills, setShowSkills] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-
   return (
     <div className="h-full flex items-center">
       <div className="w-full flex gap-0 2xl:gap-2">
@@ -89,6 +88,8 @@ export function CharacterSheet({
               editable={true}
               size="small"
               showSideLabels={true}
+              room={room}
+              isRoomCreator={false}
             />
           </div>
           <div className="flex-none hidden xl:hidden 3xl:block">
@@ -100,6 +101,8 @@ export function CharacterSheet({
               editable={true}
               size="medium"
               showSideLabels={true}
+              room={room}
+              isRoomCreator={false}
             />
           </div>
         </div>

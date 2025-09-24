@@ -8,13 +8,15 @@ interface PartyListProps {
   gameState: any;
   onGameStateChange: (newState: any) => void;
   layout?: 'horizontal' | 'vertical';
+  room?: Room;
 }
 
 const PartyList = ({ 
   characters,
   gameState,
   onGameStateChange,
-  layout = 'horizontal'
+  layout = 'horizontal',
+  room
 }: PartyListProps) => {
   if (!characters.length) {
     return (
@@ -49,6 +51,8 @@ const PartyList = ({
                     editable={false}
                     size="small"
                     showSideLabels={false}
+                    room={room}
+                    isRoomCreator={false}
                   />
                 </div>
               </div>
@@ -81,6 +85,8 @@ const PartyList = ({
               editable={false}
               size="medium"
               showSideLabels={true}
+              room={room}
+              isRoomCreator={false}
             />
           </div>
           <div className="flex-1 hidden xl:block 2xl:hidden">
@@ -91,6 +97,8 @@ const PartyList = ({
               editable={false}
               size="small"
               showSideLabels={true}
+              room={room}
+              isRoomCreator={false}
             />
           </div>
           

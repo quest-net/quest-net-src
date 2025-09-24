@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { Entity, GameState } from '../../../types/game';
+import { Entity, GameState, EntityReference } from '../../../types/game';
 import { EntityEditor } from '../EntityEditor';
 import Modal from '../../shared/Modal';
 import BasicObjectView from '../../ui/BasicObjectView';
 import EntityView from '../../shared/EntityView';
 import {ReactComponent as NPC} from '../../ui/npc.svg'
 import {ReactComponent as Field} from '../../ui/field.svg'
+import { createEntityReference, getCatalogEntity } from '../../../utils/referenceHelpers';
+
+type Room = any; // Define proper Room type
 
 interface EncounterTabProps {
   gameState: GameState;
@@ -15,50 +18,33 @@ interface EncounterTabProps {
 
 export function EncounterTab({ gameState, onGameStateChange, room }: EncounterTabProps) {
   const [showCreateEntity, setShowCreateEntity] = useState(false);
-  const [entityToView, setEntityToView] = useState<Entity | null>(null);
+  const [entityToView, setEntityToView] = useState<string | null>(null);
+  // ✅ NEW: Added state for viewing field entity instances
+  const [entityReferenceToView, setEntityReferenceToView] = useState<EntityReference | null>(null);
 
+  // ✅ COMPLETELY REWRITTEN: Proper reference system spawning
   const handleSpawnEntity = (catalogEntityId: string) => {
-    const entityToSpawn = gameState.globalCollections.entities.find(e => e.id === catalogEntityId);
-    if (!entityToSpawn) return;
-  
-    // Find existing entities with the same base name
-    const sameNameEntities = gameState.field.filter(e => 
-      e.name === entityToSpawn.name || 
-      e.name.match(new RegExp(`^${entityToSpawn.name} #\\d+$`))
-    );
-  
-    let newName = entityToSpawn.name;
-    if (sameNameEntities.length > 0) {
-      // Find the highest existing number
-      let maxNum = 1;
-      sameNameEntities.forEach(entity => {
-        const match = entity.name.match(/#(\d+)$/);
-        if (match) {
-          const num = parseInt(match[1]);
-          if (num >= maxNum) maxNum = num + 1;
-        } else {
-          maxNum = 2; // If we found an unnumbered one, start at #2
-        }
-      });
-      newName = `${entityToSpawn.name} #${maxNum}`;
+    const catalogEntity = gameState.globalCollections.entities.find(e => e.id === catalogEntityId);
+    if (!catalogEntity) return;
+
+    // ✅ FIXED: Simply create a new EntityReference - no new catalog entities needed!
+    const entityReference = createEntityReference(catalogEntityId, gameState);
+    
+    if (!entityReference) {
+      console.error('Failed to create entity reference');
+      return;
     }
-  
-    const newId = crypto.randomUUID();
-    const spawnedEntity: Entity = {
-      ...entityToSpawn,
-      id: newId,
-      name: newName
-    };
-  
+    
+    // ✅ FIXED: Just add the new reference to the field - that's it!
     onGameStateChange({
       ...gameState,
-      field: [...gameState.field, spawnedEntity]
+      field: [...gameState.field, entityReference]
     });
-  
-    // Wait for the new entity to be rendered
+
+    // Scroll to the new entity
     setTimeout(() => {
       const container = document.querySelector('.field-entities-container');
-      const newEntity = document.getElementById(newId);
+      const newEntity = document.getElementById(entityReference.instanceId);
       
       if (container && newEntity) {
         container.scrollTo({
@@ -69,11 +55,29 @@ export function EncounterTab({ gameState, onGameStateChange, room }: EncounterTa
     }, 100);
   };
 
-  const handleDespawnEntity = (fieldEntityId: string) => {
+  const handleDespawnEntity = (instanceId: string) => {
     onGameStateChange({
       ...gameState,
-      field: gameState.field.filter(e => e.id !== fieldEntityId)
+      field: gameState.field.filter(e => e.instanceId !== instanceId)
     });
+  };
+
+  // ✅ NEW: Helper function to get display name for field entities
+  const getFieldEntityDisplayName = (entityRef: EntityReference): string => {
+    const catalogEntity = getCatalogEntity(entityRef.catalogId, gameState);
+    if (!catalogEntity) return 'Unknown Entity';
+
+    // Count how many instances of this catalog entity already exist
+    const sameTypeInstances = gameState.field.filter(e => e.catalogId === entityRef.catalogId);
+    const currentIndex = sameTypeInstances.findIndex(e => e.instanceId === entityRef.instanceId);
+    
+    // If this is the first instance, use the original name
+    if (sameTypeInstances.length === 1) {
+      return catalogEntity.name;
+    }
+    
+    // Otherwise, add a number (starting from #2 for the second instance)
+    return `${catalogEntity.name} #${currentIndex + 1}`;
   };
 
   return (
@@ -118,7 +122,7 @@ export function EncounterTab({ gameState, onGameStateChange, room }: EncounterTa
               imageId={entity.image}
               id={entity.id}
               size="md"
-              onClick={() => setEntityToView(entity)}
+              onClick={() => setEntityToView(entity.id)} // This opens catalog template view
               action={{
                 onClick: () => handleSpawnEntity(entity.id),
                 icon: 'plus'
@@ -135,20 +139,26 @@ export function EncounterTab({ gameState, onGameStateChange, room }: EncounterTa
         </div>
         <h2 className="text-xl font-bold font-['BrunoAceSC'] mb-12">Field</h2>
         <div className="flex flex-wrap gap-[4vh] justify-center">
-          {gameState.field.map(entity => (
-            <BasicObjectView
-              key={entity.id}
-              name={entity.name}
-              id={entity.id}
-              imageId={entity.image}
-              size="lg"
-              onClick={() => setEntityToView(entity)}
-              action={{
-                onClick: () => handleDespawnEntity(entity.id),
-                icon: 'minus'
-              }}
-            />
-          ))}
+          {/* ✅ FIXED: Field entities now open instance view, not template view */}
+          {gameState.field.map(entityRef => {
+            const catalogEntity = getCatalogEntity(entityRef.catalogId, gameState);
+            if (!catalogEntity) return null;
+            
+            return (
+              <BasicObjectView
+                key={entityRef.instanceId} // Use instanceId as key
+                name={getFieldEntityDisplayName(entityRef)} // ✅ FIXED: Dynamic naming
+                id={entityRef.instanceId} // Use instanceId for element ID
+                imageId={catalogEntity.image}
+                size="lg"
+                onClick={() => setEntityReferenceToView(entityRef)} // ✅ FIXED: Open instance view!
+                action={{
+                  onClick: () => handleDespawnEntity(entityRef.instanceId),
+                  icon: 'minus'
+                }}
+              />
+            );
+          })}
           {gameState.field.length === 0 && (
             <div className="text-center w-full text-gray-500">
               No entities on the field
@@ -182,15 +192,8 @@ export function EncounterTab({ gameState, onGameStateChange, room }: EncounterTa
                   ...gameState.globalCollections,
                   entities: gameState.globalCollections.entities.map(e =>
                     e.id === id ? { ...e, ...updates } : e
-                  ),
-                },
-                field: gameState.field.map(e => {
-                  const catalogEntity = gameState.globalCollections.entities.find(ce => ce.id === id);
-                  if (catalogEntity && e.name === catalogEntity.name) {
-                    return { ...e, ...updates };
-                  }
-                  return e;
-                })
+                  )
+                }
               });
             }}
             onClose={() => setShowCreateEntity(false)}
@@ -198,16 +201,33 @@ export function EncounterTab({ gameState, onGameStateChange, room }: EncounterTa
         </Modal>
       )}
 
+      {/* ✅ CATALOG ENTITY VIEW: For viewing/editing templates */}
       {entityToView && (
         <Modal
           isOpen={!!entityToView}
           onClose={() => setEntityToView(null)}
-          title={entityToView.name}
           className="min-w-[42vw] max-w-[42vw]"
         >
           <EntityView
-            entity={entityToView}
+            catalogId={entityToView} // Viewing catalog template
             onClose={() => setEntityToView(null)}
+            gameState={gameState}
+            onGameStateChange={onGameStateChange}
+            room={room}
+          />
+        </Modal>
+      )}
+
+      {/* ✅ NEW: FIELD ENTITY INSTANCE VIEW: For viewing/editing specific instances */}
+      {entityReferenceToView && (
+        <Modal
+          isOpen={!!entityReferenceToView}
+          onClose={() => setEntityReferenceToView(null)}
+          className="min-w-[42vw] max-w-[42vw]"
+        >
+          <EntityView
+            entityReference={entityReferenceToView} // Viewing specific instance
+            onClose={() => setEntityReferenceToView(null)}
             gameState={gameState}
             onGameStateChange={onGameStateChange}
             room={room}

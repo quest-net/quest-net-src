@@ -84,11 +84,7 @@ export function CharacterEditor({
         return;
       }
 
-      // First try to get the thumbnail which is faster
-      const thumbnail = imageManager.getThumbnail(character.image);
-      if (thumbnail && mounted) {
-        setImagePreview(thumbnail);
-      }
+      //Load image for preview
 
       try {
         // Then load the full image
@@ -184,7 +180,12 @@ export function CharacterEditor({
       const imageData = await imageManager.addImage(file, 'character');
       
       // Update the form and preview with the new image
-      setImagePreview(imageData.thumbnail);
+      // Create preview from the uploaded file
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
       updateForm({ image: imageData.id });
       
       if (!isRoomCreator) {

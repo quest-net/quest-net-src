@@ -4,6 +4,7 @@ import { GameState } from '../../types/game';
 import { selfId } from 'trystero';
 import type { Room } from 'trystero/nostr';
 import { imageManager } from '../../services/ImageManager';
+import { getCatalogEntity } from '../../utils/referenceHelpers';
 
 interface BattleMapProps {
   gameState: GameState;
@@ -15,6 +16,15 @@ interface BattleMapProps {
 interface Position {
   x: number;
   y: number;
+}
+
+// ✅ NEW: Unified actor interface for both characters and resolved EntityReference
+interface BattleMapActor {
+  id: string;           // character.id or entityRef.instanceId for positioning
+  name: string;         // resolved name
+  image?: string;       // resolved image
+  type: 'character' | 'entity';
+  playerId?: string;    // for movement permissions (characters only)
 }
 
 const BattleMap: React.FC<BattleMapProps> = ({
@@ -35,6 +45,9 @@ const BattleMap: React.FC<BattleMapProps> = ({
   const [dragPosition, setDragPosition] = useState<Position | null>(null);
   const [hoveredActorId, setHoveredActorId] = useState<string | null>(null);
 
+  // ✅ NEW: State for storing loaded actor images
+  const [actorImages, setActorImages] = useState<Map<string, string>>(new Map());
+
   // Combat actions for state updates
   const combatActions = useCombatActions(room, gameState, onGameStateChange, isRoomCreator);
 
@@ -42,11 +55,71 @@ const BattleMap: React.FC<BattleMapProps> = ({
   const cellWidth = containerSize.width / GRID_SIZE.width;
   const cellHeight = containerSize.height / GRID_SIZE.height;
 
-  // Get all actors (characters and field entities)
-  const actors = [
-    ...gameState.party.map(char => ({ ...char, type: 'character' as const })),
-    ...gameState.field.map(entity => ({ ...entity, type: 'entity' as const }))
+  // ✅ UPDATED: Create unified actor array with proper EntityReference resolution
+  const actors: BattleMapActor[] = [
+    // Characters - map directly with character.id for positioning
+    ...gameState.party.map(char => ({
+      id: char.id,
+      name: char.name,
+      image: char.image,
+      type: 'character' as const,
+      playerId: char.playerId
+    })),
+    // Field entities - resolve EntityReference properties and use instanceId for positioning
+    ...gameState.field.map(entityRef => {
+      const catalogEntity = getCatalogEntity(entityRef.catalogId, gameState);
+      return {
+        id: entityRef.instanceId, // ✅ Use instanceId for positioning
+        name: catalogEntity?.name || 'Unknown Entity',
+        image: catalogEntity?.image,
+        type: 'entity' as const,
+        playerId: undefined // Field entities don't have player ownership
+      };
+    }).filter(actor => actor.name !== 'Unknown Entity') // Filter out invalid references
   ];
+
+  // ✅ NEW: Effect to load actor images
+  useEffect(() => {
+    let mounted = true;
+
+    const loadActorImages = async () => {
+      const newImageMap = new Map<string, string>();
+      
+      await Promise.all(
+        actors.map(async (actor) => {
+          if (!actor.image) return;
+          
+          try {
+            const imageFile = await imageManager.getImage(actor.image);
+            if (imageFile && mounted) {
+              const reader = new FileReader();
+              await new Promise<void>((resolve) => {
+                reader.onloadend = () => {
+                  if (mounted && reader.result) {
+                    newImageMap.set(actor.image!, reader.result as string);
+                  }
+                  resolve();
+                };
+                reader.readAsDataURL(imageFile);
+              });
+            }
+          } catch (error) {
+            console.error(`Failed to load image for actor ${actor.name}:`, error);
+          }
+        })
+      );
+
+      if (mounted) {
+        setActorImages(newImageMap);
+      }
+    };
+
+    loadActorImages();
+
+    return () => {
+      mounted = false;
+    };
+  }, [actors.map(a => a.image).join(',')]); // Dependency on image IDs
 
   // Update container size on resize
   useEffect(() => {
@@ -75,7 +148,7 @@ const BattleMap: React.FC<BattleMapProps> = ({
     };
   }, []);
 
-  // Watch for new actors and initialize their positions
+  // ✅ UPDATED: Watch for new actors and initialize their positions
   useEffect(() => {
     if (!gameState.combat?.isActive || !combatActions) return;
 
@@ -94,11 +167,13 @@ const BattleMap: React.FC<BattleMapProps> = ({
     }
   }, [actors, gameState.combat?.isActive, combatActions, isRoomCreator]);
 
-  // Check if user can move a piece
+  // ✅ UPDATED: Check if user can move a piece (DM can move all, players can move own characters)
   const canMovePiece = (actorId: string) => {
-    if (isRoomCreator) return true;
-    const character = gameState.party.find(c => c.id === actorId);
-    return character?.playerId === selfId;
+    if (isRoomCreator) return true; // DM can move all pieces
+    
+    // Players can only move their own characters
+    const actor = actors.find(a => a.id === actorId);
+    return actor?.type === 'character' && actor.playerId === selfId;
   };
 
   // Handle mouse events for dragging
@@ -263,8 +338,8 @@ const BattleMap: React.FC<BattleMapProps> = ({
       });
   };
 
-  // Create color-coded backgrounds for pieces without images
-  const getActorBackgroundColor = (actor: typeof actors[0]) => {
+  // ✅ UPDATED: Create color-coded backgrounds using resolved actor type
+  const getActorBackgroundColor = (actor: BattleMapActor) => {
     if (actor.type === 'character') {
       return 'rgba(59, 130, 246, 0.7)'; // Blue for characters
     } else {
@@ -334,8 +409,8 @@ const BattleMap: React.FC<BattleMapProps> = ({
       {/* Actor Pieces */}
       {actors.map(actor => {
         const pixelPos = getPixelPosition(actor.id);
-        // Direct thumbnail access without state
-        const thumbnail = actor.image ? imageManager.getThumbnail(actor.image) : null;
+        // ✅ UPDATED: Use loaded full image instead of thumbnail
+        const actorImageUrl = actor.image ? actorImages.get(actor.image) : null;
         const isBeingDragged = draggedActorId === actor.id;
         
         return (
@@ -364,13 +439,13 @@ const BattleMap: React.FC<BattleMapProps> = ({
             <div 
               className="w-full h-full flex items-center justify-center font-bold text-white"
               style={{
-                backgroundImage: thumbnail ? `url(${thumbnail})` : 'none',
+                backgroundImage: actorImageUrl ? `url(${actorImageUrl})` : 'none',
                 backgroundSize: 'cover',
                 backgroundPosition: 'center',
-                backgroundColor: thumbnail ? 'transparent' : getActorBackgroundColor(actor)
+                backgroundColor: actorImageUrl ? 'transparent' : getActorBackgroundColor(actor)
               }}
             >
-              {!thumbnail && actor.name.substring(0, 2).toUpperCase()}
+              {!actorImageUrl && actor.name.substring(0, 2).toUpperCase()}
             </div>
           </div>
         );
@@ -386,6 +461,7 @@ const BattleMap: React.FC<BattleMapProps> = ({
             width: 120
           }}
         >
+          {/* ✅ UPDATED: Use resolved actor name */}
           {actors.find(a => a.id === hoveredActorId)?.name}
         </div>
       )}

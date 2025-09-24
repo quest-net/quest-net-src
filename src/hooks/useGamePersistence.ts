@@ -1,8 +1,11 @@
+// src/hooks/useGamePersistence.ts
+
 import { useCallback, useEffect, useState } from 'react';
 import type { GameState, SaveState, SavedRoomInfo, GameImage } from '../types/game';
 import { initialGameState } from '../types/game';
 import { selfId } from 'trystero';
 import { imageManager } from '../services/ImageManager';
+import { getCatalogEntity } from '../utils/referenceHelpers';
 
 // Type for image data in transit
 interface TransitGameImage extends GameImage {
@@ -39,8 +42,7 @@ const stripImageData = (gameState: GameState): GameState => {
         hash: img.hash,
         size: img.size,
         type: img.type,
-        tags: img.tags,
-        thumbnail: img.thumbnail // Keep the thumbnail as it's required
+        tags: img.tags
       }))
     }
   };
@@ -74,49 +76,52 @@ const processIncomingGameState = async (gameState: TransitGameState): Promise<Ga
 
   // Process global collection images
   const processedImages: GameImage[] = [];
-for (const image of processedState.globalCollections.images) {
-  if (image.data && typeof image.data === 'string') {
-    try {
-      // Convert data URL to File
-      const response = await fetch(image.data);
-      const blob = await response.blob();
-      const file = new File([blob], image.name, {
-        type: image.type
-      });
+  for (const image of processedState.globalCollections.images) {
+    if (image.data && typeof image.data === 'string') {
+      try {
+        // Convert data URL to File
+        const response = await fetch(image.data);
+        const blob = await response.blob();
+        const file = new File([blob], image.name, {
+          type: image.type
+        });
 
-      // Determine the category based on image usage
-      let category: 'item' | 'skill' | 'character' | 'entity' | 'gallery' = 'gallery';
-      
-      // Check items first
-      if (processedState.globalCollections.items.some(item => item.image === image.id)) {
-        category = 'item';
-      }
-      // Then check skills
-      else if (processedState.globalCollections.skills.some(skill => skill.image === image.id)) {
-        category = 'skill';
-      }
-      // Check entities
-      else if ([...processedState.globalCollections.entities, ...processedState.field]
-          .some(entity => entity.image === image.id)) {
-        category = 'entity';
-      }
-      // Check if it's an environment image
-      else if (processedState.display.environmentImageId === image.id || 
-               processedState.display.focusImageId === image.id) {
-        category = 'gallery';
-      }
+        // Determine the category based on image usage
+        let category: 'item' | 'skill' | 'character' | 'entity' | 'gallery' = 'gallery';
+        
+        // Check items first
+        if (processedState.globalCollections.items.some(item => item.image === image.id)) {
+          category = 'item';
+        }
+        // Then check skills
+        else if (processedState.globalCollections.skills.some(skill => skill.image === image.id)) {
+          category = 'skill';
+        }
+        // Check entities - need to handle both catalog entities and EntityReferences
+        else if (processedState.globalCollections.entities.some(entity => entity.image === image.id) ||
+                 processedState.field.some(entityRef => {
+                   const catalogEntity = getCatalogEntity(entityRef.catalogId, processedState);
+                   return catalogEntity?.image === image.id;
+                 })) {
+          category = 'entity';
+        }
+        // Check if it's an environment image
+        else if (processedState.display.environmentImageId === image.id || 
+                 processedState.display.focusImageId === image.id) {
+          category = 'gallery';
+        }
 
-      // Store in ImageManager with correct category
-      const storedImage = await imageManager.addImage(file, category);
-      processedImages.push(storedImage);
-    } catch (error) {
-      console.error('Failed to process collection image:', error);
+        // Store in ImageManager with correct category
+        const storedImage = await imageManager.addImage(file, category);
+        processedImages.push(storedImage);
+      } catch (error) {
+        console.error('Failed to process collection image:', error);
+      }
+    } else {
+      // Include the image as-is if it doesn't have embedded data
+      processedImages.push(image);
     }
-  } else {
-    // Include the image as-is if it doesn't have embedded data
-    processedImages.push(image);
   }
-}
 
   processedState.globalCollections.images = processedImages;
   return processedState as GameState;

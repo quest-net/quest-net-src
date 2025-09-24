@@ -1,204 +1,120 @@
-import type { GameState, SerializableGameState } from '../types/game';
+// src/utils/gameStateSafety.ts
 
-export interface StateDiffMetrics {
-  partyDiffPercentage: number;
-  itemsDiffPercentage: number;
-  skillsDiffPercentage: number;
-  entitiesDiffPercentage: number;
-  imagesDiffPercentage: number;
+interface SafetyMetrics {
   overallDiffPercentage: number;
-  details: {
-    partyRemoved: number;
-    partyAdded: number;
-    itemsRemoved: number;
-    itemsAdded: number;
-    skillsRemoved: number;
-    skillsAdded: number;
-    entitiesRemoved: number;
-    entitiesAdded: number;
-    imagesRemoved: number;
-    imagesAdded: number;
+  categoriesConsidered: string[];
+  categoryDetails: {
+    [category: string]: {
+      oldCount: number;
+      newCount: number;
+      diffPercentage: number;
+      included: boolean;
+    };
   };
 }
 
-export interface SafetyCheckResult {
+interface SafetyResult {
   isSafe: boolean;
-  metrics: StateDiffMetrics;
+  metrics: SafetyMetrics;
   reason?: string;
 }
 
-const SAFETY_THRESHOLDS = {
-  overall: 50, // 50% overall change is dangerous
-  party: 70,   // Party changes are especially sensitive
-  items: 60,
-  skills: 60,
-  entities: 60,
-  images: 60
-} as const;
+// Safety thresholds
+const PERCENTAGE_THRESHOLD = 60; // 60% change threshold
+const MIN_ITEMS_FOR_CONSIDERATION = 10; // Only consider categories with 10+ items
 
-/**
- * Calculate the percentage difference between two arrays based on IDs
- */
-function calculateArrayDifference<T extends { id: string }>(
-  oldArray: T[],
-  newArray: T[]
-): { diffPercentage: number; added: number; removed: number } {
-  const oldIds = new Set(oldArray.map(item => item.id));
-  const newIds = new Set(newArray.map(item => item.id));
+function calculateOverallSafetyMetrics(oldState: any, newState: any): SafetyMetrics {
+  const categories = {
+    party: {
+      old: oldState.party || [],
+      new: newState.party || []
+    },
+    catalogEntities: {
+      old: oldState.globalCollections?.entities || [],
+      new: newState.globalCollections?.entities || []
+    },
+    fieldEntities: {
+      old: oldState.field || [],
+      new: newState.field || []
+    },
+    items: {
+      old: oldState.globalCollections?.items || [],
+      new: newState.globalCollections?.items || []
+    },
+    skills: {
+      old: oldState.globalCollections?.skills || [],
+      new: newState.globalCollections?.skills || []
+    },
+    images: {
+      old: oldState.globalCollections?.images || [],
+      new: newState.globalCollections?.images || []
+    }
+  };
 
-  let added = 0;
-  let removed = 0;
+  const categoryDetails: SafetyMetrics['categoryDetails'] = {};
+  const consideredCategories: string[] = [];
+  let totalWeightedDiff = 0;
+  let totalWeight = 0;
 
-  // Count additions
-  newIds.forEach(id => {
-    if (!oldIds.has(id)) added++;
-  });
+  // Process each category
+  for (const [categoryName, arrays] of Object.entries(categories)) {
+    const oldCount = arrays.old.length;
+    const newCount = arrays.new.length;
+    
+    // Calculate percentage difference
+    const diffPercentage = oldCount === 0 ? 
+      (newCount > 0 ? 100 : 0) : 
+      Math.abs((newCount - oldCount) / oldCount) * 100;
 
-  // Count removals
-  oldIds.forEach(id => {
-    if (!newIds.has(id)) removed++;
-  });
-  
-  const totalChanges = added + removed;
-  const maxPossibleChanges = oldArray.length + newArray.length;
-  const diffPercentage = (totalChanges / maxPossibleChanges) * 100;
+    const included = oldCount >= MIN_ITEMS_FOR_CONSIDERATION;
 
-  return { diffPercentage, added, removed };
-}
+    categoryDetails[categoryName] = {
+      oldCount,
+      newCount,
+      diffPercentage,
+      included
+    };
 
-/**
- * Calculate comprehensive difference metrics between two game states
- */
-export function calculateStateDifference(
-  oldState: GameState,
-  newState: SerializableGameState
-): StateDiffMetrics {
-  // Calculate differences for each major collection
-  const partyDiff = calculateArrayDifference(oldState.party, newState.party);
-  const itemsDiff = calculateArrayDifference(
-    oldState.globalCollections.items,
-    newState.globalCollections.items
-  );
-  const skillsDiff = calculateArrayDifference(
-    oldState.globalCollections.skills,
-    newState.globalCollections.skills
-  );
-  const entitiesDiff = calculateArrayDifference(
-    [...oldState.globalCollections.entities, ...oldState.field],
-    [...newState.globalCollections.entities, ...newState.field]
-  );
-  const imagesDiff = calculateArrayDifference(
-    oldState.globalCollections.images,
-    newState.globalCollections.images
-  );
+    // Only include categories with enough items in the overall calculation
+    if (included) {
+      consideredCategories.push(categoryName);
+      totalWeightedDiff += diffPercentage * oldCount;
+      totalWeight += oldCount;
+    }
+  }
 
-  // Calculate overall difference percentage
-  const totalOldItems = oldState.party.length +
-    oldState.globalCollections.items.length +
-    oldState.globalCollections.skills.length +
-    oldState.globalCollections.entities.length +
-    oldState.field.length +
-    oldState.globalCollections.images.length;
-
-  const totalNewItems = newState.party.length +
-    newState.globalCollections.items.length +
-    newState.globalCollections.skills.length +
-    newState.globalCollections.entities.length +
-    newState.field.length +
-    newState.globalCollections.images.length;
-
-  const totalChanges = partyDiff.added + partyDiff.removed +
-    itemsDiff.added + itemsDiff.removed +
-    skillsDiff.added + skillsDiff.removed +
-    entitiesDiff.added + entitiesDiff.removed +
-    imagesDiff.added + imagesDiff.removed;
-
-  const overallDiffPercentage = (totalChanges / (totalOldItems + totalNewItems)) * 100;
+  // Calculate overall percentage (weighted by collection size)
+  const overallDiffPercentage = totalWeight === 0 ? 0 : totalWeightedDiff / totalWeight;
 
   return {
-    partyDiffPercentage: partyDiff.diffPercentage,
-    itemsDiffPercentage: itemsDiff.diffPercentage,
-    skillsDiffPercentage: skillsDiff.diffPercentage,
-    entitiesDiffPercentage: entitiesDiff.diffPercentage,
-    imagesDiffPercentage: imagesDiff.diffPercentage,
     overallDiffPercentage,
-    details: {
-      partyRemoved: partyDiff.removed,
-      partyAdded: partyDiff.added,
-      itemsRemoved: itemsDiff.removed,
-      itemsAdded: itemsDiff.added,
-      skillsRemoved: skillsDiff.removed,
-      skillsAdded: skillsDiff.added,
-      entitiesRemoved: entitiesDiff.removed,
-      entitiesAdded: entitiesDiff.added,
-      imagesRemoved: imagesDiff.removed,
-      imagesAdded: imagesDiff.added
-    }
+    categoriesConsidered: consideredCategories,
+    categoryDetails
   };
 }
 
-/**
- * Check if a state update is safe to apply
- */
-export function isStateUpdateSafe(
-  oldState: GameState,
-  newState: SerializableGameState
-): SafetyCheckResult {
-  // Don't perform safety checks if there's no existing state
-  if (!oldState.party.length && !oldState.globalCollections.items.length) {
-    return { isSafe: true, metrics: calculateStateDifference(oldState, newState) };
-  }
-
-  const metrics = calculateStateDifference(oldState, newState);
-
-  // Check each threshold
-  if (metrics.overallDiffPercentage > SAFETY_THRESHOLDS.overall) {
+export function isStateUpdateSafe(oldState: any, newState: any): SafetyResult {
+  const metrics = calculateOverallSafetyMetrics(oldState, newState);
+  
+  // If no categories were considered (all collections too small), it's always safe
+  if (metrics.categoriesConsidered.length === 0) {
     return {
-      isSafe: false,
-      metrics,
-      reason: `Overall changes (${metrics.overallDiffPercentage.toFixed(1)}%) exceed safety threshold of ${SAFETY_THRESHOLDS.overall}%`
+      isSafe: true,
+      metrics
     };
   }
 
-  if (metrics.partyDiffPercentage > SAFETY_THRESHOLDS.party) {
+  // Check if overall change exceeds threshold
+  if (metrics.overallDiffPercentage > PERCENTAGE_THRESHOLD) {
     return {
       isSafe: false,
       metrics,
-      reason: `Party changes (${metrics.partyDiffPercentage.toFixed(1)}%) exceed safety threshold of ${SAFETY_THRESHOLDS.party}%`
+      reason: `Overall changes (${metrics.overallDiffPercentage.toFixed(1)}%) exceed safety threshold of ${PERCENTAGE_THRESHOLD}%. Considered categories: ${metrics.categoriesConsidered.join(', ')}`
     };
   }
 
-  if (metrics.itemsDiffPercentage > SAFETY_THRESHOLDS.items) {
-    return {
-      isSafe: false,
-      metrics,
-      reason: `Item changes (${metrics.itemsDiffPercentage.toFixed(1)}%) exceed safety threshold of ${SAFETY_THRESHOLDS.items}%`
-    };
-  }
-
-  if (metrics.skillsDiffPercentage > SAFETY_THRESHOLDS.skills) {
-    return {
-      isSafe: false,
-      metrics,
-      reason: `Skill changes (${metrics.skillsDiffPercentage.toFixed(1)}%) exceed safety threshold of ${SAFETY_THRESHOLDS.skills}%`
-    };
-  }
-
-  if (metrics.entitiesDiffPercentage > SAFETY_THRESHOLDS.entities) {
-    return {
-      isSafe: false,
-      metrics,
-      reason: `Entity changes (${metrics.entitiesDiffPercentage.toFixed(1)}%) exceed safety threshold of ${SAFETY_THRESHOLDS.entities}%`
-    };
-  }
-
-  if (metrics.imagesDiffPercentage > SAFETY_THRESHOLDS.images) {
-    return {
-      isSafe: false,
-      metrics,
-      reason: `Image changes (${metrics.imagesDiffPercentage.toFixed(1)}%) exceed safety threshold of ${SAFETY_THRESHOLDS.images}%`
-    };
-  }
-
-  return { isSafe: true, metrics };
+  return {
+    isSafe: true,
+    metrics
+  };
 }

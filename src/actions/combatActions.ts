@@ -1,6 +1,9 @@
+// src/actions/combatActions.ts
+
 import type { Room } from 'trystero/nostr';
-import { type GameState, SerializableCharacter, Entity, CombatState, BattleMapPosition, DEFAULT_CHARACTER_POSITIONS, DEFAULT_ENTITY_POSITIONS } from '../types/game';
+import { type GameState, SerializableCharacter, Entity, EntityReference, CombatState, BattleMapPosition, DEFAULT_CHARACTER_POSITIONS, DEFAULT_ENTITY_POSITIONS } from '../types/game';
 import { selfId } from 'trystero';
+import { getCatalogEntity } from '../utils/referenceHelpers';
 
 // Combined action types
 export const CombatActions = {
@@ -52,16 +55,19 @@ function applySPRegenerationToCharacter(character: SerializableCharacter, isForw
   };
 }
 
-// Helper function to apply SP regeneration to an entity
-function applySPRegenerationToEntity(entity: Entity, isForward: boolean = true): Entity {
+// Helper function to apply SP regeneration to an entity reference
+function applySPRegenerationToEntityReference(entityRef: EntityReference, gameState: GameState, isForward: boolean = true): EntityReference {
+  const catalogEntity = getCatalogEntity(entityRef.catalogId, gameState);
+  if (!catalogEntity) return entityRef; // Can't regenerate without catalog data
+  
   const multiplier = isForward ? 1 : -1;
   const newSP = Math.min(
-    entity.maxSp,
-    Math.max(0, entity.sp + (entity.spRegenRate * multiplier))
+    catalogEntity.maxSp,
+    Math.max(0, entityRef.sp + (catalogEntity.spRegenRate * multiplier))
   );
   
   return {
-    ...entity,
+    ...entityRef,
     sp: newSP
   };
 }
@@ -72,8 +78,8 @@ function updateAllActorsSP(gameState: GameState, isForward: boolean = true): Gam
     applySPRegenerationToCharacter(character, isForward)
   );
 
-  const updatedField = gameState.field.map(entity =>
-    applySPRegenerationToEntity(entity, isForward)
+  const updatedField = gameState.field.map(entityRef =>
+    applySPRegenerationToEntityReference(entityRef, gameState, isForward)
   );
 
   return {
@@ -225,15 +231,16 @@ export function setupCombatActions(
         }
       });
 
-      // Place field entities
-      gameState.field.forEach((entity, index) => {
+      // Place field entities (now EntityReference objects)
+      gameState.field.forEach((entityRef, index) => {
         const position = findAvailablePosition(
           positions,
           false,
           defaultEntityPositions
         );
         if (position) {
-          positions[entity.id] = position;
+          // Use the entity reference's instanceId for combat positioning
+          positions[entityRef.instanceId] = position;
         }
       });
 

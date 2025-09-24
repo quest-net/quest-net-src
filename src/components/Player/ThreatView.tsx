@@ -105,6 +105,7 @@ const handleStatChange = async (statType: 'hp' | 'mp' | 'sp', newValue: number) 
         gameState={gameState}
         onGameStateChange={onGameStateChange}
         layout="vertical"
+        room={room}
       />
       </div>
 
@@ -115,7 +116,7 @@ const handleStatChange = async (statType: 'hp' | 'mp' | 'sp', newValue: number) 
 
       {/* Column 4, Row 1-2: Field Entities */}
       <div style={{ gridColumn: '4', gridRow: '1 / 3' }} className="rounded-lg  p-2 overflow-auto">
-        <Field field={gameState.field} />
+        <Field field={gameState.field} gameState={gameState}/>
       </div>
 
       {/* Modal Panels */}
