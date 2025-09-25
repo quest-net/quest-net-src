@@ -30,10 +30,11 @@
     "trystero": "^0.20.0",
     "typescript": "^4.9.5",
     "uuid": "^11.0.2",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^2.1.4",
+    "zustand": "^5.0.8"
   },
   "scripts": {
-    "push:src": "git add . && git commit -m \"update source\" && git push git@github.com:quest-net/quest-net-src.git HEAD:main",
+    "push:src": "git add . && git diff --cached --quiet && echo \"No changes to commit\" || (git commit -m \"chore(src): update\" && git push)",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d build",
     "deploy:beta": "gh-pages -d build -b beta",
