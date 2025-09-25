@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import './App.css';
 import GameRoom from './GameRoom';
 import { Header } from './components/ui/Header';
@@ -50,7 +50,6 @@ function App() {
       <CustomCursor scale={window.innerWidth > 1920 ? 1.2 : 1} />
       <div className="App">
         <Routes>
-          {/* Main Game Route */}
           <Route path="/" element={
             <>
               <Header 
@@ -68,7 +67,6 @@ function App() {
             </>
           } />
           
-          {/* Character Sheet Route */}
           <Route path="/character/:characterId" element={<StandaloneCharacterSheet />} />
         </Routes>
       </div>
