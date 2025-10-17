@@ -1,6 +1,6 @@
 {
   "name": "quest-net",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "homepage": "https://quest-net.github.io",
   "private": true,
   "dependencies": {
@@ -9,6 +9,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@radix-ui/react-alert-dialog": "^1.1.2",
     "@radix-ui/react-tabs": "^1.1.1",
+    "@tailwindcss/vite": "^4.1.14",
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
@@ -16,19 +17,18 @@
     "@tsparticles/react": "^3.0.0",
     "@tsparticles/slim": "^3.5.0",
     "@types/jest": "^27.5.2",
-    "@types/node": "^16.18.115",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "antd": "^5.27.4",
+    "fast-json-patch": "^3.1.1",
     "firebase": "^11.0.1",
     "framer-motion": "^11.11.17",
     "lucide-react": "^0.454.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.30.1",
-    "react-scripts": "5.0.1",
     "react-use": "^17.5.1",
-    "trystero": "^0.20.0",
-    "typescript": "^4.9.5",
+    "trystero": "^0.21.0",
     "uuid": "^11.0.2",
     "web-vitals": "^2.1.4",
     "zustand": "^5.0.8"
@@ -38,10 +38,9 @@
     "predeploy": "npm run build",
     "deploy": "gh-pages -d build",
     "deploy:beta": "gh-pages -d build -b beta",
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "dev": "vite --host",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
   },
   "eslintConfig": {
     "extends": [
@@ -62,12 +61,19 @@
     ]
   },
   "devDependencies": {
+    "@iconify/json": "^2.2.396",
+    "@iconify/tailwind4": "^1.0.6",
     "@types/lodash": "^4.17.13",
+    "@types/node": "^22.18.10",
     "@types/react-router-dom": "^5.3.3",
     "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^5.0.4",
     "autoprefixer": "^10.4.20",
+    "daisyui": "^5.2.3",
     "gh-pages": "^6.2.0",
     "postcss": "^8.4.47",
-    "tailwindcss": "^3.4.14"
+    "tailwindcss": "^4.1.14",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.9"
   }
 }

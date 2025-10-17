@@ -1,5 +1,12 @@
+
+import { Campaign } from "../Campaign/Campaign";
+import { User } from "../User/User";
+
 export interface Context {
-    User: User;
-    Campaigns: Campaign[];
-    AppSettings: AppSetting[];
+	// User data
+	User: User;
+	// List of Campaigns
+	Campaigns: Campaign[];
+	// App Preferences
+	AppSettings: Record<string,string>;
 }

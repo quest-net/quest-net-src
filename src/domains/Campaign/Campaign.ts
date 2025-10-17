@@ -1,12 +1,30 @@
+import { Character } from "../Character/Character";
+import { Item } from "../Item/Item";
+import { Skill } from "../Skill/Skill";
+import { Image } from "../Image/Image";
+import { LogEntry } from "../Log/LogEntry";
+import { Audio } from "../Audio/Audio";
+import { Status } from "../Status/Status";
+import { GameState } from "../GameState/GameState";
+import { Entity } from "../Entity/Entity";
+import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
+
 export interface Campaign {
     Id: string;
     Name: string;
     RoomCode: string;
-    Characters: Character[];
-    Items: Item[];
-    Skills: Skill[];
-    Statuses: Status[];
+    //Global Collections
+    CharacterTemplates: Character[];
+    ItemTemplates: Item[];
+    SkillTemplates: Skill[];
+    StatuseTemplates: Status[];
+    EntityTemplates: Entity[];
     Audios: Audio[];
     Images: Image[];
-    Entities: Entity[];
+    //GameState
+    GameState: GameState;
+    //Campaign Log
+    Log: LogEntry[];
+    //Campaign-specific settings
+    Settings: CampaignSettings;
 }
