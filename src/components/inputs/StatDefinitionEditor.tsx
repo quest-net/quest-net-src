@@ -1,13 +1,17 @@
-// StatDefinitionsEditor.tsx
+// components/inputs/StatDefinitionEditor.tsx
 import { StatDefinition } from '../../domains/CampaignSetting/CampaignSetting';
+import { useFormReadOnly } from '../Form/Form';
 
 interface StatDefinitionsEditorProps {
   stats: StatDefinition[];
   onChange: (stats: StatDefinition[]) => void;
-  readOnly: boolean;
+  readOnly?: boolean; // Optional - will use FormContext if available
 }
 
-export function StatDefinitionsEditor({ stats, onChange, readOnly }: StatDefinitionsEditorProps) {
+export function StatDefinitionsEditor({ stats, onChange, readOnly: readOnlyProp }: StatDefinitionsEditorProps) {
+  // Try to get readOnly from FormContext, fall back to prop
+  const contextReadOnly = useFormReadOnly();
+  const readOnly = readOnlyProp ?? contextReadOnly;
   
   const handleAdd = () => {
     const newStat: StatDefinition = {
@@ -39,7 +43,7 @@ export function StatDefinitionsEditor({ stats, onChange, readOnly }: StatDefinit
               <th>Color</th>
               <th>Max</th>
               <th>Regen Rate</th>
-              <th></th>
+              {!readOnly && <th></th>}
             </tr>
           </thead>
           <tbody>
@@ -59,7 +63,7 @@ export function StatDefinitionsEditor({ stats, onChange, readOnly }: StatDefinit
                     type="color"
                     value={stat.Color}
                     onChange={(e) => handleUpdate(stat.Id, 'Color', e.target.value)}
-                    className=" input-sm h-10 w-20"
+                    className="input-sm h-10 w-20"
                     disabled={readOnly}
                   />
                 </td>
@@ -83,25 +87,28 @@ export function StatDefinitionsEditor({ stats, onChange, readOnly }: StatDefinit
                     disabled={readOnly}
                   />
                 </td>
-                <td>
-                  <button
-                    onClick={() => handleDelete(stat.Id)}
-                    className="btn btn-error btn-sm btn-square"
-                    title="Delete stat"
-                    hidden={readOnly}
-                  >
-                    ✕
-                  </button>
-                </td>
+                {!readOnly && (
+                  <td>
+                    <button
+                      onClick={() => handleDelete(stat.Id)}
+                      className="btn btn-error btn-sm btn-square"
+                      title="Delete stat"
+                    >
+                      ✕
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      <button onClick={handleAdd} className="btn btn-outline btn-sm" hidden={readOnly}>
-        + Add Stat
-      </button>
+      {!readOnly && (
+        <button onClick={handleAdd} className="btn btn-outline btn-sm">
+          + Add Stat
+        </button>
+      )}
     </div>
   );
 }

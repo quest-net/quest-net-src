@@ -11,11 +11,7 @@ export default defineConfig({
   ],
   base: '/',
   server: {
-    https: {
-      key: fs.readFileSync('./localhost+3-key.pem'),
-      cert: fs.readFileSync('./localhost+3.pem')
-    },
-    host: true
+    port: 3000
   },
   build: {
     outDir: 'build', // Keep 'build' folder for compatibility with your deploy script

@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+// components/inputs/TagEditor.tsx
+import { useState } from 'react';
+import { useFormReadOnly } from '../Form/Form';
 
 interface TagEditorProps {
   tags: string[];
@@ -6,7 +8,10 @@ interface TagEditorProps {
   readOnly?: boolean;
 }
 
-export function TagEditor({ tags, onChange, readOnly = false }: TagEditorProps) {
+export function TagEditor({ tags, onChange, readOnly: readOnlyProp }: TagEditorProps) {
+  const contextReadOnly = useFormReadOnly();
+  const readOnly = readOnlyProp ?? contextReadOnly;
+  
   const [newTag, setNewTag] = useState('');
 
   const handleAdd = () => {

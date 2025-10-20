@@ -14,6 +14,38 @@ import { Position } from "../Actor/Actor";
 export const CharacterActions = {
   
   /**
+   * Creates a default character template with campaign stat definitions
+   */
+  createDefault(context: Context): Character {
+    const campaign = CampaignActions.getActiveCampaign(context);
+    
+    // Initialize stats from campaign settings with Current = Max
+    const stats = campaign.Settings.StatDefinitions.map(statDef => ({
+      ...statDef,
+      Current: statDef.Max
+    }));
+    
+    return {
+      Id: crypto.randomUUID(),
+      Name: 'New Character',
+      Description: '',
+      Image: undefined,
+      Stats: stats,
+      Attributes: {},
+      Position: { x: 0, y: 0 },
+      MoveSpeed: 30,
+      CanFly: false,
+      Inventory: [],
+      Equipment: [],
+      Skills: [],
+      Statuses: [],
+      Tags: [],
+      Notes: [],
+      playedBy: null
+    };
+  },
+
+  /**
    * Creates a new character template in the catalog
    * Sets playedBy to the creating user
    */

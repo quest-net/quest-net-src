@@ -1,10 +1,15 @@
+// components/inputs/AttributeEditor.tsx
+import { useFormReadOnly } from '../Form/Form';
+
 interface AttributeEditorProps {
   attributes: Record<string, string>;
   onChange: (attributes: Record<string, string>) => void;
   readOnly?: boolean;
 }
 
-export function AttributeEditor({ attributes, onChange, readOnly = false }: AttributeEditorProps) {
+export function AttributeEditor({ attributes, onChange, readOnly: readOnlyProp }: AttributeEditorProps) {
+  const contextReadOnly = useFormReadOnly();
+  const readOnly = readOnlyProp ?? contextReadOnly;
 
   const handleAdd = () => {
     // Find a unique name for the new attribute
@@ -53,8 +58,8 @@ export function AttributeEditor({ attributes, onChange, readOnly = false }: Attr
             </tr>
           </thead>
           <tbody>
-            {Object.entries(attributes).map(([key, value]) => (
-              <tr key={key}>
+            {Object.entries(attributes).map(([key, value], index) => (
+              <tr key={index}>
                 <td>
                   <input
                     type="text"

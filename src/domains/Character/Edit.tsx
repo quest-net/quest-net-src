@@ -1,188 +1,163 @@
-import { useEffect, useState } from 'react';
-import { Character } from './Character';
-import { useActionService } from '../../services/Actions/ActionServiceProvider';
+// domains/Character/Edit.tsx
+
 import { useQuestContext } from '../Context/ContextProvider';
-import { CampaignActions } from '../Campaign/CampaignActions';
+import { useActionService } from '../../services/Actions/ActionServiceProvider';
+import { CharacterActions } from './CharacterActions';
+import { Character } from './Character';
+import { FormWrapper, FormSection, FormField, FormGrid } from '../../components/Form/Form';
+import { StatDefinitionsEditor } from '../../components/inputs/StatDefinitionEditor';
 import { AttributeEditor } from '../../components/inputs/AttributeEditor';
 import { TagEditor } from '../../components/inputs/TagEditor';
-import { StatDefinitionsEditor } from '../../components/inputs/StatDefinitionEditor';
-import { CampaignSettings } from '../CampaignSetting/CampaignSetting';
 
 interface CharacterEditProps {
   character?: Character;
-  mode: 'create' | 'edit' | 'view';
-  onClose?: () => void;
+  onClose: () => void;
 }
 
-const getInitialFormData = (campaignSettings: CampaignSettings, character?: Character): Character => {
-  if (character) {
-    return structuredClone(character); // Use structuredClone for a deep copy
-  }
-
-  // Create a new character template
-  return {
-    Id: crypto.randomUUID(),
-    Name: 'New Character',
-    Description: '',
-    Image: '',
-    Stats: structuredClone(campaignSettings.StatDefinitions), // Deep copy from campaign settings
-    Attributes: {},
-    Position: { x: 0, y: 0 },
-    MoveSpeed: 6,
-    CanFly: false,
-    Inventory: [],
-    Equipment: [],
-    Skills: [],
-    Statuses: [],
-    Tags: [],
-    Notes: [],
-    playedBy: null,
-  };
-};
-
-export function CharacterEdit({ character, mode, onClose }: CharacterEditProps) {
+export function CharacterEdit({ character, onClose }: CharacterEditProps) {
   const context = useQuestContext();
   const { actionService } = useActionService();
-  const campaign = CampaignActions.getActiveCampaign(context);
-  const isReadOnly = mode === 'view';
 
-  // Use a stringified version for reliable dirty checking
-  const [initialData] = useState(() => getInitialFormData(campaign.Settings, character));
-  const [formData, setFormData] = useState<Character>(initialData);
-  const [isDirty, setIsDirty] = useState(false);
+  const initialData = character || CharacterActions.createDefault(context);
 
-  useEffect(() => {
-    // Compare stringified versions to check for meaningful changes
-    setIsDirty(JSON.stringify(initialData) !== JSON.stringify(formData));
-  }, [formData, initialData]);
+  const handleSave = (data: Character) => {
+    if (!actionService) return;
+    
+    if (!character) {
+      // Create mode
+      actionService.execute('character:create', {
+        character: data
+      });
+    } else {
+      // Edit mode
+      actionService.execute('character:edit', {
+        characterId: data.Id,
+        updates: data
+      });
+    }
+  };
+
+  return (
+    <FormWrapper
+      entityId={character?.Id}
+      initialData={initialData}
+      onSave={handleSave}
+      onClose={onClose}
+      createTitle="Create Character"
+      editTitle="Edit Character"
+      viewTitle="View Character"
+    >
+      <CharacterForm />
+    </FormWrapper>
+  );
+}
+
+// ============================================================================
+// CHARACTER FORM (Receives data and onChange from FormWrapper)
+// ============================================================================
+
+interface CharacterFormProps {
+  data?: Character;
+  onChange?: (data: Character) => void;
+}
+
+function CharacterForm({ data, onChange }: CharacterFormProps) {
+  if (!data || !onChange) return null;
 
   const handleFieldChange = (field: keyof Character, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    onChange({
+      ...data,
+      [field]: value
+    });
   };
 
-  const handleSave = () => {
-    if (!actionService) return;
-    if (mode === 'create') {
-      actionService.execute('character:create', { character: formData });
-    } else if (mode === 'edit' && character) {
-      // For edits, only send the changed fields for efficiency, but here we send the whole object as per CharacterActions
-      actionService.execute('character:edit', { characterId: character.Id, updates: formData });
-    }
-    onClose?.();
-  };
-  
   return (
-    <div className="p-4 bg-base-200 rounded-lg space-y-6">
-      {/* Header */}
-      <header className="flex justify-between items-center pb-2 border-b border-base-300">
-        <h3 className="text-xl font-bold">{mode === 'create' ? 'Create New Character' : formData.Name}</h3>
-        {onClose && (
-          <button onClick={onClose} className="btn btn-sm btn-ghost btn-square">
-            <span className="icon-[mdi--close] h-6 w-6" />
-          </button>
-        )}
-      </header>
-
-      {/* Form Body */}
-      <main className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Main Details */}
-          <div className="form-control">
-            <label className="label"><span className="label-text">Name</span></label>
-            <input 
-              type="text" 
-              value={formData.Name}
+    <>
+      {/* Basic Info */}
+      <FormSection 
+        title="Basic Information"
+        description="Character identity and description"
+      >
+        <FormGrid cols={2}>
+          <FormField label="Name">
+            <input
+              type="text"
+              value={data.Name}
               onChange={(e) => handleFieldChange('Name', e.target.value)}
-              disabled={isReadOnly}
-              className="input input-bordered"
+              className="input input-bordered w-full"
+              placeholder="Character Name"
             />
-          </div>
-          <div className="form-control md:col-span-2">
-            <label className="label"><span className="label-text">Description</span></label>
-            <textarea 
-              value={formData.Description}
+          </FormField>
+
+          <FormField label="Image">
+            <div className="text-sm text-base-content/60 italic">
+              Image handling not yet implemented
+            </div>
+          </FormField>
+
+          <FormField label="Description" span={2}>
+            <textarea
+              value={data.Description || ''}
               onChange={(e) => handleFieldChange('Description', e.target.value)}
-              disabled={isReadOnly}
-              className="textarea textarea-bordered h-24"
+              className="textarea textarea-bordered w-full"
               rows={3}
+              placeholder="Character description..."
             />
-          </div>
+          </FormField>
 
-          {/* Image Placeholder */}
-          <div className="form-control">
-            <label className="label"><span className="label-text">Image</span></label>
-            <div className="w-full aspect-square bg-base-300 rounded-lg flex items-center justify-center">
-              <span className="icon-[mdi--image-off-outline] text-4xl text-base-content/30" />
-            </div>
-          </div>
+          <FormField label="Move Speed">
+            <input
+              type="number"
+              value={data.MoveSpeed}
+              onChange={(e) => handleFieldChange('MoveSpeed', Number(e.target.value))}
+              className="input input-bordered w-full"
+              min={0}
+            />
+          </FormField>
           
-          {/* Movement */}
-          <div className="md:col-span-2 space-y-4">
-            <div className="form-control">
-              <label className="label"><span className="label-text">Move Speed</span></label>
-              <input 
-                type="number" 
-                value={formData.MoveSpeed}
-                onChange={(e) => handleFieldChange('MoveSpeed', parseInt(e.target.value, 10) || 0)}
-                disabled={isReadOnly}
-                className="input input-bordered"
-              />
-            </div>
-            <div className="form-control">
-              <label className="cursor-pointer label justify-start gap-4">
-                <input 
-                  type="checkbox" 
-                  checked={formData.CanFly}
-                  onChange={(e) => handleFieldChange('CanFly', e.target.checked)}
-                  disabled={isReadOnly}
-                  className="checkbox checkbox-primary" 
-                />
-                <span className="label-text">Can Fly</span> 
-              </label>
-            </div>
-          </div>
-        </div>
+          <FormField label="Can Fly">
+            <input
+              type="checkbox"
+              checked={data.CanFly}
+              onChange={(e) => handleFieldChange('CanFly', e.target.checked)}
+              className="toggle toggle-primary"
+            />
+          </FormField>
+        </FormGrid>
+      </FormSection>
 
-        {/* Stats */}
-        <div className="form-control">
-          <label className="label"><span className="label-text font-bold">Stats</span></label>
-          <StatDefinitionsEditor
-            stats={formData.Stats}
-            onChange={(stats) => handleFieldChange('Stats', stats)}
-            readOnly={isReadOnly}
-          />
-        </div>
+      {/* Stats */}
+      <FormSection 
+        title="Stats"
+        description="Character statistics (HP, Mana, etc.)"
+      >
+        <StatDefinitionsEditor
+          stats={data.Stats}
+          onChange={(stats) => handleFieldChange('Stats', stats)}
+        />
+      </FormSection>
 
-        {/* Attributes */}
-        <div className="form-control">
-          <label className="label"><span className="label-text font-bold">Attributes</span></label>
-          <AttributeEditor 
-            attributes={formData.Attributes}
-            onChange={(attrs) => handleFieldChange('Attributes', attrs)}
-            readOnly={isReadOnly}
-          />
-        </div>
-        
-        {/* Tags */}
-        <div className="form-control">
-          <label className="label"><span className="label-text font-bold">Tags</span></label>
-          <TagEditor 
-            tags={formData.Tags || []}
-            onChange={(tags) => handleFieldChange('Tags', tags)}
-            readOnly={isReadOnly}
-          />
-        </div>
-      </main>
+      {/* Attributes */}
+      <FormSection 
+        title="Attributes"
+        description="Custom key-value attributes"
+      >
+        <AttributeEditor
+          attributes={data.Attributes}
+          onChange={(attributes) => handleFieldChange('Attributes', attributes)}
+        />
+      </FormSection>
 
-      {/* Footer Actions */}
-      {mode !== 'view' && (
-        <footer className="flex justify-end gap-2 pt-4 border-t border-base-300">
-          <button onClick={onClose} className="btn btn-ghost">Cancel</button>
-          <button onClick={handleSave} className="btn btn-primary" disabled={!isDirty}>
-            Save Changes
-          </button>
-        </footer>
-      )}
-    </div>
+      {/* Tags */}
+      <FormSection 
+        title="Tags"
+        description="Organizational tags for this character"
+      >
+        <TagEditor
+          tags={data.Tags || []}
+          onChange={(tags) => handleFieldChange('Tags', tags)}
+        />
+      </FormSection>
+    </>
   );
 }

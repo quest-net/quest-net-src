@@ -1,83 +1,76 @@
 // domains/CampaignSetting/Edit.tsx
 
-import { useEffect, useState } from 'react';
 import { useQuestContext } from '../Context/ContextProvider';
 import { useActionService } from '../../services/Actions/ActionServiceProvider';
 import { CampaignActions } from '../Campaign/CampaignActions';
 import { CampaignSettings } from './CampaignSetting';
-import { FormSection, FormField } from '../../components/Form/FormIndex';
+import { FormWrapper, FormSection, FormField, FormGrid } from '../../components/Form/Form';
 import { StatDefinitionsEditor } from '../../components/inputs/StatDefinitionEditor';
 
 export function CampaignSettingEdit() {
   const context = useQuestContext();
   const { actionService } = useActionService();
   const campaign = CampaignActions.getActiveCampaign(context);
-  
-  const [settings, setSettings] = useState<CampaignSettings>(campaign.Settings);
-  const [isDirty, setIsDirty] = useState(false);
 
-  useEffect(() => {
-    const originalSettings = JSON.stringify(campaign.Settings);
-    const currentSettings = JSON.stringify(settings);
-    
-    if (originalSettings !== currentSettings) {
-      setIsDirty(true);
-    } else {
-      setIsDirty(false);
-    }
-  }, [settings, campaign.Settings]);
-
-  const handleSettingChange = (category: keyof CampaignSettings, field: string) => {
-    return (e: React.ChangeEvent<HTMLInputElement>) => {
-      const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
-      
-      setSettings(prev => ({
-        ...prev,
-        [category]: {
-          ...(prev[category] as object), // Cast to ensure spread works
-          [field]: value
-        }
-      }));
-    };
-  };
-
-  const handleSave = () => {
+  const handleSave = (data: CampaignSettings) => {
     if (!actionService) return;
     
     actionService.execute('setting:update', {
-      updates: settings
+      updates: data
     });
-
-    setIsDirty(false);
-  };
-
-  const updateSettings = (updates: Partial<CampaignSettings>) => {
-    setSettings(prev => ({ ...prev, ...updates }));
   };
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Campaign Settings</h2>
-        <div className="flex items-center gap-4">
-          {isDirty && (
-            <span className="text-sm text-warning italic">You have unsaved changes</span>
-          )}
-          <button onClick={handleSave} className="btn btn-primary">
-            Save Changes
-          </button>
-        </div>
-      </div>
+    <FormWrapper
+      entityId={campaign.Id}
+      initialData={campaign.Settings}
+      onSave={handleSave}
+      onClose={() => {}} // No close action needed - this is shown in DMView
+      createTitle="Campaign Settings"
+      editTitle="Campaign Settings"
+      viewTitle="Campaign Settings"
+    >
+      <CampaignSettingForm />
+    </FormWrapper>
+  );
+}
 
+// ============================================================================
+// CAMPAIGN SETTING FORM (Receives data and onChange from FormWrapper)
+// ============================================================================
+
+interface CampaignSettingFormProps {
+  data?: CampaignSettings;
+  onChange?: (data: CampaignSettings) => void;
+}
+
+function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
+  if (!data || !onChange) return null;
+
+  const handleSettingChange = (category: keyof CampaignSettings, field: string, value: any) => {
+    onChange({
+      ...data,
+      [category]: {
+        ...(data[category] as object),
+        [field]: value
+      }
+    });
+  };
+
+  const updateSettings = (updates: Partial<CampaignSettings>) => {
+    onChange({ ...data, ...updates });
+  };
+
+  return (
+    <>
       {/* Stat Definitions */}
       <FormSection 
         title="Stat Definitions" 
         description="Define custom stats for characters (HP, Mana, Stamina, etc.)"
       >
         <StatDefinitionsEditor
-          stats={settings.StatDefinitions}
+          stats={data.StatDefinitions}
           onChange={(stats) => updateSettings({ StatDefinitions: stats })}
-          readOnly={false}
         />
       </FormSection>
 
@@ -86,11 +79,12 @@ export function CampaignSettingEdit() {
         title="Visibility Settings"
         description="Control what information players can see"
       >
+        <FormGrid cols={2}>
           <FormField label="Players can see DM rolls">
             <input
               type="checkbox"
-              checked={settings.VisibilitySettings.playersSeeDMRolls}
-              onChange={handleSettingChange('VisibilitySettings', 'playersSeeDMRolls')}
+              checked={data.VisibilitySettings.playersSeeDMRolls}
+              onChange={(e) => handleSettingChange('VisibilitySettings', 'playersSeeDMRolls', e.target.checked)}
               className="toggle toggle-primary"
             />
           </FormField>
@@ -98,11 +92,12 @@ export function CampaignSettingEdit() {
           <FormField label="Players can see other players' rolls">
             <input
               type="checkbox"
-              checked={settings.VisibilitySettings.playersSeePeerRolls}
-              onChange={handleSettingChange('VisibilitySettings', 'playersSeePeerRolls')}
+              checked={data.VisibilitySettings.playersSeePeerRolls}
+              onChange={(e) => handleSettingChange('VisibilitySettings', 'playersSeePeerRolls', e.target.checked)}
               className="toggle toggle-primary"
             />
           </FormField>
+        </FormGrid>
       </FormSection>
 
       {/* Map Settings */}
@@ -113,19 +108,12 @@ export function CampaignSettingEdit() {
         <FormField label="3D Mode">
           <input
             type="checkbox"
-            checked={settings.MapSettings.is3D}
-            onChange={handleSettingChange('MapSettings', 'is3D')}
+            checked={data.MapSettings.is3D}
+            onChange={(e) => handleSettingChange('MapSettings', 'is3D', e.target.checked)}
             className="toggle toggle-primary"
           />
         </FormField>
       </FormSection>
-
-      {/* Save Button (bottom) */}
-      <div className="flex justify-end">
-        <button onClick={handleSave} className="btn btn-primary">
-          Save Changes
-        </button>
-      </div>
-    </div>
+    </>
   );
 }
