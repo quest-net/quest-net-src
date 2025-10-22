@@ -1,90 +1,111 @@
-// hooks/usePeerTracking.ts
-
 import { useState, useEffect, useRef } from 'react';
 import { useActionService } from '../services/Actions/ActionServiceProvider';
 import { useQuestContext } from '../domains/Context/ContextProvider';
 import { RoomActions } from '../domains/Room/RoomActions';
+import { User } from '../domains/User/User';
 
 export interface PeerInfo {
-  id: string;
-  name: string;
+  peerId: string;      // WebRTC connection ID
+  user: User;          // Full user object (contains Id, Name, SelectedCharacters, etc.)
   ping: number | null;
 }
 
 export interface PeerTrackingData {
-  peerIds: string[];
-  peerNames: Record<string, string>;
-  peerPings: Record<string, number>;
-  peerInfoList: PeerInfo[];
+  peers: PeerInfo[];   // Clean array of peer info
   connectionStatus: 'online' | 'connected';
 }
 
 export function usePeerTracking(): PeerTrackingData {
   const { actionService } = useActionService();
   const context = useQuestContext();
-  const [peerIds, setPeerIds] = useState<string[]>([]);
-  const [peerNames, setPeerNames] = useState<Record<string, string>>({});
+  
+  const [peerUsers, setPeerUsers] = useState<Record<string, User>>({});
   const [peerPings, setPeerPings] = useState<Record<string, number>>({});
   
-  // Refs to store action functions and intervals
-  const sendUserNameRef = useRef<((name: string, peerId?: string) => void) | null>(null);
+  const sendUserRef = useRef<((data: any, peerId?: string) => void) | null>(null);
   const pingIntervalsRef = useRef<Record<string, NodeJS.Timeout>>({});
 
   useEffect(() => {
+    console.log('[usePeerTracking] Effect triggered', {
+      hasActionService: !!actionService,
+      userRole: context.User.Role,
+      userId: context.User.Id,
+      userName: context.User.Name
+    });
+
     if (!actionService) {
-      setPeerIds([]);
-      setPeerNames({});
-      setPeerPings({});
+      console.log('[usePeerTracking] No actionService, returning early (NOT clearing state)');
       return;
     }
 
     const room = actionService['room'];
     if (!room) {
-      setPeerIds([]);
-      setPeerNames({});
-      setPeerPings({});
+      console.log('[usePeerTracking] No room found in actionService, returning early (NOT clearing state)');
       return;
     }
 
+    console.log('[usePeerTracking] Valid actionService and room found, proceeding with setup');
+
+    console.log('[usePeerTracking] Setting up peer tracking for room');
+
     // Get initial peer list
-    setPeerIds(RoomActions.getConnectedPeerIds(room));
+    const initialPeers = RoomActions.getConnectedPeerIds(room);
+    console.log('[usePeerTracking] Initial connected peers:', initialPeers);
 
-    // Set up user name sharing action
-    const [sendUserName, getUserName] = room.makeAction('userName');
-    sendUserNameRef.current = sendUserName;
+    // Send full User object
+    const [sendUser, getUser] = room.makeAction('userState');
+    sendUserRef.current = sendUser;
 
-    // Broadcast our name to all existing peers
-    sendUserName(context.User.Name);
+    console.log('[usePeerTracking] Created userState action channel');
 
-    // Listen for other peers' names
-    getUserName((data, peerId) => {
-      // Type guard to ensure we received a string
-      if (typeof data === 'string') {
-        setPeerNames(current => ({
-          ...current,
-          [peerId]: data
-        }));
+    // Broadcast our User object to all existing peers
+    console.log('[usePeerTracking] Broadcasting initial user state to all peers', {
+      user: context.User,
+      peerCount: initialPeers.length
+    });
+    sendUser(context.User as any);
+
+    // Listen for other peers' User objects
+    getUser((userData, peerId) => {
+      console.log('[usePeerTracking] Received user data from peer', {
+        peerId,
+        userData,
+        isValidObject: typeof userData === 'object' && userData !== null
+      });
+
+      if (typeof userData === 'object' && userData !== null) {
+        setPeerUsers(current => {
+          const updated = {
+            ...current,
+            [peerId]: userData as unknown as User
+          };
+          console.log('[usePeerTracking] Updated peer users', {
+            peerId,
+            userName: (userData as any).Name,
+            totalPeers: Object.keys(updated).length
+          });
+          return updated;
+        });
       }
     });
 
-    // Function to start pinging a peer
     const startPingingPeer = (peerId: string) => {
-      // Clear any existing interval for this peer
+      console.log('[usePeerTracking] Starting to ping peer:', peerId);
+
       if (pingIntervalsRef.current[peerId]) {
         clearInterval(pingIntervalsRef.current[peerId]);
       }
 
-      // Ping immediately
       room.ping(peerId).then(ms => {
+        console.log('[usePeerTracking] Initial ping result:', { peerId, ms });
         setPeerPings(current => ({
           ...current,
           [peerId]: ms
         }));
       }).catch(err => {
-        console.warn(`Failed to ping peer ${peerId}:`, err);
+        console.warn('[usePeerTracking] Failed initial ping:', { peerId, error: err });
       });
 
-      // Then ping every 3 seconds
       pingIntervalsRef.current[peerId] = setInterval(async () => {
         try {
           const ms = await room.ping(peerId);
@@ -93,34 +114,47 @@ export function usePeerTracking(): PeerTrackingData {
             [peerId]: ms
           }));
         } catch (err) {
-          console.warn(`Failed to ping peer ${peerId}:`, err);
+          console.warn('[usePeerTracking] Failed to ping peer:', { peerId, error: err });
         }
       }, 3000);
     };
 
-    // Register callbacks with ActionService
+    // Set up peer join handler
     actionService.setOnPeerJoin((peerId) => {
-      setPeerIds(current => {
-        if (current.includes(peerId)) return current;
-        return [...current, peerId];
+      console.log('[usePeerTracking] Peer joined!', {
+        peerId,
+        currentPeerCount: Object.keys(peerUsers).length,
+        willBroadcastTo: peerId
       });
 
-      // Send our name to the new peer
-      if (sendUserNameRef.current) {
-        sendUserNameRef.current(context.User.Name, peerId);
+      // Send our User object to the new peer
+      if (sendUserRef.current) {
+        console.log('[usePeerTracking] Sending user state to new peer', {
+          peerId,
+          user: context.User
+        });
+        sendUserRef.current(context.User as any, peerId);
+      } else {
+        console.warn('[usePeerTracking] sendUserRef not set, cannot send to peer:', peerId);
       }
 
-      // Start pinging this peer
       startPingingPeer(peerId);
     });
 
+    // Set up peer leave handler
     actionService.setOnPeerLeave((peerId) => {
-      setPeerIds(current => current.filter(id => id !== peerId));
-      
-      // Clean up peer data
-      setPeerNames(current => {
+      console.log('[usePeerTracking] Peer left:', {
+        peerId,
+        currentPeerCount: Object.keys(peerUsers).length
+      });
+
+      setPeerUsers(current => {
         const updated = { ...current };
         delete updated[peerId];
+        console.log('[usePeerTracking] Removed peer from users', {
+          peerId,
+          remainingPeers: Object.keys(updated).length
+        });
         return updated;
       });
       
@@ -130,43 +164,62 @@ export function usePeerTracking(): PeerTrackingData {
         return updated;
       });
 
-      // Clear ping interval
       if (pingIntervalsRef.current[peerId]) {
         clearInterval(pingIntervalsRef.current[peerId]);
         delete pingIntervalsRef.current[peerId];
       }
     });
 
-    // Start pinging all current peers
+    // Start pinging current peers
     const currentPeers = RoomActions.getConnectedPeerIds(room);
+    console.log('[usePeerTracking] Starting ping intervals for existing peers:', currentPeers);
     currentPeers.forEach(peerId => startPingingPeer(peerId));
 
-    // Cleanup function
     return () => {
-      // Clear all ping intervals
+      console.log('[usePeerTracking] Cleaning up peer tracking - clearing intervals and state');
       Object.values(pingIntervalsRef.current).forEach(interval => {
         clearInterval(interval);
       });
       pingIntervalsRef.current = {};
+      
+      // Clear state on cleanup - this only happens when actionService changes
+      setPeerUsers({});
+      setPeerPings({});
     };
-  }, [actionService, context.User.Name]);
+  }, [actionService]);
 
-  // Calculate connection status
-  const connectionStatus: 'online' | 'connected' = 
-    peerIds.length === 0 ? 'online' : 'connected';
+  // Re-broadcast when User object changes (e.g., character selection)
+  useEffect(() => {
+    console.log('[usePeerTracking] User changed, re-broadcasting', {
+      user: context.User,
+      hasSendUserRef: !!sendUserRef.current
+    });
 
-  // Build peer info list
-  const peerInfoList: PeerInfo[] = peerIds.map(id => ({
-    id,
-    name: peerNames[id] || 'Unknown',
-    ping: peerPings[id] ?? null
+    if (sendUserRef.current) {
+      console.log('[usePeerTracking] Broadcasting updated user state to all peers');
+      sendUserRef.current(context.User as any);
+    }
+  }, [context.User]);
+
+  // Build clean peer list from internal state
+  const peers: PeerInfo[] = Object.keys(peerUsers).map(peerId => ({
+    peerId,
+    user: peerUsers[peerId],
+    ping: peerPings[peerId] ?? null
   }));
 
+  const connectionStatus: 'online' | 'connected' = 
+    peers.length === 0 ? 'online' : 'connected';
+
+  console.log('[usePeerTracking] Current state:', {
+    peerCount: peers.length,
+    connectionStatus,
+    peerUserIds: Object.keys(peerUsers),
+    peers: peers.map(p => ({ id: p.peerId, name: p.user.Name }))
+  });
+
   return {
-    peerIds,
-    peerNames,
-    peerPings,
-    peerInfoList,
+    peers,
     connectionStatus
   };
 }

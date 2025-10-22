@@ -37,12 +37,29 @@ export function CharacterEdit({ character, onClose }: CharacterEditProps) {
     }
   };
 
+  const handleClone = (data: Character) => {
+    if (!actionService) return;
+    
+    // Use the clone action we just created
+    actionService.execute('character:create', {
+      character: {
+        ...data,
+        Id: crypto.randomUUID(),
+        Name: `${data.Name} (Copy)`
+      }
+    });
+    
+    // Close the current form after cloning
+    onClose();
+  };
+
   return (
     <FormWrapper
       entityId={character?.Id}
       initialData={initialData}
       onSave={handleSave}
       onClose={onClose}
+      onClone={character ? handleClone : undefined}
       createTitle="Create Character"
       editTitle="Edit Character"
       viewTitle="View Character"

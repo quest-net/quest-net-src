@@ -34,7 +34,19 @@ export const UserActions = {
     return {
         Id: crypto.randomUUID(),
         Name: generateRandomName(),
-        Role: undefined
+        Role: undefined,
+        SelectedCharacters: {}
       }
+  },
+
+  selectCharacter(params: { campaignId: string; characterId: string | null }, context: Context): void {
+    if (params.characterId) {
+      context.User.SelectedCharacters[params.campaignId] = params.characterId;
+    } else {
+      // null characterId means unselect
+      delete context.User.SelectedCharacters[params.campaignId];
+    }
+    console.log(`[User] Character selection updated for campaign ${params.campaignId}`);
   }
+
 };

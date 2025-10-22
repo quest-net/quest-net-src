@@ -24,4 +24,21 @@
 - **Players = Requesters**: Send action requests to DM via `actionReq` channel
 - **Initial state**: DM auto-sends campaign on `onPeerJoin`
 
-## TODO / Future
+## Image Handling
+
+### Architecture
+
+Images use a **DM-as-central-authority** model for consistency with the app's overall design.
+
+- **Storage**: All image binary data stored in IndexedDB (never in Campaign object)
+- **References**: Campaign.Images[] contains only metadata (Id, Name, FileSize, MimeType, Width, Height)
+- **Distribution**: DM serves as the image library; players request images on-demand
+
+### Image Constraints
+
+- **Max file size**: 1 MB (hard limit, enforced after compression)
+- **Max dimensions**: 2048px (width or height)
+- **Formats**: 
+  - JPEGs and other static formats → converted to JPEG at 0.85 quality
+  - GIFs → preserved with animation, but must meet size/dimension limits
+- **Compression**: Automatic on upload, client-side using Canvas API

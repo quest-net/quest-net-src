@@ -8,6 +8,7 @@ import { CharacterIndex } from '../Character/Index';
 import { CampaignSettingEdit } from '../CampaignSetting/Edit';
 import { LogDisplay } from '../Log/LogDisplay';
 import { PeerStatus } from '../Room/PeerStatus';
+import { usePeerTracking } from '../../hooks/usePeerTracking';
 
 type TabView = 'characters' | 'settings';
 
@@ -16,6 +17,9 @@ export function DMView() {
   const context = useQuestContext();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<TabView>('characters');
+  
+  // Call usePeerTracking once at the view level
+  const { peers, connectionStatus } = usePeerTracking();
 
   const campaign = CampaignActions.findCampaignByIdentifier(identifier!, context);
 
@@ -31,7 +35,7 @@ export function DMView() {
           <div className="badge badge-primary badge-lg font-mono">
             {campaign.RoomCode}
           </div>
-          <PeerStatus />
+          <PeerStatus connectionStatus={connectionStatus} peers={peers} />
         </div>
         <h1 className="text-xl font-bold">{campaign.Name}</h1>
         <button

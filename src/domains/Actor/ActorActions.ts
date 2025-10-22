@@ -19,9 +19,9 @@ export const ActorActions = {
     const template = templates.find(t => t.Id === params.templateId);
     if (!template) return;
     
+    // Create instance with same ID as template (no new ID generation)
     const instance = {
       ...template,
-      Id: crypto.randomUUID(),
       ...(params.position && { Position: params.position })
     };
     

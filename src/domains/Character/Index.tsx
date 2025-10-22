@@ -2,12 +2,14 @@
 
 import { useState } from 'react';
 import { useQuestContext } from '../Context/ContextProvider';
+import { useActionService } from '../../services/Actions/ActionServiceProvider';
 import { CampaignActions } from '../Campaign/CampaignActions';
 import { CharacterEdit } from './Edit';
 import { Character } from './Character';
 
 export function CharacterIndex() {
   const context = useQuestContext();
+  const { actionService } = useActionService();
   const campaign = CampaignActions.getActiveCampaign(context);
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -33,6 +35,21 @@ export function CharacterIndex() {
     }
   };
 
+  const handleSpawn = (characterId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent opening the edit drawer
+    
+    if (!actionService) return;
+    
+    actionService.execute('character:spawn', {
+      templateId: characterId,
+      position: { x: 0, y: 0 }
+    });
+  };
+
+  const isCharacterActive = (characterId: string) => {
+    return campaign.GameState.Characters.some(c => c.Id === characterId);
+  };
+
   return (
     <div className="drawer">
       <input 
@@ -53,13 +70,17 @@ export function CharacterIndex() {
         <div className="space-y-4">
           {/* Header */}
           <div className="flex justify-between items-center">
-            <h2 className="text-2xl font-bold">Characters</h2>
+            <div>
+              <h2 className="text-2xl font-bold">Character Templates</h2>
+              <p className="text-base-content/60">Manage your character roster</p>
+            </div>
             <label 
               htmlFor="character-drawer"
               className="btn btn-primary"
               onClick={handleOpenCreate}
             >
-              + Create Character
+              <span className="icon-[mdi--plus] w-5 h-5 mr-1" />
+              Create Character
             </label>
           </div>
 
@@ -71,24 +92,64 @@ export function CharacterIndex() {
           ) : (
             /* Character cards */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {campaign.CharacterTemplates.map(character => (
-                <label
-                  key={character.Id}
-                  htmlFor="character-drawer"
-                  className="card bg-base-100 border border-base-300 hover:border-primary cursor-pointer transition-colors"
-                  onClick={() => handleOpenEdit(character)}
-                >
-                  <figure className="px-4 pt-4">
-                    {/* TODO: Image handling not implemented yet */}
-                    <div className="w-full h-32 bg-base-200 rounded-lg flex items-center justify-center">
-                      <span className="text-4xl">👤</span>
+              {campaign.CharacterTemplates.map(character => {
+                const isActive = isCharacterActive(character.Id);
+                
+                return (
+                  <div
+                    key={character.Id}
+                    className={`card bg-base-100 border-2 transition-colors ${
+                      isActive ? 'border-success' : 'border-base-300 hover:border-primary'
+                    }`}
+                  >
+                    <label
+                      htmlFor="character-drawer"
+                      className="cursor-pointer"
+                      onClick={() => handleOpenEdit(character)}
+                    >
+                      <figure className="px-4 pt-4">
+                        {/* TODO: Image handling not implemented yet */}
+                        <div className="w-full h-32 bg-base-200 rounded-lg flex items-center justify-center">
+                          <span className="text-4xl">👤</span>
+                        </div>
+                      </figure>
+                      <div className="card-body">
+                        <h3 className="card-title text-center justify-center">
+                          {character.Name}
+                        </h3>
+                        {isActive && (
+                          <div className="badge badge-success badge-sm w-full">
+                            Active
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                    
+                    {/* Action buttons */}
+                    <div className="card-actions justify-end p-4 pt-0">
+                      {!isActive ? (
+                        <button
+                          onClick={(e) => handleSpawn(character.Id, e)}
+                          className="btn btn-sm btn-primary w-full"
+                          title="Spawn character into the game"
+                        >
+                          <span className="icon-[mdi--play] w-4 h-4 mr-1" />
+                          Spawn
+                        </button>
+                      ) : (
+                        <button
+                          className="btn btn-sm btn-ghost w-full"
+                          disabled
+                          title="Character is already active"
+                        >
+                          <span className="icon-[mdi--check-circle] w-4 h-4 mr-1" />
+                          Spawned
+                        </button>
+                      )}
                     </div>
-                  </figure>
-                  <div className="card-body">
-                    <h3 className="card-title text-center">{character.Name}</h3>
                   </div>
-                </label>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

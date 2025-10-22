@@ -4,4 +4,6 @@ export interface User {
 	Name: string;
 
 	Role?: "dm" | "player";
+
+	SelectedCharacters: Record<string, string>; //campaignId -> characterId
 }

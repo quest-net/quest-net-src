@@ -1,30 +1,69 @@
 // domains/Campaign/PlayerView.tsx
 
 import { useNavigate, useParams } from 'react-router-dom';
-import { useQuestContext } from '../Context/ContextProvider';
+import { useQuestContext, triggerContextUpdate } from '../Context/ContextProvider';
 import { CampaignActions } from './CampaignActions';
+import { UserActions } from '../User/UserActions';
 import { LogDisplay } from '../Log/LogDisplay';
 import { PeerStatus } from '../Room/PeerStatus';
+import { CharacterSelect } from '../Character/CharacterSelect';
+import { usePeerTracking } from '../../hooks/usePeerTracking';
 
 export function PlayerView() {
   const { identifier } = useParams<{ identifier: string }>();
   const context = useQuestContext();
   const navigate = useNavigate();
+  
+  // Single source of truth for peer data - call hook once at view level
+  const { peers, connectionStatus } = usePeerTracking();
+  
   const campaign = CampaignActions.findCampaignByIdentifier(identifier!, context);
 
   if (!campaign) {
     return null;
   }
 
+  // Check if user has selected a character for this campaign
+  // Use RoomCode as the key for consistency (players use RoomCode in their sanitized campaigns)
+  const selectedCharacterId = context.User.SelectedCharacters[campaign.RoomCode];
+  const hasSelectedCharacter = !!selectedCharacterId;
+
+  // Find the selected character to display info
+  const selectedCharacter = hasSelectedCharacter
+    ? campaign.GameState.Characters.find(c => c.Id === selectedCharacterId)
+    : null;
+
+  const handleChangeCharacter = () => {
+    UserActions.selectCharacter({
+      campaignId: campaign.RoomCode, // Use RoomCode for consistency
+      characterId: null
+    }, context);
+    triggerContextUpdate();
+  };
+
   return (
     <div className="flex flex-col h-screen">
-      {/* Header */}
+      {/* Header - Always Visible */}
       <header className="navbar border-b-2 px-6 justify-between">
         <div className="flex items-center gap-4">
-          <PeerStatus />
+          <PeerStatus connectionStatus={connectionStatus} peers={peers} />
         </div>
         <h1 className="text-xl font-bold">{campaign.Name}</h1>
-        <div className="flex-none">
+        <div className="flex items-center gap-2">
+          {selectedCharacter && (
+            <div className="badge badge-primary badge-lg">
+              Playing as: {selectedCharacter.Name}
+            </div>
+          )}
+          {hasSelectedCharacter && (
+            <button
+              className="btn btn-neutral btn-sm"
+              onClick={handleChangeCharacter}
+              title="Change character"
+            >
+              <span className="icon-[mdi--account-switch] w-5 h-5" />
+            </button>
+          )}
           <button
             className="btn btn-neutral"
             onClick={() => navigate('/campaigns')}
@@ -34,13 +73,18 @@ export function PlayerView() {
         </div>
       </header>
 
-      {/* Main Content Area (empty for now) */}
+      {/* Main Content - Conditional */}
       <main className="flex-1 overflow-auto p-6">
-        <p className="text-center text-base-content opacity-50">
-          Player view - content coming soon
-        </p>
+        {!hasSelectedCharacter ? (
+          <CharacterSelect peers={peers} />
+        ) : (
+          <p className="text-center text-base-content opacity-50">
+            Player view - content coming soon
+          </p>
+        )}
       </main>
-      {/* Log Display*/}
+      
+      {/* Log Display */}
       <LogDisplay />
     </div>
   );

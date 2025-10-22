@@ -40,6 +40,7 @@ interface FormWrapperProps<T> {
   initialData: T;
   onSave: (data: T) => void;
   onClose: () => void;
+  onClone?: (data: T) => void;
   createTitle: string;
   editTitle: string;
   viewTitle: string;
@@ -51,6 +52,7 @@ export function FormWrapper<T extends Record<string, any>>({
   initialData,
   onSave,
   onClose,
+  onClone, // NEW
   createTitle,
   editTitle,
   viewTitle,
@@ -82,6 +84,12 @@ export function FormWrapper<T extends Record<string, any>>({
     onClose();
   };
 
+  const handleClone = () => {
+    if (onClone) {
+      onClone(data);
+    }
+  };
+
   const contextValue: FormContextValue = {
     mode,
     readOnly,
@@ -104,6 +112,8 @@ export function FormWrapper<T extends Record<string, any>>({
           viewTitle={viewTitle}
           onSave={handleSave}
           onClose={onClose}
+          onClone={handleClone}
+          showClone={mode === 'edit' && !!onClone}
         />
         
         {childrenWithProps}
@@ -133,9 +143,11 @@ interface FormHeaderProps {
   viewTitle: string;
   onSave: () => void;
   onClose: () => void;
+  onClone: () => void; // NEW
+  showClone: boolean; // NEW
 }
 
-function FormHeader({ createTitle, editTitle, viewTitle, onSave, onClose }: FormHeaderProps) {
+function FormHeader({ createTitle, editTitle, viewTitle, onSave, onClose, onClone, showClone }: FormHeaderProps) {
   const { mode, readOnly, isDirty } = useFormContext();
   
   const title = mode === 'create' ? createTitle : mode === 'edit' ? editTitle : viewTitle;
@@ -146,6 +158,11 @@ function FormHeader({ createTitle, editTitle, viewTitle, onSave, onClose }: Form
       <div className="flex items-center gap-4">
         {isDirty && !readOnly && (
           <span className="text-sm text-warning italic">You have unsaved changes</span>
+        )}
+        {showClone && (
+          <button onClick={onClone} className="btn btn-outline">
+            Clone
+          </button>
         )}
         {!readOnly && (
           <button onClick={onSave} className="btn btn-primary">

@@ -40,8 +40,7 @@ export const CharacterActions = {
       Skills: [],
       Statuses: [],
       Tags: [],
-      Notes: [],
-      playedBy: null
+      Notes: []
     };
   },
 
@@ -55,8 +54,7 @@ export const CharacterActions = {
     // Initialize character with playedBy and empty Notes
     const character: Character = {
       ...params.character,
-      Notes: params.character.Notes || [],
-      playedBy: null
+      Notes: params.character.Notes || []
     };
     
     campaign.CharacterTemplates.push(character);
@@ -81,52 +79,50 @@ export const CharacterActions = {
 
   /**
    * Removes a character from the field (despawn)
+   * CUSTOM LOGIC: Syncs character state back to template
    * DM only - handled by ACTION_REGISTRY
    */
   remove(params: { characterId: string }, context: Context): void {
-    ActorActions.removeActor('character', { actorId: params.characterId }, context);
+    const campaign = CampaignActions.getActiveCampaign(context);
+    
+    // Find the spawned character
+    const index = campaign.GameState.Characters.findIndex(c => c.Id === params.characterId);
+    if (index === -1) {
+      console.warn(`Character not found on field: ${params.characterId}`);
+      return;
+    }
+    
+    const character = campaign.GameState.Characters[index];
+    
+    // Remove from GameState
+    campaign.GameState.Characters.splice(index, 1);
+    
+    // Find the template with the same ID and overwrite it
+    const templateIndex = campaign.CharacterTemplates.findIndex(c => c.Id === params.characterId);
+    if (templateIndex !== -1) {
+      // Overwrite the template with the current character state
+      campaign.CharacterTemplates[templateIndex] = character;
+      console.log(`[Character] Synced character state back to template: ${character.Name}`);
+    } else {
+      console.warn(`Template not found for character: ${params.characterId}. Character removed but not synced.`);
+    }
+    
+    LogActions.create({
+      action: 'Character removed',
+      details: `${character.Name} left the field and synced to template`,
+      category: 'character',
+      level: 'important',
+      visibility: ['all'],
+      actorId: params.characterId
+    }, context);
   },
 
   /**
    * Edits a character's properties
-   * Players can edit their own characters OR claim unclaimed characters
+   * Players can ONLY edit spawned characters (GameState), never templates
+   * They can claim characters or edit their own claimed characters
    */
   edit(params: { characterId: string; updates: Partial<Character> }, context: Context): void {
-    // Validation: Players have special rules
-    if (context.User.Role === 'player') {
-      const campaign = CampaignActions.getActiveCampaign(context);
-      
-      // Check both templates and spawned characters
-      let character = campaign.CharacterTemplates.find(c => c.Id === params.characterId);
-      if (!character) {
-        character = campaign.GameState.Characters.find(c => c.Id === params.characterId);
-      }
-      
-      if (!character) {
-        console.warn(`Character not found: ${params.characterId}`);
-        return;
-      }
-      
-      // If trying to edit playedBy field (claiming a character)
-      if (params.updates.playedBy !== undefined) {
-        // Can only claim unclaimed characters, and only to self
-        if (character.playedBy) {
-          console.warn(`Player ${context.User.Name} cannot claim character ${params.characterId} - already played by ${character.playedBy.Name}`);
-          return;
-        }
-        if (params.updates.playedBy !== context.User) {
-          console.warn(`Player ${context.User.Name} cannot set playedBy to another user`);
-          return;
-        }
-      } else {
-        // Editing other fields - must already own the character
-        if (character.playedBy !== context.User) {
-          console.warn(`Player ${context.User.Name} cannot edit character ${params.characterId} (played by ${character.playedBy?.Name})`);
-          return;
-        }
-      }
-    }
-    
     ActorActions.editActor('character', { actorId: params.characterId, updates: params.updates }, context);
   },
 
@@ -150,11 +146,6 @@ export const CharacterActions = {
       
       if (!character) {
         console.warn(`Character not found on field: ${params.characterId}`);
-        return;
-      }
-      
-      if (character.playedBy !== context.User) {
-        console.warn(`Player ${context.User.Name} cannot move character ${params.characterId} (played by ${character.playedBy?.Name})`);
         return;
       }
     }

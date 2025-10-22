@@ -160,7 +160,7 @@ export class ActionService {
   /**
    * DM receives and processes player action requests
    */
-  private handlePlayerRequest(data: { actionKey: string, params: any, playerId: string }) {
+  private handlePlayerRequest(data: any) {
     console.log(`[DM] Received action request from ${data.playerId}: ${data.actionKey}`, data.params);
     
     // Execute the domain action
