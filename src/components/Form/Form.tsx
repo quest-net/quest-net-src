@@ -1,6 +1,7 @@
 // components/Form/Form.tsx
 import { createContext, useContext, useState, useEffect, ReactNode, ReactElement, cloneElement } from 'react';
-import { isDmAccess } from '../../utils/UrlParser';
+import { useQuestContext } from '../../domains/Context/ContextProvider';
+import { canPerformAction } from '../../services/Actions/ActionRegistry';
 
 // ============================================================================
 // CONTEXT
@@ -36,6 +37,7 @@ export function useFormReadOnly(): boolean {
 // ============================================================================
 
 interface FormWrapperProps<T> {
+  domain: string; // NEW: e.g., 'character', 'item', 'skill'
   entityId?: string;
   initialData: T;
   onSave: (data: T) => void;
@@ -48,18 +50,29 @@ interface FormWrapperProps<T> {
 }
 
 export function FormWrapper<T extends Record<string, any>>({
+  domain,
   entityId,
   initialData,
   onSave,
   onClose,
-  onClone, // NEW
+  onClone,
   createTitle,
   editTitle,
   viewTitle,
   children
 }: FormWrapperProps<T>) {
-  // Determine mode
-  const mode: FormMode = !entityId ? 'create' : isDmAccess() ? 'edit' : 'view';
+  const context = useQuestContext();
+  
+  // Check permissions for this domain
+  const canCreate = canPerformAction(context.User, `${domain}:create`);
+  const canEdit = canPerformAction(context.User, `${domain}:edit`);
+  
+  // Determine mode based on permissions
+  const mode: FormMode = 
+    !entityId && canCreate ? 'create' :
+    entityId && canEdit ? 'edit' :
+    'view';
+  
   const readOnly = mode === 'view';
 
   // State management
@@ -143,8 +156,8 @@ interface FormHeaderProps {
   viewTitle: string;
   onSave: () => void;
   onClose: () => void;
-  onClone: () => void; // NEW
-  showClone: boolean; // NEW
+  onClone: () => void;
+  showClone: boolean;
 }
 
 function FormHeader({ createTitle, editTitle, viewTitle, onSave, onClose, onClone, showClone }: FormHeaderProps) {

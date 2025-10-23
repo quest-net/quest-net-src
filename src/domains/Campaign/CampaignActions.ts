@@ -26,7 +26,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 		Id: crypto.randomUUID(),
 		Name: name,
 		RoomCode: roomCode || generateRoomCode(),
-		CharacterTemplates: [],
+		CharacterRoster: [],
 		ItemTemplates: [],
 		SkillTemplates: [],
 		StatuseTemplates: [],

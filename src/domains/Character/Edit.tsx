@@ -8,6 +8,7 @@ import { FormWrapper, FormSection, FormField, FormGrid } from '../../components/
 import { StatDefinitionsEditor } from '../../components/inputs/StatDefinitionEditor';
 import { AttributeEditor } from '../../components/inputs/AttributeEditor';
 import { TagEditor } from '../../components/inputs/TagEditor';
+import { ImagePicker } from '../../components/inputs/ImagePicker';
 
 interface CharacterEditProps {
   character?: Character;
@@ -55,6 +56,7 @@ export function CharacterEdit({ character, onClose }: CharacterEditProps) {
 
   return (
     <FormWrapper
+      domain="character"
       entityId={character?.Id}
       initialData={initialData}
       onSave={handleSave}
@@ -107,9 +109,11 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
           </FormField>
 
           <FormField label="Image">
-            <div className="text-sm text-base-content/60 italic">
-              Image handling not yet implemented
-            </div>
+            <ImagePicker
+              value={data.Image}
+              onChange={(imageId) => handleFieldChange('Image', imageId)}
+              label=""
+            />
           </FormField>
 
           <FormField label="Description" span={2}>

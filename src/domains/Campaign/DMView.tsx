@@ -6,11 +6,12 @@ import { useQuestContext } from '../Context/ContextProvider';
 import { CampaignActions } from './CampaignActions';
 import { CharacterIndex } from '../Character/Index';
 import { CampaignSettingEdit } from '../CampaignSetting/Edit';
+import { ImageIndex } from '../Image/Index';
 import { LogDisplay } from '../Log/LogDisplay';
 import { PeerStatus } from '../Room/PeerStatus';
 import { usePeerTracking } from '../../hooks/usePeerTracking';
 
-type TabView = 'characters' | 'settings';
+type TabView = 'characters' | 'images' | 'settings';
 
 export function DMView() {
   const { identifier } = useParams<{ identifier: string }>();
@@ -56,7 +57,15 @@ export function DMView() {
                 className={activeTab === 'characters' ? 'active' : ''}
                 onClick={() => setActiveTab('characters')}
               >
-              Characters
+                Characters
+              </button>
+            </li>
+            <li>
+              <button
+                className={activeTab === 'images' ? 'active' : ''}
+                onClick={() => setActiveTab('images')}
+              >
+                Images
               </button>
             </li>
             <li>
@@ -64,7 +73,7 @@ export function DMView() {
                 className={activeTab === 'settings' ? 'active' : ''}
                 onClick={() => setActiveTab('settings')}
               >
-              Settings
+                Settings
               </button>
             </li>
           </ul>
@@ -73,6 +82,7 @@ export function DMView() {
         {/* Main Content */}
         <main className="flex-1 overflow-auto p-6">
           {activeTab === 'characters' && <CharacterIndex />}
+          {activeTab === 'images' && <ImageIndex />}
           {activeTab === 'settings' && <CampaignSettingEdit />}
         </main>
         {/* Log Display*/}

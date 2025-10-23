@@ -5,6 +5,7 @@ import { Context } from '../../domains/Context/Context';
 import { CharacterActions } from '../../domains/Character/CharacterActions';
 import { CampaignSettingActions } from '../../domains/CampaignSetting/CampaignSettingActions';
 import { LogActions } from '../../domains/Log/LogActions';
+import { ImageActions } from '../../domains/Image/ImageActions';
 // Import other action modules as they're created
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
@@ -212,18 +213,14 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   //   roles: ['dm'],
   //   handler: SceneActions.setFocus
   // },
-  // 'image:create': {
-  //   roles: ['dm'],
-  //   handler: ImageActions.create
-  // },
-  // 'image:edit': {
-  //   roles: ['dm'],
-  //   handler: ImageActions.edit
-  // },
-  // 'image:delete': {
-  //   roles: ['dm'],
-  //   handler: ImageActions.delete
-  // },
+    'image:create': {
+    roles: ['dm', 'player'],
+    handler: ImageActions.create
+    },
+    'image:delete': {
+    roles: ['dm'],
+    handler: ImageActions.delete
+    },
   
   // ============================================================================
   // STATUS EFFECT ACTIONS (uncomment when StatusActions is implemented)

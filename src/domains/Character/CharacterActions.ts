@@ -9,12 +9,13 @@ import { Position } from "../Actor/Actor";
 
 /**
  * Character action handlers
- * Characters are actors owned by players (tracked via playedBy field)
+ * Characters are unique, persistent actors that move between Roster and GameState
+ * Unlike Entities, Characters are never cloned - they MOVE between locations
  */
 export const CharacterActions = {
   
   /**
-   * Creates a default character template with campaign stat definitions
+   * Creates a default character with campaign stat definitions
    */
   createDefault(context: Context): Character {
     const campaign = CampaignActions.getActiveCampaign(context);
@@ -45,23 +46,22 @@ export const CharacterActions = {
   },
 
   /**
-   * Creates a new character template in the catalog
-   * Sets playedBy to the creating user
+   * Creates a new character and adds to the roster
    */
   create(params: { character: Omit<Character, 'playedBy'> }, context: Context): void {
     const campaign = CampaignActions.getActiveCampaign(context);
     
-    // Initialize character with playedBy and empty Notes
+    // Initialize character with empty Notes if not provided
     const character: Character = {
       ...params.character,
       Notes: params.character.Notes || []
     };
     
-    campaign.CharacterTemplates.push(character);
+    campaign.CharacterRoster.push(character);
     
     LogActions.create({
       action: 'Character created',
-      details: `${character.Name} added to catalog`,
+      details: `${character.Name} added to roster`,
       category: 'character',
       level: 'info',
       visibility: ['dm', 'owner'],
@@ -70,46 +70,79 @@ export const CharacterActions = {
   },
 
   /**
-   * Spawns a character from template onto the field
-   * DM Only
+   * Spawns a character from roster onto the field (MOVE operation)
+   * DM only - handled by ACTION_REGISTRY
    */
-  spawn(params: { templateId: string; position?: Position }, context: Context): void {
-    ActorActions.spawnActor('character', params, context);
+  spawn(params: { characterId: string; position?: Position }, context: Context): void {
+    const campaign = CampaignActions.getActiveCampaign(context);
+    
+    // Find character in roster
+    const rosterIndex = campaign.CharacterRoster.findIndex(c => c.Id === params.characterId);
+    if (rosterIndex === -1) {
+      console.warn(`Character not found in roster: ${params.characterId}`);
+      return;
+    }
+    
+    // Check if already spawned (safety check - shouldn't happen with proper UI)
+    const alreadySpawned = campaign.GameState.Characters.some(c => c.Id === params.characterId);
+    if (alreadySpawned) {
+      console.warn(`Character already spawned: ${params.characterId}`);
+      return;
+    }
+    
+    // MOVE: Remove from roster
+    const [character] = campaign.CharacterRoster.splice(rosterIndex, 1);
+    
+    // Update position if provided
+    if (params.position) {
+      character.Position = params.position;
+    }
+    
+    // Add to GameState
+    campaign.GameState.Characters.push(character);
+    
+    LogActions.create({
+      action: 'Character spawned',
+      details: `${character.Name} entered the field`,
+      category: 'character',
+      level: 'important',
+      visibility: ['all'],
+      actorId: character.Id
+    }, context);
   },
 
   /**
-   * Removes a character from the field (despawn)
-   * CUSTOM LOGIC: Syncs character state back to template
+   * Removes a character from the field (MOVE operation)
+   * Moves character back to roster, preserving all state changes
    * DM only - handled by ACTION_REGISTRY
    */
   remove(params: { characterId: string }, context: Context): void {
     const campaign = CampaignActions.getActiveCampaign(context);
     
     // Find the spawned character
-    const index = campaign.GameState.Characters.findIndex(c => c.Id === params.characterId);
-    if (index === -1) {
-      console.warn(`Character not found on field: ${params.characterId}`);
+    const gameStateIndex = campaign.GameState.Characters.findIndex(c => c.Id === params.characterId);
+    if (gameStateIndex === -1) {
+      console.warn(`Character not found in GameState: ${params.characterId}`);
       return;
     }
     
-    const character = campaign.GameState.Characters[index];
-    
-    // Remove from GameState
-    campaign.GameState.Characters.splice(index, 1);
-    
-    // Find the template with the same ID and overwrite it
-    const templateIndex = campaign.CharacterTemplates.findIndex(c => c.Id === params.characterId);
-    if (templateIndex !== -1) {
-      // Overwrite the template with the current character state
-      campaign.CharacterTemplates[templateIndex] = character;
-      console.log(`[Character] Synced character state back to template: ${character.Name}`);
-    } else {
-      console.warn(`Template not found for character: ${params.characterId}. Character removed but not synced.`);
+    // Check if already in roster (safety check - shouldn't happen)
+    const alreadyInRoster = campaign.CharacterRoster.some(c => c.Id === params.characterId);
+    if (alreadyInRoster) {
+      console.warn(`Character already in roster: ${params.characterId}. Removing from GameState only.`);
+      campaign.GameState.Characters.splice(gameStateIndex, 1);
+      return;
     }
+    
+    // MOVE: Remove from GameState
+    const [character] = campaign.GameState.Characters.splice(gameStateIndex, 1);
+    
+    // Add back to roster
+    campaign.CharacterRoster.push(character);
     
     LogActions.create({
       action: 'Character removed',
-      details: `${character.Name} left the field and synced to template`,
+      details: `${character.Name} left the field and returned to roster`,
       category: 'character',
       level: 'important',
       visibility: ['all'],
@@ -119,18 +152,28 @@ export const CharacterActions = {
 
   /**
    * Edits a character's properties
-   * Players can ONLY edit spawned characters (GameState), never templates
-   * They can claim characters or edit their own claimed characters
+   * Works on characters in either Roster or GameState
+   * Players can edit their own characters, DM can edit any
    */
   edit(params: { characterId: string; updates: Partial<Character> }, context: Context): void {
     ActorActions.editActor('character', { actorId: params.characterId, updates: params.updates }, context);
   },
 
   /**
-   * Deletes a character from the catalog
+   * Deletes a character from the roster permanently
+   * Character must NOT be in GameState (must be removed first)
    * DM only - handled by ACTION_REGISTRY
    */
   delete(params: { characterId: string }, context: Context): void {
+    const campaign = CampaignActions.getActiveCampaign(context);
+    
+    // Safety check: Don't delete if character is currently spawned
+    const isSpawned = campaign.GameState.Characters.some(c => c.Id === params.characterId);
+    if (isSpawned) {
+      console.warn(`Cannot delete spawned character: ${params.characterId}. Remove from field first.`);
+      return;
+    }
+    
     ActorActions.deleteActor('character', { actorId: params.characterId }, context);
   },
 
@@ -145,9 +188,12 @@ export const CharacterActions = {
       const character = campaign.GameState.Characters.find(c => c.Id === params.characterId);
       
       if (!character) {
-        console.warn(`Character not found on field: ${params.characterId}`);
+        console.warn(`Character not found in GameState: ${params.characterId}`);
         return;
       }
+      
+      // TODO: Add ownership validation here when implemented
+      // if (character.OwnerId !== context.User.Id) { return; }
     }
     
     ActorActions.moveActor('character', { actorId: params.characterId, position: params.position }, context);

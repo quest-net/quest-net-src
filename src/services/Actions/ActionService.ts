@@ -4,6 +4,7 @@ import { Context } from "../../domains/Context/Context";
 import { canPerformAction, ACTION_REGISTRY } from "./ActionRegistry";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { StateSync } from "../StateSync";
+import { ImageService } from "../ImageService";
 import { Room } from "../../domains/Room/Room";
 import { triggerContextUpdate } from "../../domains/Context/ContextProvider";
 import { RoomActions } from "../../domains/Room/RoomActions";
@@ -13,6 +14,7 @@ export class ActionService {
   private context: Context;
   private room: Room;
   private stateSync: StateSync;
+  public imageService: ImageService;
   private onPeerJoinCallback?: (peerId: string) => void;
   private onPeerLeaveCallback?: (peerId: string) => void;
 
@@ -25,6 +27,7 @@ export class ActionService {
     this.context = context;
     this.room = room;
     this.stateSync = new StateSync(room, this.execute.bind(this));
+    this.imageService = new ImageService(room, context.User.Role === 'dm', this.execute.bind(this));
     this.setupChannels();
     this.setupStateSync();
     this.setupPeerHandlers();

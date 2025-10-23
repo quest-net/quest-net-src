@@ -6,6 +6,7 @@ import { useActionService } from '../../services/Actions/ActionServiceProvider';
 import { CampaignActions } from '../Campaign/CampaignActions';
 import { CharacterEdit } from './Edit';
 import { Character } from './Character';
+import { ImageDisplay } from '../Image/ImageDisplay';
 
 export function CharacterIndex() {
   const context = useQuestContext();
@@ -41,11 +42,15 @@ export function CharacterIndex() {
     if (!actionService) return;
     
     actionService.execute('character:spawn', {
-      templateId: characterId,
+      characterId: characterId,  // Changed from templateId - we're moving an existing character
       position: { x: 0, y: 0 }
     });
   };
 
+  /**
+   * Checks if a character is currently active (spawned in GameState)
+   * With the new MOVE architecture, characters are either in Roster OR GameState
+   */
   const isCharacterActive = (characterId: string) => {
     return campaign.GameState.Characters.some(c => c.Id === characterId);
   };
@@ -71,7 +76,7 @@ export function CharacterIndex() {
           {/* Header */}
           <div className="flex justify-between items-center">
             <div>
-              <h2 className="text-2xl font-bold">Character Templates</h2>
+              <h2 className="text-2xl font-bold">Character Roster</h2>
               <p className="text-base-content/60">Manage your character roster</p>
             </div>
             <label 
@@ -85,14 +90,14 @@ export function CharacterIndex() {
           </div>
 
           {/* Empty state */}
-          {campaign.CharacterTemplates.length === 0 ? (
+          {campaign.CharacterRoster.length === 0 ? (
             <div className="rounded-lg p-6 bg-base-300">
               <p>No characters yet. Create one to get started!</p>
             </div>
           ) : (
             /* Character cards */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {campaign.CharacterTemplates.map(character => {
+              {campaign.CharacterRoster.map(character => {
                 const isActive = isCharacterActive(character.Id);
                 
                 return (
@@ -108,9 +113,16 @@ export function CharacterIndex() {
                       onClick={() => handleOpenEdit(character)}
                     >
                       <figure className="px-4 pt-4">
-                        {/* TODO: Image handling not implemented yet */}
-                        <div className="w-full h-32 bg-base-200 rounded-lg flex items-center justify-center">
-                          <span className="text-4xl">👤</span>
+                        <div className="w-full h-32 bg-base-200 rounded-lg overflow-hidden flex items-center justify-center">
+                          {character.Image ? (
+                            <ImageDisplay
+                              imageId={character.Image}
+                              className="w-full h-full object-cover"
+                              alt={character.Name}
+                            />
+                          ) : (
+                            <span className="text-4xl opacity-30">👤</span>
+                          )}
                         </div>
                       </figure>
                       <div className="card-body">

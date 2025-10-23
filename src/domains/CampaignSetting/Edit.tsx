@@ -22,6 +22,7 @@ export function CampaignSettingEdit() {
 
   return (
     <FormWrapper
+      domain="setting"
       entityId={campaign.Id}
       initialData={campaign.Settings}
       onSave={handleSave}

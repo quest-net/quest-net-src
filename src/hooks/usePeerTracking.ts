@@ -211,13 +211,6 @@ export function usePeerTracking(): PeerTrackingData {
   const connectionStatus: 'online' | 'connected' = 
     peers.length === 0 ? 'online' : 'connected';
 
-  console.log('[usePeerTracking] Current state:', {
-    peerCount: peers.length,
-    connectionStatus,
-    peerUserIds: Object.keys(peerUsers),
-    peers: peers.map(p => ({ id: p.peerId, name: p.user.Name }))
-  });
-
   return {
     peers,
     connectionStatus

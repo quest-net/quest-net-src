@@ -3,7 +3,6 @@
 import { Context } from "../Context/Context";
 import type { Image } from "./Image";
 import { CampaignActions } from "../Campaign/CampaignActions";
-import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 import { LogActions } from "../Log/LogActions";
 
 const MAX_IMAGE_SIZE = 1024 * 1024; // 1 MB
@@ -16,50 +15,29 @@ const JPEG_QUALITY = 0.85; // Fixed quality for JPEG compression
 export const ImageActions = {
   
   /**
-   * Creates a new image: compresses, stores in IndexedDB, adds to campaign
+   * Adds an image to the campaign catalog (metadata only)
+   * NOTE: Image blob should already be stored in IndexedDB before calling this
    */
-  async create(params: { file: File; name?: string }, context: Context): Promise<Image> {
+  create(params: { image: Image }, context: Context): void {
     const campaign = CampaignActions.getActiveCampaign(context);
     
-    // Compress and convert the image
-    const { blob, width, height, mimeType } = await this.compressImage(params.file);
-    
-    // Verify size
-    if (blob.size > MAX_IMAGE_SIZE) {
-      throw new Error(`Image is too large (${(blob.size / 1024 / 1024).toFixed(2)} MB). Maximum size is 1 MB.`);
-    }
-    
-    // Create Image metadata
-    const image: Image = {
-      Id: crypto.randomUUID(),
-      Name: params.name || params.file.name.replace(/\.[^/.]+$/, ''), // Remove extension
-      FileSize: blob.size,
-      MimeType: mimeType,
-      Width: width,
-      Height: height
-    };
-    
-    // Store binary data in IndexedDB
-    await IndexedDBUtilities.save(image.Id, blob);
-    
-    // Add to campaign catalog
-    campaign.Images.push(image);
+    // Simply add the image metadata to the campaign
+    campaign.Images.push(params.image);
     
     LogActions.create({
-      action: 'Image uploaded',
-      details: `${image.Name} (${(image.FileSize / 1024).toFixed(1)} KB)`,
+      action: 'Image added',
+      details: `${params.image.Name} (${(params.image.FileSize / 1024).toFixed(1)} KB)`,
       category: 'system',
       level: 'info',
       visibility: ['dm']
     }, context);
-    
-    return image;
   },
   
   /**
-   * Deletes an image from catalog and IndexedDB
+   * Removes an image from the campaign catalog (metadata only)
+   * NOTE: IndexedDB cleanup should be handled separately by the service layer
    */
-  async delete(params: { imageId: string }, context: Context): Promise<void> {
+  delete(params: { imageId: string }, context: Context): void {
     const campaign = CampaignActions.getActiveCampaign(context);
     
     const index = campaign.Images.findIndex(img => img.Id === params.imageId);
@@ -69,15 +47,33 @@ export const ImageActions = {
     }
     
     const image = campaign.Images[index];
-    
-    // Remove from catalog
     campaign.Images.splice(index, 1);
     
-    // Remove from IndexedDB
-    await IndexedDBUtilities.remove(params.imageId);
+    LogActions.create({
+      action: 'Image removed',
+      details: image.Name,
+      category: 'system',
+      level: 'info',
+      visibility: ['dm']
+    }, context);
+  },
+  
+  /**
+   * Edits image metadata
+   */
+  edit(params: { imageId: string; updates: Partial<Image> }, context: Context): void {
+    const campaign = CampaignActions.getActiveCampaign(context);
+    
+    const image = campaign.Images.find(img => img.Id === params.imageId);
+    if (!image) {
+      console.warn(`Image not found: ${params.imageId}`);
+      return;
+    }
+    
+    Object.assign(image, params.updates);
     
     LogActions.create({
-      action: 'Image deleted',
+      action: 'Image updated',
       details: image.Name,
       category: 'system',
       level: 'info',
@@ -86,12 +82,13 @@ export const ImageActions = {
   },
   
   // ============================================================================
-  // HELPER FUNCTIONS
+  // UTILITY FUNCTIONS (Not actions - for use by service layer)
   // ============================================================================
   
   /**
    * Compresses and converts an image file
    * GIFs remain GIFs (with animation), everything else becomes JPEG
+   * This is a utility function, not an action
    */
   async compressImage(file: File): Promise<{
     blob: Blob;
@@ -186,6 +183,15 @@ export const ImageActions = {
             `GIF dimensions too large (${width}x${height}). ` +
             `Maximum dimension is ${MAX_DIMENSION}px. ` +
             `Please resize the GIF before uploading.`
+          ));
+          return;
+        }
+        
+        // Check size
+        if (file.size > MAX_IMAGE_SIZE) {
+          reject(new Error(
+            `GIF file too large (${(file.size / 1024 / 1024).toFixed(2)} MB). ` +
+            `Maximum size is 1 MB.`
           ));
           return;
         }
