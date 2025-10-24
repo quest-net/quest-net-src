@@ -7,17 +7,18 @@ import { CampaignActions } from './CampaignActions';
 import { CharacterIndex } from '../Character/Index';
 import { CampaignSettingEdit } from '../CampaignSetting/Edit';
 import { ImageIndex } from '../Image/Index';
+import { Main } from '../Main/Main';
 import { LogDisplay } from '../Log/LogDisplay';
 import { PeerStatus } from '../Room/PeerStatus';
 import { usePeerTracking } from '../../hooks/usePeerTracking';
 
-type TabView = 'characters' | 'images' | 'settings';
+type TabView = 'main' | 'characters' | 'images' | 'settings';
 
 export function DMView() {
   const { identifier } = useParams<{ identifier: string }>();
   const context = useQuestContext();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<TabView>('characters');
+  const [activeTab, setActiveTab] = useState<TabView>('main');
   
   // Call usePeerTracking once at the view level
   const { peers, connectionStatus } = usePeerTracking();
@@ -54,6 +55,14 @@ export function DMView() {
           <ul className="menu menu-lg">
             <li>
               <button
+                className={activeTab === 'main' ? 'active' : ''}
+                onClick={() => setActiveTab('main')}
+              >
+                Main
+              </button>
+            </li>
+            <li>
+              <button
                 className={activeTab === 'characters' ? 'active' : ''}
                 onClick={() => setActiveTab('characters')}
               >
@@ -80,7 +89,8 @@ export function DMView() {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex-1 overflow-auto">
+          {activeTab === 'main' && <Main />}
           {activeTab === 'characters' && <CharacterIndex />}
           {activeTab === 'images' && <ImageIndex />}
           {activeTab === 'settings' && <CampaignSettingEdit />}

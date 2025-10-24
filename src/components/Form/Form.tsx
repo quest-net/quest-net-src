@@ -111,7 +111,7 @@ export function FormWrapper<T extends Record<string, any>>({
   };
 
   // Inject data and setData into children
-  const childrenWithProps = cloneElement(children as ReactElement, {
+  const childrenWithProps = cloneElement(children as ReactElement<any>, {
     data,
     onChange: setData
   });
@@ -231,9 +231,9 @@ export function FormField({ label, hint, children, span = 1 }: FormFieldProps) {
   const { readOnly } = useFormContext();
 
   // Clone the child element and inject readonly/disabled props
-  const childWithReadOnly = cloneElement(children, {
-    disabled: readOnly || children.props.disabled,
-    readOnly: readOnly || children.props.readOnly,
+  const childWithReadOnly = cloneElement(children as ReactElement<any>, {
+    disabled: readOnly || (children as ReactElement<any>).props.disabled,
+    readOnly: readOnly || (children as ReactElement<any>).props.readOnly,
   });
 
   // Map span to Tailwind class (must be explicit for Tailwind to detect)

@@ -6,6 +6,7 @@ import { CharacterActions } from '../../domains/Character/CharacterActions';
 import { CampaignSettingActions } from '../../domains/CampaignSetting/CampaignSettingActions';
 import { LogActions } from '../../domains/Log/LogActions';
 import { ImageActions } from '../../domains/Image/ImageActions';
+import { TerrainActions } from '../../domains/Terrain/TerrainActions';
 // Import other action modules as they're created
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
@@ -260,6 +261,10 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   // CAMPAIGN SETTING ACTIONS
   // ============================================================================
     ...registerDomain('setting', CampaignSettingActions, ['dm']),
+  // ============================================================================
+  //TERRAIN ACTIONS
+  // ============================================================================
+    ...registerDomain('terrain', TerrainActions, ['dm']),
 };
 
 // ============================================================================

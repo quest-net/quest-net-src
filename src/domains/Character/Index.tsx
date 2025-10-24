@@ -72,7 +72,7 @@ export function CharacterIndex() {
       
       {/* Main Content */}
       <div className="drawer-content">
-        <div className="space-y-4">
+        <div className="space-y-4 p-6">
           {/* Header */}
           <div className="flex justify-between items-center">
             <div>

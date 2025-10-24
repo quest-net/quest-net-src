@@ -9,6 +9,7 @@ export interface GameState {
 	Audio: string;
 	Volume: number;
 	Scene: Scene;
+	TerrainId: string;
 }
 
 export interface CombatState {

@@ -3,6 +3,7 @@ import { Campaign } from "./Campaign";
 import { getUrlIdentifier, isGUID } from "../../utils/UrlParser";
 import { ContextActions } from "../Context/ContextActions";
 import { CampaignSettingActions } from "../CampaignSetting/CampaignSettingActions";
+import { TerrainActions } from "../Terrain/TerrainActions";
 
 /**
  * Generates a random room code (lowercase, alphanumeric, max 32 chars)
@@ -31,6 +32,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 		SkillTemplates: [],
 		StatuseTemplates: [],
 		EntityTemplates: [],
+		Terrains: [TerrainActions.createDefault()],
 		Audios: [],
 		Images: [],
 		GameState: {
@@ -46,7 +48,8 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 			Scene: {
 				EnvironmentImageId: '',
 				FocusImageId: ''
-			}
+			},
+			TerrainId: 'DEFAULT_TERRAIN'
 		},
 		Log: [],
 		Settings: CampaignSettingActions.createDefault()

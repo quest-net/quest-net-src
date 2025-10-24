@@ -21,18 +21,20 @@ export function CampaignSettingEdit() {
   };
 
   return (
-    <FormWrapper
-      domain="setting"
-      entityId={campaign.Id}
-      initialData={campaign.Settings}
-      onSave={handleSave}
-      onClose={() => {}} // No close action needed - this is shown in DMView
-      createTitle="Campaign Settings"
-      editTitle="Campaign Settings"
-      viewTitle="Campaign Settings"
-    >
-      <CampaignSettingForm />
-    </FormWrapper>
+    <div className="p-6">
+      <FormWrapper
+        domain="setting"
+        entityId={campaign.Id}
+        initialData={campaign.Settings}
+        onSave={handleSave}
+        onClose={() => {}} // No close action needed - this is shown in DMView
+        createTitle="Campaign Settings"
+        editTitle="Campaign Settings"
+        viewTitle="Campaign Settings"
+      >
+        <CampaignSettingForm />
+      </FormWrapper>
+    </div>
   );
 }
 

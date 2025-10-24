@@ -75,6 +75,7 @@ export function usePeerTracking(): PeerTrackingData {
 
       if (typeof userData === 'object' && userData !== null) {
         setPeerUsers(current => {
+          const isNewPeer = !current[peerId];
           const updated = {
             ...current,
             [peerId]: userData as unknown as User
@@ -82,8 +83,20 @@ export function usePeerTracking(): PeerTrackingData {
           console.log('[usePeerTracking] Updated peer users', {
             peerId,
             userName: (userData as any).Name,
-            totalPeers: Object.keys(updated).length
+            totalPeers: Object.keys(updated).length,
+            isNewPeer
           });
+          
+          // If this is the first time we're hearing from this peer,
+          // respond by sending our user data back to ensure mutual awareness
+          if (isNewPeer && sendUserRef.current) {
+            console.log('[usePeerTracking] New peer detected, sending user data back', {
+              peerId,
+              ourUser: context.User
+            });
+            sendUserRef.current(context.User as any, peerId);
+          }
+          
           return updated;
         });
       }
@@ -189,6 +202,8 @@ export function usePeerTracking(): PeerTrackingData {
   }, [actionService]);
 
   // Re-broadcast when User object changes (e.g., character selection)
+  const userJson = JSON.stringify(context.User);
+
   useEffect(() => {
     console.log('[usePeerTracking] User changed, re-broadcasting', {
       user: context.User,
@@ -199,7 +214,7 @@ export function usePeerTracking(): PeerTrackingData {
       console.log('[usePeerTracking] Broadcasting updated user state to all peers');
       sendUserRef.current(context.User as any);
     }
-  }, [context.User]);
+  }, [userJson]);
 
   // Build clean peer list from internal state
   const peers: PeerInfo[] = Object.keys(peerUsers).map(peerId => ({

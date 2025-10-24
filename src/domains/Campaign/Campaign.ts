@@ -8,6 +8,7 @@ import { Status } from "../Status/Status";
 import { GameState } from "../GameState/GameState";
 import { Entity } from "../Entity/Entity";
 import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
+import { Terrain } from "../Terrain/Terrain";
 
 export interface Campaign {
     Id: string;
@@ -19,6 +20,7 @@ export interface Campaign {
     SkillTemplates: Skill[];
     StatuseTemplates: Status[];
     EntityTemplates: Entity[];
+    Terrains: Terrain[];
     Audios: Audio[];
     Images: Image[];
     //GameState
