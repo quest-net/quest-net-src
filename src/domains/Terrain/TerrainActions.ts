@@ -35,6 +35,85 @@ export const TerrainActions = {
     };
   },
 
+  /** Create a randomized hilly terrain with two colors by height */
+    createHills(): Terrain {
+    // Tunables — feel free to tweak
+    const width = 32;
+    const length = 32;
+    const MAX_HEIGHT = 8;         // integer height cap
+    const HILLS_COUNT = 6;        // number of hill centers
+    const MIN_RADIUS = 3;
+    const MAX_RADIUS = Math.floor(Math.min(width, length) / 3); // gentle slopes
+
+    // Base arrays
+    const heightFloat: number[][] = Array.from({ length }, () => Array(width).fill(0));
+    const heightMap: number[][] = Array.from({ length }, () => Array(width).fill(0));
+    const colorMap: TerrainType[][] = Array.from({ length }, () => Array(width).fill('green' as TerrainType));
+
+    // Random hill parameters
+    const hills = Array.from({ length: HILLS_COUNT }, () => {
+        const cx = Math.floor(Math.random() * width);
+        const cy = Math.floor(Math.random() * length);
+        const radius = Math.max(MIN_RADIUS, Math.floor(Math.random() * (MAX_RADIUS - MIN_RADIUS + 1)) + MIN_RADIUS);
+        const peak = 0.6 + Math.random() * 0.8; // 0.6..1.4 (relative strength)
+        const sigma2 = (radius * 0.45) ** 2;    // gaussian falloff
+        return { cx, cy, peak, sigma2 };
+    });
+
+    // Accumulate gaussian hills
+    for (let y = 0; y < length; y++) {
+        for (let x = 0; x < width; x++) {
+        let v = 0;
+        for (const h of hills) {
+            const dx = x - h.cx;
+            const dy = y - h.cy;
+            const d2 = dx * dx + dy * dy;
+            v += h.peak * Math.exp(-d2 / (2 * h.sigma2));
+        }
+        // Tiny ambient noise so flats aren’t perfectly uniform
+        v += (Math.random() - 0.5) * 0.05;
+        heightFloat[y][x] = Math.max(0, v);
+        }
+    }
+
+    // Normalize to [0, MAX_HEIGHT] and quantize to integers
+    let minV = Infinity, maxV = -Infinity;
+    for (let y = 0; y < length; y++) {
+        for (let x = 0; x < width; x++) {
+        const v = heightFloat[y][x];
+        if (v < minV) minV = v;
+        if (v > maxV) maxV = v;
+        }
+    }
+    const span = Math.max(1e-6, maxV - minV);
+    for (let y = 0; y < length; y++) {
+        for (let x = 0; x < width; x++) {
+        const n = (heightFloat[y][x] - minV) / span;      // 0..1
+        const h = Math.round(n * MAX_HEIGHT);             // 0..MAX_HEIGHT
+        heightMap[y][x] = h;
+        }
+    }
+
+    // Two-color ramp by elevation: green (low) → brown (high)
+    const threshold = Math.floor(MAX_HEIGHT * 0.45);
+    for (let y = 0; y < length; y++) {
+        for (let x = 0; x < width; x++) {
+        colorMap[y][x] = heightMap[y][x] > threshold ? 'brown' : 'green';
+        }
+    }
+
+    // Produce Terrain object
+    return {
+        Id: `HILLS_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e4)}`,
+        Name: 'Random Hills',
+        Width: width,
+        Length: length,
+        HeightMap: heightMap,
+        ColorMap: colorMap,
+    };
+    },
+
+
   /**
    * Creates a new blank terrain (for user-created terrains)
    */
