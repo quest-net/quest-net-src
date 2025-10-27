@@ -27,7 +27,7 @@ export const CampaignSettingActions = {
    * Updates campaign settings
    * Replaces the entire Settings object or merges partial updates
    */
-  update(params: { updates: Partial<CampaignSettings> }, context: Context): void {
+  edit(params: { updates: Partial<CampaignSettings> }, context: Context): void {
     const campaign = CampaignActions.getActiveCampaign(context);
     Object.assign(campaign.Settings, params.updates);
   }

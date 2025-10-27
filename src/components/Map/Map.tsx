@@ -1,7 +1,7 @@
-// Map.tsx — React 19 + @pixi/react v8
-// Pan (RMB/MMB), wheel zoom, 90° rotations with a short tween, and cliff faces.
+// Map.tsx - React 19 + @pixi/react v8
+// Isometric map with pan, zoom, smooth rotation animations, PAN LIMITS, and tile selection
 
-import React, {
+import {
   useMemo,
   useRef,
   useState,
@@ -14,13 +14,36 @@ import { Container as PixiContainer, Graphics as PixiGraphics } from 'pixi.js';
 
 extend({ Container: PixiContainer, Graphics: PixiGraphics });
 
-// Prop types kept to preserve existing usage
 import type { Character } from '../../domains/Character/Character';
 import type { Entity } from '../../domains/Entity/Entity';
 import type { CombatState } from '../../domains/GameState/GameState';
 import type { Scene } from '../../domains/Scene/Scene';
-import type { Terrain, TerrainType } from '../../domains/Terrain/Terrain';
-import { TERRAIN_COLORS } from '../../domains/Terrain/Terrain';
+import type { Terrain } from '../../domains/Terrain/Terrain';
+
+import {
+  TILE_W,
+  TILE_H,
+  V_SCALE,
+  MIN_SCALE,
+  MAX_SCALE,
+  type Orientation,
+  type AnimationState,
+  type GridBounds,
+  easeInOut,
+  buildBaseTiles,
+  projectTiles,
+  lerpProjections,
+  sortTilesByDepth,
+  calculateGridBounds,
+  centerGridInView,
+  lerpCenter,
+  screenEastNeighbor,
+  screenSouthNeighbor,
+  mulColor,
+  clampPan,
+  screenToTile,
+  getTileIndex,
+} from './MapUtilities';
 
 interface MapProps {
   characters: Character[];
@@ -30,55 +53,8 @@ interface MapProps {
   terrain?: Terrain | null;
 }
 
-const TILE_W = 64;    // 2:1 isometric tile width
-const TILE_H = 32;    // 2:1 isometric tile height
-const V_SCALE = 20;   // pixels per height unit
+const PAN_PADDING = 500;
 
-// ───────── helpers ─────────
-function hexToNum(hex: string) {
-  const h = hex.startsWith('#') ? hex.slice(1) : hex;
-  return parseInt(h, 16);
-}
-function mulColor(rgb: number, factor: number) {
-  let r = ((rgb >> 16) & 0xff) * factor;
-  let g = ((rgb >> 8) & 0xff) * factor;
-  let b = (rgb & 0xff) * factor;
-  r = Math.max(0, Math.min(255, r));
-  g = Math.max(0, Math.min(255, g));
-  b = Math.max(0, Math.min(255, b));
-  return ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
-}
-const easeInOut = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
-
-// World (x,y) → view (rx,ry) by orientation (0,1,2,3)
-function rotXY(x: number, y: number, W: number, L: number, o: 0 | 1 | 2 | 3) {
-  switch (o) {
-    case 0: return { rx: x,             ry: y             };
-    case 1: return { rx: y,             ry: W - 1 - x     }; // 90° CW
-    case 2: return { rx: W - 1 - x,     ry: L - 1 - y     }; // 180°
-    case 3: return { rx: L - 1 - y,     ry: x             }; // 270° CW
-  }
-}
-
-// For cliff faces, which *original* neighbor is screen-East/South for a given orientation?
-function screenEastNeighbor(x: number, y: number, o: 0 | 1 | 2 | 3) {
-  switch (o) {
-    case 0: return { nx: x + 1, ny: y     }; // east
-    case 1: return { nx: x,     ny: y + 1 }; // south
-    case 2: return { nx: x - 1, ny: y     }; // west
-    case 3: return { nx: x,     ny: y - 1 }; // north
-  }
-}
-function screenSouthNeighbor(x: number, y: number, o: 0 | 1 | 2 | 3) {
-  switch (o) {
-    case 0: return { nx: x,     ny: y + 1 }; // south
-    case 1: return { nx: x - 1, ny: y     }; // west
-    case 2: return { nx: x,     ny: y - 1 }; // north
-    case 3: return { nx: x + 1, ny: y     }; // east
-  }
-}
-
-// ───────── measured container ─────────
 function useMeasuredContainer<T extends HTMLElement>() {
   const ref = useRef<T | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -100,32 +76,26 @@ function useMeasuredContainer<T extends HTMLElement>() {
   return { ref, ...size };
 }
 
-// ───────── component ─────────
-type BaseTile = { x: number; y: number; h: number; color: number };
-type Projected = { cx: number; cy: number; rx: number; ry: number };
-
 export default function Map({ scene, terrain }: MapProps) {
   const { ref, w, h } = useMeasuredContainer<HTMLDivElement>();
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio : 1;
 
-  // View rotation (discrete)
-  const [orientation, setOrientation] = useState<0 | 1 | 2 | 3>(0);
-  const [anim, setAnim] = useState<null | { from: 0 | 1 | 2 | 3; to: 0 | 1 | 2 | 3; t: number; start: number }>(null);
-  const DURATION = 180; // ms
+  const [orientation, setOrientation] = useState<Orientation>(0);
+  const [anim, setAnim] = useState<AnimationState | null>(null);
+  const DURATION = 180;
 
   const startRotate = (dir: 1 | -1) => {
     const now = performance.now();
-    // If mid-anim, snap base to nearest side to keep chaining smooth
     let base = orientation;
     if (anim) base = anim.t < 0.5 ? anim.from : anim.to;
-    const to = ((base + (dir === 1 ? 1 : 3)) & 3) as 0 | 1 | 2 | 3;
+    const to = ((base + (dir === 1 ? 1 : 3)) & 3) as Orientation;
     setOrientation(base);
     setAnim({ from: base, to, t: 0, start: now });
   };
+
   const rotateCW = () => startRotate(1);
   const rotateCCW = () => startRotate(-1);
 
-  // rAF tween loop
   useEffect(() => {
     if (!anim) return;
     let raf = 0;
@@ -135,29 +105,58 @@ export default function Map({ scene, terrain }: MapProps) {
       if (t < 1) {
         raf = requestAnimationFrame(loop);
       } else {
-        // commit to target orientation
         setOrientation(anim.to);
         setAnim(null);
       }
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anim?.start]);
 
-  // Pan & Zoom
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const panRef = useRef(pan);
   const scaleRef = useRef(scale);
-  panRef.current = pan; scaleRef.current = scale;
+  const centerRef = useRef({ x: 0, y: 0 });
+  const boundsRef = useRef<GridBounds | null>(null);
+  panRef.current = pan;
+  scaleRef.current = scale;
 
   const [isPanning, setIsPanning] = useState(false);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
-  const MIN_SCALE = 0.5, MAX_SCALE = 4;
+
+  // Tile selection state
+  const [hoveredTile, setHoveredTile] = useState<{ x: number; y: number } | null>(null);
+  const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
+
+  // Track if we've had the first hover to trigger a one-time redraw fix
+  const hasHoveredOnce = useRef(false);
+  const [forceRedraw, setForceRedraw] = useState(0);
+
+  const baseTiles = useMemo(() => terrain ? buildBaseTiles(terrain) : [], [terrain]);
+
+  const fromO = anim ? anim.from : orientation;
+  const toO = anim ? anim.to : orientation;
+  const tNorm = anim ? easeInOut(anim.t) : 1;
+
+  const projFrom = useMemo(() => !terrain || baseTiles.length === 0 ? [] : projectTiles(baseTiles, terrain.Width, terrain.Length, fromO), [baseTiles, terrain, fromO]);
+  const projTo = useMemo(() => !terrain || baseTiles.length === 0 ? [] : projectTiles(baseTiles, terrain.Width, terrain.Length, toO), [baseTiles, terrain, toO]);
+  const currentProjections = useMemo(() => (projFrom.length === 0 || projTo.length === 0) ? [] : lerpProjections(projFrom, projTo, tNorm), [projFrom, projTo, tNorm]);
+  const order = useMemo(() => !terrain || baseTiles.length === 0 || projTo.length === 0 ? [] : sortTilesByDepth(baseTiles, projTo), [terrain, baseTiles, projTo]);
+
+  const centerFrom = useMemo(() => projFrom.length === 0 ? { cx: w / 2, cy: h / 2 } : centerGridInView(calculateGridBounds(projFrom), w, h), [projFrom, w, h]);
+  const centerTo = useMemo(() => {
+    if (projTo.length === 0) return { cx: w / 2, cy: h / 2 };
+    const bounds = calculateGridBounds(projTo);
+    boundsRef.current = bounds;
+    return centerGridInView(bounds, w, h);
+  }, [projTo, w, h]);
+
+  const currentCenter = useMemo(() => lerpCenter(centerFrom, centerTo, tNorm), [centerFrom, centerTo, tNorm]);
+  centerRef.current = { x: currentCenter.cx, y: currentCenter.cy };
 
   const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    if (!ref.current) return;
+    if (!ref.current || !boundsRef.current) return;
     e.preventDefault();
     const zoomIntensity = 0.0015;
     const zoom = Math.exp(-e.deltaY * zoomIntensity);
@@ -167,137 +166,124 @@ export default function Map({ scene, terrain }: MapProps) {
     if (actual === 1) return;
 
     const rect = ref.current.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
 
-    // Keep cursor world point stable across zoom
-    const cx = currentCenterX; const cy = currentCenterY;
+    const cx = centerRef.current.x;
+    const cy = centerRef.current.y;
     const worldX = (mx - (cx + panRef.current.x)) / scaleRef.current;
     const worldY = (my - (cy + panRef.current.y)) / scaleRef.current;
     const nextPanX = mx - cx - worldX * newScale;
     const nextPanY = my - cy - worldY * newScale;
 
+    const clampedPan = clampPan(
+      { x: nextPanX, y: nextPanY },
+      centerRef.current,
+      boundsRef.current,
+      newScale,
+      rect.width,
+      rect.height,
+      PAN_PADDING
+    );
+
     setScale(newScale);
-    setPan({ x: nextPanX, y: nextPanY });
-  }, /* deps filled below via vars */[]);
+    setPan(clampedPan);
+  }, []);
 
   const onMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.button !== 1 && e.button !== 2) return; // only MMB/RMB
+    if (e.button !== 1 && e.button !== 2) return;
     e.preventDefault();
     setIsPanning(true);
     dragStart.current = { x: e.clientX, y: e.clientY };
   }, []);
+
   const onMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isPanning || !dragStart.current) return;
+    if (!isPanning || !dragStart.current || !boundsRef.current) return;
     const dx = e.clientX - dragStart.current.x;
     const dy = e.clientY - dragStart.current.y;
     dragStart.current = { x: e.clientX, y: e.clientY };
-    setPan(p => ({ x: p.x + dx, y: p.y + dy }));
-  }, [isPanning]);
-  const endPan = useCallback(() => { setIsPanning(false); dragStart.current = null; }, []);
+    setPan((p) => clampPan(
+      { x: p.x + dx, y: p.y + dy },
+      centerRef.current,
+      boundsRef.current!,
+      scaleRef.current,
+      w,
+      h,
+      PAN_PADDING
+    ));
+  }, [isPanning, w, h]);
 
-  // Build base tiles (world-space data)
-  const baseTiles: BaseTile[] = useMemo(() => {
-    if (!terrain) return [];
-    const W = terrain.Width, L = terrain.Length;
-    const hmap = terrain.HeightMap || [];
-    const cmap = terrain.ColorMap || [];
-    const out: BaseTile[] = [];
-    for (let y = 0; y < L; y++) {
-      for (let x = 0; x < W; x++) {
-        const hgt = (hmap[y]?.[x] ?? 0) | 0;
-        const ttype = (cmap[y]?.[x] ?? ('grey' as TerrainType));
-        const color = hexToNum(TERRAIN_COLORS[ttype] ?? '#6b7280');
-        out.push({ x, y, h: hgt, color });
-      }
+  const endPan = useCallback(() => {
+    setIsPanning(false);
+    dragStart.current = null;
+  }, []);
+
+  // Tile interaction handlers
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!ref.current || !terrain || isPanning) return;
+
+    const rect = ref.current.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    // Use the "to" orientation for hit testing during animation
+    const currentOrientation: Orientation = anim ? anim.to : orientation;
+
+    const tile = screenToTile(
+      screenX,
+      screenY,
+      centerRef.current.x,
+      centerRef.current.y,
+      panRef.current.x,
+      panRef.current.y,
+      scaleRef.current,
+      terrain.Width,
+      terrain.Length,
+      currentOrientation,
+      terrain.HeightMap
+    );
+
+    if (tile && !hasHoveredOnce.current) {
+      hasHoveredOnce.current = true;
+      setForceRedraw(1);
     }
-    return out;
-  }, [terrain]);
+    setHoveredTile(tile);
+  }, [terrain, isPanning, anim, orientation]);
 
-  // Project tiles for an orientation
-  const projectFor = useCallback((o: 0 | 1 | 2 | 3): Projected[] => {
-    if (!terrain) return [];
-    const W = terrain.Width, L = terrain.Length;
-    const arr: Projected[] = new Array(baseTiles.length);
-    for (let i = 0; i < baseTiles.length; i++) {
-      const t = baseTiles[i];
-      const { rx, ry } = rotXY(t.x, t.y, W, L, o);
-      const cx = (rx - ry) * (TILE_W / 2);
-      const cy = (rx + ry) * (TILE_H / 2) - t.h * V_SCALE;
-      arr[i] = { cx, cy, rx, ry };
-    }
-    return arr;
-  }, [baseTiles, terrain]);
+  const handlePointerDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // Only handle left click for tile selection
+    if (e.button !== 0 || !hoveredTile || !terrain) return;
+    
+    setSelectedTile(hoveredTile);
+    console.log(`Selected tile: (${hoveredTile.x}, ${hoveredTile.y})`);
+  }, [hoveredTile, terrain]);
 
-  // Determine from/to orientation for current frame
-  const fromO: 0 | 1 | 2 | 3 = anim ? anim.from : orientation;
-  const toO:   0 | 1 | 2 | 3 = anim ? anim.to : orientation;
-  const tNorm = anim ? easeInOut(anim.t) : 1;
-
-  // Precompute projections for from/to and lerp positions
-  const projFrom = useMemo(() => projectFor(fromO), [projectFor, fromO]);
-  const projTo   = useMemo(() => projectFor(toO),   [projectFor, toO]);
-
-  // Sort order based on the *target* orientation (stable during tween)
-  const order = useMemo(() => {
-    if (!terrain) return [] as number[];
-    const idxs = baseTiles.map((_, i) => i);
-    idxs.sort((ia, ib) => {
-      const a = projTo[ia], b = projTo[ib];
-      const da = a.rx + a.ry, db = b.rx + b.ry;
-      if (da !== db) return da - db;
-      return baseTiles[ia].h - baseTiles[ib].h;
-    });
-    return idxs;
-  }, [terrain, baseTiles, projTo]);
-
-  // Lerp centers for display, compute bounds for both orientations and lerp centers
-  const boundsCenter = useCallback((proj: Projected[]) => {
-    const halfW = TILE_W / 2, halfH = TILE_H / 2;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (let i = 0; i < proj.length; i++) {
-      const p = proj[i];
-      minX = Math.min(minX, p.cx - halfW);
-      maxX = Math.max(maxX, p.cx + halfW);
-      minY = Math.min(minY, p.cy - halfH);
-      maxY = Math.max(maxY, p.cy + halfH);
-    }
-    const gridW = maxX - minX, gridH = maxY - minY;
-    return { cx: w / 2 - (minX + gridW / 2), cy: h / 2 - (minY + gridH / 2) };
-  }, [w, h]);
-
-  const centerFrom = useMemo(() => (projFrom.length ? boundsCenter(projFrom) : { cx: w / 2, cy: h / 2 }), [projFrom, boundsCenter, w, h]);
-  const centerTo   = useMemo(() => (projTo.length   ? boundsCenter(projTo)   : { cx: w / 2, cy: h / 2 }), [projTo,   boundsCenter, w, h]);
-  const currentCenterX = centerFrom.cx * (1 - tNorm) + centerTo.cx * tNorm;
-  const currentCenterY = centerFrom.cy * (1 - tNorm) + centerTo.cy * tNorm;
-
-  // Draw (cliff faces + top faces) using lerped centers
   const draw = useCallback((g: PixiGraphics) => {
     g.clear();
-    if (!terrain || baseTiles.length === 0) return;
-
-    const W = terrain.Width, L = terrain.Length;
+    if (!terrain || baseTiles.length === 0 || currentProjections.length === 0) return;
+    const W = terrain.Width;
+    const L = terrain.Length;
     const hmap = terrain.HeightMap || [];
-    const halfW = TILE_W / 2, halfH = TILE_H / 2;
-
-    // Decide which orientation to use for *face selection* (swap at mid-tween)
-    const faceOrient: 0 | 1 | 2 | 3 = anim ? (anim.t < 0.5 ? anim.from : anim.to) : orientation;
-
+    const halfW = TILE_W / 2;
+    const halfH = TILE_H / 2;
+    const faceOrient: Orientation = anim ? (anim.t < 0.5 ? anim.from : anim.to) : orientation;
     for (const i of order) {
       const base = baseTiles[i];
-      const pf = projFrom[i], pt = projTo[i];
-      const cx = pf.cx * (1 - tNorm) + pt.cx * tNorm;
-      const cy = pf.cy * (1 - tNorm) + pt.cy * tNorm;
+      const proj = currentProjections[i];
+      const cx = proj.cx;
+      const cy = proj.cy;
       const color = base.color;
-
-      const topX = cx,           topY = cy - halfH;
-      const rightX = cx + halfW, rightY = cy;
-      const bottomX = cx,        bottomY = cy + halfH;
-      const leftX = cx - halfW,  leftY = cy;
-
-      // EAST (screen-right) face for current face-orientation
+      const topX = cx;
+      const topY = cy - halfH;
+      const rightX = cx + halfW;
+      const rightY = cy;
+      const bottomX = cx;
+      const bottomY = cy + halfH;
+      const leftX = cx - halfW;
+      const leftY = cy;
       {
         const { nx, ny } = screenEastNeighbor(base.x, base.y, faceOrient);
-        const nh = (nx >= 0 && nx < W && ny >= 0 && ny < L) ? (hmap[ny]?.[nx] ?? 0) : 0;
+        const nh = nx >= 0 && nx < W && ny >= 0 && ny < L ? hmap[ny]?.[nx] ?? 0 : 0;
         if (base.h > nh) {
           const dh = (base.h - nh) * V_SCALE;
           g.setFillStyle({ color: mulColor(color, 0.82) });
@@ -312,11 +298,9 @@ export default function Map({ scene, terrain }: MapProps) {
           g.stroke();
         }
       }
-
-      // SOUTH (screen-bottom) face
       {
         const { nx, ny } = screenSouthNeighbor(base.x, base.y, faceOrient);
-        const nh = (nx >= 0 && nx < W && ny >= 0 && ny < L) ? (hmap[ny]?.[nx] ?? 0) : 0;
+        const nh = nx >= 0 && nx < W && ny >= 0 && ny < L ? hmap[ny]?.[nx] ?? 0 : 0;
         if (base.h > nh) {
           const dh = (base.h - nh) * V_SCALE;
           g.setFillStyle({ color: mulColor(color, 0.68) });
@@ -331,8 +315,6 @@ export default function Map({ scene, terrain }: MapProps) {
           g.stroke();
         }
       }
-
-      // Top diamond
       g.setFillStyle({ color });
       g.setStrokeStyle({ width: 1, color: 0x000000, alpha: 0.12 });
       g.beginPath();
@@ -344,7 +326,53 @@ export default function Map({ scene, terrain }: MapProps) {
       g.fill();
       g.stroke();
     }
-  }, [terrain, baseTiles, projFrom, projTo, order, tNorm, anim, orientation]);
+  }, [terrain, baseTiles, currentProjections, order, anim, orientation, forceRedraw]);
+
+  // Draw hover highlight
+  const drawHoverHighlight = useCallback((g: PixiGraphics) => {
+    g.clear();
+    if (!hoveredTile || !terrain || baseTiles.length === 0 || currentProjections.length === 0) return;
+
+    const tileIndex = getTileIndex(hoveredTile.x, hoveredTile.y, terrain.Width);
+    const proj = currentProjections[tileIndex];
+    if (!proj) return;
+
+    const halfW = TILE_W / 2;
+    const halfH = TILE_H / 2;
+
+    g.setFillStyle({ color: 0xffffff, alpha: 0.3 });
+    g.setStrokeStyle({ width: 2, color: 0xffffff, alpha: 0.8 });
+    g.beginPath();
+    g.moveTo(proj.cx, proj.cy - halfH);
+    g.lineTo(proj.cx + halfW, proj.cy);
+    g.lineTo(proj.cx, proj.cy + halfH);
+    g.lineTo(proj.cx - halfW, proj.cy);
+    g.closePath();
+    g.fill();
+    g.stroke();
+  }, [hoveredTile, terrain, baseTiles, currentProjections]);
+
+  // Draw selection highlight
+  const drawSelectionHighlight = useCallback((g: PixiGraphics) => {
+    g.clear();
+    if (!selectedTile || !terrain || baseTiles.length === 0 || currentProjections.length === 0) return;
+
+    const tileIndex = getTileIndex(selectedTile.x, selectedTile.y, terrain.Width);
+    const proj = currentProjections[tileIndex];
+    if (!proj) return;
+
+    const halfW = TILE_W / 2;
+    const halfH = TILE_H / 2;
+
+    g.setStrokeStyle({ width: 3, color: 0x00ff00, alpha: 1 });
+    g.beginPath();
+    g.moveTo(proj.cx, proj.cy - halfH);
+    g.lineTo(proj.cx + halfW, proj.cy);
+    g.lineTo(proj.cx, proj.cy + halfH);
+    g.lineTo(proj.cx - halfW, proj.cy);
+    g.closePath();
+    g.stroke();
+  }, [selectedTile, terrain, baseTiles, currentProjections]);
 
   const ready = w > 0 && h > 0;
   const cursorClass = isPanning ? 'cursor-grabbing' : 'cursor-default';
@@ -358,6 +386,8 @@ export default function Map({ scene, terrain }: MapProps) {
       onMouseMove={onMouseMove}
       onMouseUp={endPan}
       onMouseLeave={endPan}
+      onPointerMove={handlePointerMove}
+      onClick={handlePointerDown}
       onContextMenu={(e) => e.preventDefault()}
     >
       {ready && (
@@ -369,22 +399,27 @@ export default function Map({ scene, terrain }: MapProps) {
           backgroundAlpha={0}
         >
           <pixiContainer
-            x={currentCenterX + pan.x}
-            y={currentCenterY + pan.y}
+            x={currentCenter.cx + pan.x}
+            y={currentCenter.cy + pan.y}
             scale={{ x: scale, y: scale }}
           >
+            {/* Base terrain layer */}
             <pixiGraphics draw={draw} />
+            
+            {/* Hover highlight layer */}
+            {hoveredTile && <pixiGraphics draw={drawHoverHighlight} />}
+            
+            {/* Selection highlight layer */}
+            {selectedTile && <pixiGraphics draw={drawSelectionHighlight} />}
           </pixiContainer>
         </Application>
       )}
-
-      {/* UI: rotate buttons */}
       <div className="absolute left-3 top-3 z-10 flex gap-2">
         <button
           type="button"
           className="btn btn-lg rounded-md bg-base-100 shadow hover:bg-base-300"
           onClick={rotateCCW}
-          title="Rotate 90° counter-clockwise"
+          title="Rotate 90 degrees counter-clockwise"
         >
           ⟳
         </button>
@@ -392,19 +427,29 @@ export default function Map({ scene, terrain }: MapProps) {
           type="button"
           className="btn btn-lg rounded-md bg-base-100 shadow hover:bg-base-300"
           onClick={rotateCW}
-          title="Rotate 90° clockwise"
+          title="Rotate 90 degrees clockwise"
         >
           ⟲
         </button>
       </div>
-
-      {/* Readouts */}
       <div className="pointer-events-none absolute right-3 bottom-3 rounded-xl bg-base-100/70 px-2 py-1 text-[11px] shadow">
         <span className="opacity-70">Terrain:</span>{' '}
-        <span className="font-mono">{terrain?.Name ?? '—'}</span>{' '}
+        <span className="font-mono">{terrain?.Name ?? '-'}</span>{' '}
         <span className="opacity-70">| Rot:</span>{' '}
         <span className="font-mono">{(anim ? anim.to : orientation) * 90}°</span>{' '}
         {anim && <span className="opacity-60">({Math.round(tNorm * 100)}%)</span>}
+        {hoveredTile && (
+          <>
+            {' '}<span className="opacity-70">| Hover:</span>{' '}
+            <span className="font-mono">({hoveredTile.x}, {hoveredTile.y})</span>
+          </>
+        )}
+        {selectedTile && (
+          <>
+            {' '}<span className="opacity-70">| Selected:</span>{' '}
+            <span className="font-mono">({selectedTile.x}, {selectedTile.y})</span>
+          </>
+        )}
       </div>
     </div>
   );

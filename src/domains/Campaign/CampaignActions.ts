@@ -32,7 +32,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 		SkillTemplates: [],
 		StatuseTemplates: [],
 		EntityTemplates: [],
-		Terrains: [TerrainActions.createDefault()],
+		Terrains: [TerrainActions.createDefault(), TerrainActions.createHills()],
 		Audios: [],
 		Images: [],
 		GameState: {

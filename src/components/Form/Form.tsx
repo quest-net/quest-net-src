@@ -37,12 +37,13 @@ export function useFormReadOnly(): boolean {
 // ============================================================================
 
 interface FormWrapperProps<T> {
-  domain: string; // NEW: e.g., 'character', 'item', 'skill'
+  domain: string;
   entityId?: string;
   initialData: T;
   onSave: (data: T) => void;
   onClose: () => void;
   onClone?: (data: T) => void;
+  onDelete?: () => void;
   createTitle: string;
   editTitle: string;
   viewTitle: string;
@@ -56,6 +57,7 @@ export function FormWrapper<T extends Record<string, any>>({
   onSave,
   onClose,
   onClone,
+  onDelete,
   createTitle,
   editTitle,
   viewTitle,
@@ -66,6 +68,7 @@ export function FormWrapper<T extends Record<string, any>>({
   // Check permissions for this domain
   const canCreate = canPerformAction(context.User, `${domain}:create`);
   const canEdit = canPerformAction(context.User, `${domain}:edit`);
+  const canDelete = entityId && onDelete && canPerformAction(context.User, `${domain}:delete`);
   
   // Determine mode based on permissions
   const mode: FormMode = 
@@ -78,6 +81,10 @@ export function FormWrapper<T extends Record<string, any>>({
   // State management
   const [data, setData] = useState<T>(initialData);
   const [isDirty, setDirty] = useState(mode === 'create');
+  
+  // Delete confirmation state
+  const [isDeleteConfirm, setIsDeleteConfirm] = useState(false);
+  const [isDeleteCooldown, setIsDeleteCooldown] = useState(false);
 
   // Track changes for dirty state
   useEffect(() => {
@@ -100,6 +107,21 @@ export function FormWrapper<T extends Record<string, any>>({
   const handleClone = () => {
     if (onClone) {
       onClone(data);
+    }
+  };
+
+  const handleDelete = () => {
+    if (!isDeleteConfirm) {
+      // First click - enter confirmation mode
+      setIsDeleteConfirm(true);
+      setIsDeleteCooldown(true);
+      setTimeout(() => setIsDeleteCooldown(false), 500);
+    } else {
+      // Second click - execute delete
+      if (onDelete) {
+        onDelete();
+        onClose();
+      }
     }
   };
 
@@ -132,13 +154,26 @@ export function FormWrapper<T extends Record<string, any>>({
         {childrenWithProps}
 
         {!readOnly && (
-          <div className="flex justify-end gap-2">
-            <button onClick={onClose} className="btn btn-neutral">
-              Cancel
-            </button>
-            <button onClick={handleSave} className="btn btn-primary">
-              {mode === 'create' ? 'Create' : 'Save Changes'}
-            </button>
+          <div className="flex justify-between gap-2">
+            <div>
+              {canDelete && (
+                <button 
+                  onClick={handleDelete}
+                  className="btn btn-error"
+                  disabled={isDeleteCooldown}
+                >
+                  {isDeleteConfirm ? 'Click again to delete' : 'Delete'}
+                </button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={onClose} className="btn btn-neutral">
+                Cancel
+              </button>
+              <button onClick={handleSave} className="btn btn-primary">
+                {mode === 'create' ? 'Create' : 'Save Changes'}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -246,7 +281,7 @@ export function FormField({ label, hint, children, span = 1 }: FormFieldProps) {
 
   return (
     <div className={`flex items-center gap-4 ${colSpanClass}`}>
-      <label className="flex-shrink-0 min-w-[200px] font-medium">
+      <label className="shrink-0 min-w-[200px] font-medium">
         {label}
         {hint && <span className="text-sm text-base-content/60 ml-2">{hint}</span>}
       </label>

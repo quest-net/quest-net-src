@@ -33,7 +33,7 @@ export const CharacterActions = {
       Image: undefined,
       Stats: stats,
       Attributes: {},
-      Position: { x: 0, y: 0 },
+      Position: { x: 0, y: 0, h: 0 },
       MoveSpeed: 30,
       CanFly: false,
       Inventory: [],
@@ -197,5 +197,44 @@ export const CharacterActions = {
     }
     
     ActorActions.moveActor('character', { actorId: params.characterId, position: params.position }, context);
+  },
+
+  /**
+ * Bulk edit tags for multiple characters
+ * More efficient than individual edits - single log entry, single state sync
+ */
+  bulkEditTags(
+    params: { updates: Array<{ characterId: string; tags: string[] }> },
+    context: Context
+  ): void {
+    const campaign = CampaignActions.getActiveCampaign(context);
+    
+    let successCount = 0;
+    
+    // Apply all updates
+    params.updates.forEach(update => {
+      // Try to find in roster first, then in gamestate
+      let character = campaign.CharacterRoster.find(c => c.Id === update.characterId);
+      if (!character) {
+        character = campaign.GameState.Characters.find(c => c.Id === update.characterId);
+      }
+      
+      if (character) {
+        character.Tags = update.tags;
+        successCount++;
+      } else {
+        console.warn(`Character not found for bulk update: ${update.characterId}`);
+      }
+    });
+    
+    // Single log entry for the entire bulk operation
+    LogActions.create({
+      action: 'Characters organized',
+      details: `Updated tags for ${successCount} character(s)`,
+      category: 'character',
+      level: 'info',
+      visibility: ['dm']
+    }, context);
   }
+
 };

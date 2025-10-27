@@ -12,14 +12,20 @@ import { ImagePicker } from '../../components/inputs/ImagePicker';
 
 interface CharacterEditProps {
   character?: Character;
+  initialTags?: string[];
   onClose: () => void;
 }
 
-export function CharacterEdit({ character, onClose }: CharacterEditProps) {
+export function CharacterEdit({ character, initialTags, onClose }: CharacterEditProps) {
   const context = useQuestContext();
   const { actionService } = useActionService();
 
-  const initialData = character || CharacterActions.createDefault(context);
+  const defaultCharacter = CharacterActions.createDefault(context);
+  if (initialTags && !character) {
+    defaultCharacter.Tags = initialTags;
+  }
+  
+  const initialData = character || defaultCharacter;
 
   const handleSave = (data: Character) => {
     if (!actionService) return;
@@ -54,6 +60,14 @@ export function CharacterEdit({ character, onClose }: CharacterEditProps) {
     onClose();
   };
 
+  const handleDelete = () => {
+    if (!actionService || !character) return;
+    
+    actionService.execute('character:delete', {
+      characterId: character.Id
+    });
+  };
+
   return (
     <FormWrapper
       domain="character"
@@ -62,6 +76,7 @@ export function CharacterEdit({ character, onClose }: CharacterEditProps) {
       onSave={handleSave}
       onClose={onClose}
       onClone={character ? handleClone : undefined}
+      onDelete={character ? handleDelete : undefined}
       createTitle="Create Character"
       editTitle="Edit Character"
       viewTitle="View Character"

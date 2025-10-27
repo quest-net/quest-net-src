@@ -15,7 +15,7 @@ export function CampaignSettingEdit() {
   const handleSave = (data: CampaignSettings) => {
     if (!actionService) return;
     
-    actionService.execute('setting:update', {
+    actionService.execute('setting:edit', {
       updates: data
     });
   };
@@ -27,7 +27,7 @@ export function CampaignSettingEdit() {
         entityId={campaign.Id}
         initialData={campaign.Settings}
         onSave={handleSave}
-        onClose={() => {}} // No close action needed - this is shown in DMView
+        onClose={() => {}}
         createTitle="Campaign Settings"
         editTitle="Campaign Settings"
         viewTitle="Campaign Settings"

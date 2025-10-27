@@ -8,14 +8,22 @@ import { IndexedDBUtilities } from '../../utils/IndexedDBUtilities';
 import { Image } from '../../domains/Image/Image';
 
 interface ImageUploadProps {
-  value?: string;  // Current image ID
+  value?: string;  // Current image ID (for single mode compatibility)
   onChange: (imageId: string | undefined) => void;
   readOnly?: boolean;
+  multiple?: boolean; // NEW: Enable multi-file upload
 }
 
 type UploadState = 'idle' | 'processing' | 'uploading' | 'error';
 
-export function ImageUpload({ value, onChange, readOnly }: ImageUploadProps) {
+interface FileUploadStatus {
+  file: File;
+  state: UploadState;
+  error?: string;
+  progress?: number;
+}
+
+export function ImageUpload({ value, onChange, readOnly, multiple = false }: ImageUploadProps) {
   const context = useQuestContext();
   const { actionService } = useActionService();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -23,12 +31,18 @@ export function ImageUpload({ value, onChange, readOnly }: ImageUploadProps) {
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [fileStatuses, setFileStatuses] = useState<FileUploadStatus[]>([]);
 
   const isDM = context.User.Role === 'dm';
 
-  const handleFileSelect = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      setError('Please select an image file');
+  const handleFileSelect = async (files: FileList) => {
+    const fileArray = Array.from(files);
+    
+    // Filter to only image files
+    const imageFiles = fileArray.filter(file => file.type.startsWith('image/'));
+    
+    if (imageFiles.length === 0) {
+      setError('Please select image files');
       setUploadState('error');
       setTimeout(() => {
         setUploadState('idle');
@@ -37,6 +51,28 @@ export function ImageUpload({ value, onChange, readOnly }: ImageUploadProps) {
       return;
     }
 
+    // Single file mode - use original logic
+    if (!multiple && imageFiles.length === 1) {
+      await handleSingleFileUpload(imageFiles[0]);
+      return;
+    }
+
+    // Multi-file mode
+    if (multiple) {
+      await handleMultiFileUpload(imageFiles);
+      return;
+    }
+
+    // Multiple files selected but multiple mode not enabled
+    setError('Please select only one file, or enable multi-upload');
+    setUploadState('error');
+    setTimeout(() => {
+      setUploadState('idle');
+      setError(null);
+    }, 3000);
+  };
+
+  const handleSingleFileUpload = async (file: File) => {
     setError(null);
     setUploadState('processing');
 
@@ -106,10 +142,122 @@ export function ImageUpload({ value, onChange, readOnly }: ImageUploadProps) {
     }
   };
 
+  const handleMultiFileUpload = async (files: File[]) => {
+    setError(null);
+    setUploadState('processing');
+
+    // Initialize statuses for all files
+    const initialStatuses: FileUploadStatus[] = files.map(file => ({
+      file,
+      state: 'processing' as UploadState,
+      progress: 0
+    }));
+    setFileStatuses(initialStatuses);
+
+    try {
+      const processedImages: Image[] = [];
+      const updatedStatuses = [...initialStatuses];
+
+      // Process all files
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        try {
+          // Compress the image
+          const { blob, width, height, mimeType } = await ImageActions.compressImage(file);
+
+          // Verify size after compression
+          if (blob.size > 1024 * 1024) {
+            throw new Error(`Too large (${(blob.size / 1024 / 1024).toFixed(2)} MB). Max 1 MB.`);
+          }
+
+          const image: Image = {
+            Id: crypto.randomUUID(),
+            Name: file.name.replace(/\.[^/.]+$/, ''), // Remove extension
+            FileSize: blob.size,
+            MimeType: mimeType,
+            Width: width,
+            Height: height
+          };
+
+          if (isDM) {
+            // Save to IndexedDB
+            await IndexedDBUtilities.save(image.Id, blob);
+            processedImages.push(image);
+            
+            updatedStatuses[i] = {
+              ...updatedStatuses[i],
+              state: 'idle',
+              progress: 100
+            };
+          } else {
+            // For players, we still need to upload one by one to DM
+            // This is a limitation of the current architecture
+            updatedStatuses[i] = {
+              ...updatedStatuses[i],
+              state: 'uploading'
+            };
+            
+            if (!actionService) {
+              throw new Error('Not connected to game session');
+            }
+
+            const imageService = (actionService as any).imageService;
+            if (!imageService) {
+              throw new Error('Image service not available');
+            }
+
+            await imageService.uploadImage(file, file.name.replace(/\.[^/.]+$/, ''));
+            
+            updatedStatuses[i] = {
+              ...updatedStatuses[i],
+              state: 'idle',
+              progress: 100
+            };
+          }
+
+          setFileStatuses([...updatedStatuses]);
+
+        } catch (err) {
+          updatedStatuses[i] = {
+            ...updatedStatuses[i],
+            state: 'error',
+            error: err instanceof Error ? err.message : 'Failed'
+          };
+          setFileStatuses([...updatedStatuses]);
+        }
+      }
+
+      // For DM: Bulk create all processed images in one action
+      if (isDM && processedImages.length > 0 && actionService) {
+        setUploadState('uploading');
+        actionService.execute('image:bulkCreate', { images: processedImages });
+      }
+
+      setUploadState('idle');
+      
+      // Clear statuses after a delay
+      setTimeout(() => {
+        setFileStatuses([]);
+      }, 3000);
+
+    } catch (err) {
+      console.error('[ImageUpload] Bulk upload failed:', err);
+      setError(err instanceof Error ? err.message : 'Upload failed');
+      setUploadState('error');
+      
+      setTimeout(() => {
+        setUploadState('idle');
+        setError(null);
+        setFileStatuses([]);
+      }, 5000);
+    }
+  };
+
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleFileSelect(file);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      handleFileSelect(files);
     }
   };
 
@@ -119,9 +267,9 @@ export function ImageUpload({ value, onChange, readOnly }: ImageUploadProps) {
 
     if (readOnly) return;
 
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      handleFileSelect(file);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleFileSelect(files);
     }
   };
 
@@ -147,8 +295,8 @@ export function ImageUpload({ value, onChange, readOnly }: ImageUploadProps) {
     fileInputRef.current?.click();
   };
 
-  // Show current image if value exists
-  if (value && uploadState === 'idle') {
+  // Show current image if value exists (single file mode only)
+  if (value && uploadState === 'idle' && !multiple) {
     return (
       <div className="space-y-2">
         <div className="relative w-full h-48 bg-base-200 rounded-lg overflow-hidden">
@@ -206,26 +354,26 @@ export function ImageUpload({ value, onChange, readOnly }: ImageUploadProps) {
         `}
         onClick={!readOnly && uploadState === 'idle' ? handleBrowse : undefined}
       >
-        {uploadState === 'idle' && (
+        {uploadState === 'idle' && fileStatuses.length === 0 && (
           <>
             <span className="icon-[mdi--cloud-upload] w-12 h-12 mb-2 opacity-50"></span>
             <p className="text-sm font-medium mb-1">
-              Drop an image here or click to browse
+              Drop {multiple ? 'images' : 'an image'} here or click to browse
             </p>
             <p className="text-xs opacity-60">
-              Max 1 MB, up to 2048px. JPEG/GIF supported.
+              Max 1 MB per image, up to 2048px. JPEG/GIF supported.
             </p>
           </>
         )}
 
-        {uploadState === 'processing' && (
+        {uploadState === 'processing' && fileStatuses.length === 0 && (
           <>
             <span className="loading loading-spinner loading-lg mb-2"></span>
-            <p className="text-sm font-medium">Processing image...</p>
+            <p className="text-sm font-medium">Processing image{multiple ? 's' : ''}...</p>
           </>
         )}
 
-        {uploadState === 'uploading' && (
+        {uploadState === 'uploading' && fileStatuses.length === 0 && (
           <>
             <span className="loading loading-spinner loading-lg mb-2"></span>
             <p className="text-sm font-medium">
@@ -234,12 +382,38 @@ export function ImageUpload({ value, onChange, readOnly }: ImageUploadProps) {
           </>
         )}
 
-        {uploadState === 'error' && error && (
+        {uploadState === 'error' && error && fileStatuses.length === 0 && (
           <>
             <span className="icon-[mdi--alert-circle] w-12 h-12 mb-2 text-error"></span>
             <p className="text-sm font-medium text-error mb-1">Upload Failed</p>
             <p className="text-xs text-error/80 text-center">{error}</p>
           </>
+        )}
+
+        {/* Multi-file status display */}
+        {fileStatuses.length > 0 && (
+          <div className="w-full space-y-2">
+            {fileStatuses.map((status, index) => (
+              <div key={index} className="flex items-center gap-2 text-sm">
+                {status.state === 'processing' && (
+                  <span className="loading loading-spinner loading-xs"></span>
+                )}
+                {status.state === 'uploading' && (
+                  <span className="loading loading-spinner loading-xs text-primary"></span>
+                )}
+                {status.state === 'idle' && (
+                  <span className="icon-[mdi--check-circle] w-4 h-4 text-success"></span>
+                )}
+                {status.state === 'error' && (
+                  <span className="icon-[mdi--alert-circle] w-4 h-4 text-error"></span>
+                )}
+                <span className="flex-1 truncate">{status.file.name}</span>
+                {status.error && (
+                  <span className="text-xs text-error">{status.error}</span>
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
@@ -247,6 +421,7 @@ export function ImageUpload({ value, onChange, readOnly }: ImageUploadProps) {
         ref={fileInputRef}
         type="file"
         accept="image/*"
+        multiple={multiple}
         onChange={handleFileInputChange}
         disabled={readOnly || uploadState !== 'idle'}
         className="hidden"

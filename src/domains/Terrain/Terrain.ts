@@ -5,6 +5,7 @@ export interface Terrain {
   Length: number;  // number of tiles long
   HeightMap: number[][];   // elevation values [y][x]
   ColorMap: TerrainType[][]; // terrain type keys [y][x]
+  Tags?: string[];
 }
 
 // Predefined colors

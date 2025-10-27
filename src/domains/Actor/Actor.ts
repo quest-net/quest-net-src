@@ -51,8 +51,10 @@ export interface StatusSlot {
 export interface Position {
   x: number;
   y: number;
+  h: number;
   lastMoveFrom?: {
 	x: number;
 	y: number;
+    h: number;
   };
 }

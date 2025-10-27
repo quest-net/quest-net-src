@@ -32,6 +32,30 @@ export const ImageActions = {
       visibility: ['dm']
     }, context);
   },
+
+  /**
+   * Adds multiple images to the campaign catalog in one operation
+   * More efficient than individual creates - single log entry, single state sync
+   * NOTE: Image blobs should already be stored in IndexedDB before calling this
+   */
+  bulkCreate(params: { images: Image[] }, context: Context): void {
+    const campaign = CampaignActions.getActiveCampaign(context);
+    
+    // Add all images at once
+    campaign.Images.push(...params.images);
+    
+    // Calculate total size for log
+    const totalSize = params.images.reduce((sum, img) => sum + img.FileSize, 0);
+    
+    // Single log entry for the entire bulk operation
+    LogActions.create({
+      action: 'Images uploaded',
+      details: `${params.images.length} image(s) added (${(totalSize / 1024).toFixed(1)} KB total)`,
+      category: 'system',
+      level: 'info',
+      visibility: ['dm']
+    }, context);
+  },
   
   /**
    * Removes an image from the campaign catalog (metadata only)
@@ -75,6 +99,40 @@ export const ImageActions = {
     LogActions.create({
       action: 'Image updated',
       details: image.Name,
+      category: 'system',
+      level: 'info',
+      visibility: ['dm']
+    }, context);
+  },
+
+  /**
+   * Bulk edit tags for multiple images
+   * More efficient than individual edits - single log entry, single state sync
+   */
+  bulkEditTags(
+    params: { updates: Array<{ imageId: string; tags: string[] }> },
+    context: Context
+  ): void {
+    const campaign = CampaignActions.getActiveCampaign(context);
+    
+    let successCount = 0;
+    
+    // Apply all updates
+    params.updates.forEach(update => {
+      const image = campaign.Images.find(img => img.Id === update.imageId);
+      
+      if (image) {
+        image.Tags = update.tags;
+        successCount++;
+      } else {
+        console.warn(`Image not found for bulk update: ${update.imageId}`);
+      }
+    });
+    
+    // Single log entry for the entire bulk operation
+    LogActions.create({
+      action: 'Images organized',
+      details: `Updated tags for ${successCount} image(s)`,
       category: 'system',
       level: 'info',
       visibility: ['dm']

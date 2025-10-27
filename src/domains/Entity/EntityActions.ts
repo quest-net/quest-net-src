@@ -36,14 +36,14 @@ export const EntityActions = {
    * Spawns an entity from template onto the field
    */
   spawn(params: { templateId: string; position?: Position }, context: Context): void {
-    ActorActions.spawnActor('entity', params, context);
+    
   },
 
   /**
    * Removes an entity from the field
    */
   remove(params: { entityId: string }, context: Context): void {
-    ActorActions.removeActor('entity', { actorId: params.entityId }, context);
+    
   },
 
   /**

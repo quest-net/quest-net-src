@@ -5,4 +5,5 @@ export interface Image {
 	MimeType: string;   // 'image/jpeg' or 'image/gif'
 	Width: number;      // For aspect ratio calculations
 	Height: number;     // For aspect ratio calculations
+	Tags?: string[];
 }

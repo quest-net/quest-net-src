@@ -7,6 +7,7 @@ import { CampaignSettingActions } from '../../domains/CampaignSetting/CampaignSe
 import { LogActions } from '../../domains/Log/LogActions';
 import { ImageActions } from '../../domains/Image/ImageActions';
 import { TerrainActions } from '../../domains/Terrain/TerrainActions';
+import { ItemActions } from '../../domains/Item/ItemActions';
 // Import other action modules as they're created
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
@@ -54,6 +55,10 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
     roles: ['dm', 'player'],
     handler: CharacterActions.move
   },
+  'character:bulkEditTags': {
+    roles: ['dm'], // Players can organize their own characters
+    handler: CharacterActions.bulkEditTags
+  },
   
   // ============================================================================
   // ITEM ACTIONS (uncomment when ItemActions is implemented)
@@ -86,18 +91,18 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   //   roles: ['dm', 'player'],
   //   handler: ItemActions.transfer
   // },
-  // 'item:create': {
-  //   roles: ['dm'],
-  //   handler: ItemActions.create
-  // },
-  // 'item:edit': {
-  //   roles: ['dm'],
-  //   handler: ItemActions.edit
-  // },
-  // 'item:delete': {
-  //   roles: ['dm'],
-  //   handler: ItemActions.delete
-  // },
+    'item:create': {
+    roles: ['dm'],
+    handler: ItemActions.create
+    },
+    'item:edit': {
+    roles: ['dm'],
+    handler: ItemActions.edit
+    },
+    'item:delete': {
+    roles: ['dm'],
+    handler: ItemActions.delete
+    },
   
   // ============================================================================
   // SKILL ACTIONS (uncomment when SkillActions is implemented)
@@ -215,12 +220,20 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
   //   handler: SceneActions.setFocus
   // },
     'image:create': {
-    roles: ['dm', 'player'],
-    handler: ImageActions.create
+      roles: ['dm', 'player'],
+      handler: ImageActions.create
+    },
+    'image:bulkCreate': {
+      roles: ['dm', 'player'],
+      handler: ImageActions.bulkCreate
     },
     'image:delete': {
-    roles: ['dm'],
-    handler: ImageActions.delete
+      roles: ['dm'],
+      handler: ImageActions.delete
+    },
+    'image:bulkEditTags': {
+      roles: ['dm'],
+      handler: ImageActions.bulkEditTags
     },
   
   // ============================================================================

@@ -6,13 +6,15 @@ import { useQuestContext } from '../Context/ContextProvider';
 import { CampaignActions } from './CampaignActions';
 import { CharacterIndex } from '../Character/Index';
 import { CampaignSettingEdit } from '../CampaignSetting/Edit';
+import { TerrainIndex } from '../Terrain/Index';
 import { ImageIndex } from '../Image/Index';
 import { Main } from '../Main/Main';
 import { LogDisplay } from '../Log/LogDisplay';
 import { PeerStatus } from '../Room/PeerStatus';
 import { usePeerTracking } from '../../hooks/usePeerTracking';
+import { ItemIndex } from '../Item/Index';
 
-type TabView = 'main' | 'characters' | 'images' | 'settings';
+type TabView = 'main' | 'characters' | 'items' | 'images' | 'terrains' | 'settings';
 
 export function DMView() {
   const { identifier } = useParams<{ identifier: string }>();
@@ -71,10 +73,34 @@ export function DMView() {
             </li>
             <li>
               <button
+                className={activeTab === 'items' ? 'active' : ''}
+                onClick={() => setActiveTab('items')}
+              >
+                Items
+              </button>
+            </li>
+            <li>
+              <button
+                className={activeTab === 'characters' ? 'active' : ''}
+                onClick={() => setActiveTab('characters')}
+              >
+                Skills
+              </button>
+            </li>
+            <li>
+              <button
                 className={activeTab === 'images' ? 'active' : ''}
                 onClick={() => setActiveTab('images')}
               >
                 Images
+              </button>
+            </li>
+            <li>
+              <button
+                className={activeTab === 'terrains' ? 'active' : ''}
+                onClick={() => setActiveTab('terrains')}
+              >
+                Terrains
               </button>
             </li>
             <li>
@@ -92,7 +118,9 @@ export function DMView() {
         <main className="flex-1 overflow-auto">
           {activeTab === 'main' && <Main />}
           {activeTab === 'characters' && <CharacterIndex />}
+          {activeTab === 'items' && <ItemIndex />}
           {activeTab === 'images' && <ImageIndex />}
+          {activeTab === 'terrains' && <TerrainIndex />}
           {activeTab === 'settings' && <CampaignSettingEdit />}
         </main>
         {/* Log Display*/}

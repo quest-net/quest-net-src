@@ -104,7 +104,7 @@ export const TerrainActions = {
 
     // Produce Terrain object
     return {
-        Id: `HILLS_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e4)}`,
+        Id: `DEFAULT_HILLS`,
         Name: 'Random Hills',
         Width: width,
         Length: length,
