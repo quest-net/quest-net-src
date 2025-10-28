@@ -169,24 +169,6 @@ export function lerpProjections(
   return result;
 }
 
-export function sortTilesByDepth(
-  baseTiles: BaseTile[],
-  projected: Projected[]
-): number[] {
-  const indices = baseTiles.map((_, i) => i);
-
-  indices.sort((ia, ib) => {
-    const a = projected[ia];
-    const b = projected[ib];
-    const da = a.rx + a.ry;
-    const db = b.rx + b.ry;
-    if (da !== db) return da - db;
-    return baseTiles[ia].h - baseTiles[ib].h;
-  });
-
-  return indices;
-}
-
 export function calculateGridBounds(projected: Projected[]): GridBounds {
   const halfW = TILE_W / 2;
   const halfH = TILE_H / 2;
@@ -283,7 +265,7 @@ function screenToIso(screenX: number, screenY: number): { isoX: number; isoY: nu
 /**
  * Check if a point is inside an isometric diamond tile
  */
-function isPointInDiamond(
+export function isPointInDiamond(
   px: number,
   py: number,
   cx: number,

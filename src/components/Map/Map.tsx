@@ -1,5 +1,5 @@
 // Map.tsx - React 19 + @pixi/react v8
-// Isometric map with pan, zoom, smooth rotation animations, PAN LIMITS, and tile selection
+// Isometric map orchestrator - delegates rendering to layer components
 
 import {
   useMemo,
@@ -10,9 +10,9 @@ import {
   useEffect,
 } from 'react';
 import { Application, extend } from '@pixi/react';
-import { Container as PixiContainer, Graphics as PixiGraphics } from 'pixi.js';
+import { Container as PixiContainer, Graphics as PixiGraphics, Sprite as PixiSprites } from 'pixi.js';
 
-extend({ Container: PixiContainer, Graphics: PixiGraphics });
+extend({ Container: PixiContainer, Graphics: PixiGraphics, Sprite: PixiSprites });
 
 import type { Character } from '../../domains/Character/Character';
 import type { Entity } from '../../domains/Entity/Entity';
@@ -21,9 +21,6 @@ import type { Scene } from '../../domains/Scene/Scene';
 import type { Terrain } from '../../domains/Terrain/Terrain';
 
 import {
-  TILE_W,
-  TILE_H,
-  V_SCALE,
   MIN_SCALE,
   MAX_SCALE,
   type Orientation,
@@ -33,17 +30,15 @@ import {
   buildBaseTiles,
   projectTiles,
   lerpProjections,
-  sortTilesByDepth,
   calculateGridBounds,
   centerGridInView,
   lerpCenter,
-  screenEastNeighbor,
-  screenSouthNeighbor,
-  mulColor,
   clampPan,
   screenToTile,
-  getTileIndex,
 } from './MapUtilities';
+
+import { MapHighlightLayer } from './MapHighlightLayer';
+import { MapWorldLayer } from './MapWorldLayer';
 
 interface MapProps {
   characters: Character[];
@@ -76,10 +71,13 @@ function useMeasuredContainer<T extends HTMLElement>() {
   return { ref, ...size };
 }
 
-export default function Map({ scene, terrain }: MapProps) {
+export default function Map({ characters, entities, scene, terrain }: MapProps) {
   const { ref, w, h } = useMeasuredContainer<HTMLDivElement>();
   const dpr = typeof window !== 'undefined' ? window.devicePixelRatio : 1;
 
+  // ============================================================================
+  // ROTATION STATE & ANIMATION
+  // ============================================================================
   const [orientation, setOrientation] = useState<Orientation>(0);
   const [anim, setAnim] = useState<AnimationState | null>(null);
   const DURATION = 180;
@@ -113,6 +111,9 @@ export default function Map({ scene, terrain }: MapProps) {
     return () => cancelAnimationFrame(raf);
   }, [anim?.start]);
 
+  // ============================================================================
+  // PAN & ZOOM STATE
+  // ============================================================================
   const [scale, setScale] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const panRef = useRef(pan);
@@ -125,26 +126,44 @@ export default function Map({ scene, terrain }: MapProps) {
   const [isPanning, setIsPanning] = useState(false);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
 
-  // Tile selection state
+  // ============================================================================
+  // TILE SELECTION STATE
+  // ============================================================================
   const [hoveredTile, setHoveredTile] = useState<{ x: number; y: number } | null>(null);
   const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
 
-  // Track if we've had the first hover to trigger a one-time redraw fix
-  const hasHoveredOnce = useRef(false);
-  const [forceRedraw, setForceRedraw] = useState(0);
-
+  // ============================================================================
+  // TERRAIN DATA & PROJECTIONS
+  // ============================================================================
   const baseTiles = useMemo(() => terrain ? buildBaseTiles(terrain) : [], [terrain]);
 
   const fromO = anim ? anim.from : orientation;
   const toO = anim ? anim.to : orientation;
   const tNorm = anim ? easeInOut(anim.t) : 1;
 
-  const projFrom = useMemo(() => !terrain || baseTiles.length === 0 ? [] : projectTiles(baseTiles, terrain.Width, terrain.Length, fromO), [baseTiles, terrain, fromO]);
-  const projTo = useMemo(() => !terrain || baseTiles.length === 0 ? [] : projectTiles(baseTiles, terrain.Width, terrain.Length, toO), [baseTiles, terrain, toO]);
-  const currentProjections = useMemo(() => (projFrom.length === 0 || projTo.length === 0) ? [] : lerpProjections(projFrom, projTo, tNorm), [projFrom, projTo, tNorm]);
-  const order = useMemo(() => !terrain || baseTiles.length === 0 || projTo.length === 0 ? [] : sortTilesByDepth(baseTiles, projTo), [terrain, baseTiles, projTo]);
+  const projFrom = useMemo(() => 
+    !terrain || baseTiles.length === 0 ? [] : projectTiles(baseTiles, terrain.Width, terrain.Length, fromO),
+    [baseTiles, terrain, fromO]
+  );
+  
+  const projTo = useMemo(() => 
+    !terrain || baseTiles.length === 0 ? [] : projectTiles(baseTiles, terrain.Width, terrain.Length, toO),
+    [baseTiles, terrain, toO]
+  );
+  
+  const currentProjections = useMemo(() => 
+    (projFrom.length === 0 || projTo.length === 0) ? [] : lerpProjections(projFrom, projTo, tNorm),
+    [projFrom, projTo, tNorm]
+  );
 
-  const centerFrom = useMemo(() => projFrom.length === 0 ? { cx: w / 2, cy: h / 2 } : centerGridInView(calculateGridBounds(projFrom), w, h), [projFrom, w, h]);
+  // ============================================================================
+  // CENTERING & BOUNDS
+  // ============================================================================
+  const centerFrom = useMemo(() => 
+    projFrom.length === 0 ? { cx: w / 2, cy: h / 2 } : centerGridInView(calculateGridBounds(projFrom), w, h),
+    [projFrom, w, h]
+  );
+  
   const centerTo = useMemo(() => {
     if (projTo.length === 0) return { cx: w / 2, cy: h / 2 };
     const bounds = calculateGridBounds(projTo);
@@ -152,30 +171,37 @@ export default function Map({ scene, terrain }: MapProps) {
     return centerGridInView(bounds, w, h);
   }, [projTo, w, h]);
 
-  const currentCenter = useMemo(() => lerpCenter(centerFrom, centerTo, tNorm), [centerFrom, centerTo, tNorm]);
+  const currentCenter = useMemo(() => 
+    lerpCenter(centerFrom, centerTo, tNorm),
+    [centerFrom, centerTo, tNorm]
+  );
+  
   centerRef.current = { x: currentCenter.cx, y: currentCenter.cy };
 
-  const onWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+  // ============================================================================
+  // INTERACTION HANDLERS
+  // ============================================================================
+  const onWheel = useCallback((e: WheelEvent) => {
     if (!ref.current || !boundsRef.current) return;
-    e.preventDefault();
+    e.preventDefault(); // Now this will work!
     const zoomIntensity = 0.0015;
     const zoom = Math.exp(-e.deltaY * zoomIntensity);
     const newScaleUnclamped = scaleRef.current * zoom;
     const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScaleUnclamped));
     const actual = newScale / scaleRef.current;
     if (actual === 1) return;
-
+  
     const rect = ref.current.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-
+  
     const cx = centerRef.current.x;
     const cy = centerRef.current.y;
     const worldX = (mx - (cx + panRef.current.x)) / scaleRef.current;
     const worldY = (my - (cy + panRef.current.y)) / scaleRef.current;
     const nextPanX = mx - cx - worldX * newScale;
     const nextPanY = my - cy - worldY * newScale;
-
+  
     const clampedPan = clampPan(
       { x: nextPanX, y: nextPanY },
       centerRef.current,
@@ -185,10 +211,23 @@ export default function Map({ scene, terrain }: MapProps) {
       rect.height,
       PAN_PADDING
     );
-
+  
     setScale(newScale);
     setPan(clampedPan);
   }, []);
+  
+  // Add this useEffect to attach the wheel listener with passive: false
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+  
+    // Attach with passive: false to allow preventDefault
+    element.addEventListener('wheel', onWheel, { passive: false });
+  
+    return () => {
+      element.removeEventListener('wheel', onWheel);
+    };
+  }, [onWheel]);
 
   const onMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 1 && e.button !== 2) return;
@@ -218,7 +257,6 @@ export default function Map({ scene, terrain }: MapProps) {
     dragStart.current = null;
   }, []);
 
-  // Tile interaction handlers
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!ref.current || !terrain || isPanning) return;
 
@@ -226,7 +264,6 @@ export default function Map({ scene, terrain }: MapProps) {
     const screenX = e.clientX - rect.left;
     const screenY = e.clientY - rect.top;
 
-    // Use the "to" orientation for hit testing during animation
     const currentOrientation: Orientation = anim ? anim.to : orientation;
 
     const tile = screenToTile(
@@ -243,137 +280,19 @@ export default function Map({ scene, terrain }: MapProps) {
       terrain.HeightMap
     );
 
-    if (tile && !hasHoveredOnce.current) {
-      hasHoveredOnce.current = true;
-      setForceRedraw(1);
-    }
     setHoveredTile(tile);
   }, [terrain, isPanning, anim, orientation]);
 
   const handlePointerDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    // Only handle left click for tile selection
     if (e.button !== 0 || !hoveredTile || !terrain) return;
     
     setSelectedTile(hoveredTile);
     console.log(`Selected tile: (${hoveredTile.x}, ${hoveredTile.y})`);
   }, [hoveredTile, terrain]);
 
-  const draw = useCallback((g: PixiGraphics) => {
-    g.clear();
-    if (!terrain || baseTiles.length === 0 || currentProjections.length === 0) return;
-    const W = terrain.Width;
-    const L = terrain.Length;
-    const hmap = terrain.HeightMap || [];
-    const halfW = TILE_W / 2;
-    const halfH = TILE_H / 2;
-    const faceOrient: Orientation = anim ? (anim.t < 0.5 ? anim.from : anim.to) : orientation;
-    for (const i of order) {
-      const base = baseTiles[i];
-      const proj = currentProjections[i];
-      const cx = proj.cx;
-      const cy = proj.cy;
-      const color = base.color;
-      const topX = cx;
-      const topY = cy - halfH;
-      const rightX = cx + halfW;
-      const rightY = cy;
-      const bottomX = cx;
-      const bottomY = cy + halfH;
-      const leftX = cx - halfW;
-      const leftY = cy;
-      {
-        const { nx, ny } = screenEastNeighbor(base.x, base.y, faceOrient);
-        const nh = nx >= 0 && nx < W && ny >= 0 && ny < L ? hmap[ny]?.[nx] ?? 0 : 0;
-        if (base.h > nh) {
-          const dh = (base.h - nh) * V_SCALE;
-          g.setFillStyle({ color: mulColor(color, 0.82) });
-          g.setStrokeStyle({ width: 1, color: 0x000000, alpha: 0.08 });
-          g.beginPath();
-          g.moveTo(rightX, rightY);
-          g.lineTo(bottomX, bottomY);
-          g.lineTo(bottomX, bottomY + dh);
-          g.lineTo(rightX, rightY + dh);
-          g.closePath();
-          g.fill();
-          g.stroke();
-        }
-      }
-      {
-        const { nx, ny } = screenSouthNeighbor(base.x, base.y, faceOrient);
-        const nh = nx >= 0 && nx < W && ny >= 0 && ny < L ? hmap[ny]?.[nx] ?? 0 : 0;
-        if (base.h > nh) {
-          const dh = (base.h - nh) * V_SCALE;
-          g.setFillStyle({ color: mulColor(color, 0.68) });
-          g.setStrokeStyle({ width: 1, color: 0x000000, alpha: 0.1 });
-          g.beginPath();
-          g.moveTo(bottomX, bottomY);
-          g.lineTo(leftX, leftY);
-          g.lineTo(leftX, leftY + dh);
-          g.lineTo(bottomX, bottomY + dh);
-          g.closePath();
-          g.fill();
-          g.stroke();
-        }
-      }
-      g.setFillStyle({ color });
-      g.setStrokeStyle({ width: 1, color: 0x000000, alpha: 0.12 });
-      g.beginPath();
-      g.moveTo(topX, topY);
-      g.lineTo(rightX, rightY);
-      g.lineTo(bottomX, bottomY);
-      g.lineTo(leftX, leftY);
-      g.closePath();
-      g.fill();
-      g.stroke();
-    }
-  }, [terrain, baseTiles, currentProjections, order, anim, orientation, forceRedraw]);
-
-  // Draw hover highlight
-  const drawHoverHighlight = useCallback((g: PixiGraphics) => {
-    g.clear();
-    if (!hoveredTile || !terrain || baseTiles.length === 0 || currentProjections.length === 0) return;
-
-    const tileIndex = getTileIndex(hoveredTile.x, hoveredTile.y, terrain.Width);
-    const proj = currentProjections[tileIndex];
-    if (!proj) return;
-
-    const halfW = TILE_W / 2;
-    const halfH = TILE_H / 2;
-
-    g.setFillStyle({ color: 0xffffff, alpha: 0.3 });
-    g.setStrokeStyle({ width: 2, color: 0xffffff, alpha: 0.8 });
-    g.beginPath();
-    g.moveTo(proj.cx, proj.cy - halfH);
-    g.lineTo(proj.cx + halfW, proj.cy);
-    g.lineTo(proj.cx, proj.cy + halfH);
-    g.lineTo(proj.cx - halfW, proj.cy);
-    g.closePath();
-    g.fill();
-    g.stroke();
-  }, [hoveredTile, terrain, baseTiles, currentProjections]);
-
-  // Draw selection highlight
-  const drawSelectionHighlight = useCallback((g: PixiGraphics) => {
-    g.clear();
-    if (!selectedTile || !terrain || baseTiles.length === 0 || currentProjections.length === 0) return;
-
-    const tileIndex = getTileIndex(selectedTile.x, selectedTile.y, terrain.Width);
-    const proj = currentProjections[tileIndex];
-    if (!proj) return;
-
-    const halfW = TILE_W / 2;
-    const halfH = TILE_H / 2;
-
-    g.setStrokeStyle({ width: 3, color: 0x00ff00, alpha: 1 });
-    g.beginPath();
-    g.moveTo(proj.cx, proj.cy - halfH);
-    g.lineTo(proj.cx + halfW, proj.cy);
-    g.lineTo(proj.cx, proj.cy + halfH);
-    g.lineTo(proj.cx - halfW, proj.cy);
-    g.closePath();
-    g.stroke();
-  }, [selectedTile, terrain, baseTiles, currentProjections]);
-
+  // ============================================================================
+  // RENDER
+  // ============================================================================
   const ready = w > 0 && h > 0;
   const cursorClass = isPanning ? 'cursor-grabbing' : 'cursor-default';
 
@@ -381,7 +300,6 @@ export default function Map({ scene, terrain }: MapProps) {
     <div
       ref={ref}
       className={`relative h-full w-full bg-base-200 overflow-hidden select-none ${cursorClass}`}
-      onWheel={onWheel}
       onMouseDown={onMouseDown}
       onMouseMove={onMouseMove}
       onMouseUp={endPan}
@@ -403,17 +321,28 @@ export default function Map({ scene, terrain }: MapProps) {
             y={currentCenter.cy + pan.y}
             scale={{ x: scale, y: scale }}
           >
-            {/* Base terrain layer */}
-            <pixiGraphics draw={draw} />
-            
-            {/* Hover highlight layer */}
-            {hoveredTile && <pixiGraphics draw={drawHoverHighlight} />}
-            
-            {/* Selection highlight layer */}
-            {selectedTile && <pixiGraphics draw={drawSelectionHighlight} />}
+            <MapWorldLayer
+                terrain={terrain}
+                baseTiles={baseTiles}
+                currentProjections={currentProjections}
+                orientation={orientation}
+                animationState={anim}
+                characters={characters}
+                entities={entities}
+            />
+            {/* Highlight Layer */}
+            <MapHighlightLayer
+              terrain={terrain}
+              baseTiles={baseTiles}
+              currentProjections={currentProjections}
+              hoveredTile={hoveredTile}
+              selectedTile={selectedTile}
+            />
           </pixiContainer>
         </Application>
       )}
+      
+      {/* UI Overlay */}
       <div className="absolute left-3 top-3 z-10 flex gap-2">
         <button
           type="button"
@@ -432,6 +361,7 @@ export default function Map({ scene, terrain }: MapProps) {
           ⟲
         </button>
       </div>
+      
       <div className="pointer-events-none absolute right-3 bottom-3 rounded-xl bg-base-100/70 px-2 py-1 text-[11px] shadow">
         <span className="opacity-70">Terrain:</span>{' '}
         <span className="font-mono">{terrain?.Name ?? '-'}</span>{' '}
