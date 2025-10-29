@@ -9,6 +9,7 @@ import {
 	FormField,
 	FormGrid,
 } from "../../components/Form/Form";
+import Map from "../../components/Map/Map";
 import { TagEditor } from "../../components/inputs/TagEditor";
 import TerrainEditor from "../../components/inputs/TerrainEditor";
 
@@ -19,14 +20,16 @@ import TerrainEditor from "../../components/inputs/TerrainEditor";
 interface TerrainEditProps {
 	terrain?: Terrain;
 	isDefault?: boolean;
+	initialTags?: string[];
 	onClose: () => void;
-	onDelete?: () => void; // No longer used - kept for backwards compatibility
 }
 
-export function TerrainEdit({ terrain, isDefault, onClose }: TerrainEditProps) {
+export function TerrainEdit({ terrain, isDefault, initialTags, onClose }: TerrainEditProps) {
 	const { actionService } = useActionService();
 
 	const initialData = terrain ?? TerrainActions.createNew();
+
+	initialData.Tags = initialTags;
 
 	const handleSave = (data: Terrain) => {
 		if (!actionService) return;
@@ -204,7 +207,20 @@ function TerrainForm({ data, onChange }: TerrainFormProps) {
 					onChange={handleTerrainEdited}
 				/>
 			</FormSection>
-
+			<FormSection
+				title="Live Map Preview"
+			>
+				<div className="h-168 w-full rounded-lg border bg-base-200 overflow-hidden">
+				<Map
+					preview
+					allowPanZoom
+					showControls
+					characters={[]}
+					entities={[]}
+					terrain={data}
+				/>
+				</div>
+			</FormSection>
 			{/* Tags */}
 			<FormSection title="Tags" description="Organize terrains with tags">
 				<TagEditor

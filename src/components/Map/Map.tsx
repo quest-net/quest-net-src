@@ -14,6 +14,7 @@ import {
 	Container as PixiContainer,
 	Graphics as PixiGraphics,
 	Sprite as PixiSprites,
+	Text as PixiText,
 } from "pixi.js";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 
@@ -21,6 +22,7 @@ extend({
 	Container: PixiContainer,
 	Graphics: PixiGraphics,
 	Sprite: PixiSprites,
+	Text: PixiText,
 });
 
 import type { Character } from "../../domains/Character/Character";
@@ -56,9 +58,12 @@ import { useActorAnimations } from "./useActorAnimations";
 interface MapProps {
 	characters: Character[];
 	entities: Entity[];
-	combatState: CombatState;
-	scene: Scene;
+	combatState?: CombatState;
+	scene?: Scene;
 	terrain?: Terrain | null;
+	preview?: boolean; // disables actor selection/movement + actionService calls
+	allowPanZoom?: boolean; // enable wheel + middle/right drag
+	showControls?: boolean; // rotate buttons + HUD
 }
 
 const PAN_PADDING = 500;
@@ -89,6 +94,9 @@ export default function Map({
 	entities,
 	scene,
 	terrain,
+	preview = false,
+	allowPanZoom = true,
+	showControls = true,
 }: MapProps) {
 	const { ref, w, h } = useMeasuredContainer<HTMLDivElement>();
 	const { startAnimation, getActorPosition, hasActiveAnimations } =
@@ -199,9 +207,23 @@ export default function Map({
 	);
 
 	const actorPositionsKey =
-	characters.map(c => `${c.Id}:${c.Position?.x ?? 0},${c.Position?.y ?? 0},${c.Position?.h ?? 0}`).join('|')
-	+ '|' +
-	entities.map((e: any) => `${e.Id}:${e.Position?.x ?? 0},${e.Position?.y ?? 0},${e.Position?.h ?? 0}`).join('|');
+		characters
+			.map(
+				(c) =>
+					`${c.Id}:${c.Position?.x ?? 0},${c.Position?.y ?? 0},${
+						c.Position?.h ?? 0
+					}`
+			)
+			.join("|") +
+		"|" +
+		entities
+			.map(
+				(e: any) =>
+					`${e.Id}:${e.Position?.x ?? 0},${e.Position?.y ?? 0},${
+						e.Position?.h ?? 0
+					}`
+			)
+			.join("|");
 
 	const actorHitCandidates = useMemo(
 		() =>
@@ -262,43 +284,47 @@ export default function Map({
 	// ============================================================================
 	// INTERACTION HANDLERS
 	// ============================================================================
-	const onWheel = useCallback((e: WheelEvent) => {
-		if (!ref.current || !boundsRef.current) return;
-		e.preventDefault(); // Now this will work!
-		const zoomIntensity = 0.0015;
-		const zoom = Math.exp(-e.deltaY * zoomIntensity);
-		const newScaleUnclamped = scaleRef.current * zoom;
-		const newScale = Math.max(
-			MIN_SCALE,
-			Math.min(MAX_SCALE, newScaleUnclamped)
-		);
-		const actual = newScale / scaleRef.current;
-		if (actual === 1) return;
+	const onWheel = useCallback(
+		(e: WheelEvent) => {
+			if (!allowPanZoom) return;
+			if (!ref.current || !boundsRef.current) return;
+			e.preventDefault(); // Now this will work!
+			const zoomIntensity = 0.0015;
+			const zoom = Math.exp(-e.deltaY * zoomIntensity);
+			const newScaleUnclamped = scaleRef.current * zoom;
+			const newScale = Math.max(
+				MIN_SCALE,
+				Math.min(MAX_SCALE, newScaleUnclamped)
+			);
+			const actual = newScale / scaleRef.current;
+			if (actual === 1) return;
 
-		const rect = ref.current.getBoundingClientRect();
-		const mx = e.clientX - rect.left;
-		const my = e.clientY - rect.top;
+			const rect = ref.current.getBoundingClientRect();
+			const mx = e.clientX - rect.left;
+			const my = e.clientY - rect.top;
 
-		const cx = centerRef.current.x;
-		const cy = centerRef.current.y;
-		const worldX = (mx - (cx + panRef.current.x)) / scaleRef.current;
-		const worldY = (my - (cy + panRef.current.y)) / scaleRef.current;
-		const nextPanX = mx - cx - worldX * newScale;
-		const nextPanY = my - cy - worldY * newScale;
+			const cx = centerRef.current.x;
+			const cy = centerRef.current.y;
+			const worldX = (mx - (cx + panRef.current.x)) / scaleRef.current;
+			const worldY = (my - (cy + panRef.current.y)) / scaleRef.current;
+			const nextPanX = mx - cx - worldX * newScale;
+			const nextPanY = my - cy - worldY * newScale;
 
-		const clampedPan = clampPan(
-			{ x: nextPanX, y: nextPanY },
-			centerRef.current,
-			boundsRef.current,
-			newScale,
-			rect.width,
-			rect.height,
-			PAN_PADDING
-		);
+			const clampedPan = clampPan(
+				{ x: nextPanX, y: nextPanY },
+				centerRef.current,
+				boundsRef.current,
+				newScale,
+				rect.width,
+				rect.height,
+				PAN_PADDING
+			);
 
-		setScale(newScale);
-		setPan(clampedPan);
-	}, []);
+			setScale(newScale);
+			setPan(clampedPan);
+		},
+		[allowPanZoom]
+	);
 
 	// Add this useEffect to attach the wheel listener with passive: false
 	useEffect(() => {
@@ -313,12 +339,16 @@ export default function Map({
 		};
 	}, [onWheel]);
 
-	const onMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-		if (e.button !== 1 && e.button !== 2) return;
-		e.preventDefault();
-		setIsPanning(true);
-		dragStart.current = { x: e.clientX, y: e.clientY };
-	}, []);
+	const onMouseDown = useCallback(
+		(e: React.MouseEvent<HTMLDivElement>) => {
+			if (!allowPanZoom) return;
+			if (e.button !== 1 && e.button !== 2) return;
+			e.preventDefault();
+			setIsPanning(true);
+			dragStart.current = { x: e.clientX, y: e.clientY };
+		},
+		[allowPanZoom]
+	);
 
 	const onMouseMove = useCallback(
 		(e: React.MouseEvent<HTMLDivElement>) => {
@@ -380,6 +410,7 @@ export default function Map({
 
 	const handlePointerDown = useCallback(
 		(e: React.MouseEvent<HTMLDivElement>) => {
+			if (preview) return;
 			if (e.button !== 0 || !terrain || !ref.current) return;
 
 			const rect = ref.current.getBoundingClientRect();
@@ -397,7 +428,12 @@ export default function Map({
 				actorHitCandidates
 			);
 
+			// NEW: clicking the currently selected token unselects it
 			if (clickedActor) {
+				if (selectedActor && selectedActor.id === clickedActor.id) {
+					setSelectedActor(null);
+					return;
+				}
 				setSelectedActor({
 					id: clickedActor.id,
 					kind: clickedActor.kind,
@@ -407,17 +443,16 @@ export default function Map({
 				return;
 			}
 
+			// existing move-on-empty-tile logic
 			if (hoveredTile) {
 				if (selectedActor && actionService) {
 					const tileHeight =
 						terrain.HeightMap?.[hoveredTile.y]?.[hoveredTile.x] ?? 0;
 
-					// Find the actor's current position before moving
 					const actor = actorHitCandidates.find(
 						(a) => a.id === selectedActor.id
 					);
 					if (actor) {
-						// Start animation BEFORE executing the move
 						startAnimation(
 							selectedActor.id,
 							{ x: actor.x, y: actor.y, h: actor.h },
@@ -425,7 +460,6 @@ export default function Map({
 						);
 					}
 
-					// Execute the move action
 					if (selectedActor.kind === "character") {
 						actionService.execute("character:move", {
 							characterId: selectedActor.id,
@@ -443,6 +477,7 @@ export default function Map({
 			}
 		},
 		[
+			preview,
 			hoveredTile,
 			terrain,
 			selectedActor,
@@ -506,31 +541,34 @@ export default function Map({
 							selectedActorId={selectedActor?.id}
 							getActorPosition={getActorPosition}
 							movementRangeIndices={movementRangeIndices}
-                			hoveredIndex={hoveredIndex}
+							hoveredIndex={hoveredIndex}
 						/>
 					</pixiContainer>
 				</Application>
 			)}
-
-			{/* UI Overlay */}
-			<div className="absolute left-3 top-3 z-10 flex gap-2">
-				<button
-					type="button"
-					className="btn btn-lg rounded-md bg-base-100 shadow hover:bg-base-300"
-					onClick={rotateCCW}
-					title="Rotate 90 degrees counter-clockwise"
-				>
-					⟳
-				</button>
-				<button
-					type="button"
-					className="btn btn-lg rounded-md bg-base-100 shadow hover:bg-base-300"
-					onClick={rotateCW}
-					title="Rotate 90 degrees clockwise"
-				>
-					⟲
-				</button>
-			</div>
+			{showControls && (
+				<>
+					{/* UI Overlay */}
+					<div className="absolute left-3 top-3 z-10 flex gap-2">
+						<button
+							type="button"
+							className="btn btn-lg rounded-md bg-base-100 shadow hover:bg-base-300"
+							onClick={rotateCCW}
+							title="Rotate 90 degrees counter-clockwise"
+						>
+							⟳
+						</button>
+						<button
+							type="button"
+							className="btn btn-lg rounded-md bg-base-100 shadow hover:bg-base-300"
+							onClick={rotateCW}
+							title="Rotate 90 degrees clockwise"
+						>
+							⟲
+						</button>
+					</div>
+				</>
+			)}
 
 			<div className="pointer-events-none absolute right-3 bottom-3 rounded-xl bg-base-100/70 px-2 py-1 text-[11px] shadow">
 				<span className="opacity-70">Terrain:</span>{" "}

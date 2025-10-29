@@ -7,6 +7,7 @@ import { TerrainEdit } from "./Edit";
 import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
 import { useState } from "react";
 import { Terrain, TerrainType, TERRAIN_COLORS } from "./Terrain";
+import { replacePathTag } from "../../utils/FolderUtils";
 
 /**
  * Calculates the most common terrain type in a ColorMap
@@ -53,36 +54,23 @@ export function TerrainIndex() {
 
 	const [createCounter, setCreateCounter] = useState(0);
 
+	const handleBulkUpdateItemTags = (
+		updates: Array<{ itemId: string; newTags: string[] }>
+	) => {
+		if (!actionService) return;
+
+		actionService.execute("terrain:bulkEditTags", {
+			updates: updates.map((update) => ({
+				terrainId: update.itemId,
+				tags: update.newTags,
+			})),
+		});
+	};
+
 	const handleSetActive = (terrainId: string) => {
 		if (!actionService) return;
 
 		actionService.execute("terrain:setActive", {
-			terrainId: terrainId,
-		});
-	};
-
-	const handleDelete = (terrainId: string) => {
-		if (!actionService) return;
-
-		// Prevent deletion of default terrain
-		if (terrainId === "DEFAULT_TERRAIN") {
-			alert("Cannot delete the default terrain");
-			return;
-		}
-
-		// Prevent deletion of active terrain
-		if (campaign.GameState.TerrainId === terrainId) {
-			alert(
-				"Cannot delete the active terrain. Switch to another terrain first."
-			);
-			return;
-		}
-
-		if (!window.confirm("Delete this terrain?")) {
-			return;
-		}
-
-		actionService.execute("terrain:delete", {
 			terrainId: terrainId,
 		});
 	};
@@ -121,11 +109,14 @@ export function TerrainIndex() {
 			searchEnabled={true}
 			searchPlaceholder="Search terrains by name..."
 			emptyMessage="No terrains yet. Create one to get started!"
-			renderEditForm={(item) => {
+			onBulkUpdateItemTags={handleBulkUpdateItemTags}
+			renderEditForm={(item, { currentPath, closeDrawer }) => {
 				const terrain = item
 					? campaign.Terrains.find((t) => t.Id === item.id)
 					: undefined;
 
+				const initialTags =
+					currentPath.length > 0 ? replacePathTag([], currentPath) : undefined;
 				// Check if trying to edit default terrain
 				const isDefault = terrain?.Id === "DEFAULT_TERRAIN";
 
@@ -134,15 +125,8 @@ export function TerrainIndex() {
 						key={item?.id || `create-${createCounter}`}
 						terrain={terrain}
 						isDefault={isDefault}
-						onClose={() => {
-							const checkbox = document.getElementById(
-								"indexview-drawer"
-							) as HTMLInputElement;
-							if (checkbox) checkbox.checked = false;
-						}}
-						onDelete={
-							terrain && !isDefault ? () => handleDelete(terrain.Id) : undefined
-						}
+						initialTags={initialTags}
+						onClose={() => closeDrawer?.()}
 					/>
 				);
 			}}

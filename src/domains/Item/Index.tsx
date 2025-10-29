@@ -51,28 +51,20 @@ export function ItemIndex() {
 			searchPlaceholder="Search items by name..."
 			emptyMessage="No items yet. Create one to get started!"
 			onBulkUpdateItemTags={handleBulkUpdateItemTags}
-			renderEditForm={(item, folderContext) => {
+			renderEditForm={(item, { currentPath, closeDrawer }) => {
 				const found = item
 					? (campaign.ItemTemplates as Item[]).find((i) => i.Id === item.id)
 					: undefined;
 
-				// Build initial tags from current path (matches CharacterIndex behavior)
 				const initialTags =
-					folderContext.currentPath.length > 0
-						? replacePathTag([], folderContext.currentPath)
-						: undefined;
+					currentPath.length > 0 ? replacePathTag([], currentPath) : undefined;
 
 				return (
 					<ItemEdit
 						key={item?.id || `create-${createCounter}`}
 						item={found}
 						initialTags={initialTags}
-						onClose={() => {
-							const checkbox = document.getElementById(
-								"indexview-drawer"
-							) as HTMLInputElement;
-							if (checkbox) checkbox.checked = false;
-						}}
+						onClose={() => closeDrawer?.()}
 					/>
 				);
 			}}

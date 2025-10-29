@@ -19,10 +19,10 @@ export const TerrainActions = {
 			.fill(null)
 			.map(() => Array(width).fill(8));
 
-		// Initialize color map (all green)
+		// Initialize color map (all white)
 		const colorMap: TerrainType[][] = Array(length)
 			.fill(null)
-			.map(() => Array(width).fill("green" as TerrainType));
+			.map(() => Array(width).fill("white" as TerrainType));
 
 		return {
 			Id: "DEFAULT_TERRAIN",
@@ -384,6 +384,38 @@ export const TerrainActions = {
 				details: `${terrain.Name} resized to ${newWidth}×${newLength}`,
 				category: "system",
 				level: "info",
+				visibility: ["dm"],
+			},
+			context
+		);
+	},
+
+	/**
+	 * Bulk edit tags for multiple terrains
+	 */
+	bulkEditTags(
+		params: { updates: Array<{ terrainId: string; tags: string[] }> },
+		context: Context
+	): void {
+		const campaign = CampaignActions.getActiveCampaign(context);
+
+		let successCount = 0;
+		params.updates.forEach((update) => {
+			const terrain = campaign.Terrains.find((t) => t.Id === update.terrainId);
+			if (terrain) {
+				terrain.Tags = update.tags;
+				successCount++;
+			} else {
+				console.warn(`Item not found for bulk update: ${update.terrainId}`);
+			}
+		});
+
+		LogActions.create(
+			{
+				action: "terrains organized",
+				details: `Updated tags for ${successCount} terrains(s)`,
+				category: "scene",
+				level: "verbose",
 				visibility: ["dm"],
 			},
 			context

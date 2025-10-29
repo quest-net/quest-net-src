@@ -20,8 +20,8 @@ export interface IndexViewItem {
 	label: string;
 	details?: string;
 	imageId?: string;
-	icon?: string; // NEW: Iconify icon class (e.g., 'icon-[mdi--terrain]')
-	iconColor?: string; // NEW: Color for the icon (e.g., '#22c55e')
+	icon?: string;
+	iconColor?: string;
 	tags?: string[];
 	action?: {
 		label: string;
@@ -48,7 +48,7 @@ interface IndexViewProps {
 	// Drawer content
 	renderEditForm: (
 		item: IndexViewItem | null,
-		context: { currentPath: string[] }
+		context: { currentPath: string[]; closeDrawer: () => void }
 	) => ReactNode;
 
 	// Folder support - callback for bulk tag updates
@@ -80,6 +80,7 @@ export function IndexView({
 	const [selectedItem, setSelectedItem] = useState<IndexViewItem | null>(null);
 	const [isCreating, setIsCreating] = useState(false);
 	const [currentPath, setCurrentPath] = useState<string[]>([]);
+	const [isDrawerOpen, setDrawerOpen] = useState(false);
 
 	// Selection mode state
 	const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -112,6 +113,14 @@ export function IndexView({
 	useEffect(() => {
 		setSelectedItemIds(new Set());
 	}, [currentPath, searchQuery]);
+
+	// Drawer controls (React-controlled)
+	const openDrawer = () => setDrawerOpen(true);
+	const closeDrawer = () => {
+		setDrawerOpen(false);
+		setSelectedItem(null);
+		setIsCreating(false);
+	};
 
 	const handleOpenEdit = (item: IndexViewItem) => {
 		if (isSelectionMode) return; // Don't open edit in selection mode
@@ -215,24 +224,20 @@ export function IndexView({
 		handleExitSelectionMode();
 	};
 
-	const openDrawer = () => {
-		const checkbox = document.getElementById(
-			"indexview-drawer"
-		) as HTMLInputElement;
-		if (checkbox) checkbox.checked = true;
-	};
-
 	return (
 		<div className="drawer">
 			<input
 				id="indexview-drawer"
 				type="checkbox"
 				className="drawer-toggle"
+				checked={isDrawerOpen}
 				onChange={(e) => {
-					if (!e.target.checked) {
-						setSelectedItem(null);
-						setIsCreating(false);
-					}
+				const open = e.target.checked;
+				setDrawerOpen(open);
+				if (!open) {
+					setSelectedItem(null);
+					setIsCreating(false);
+				}
 				}}
 			/>
 
@@ -447,7 +452,7 @@ export function IndexView({
 				></label>
 				<div className="bg-base-200 min-h-full w-full max-w-4xl p-6 overflow-y-auto">
 					{(selectedItem || isCreating) &&
-						renderEditForm(selectedItem, { currentPath })}
+						renderEditForm(selectedItem, { currentPath, closeDrawer })}
 				</div>
 			</div>
 		</div>

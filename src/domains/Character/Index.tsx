@@ -62,28 +62,20 @@ export function CharacterIndex() {
 			searchPlaceholder="Search characters by name..."
 			emptyMessage="No characters yet. Create one to get started!"
 			onBulkUpdateItemTags={handleBulkUpdateItemTags}
-			renderEditForm={(item, folderContext) => {
+			renderEditForm={(item, { currentPath, closeDrawer }) => {
 				const character = item
 					? campaign.CharacterRoster.find((c) => c.Id === item.id)
 					: undefined;
 
-				// Build initial tags from current path
-				const initialTags =
-					folderContext.currentPath.length > 0
-						? replacePathTag([], folderContext.currentPath)
-						: undefined;
+					const initialTags =
+					currentPath.length > 0 ? replacePathTag([], currentPath) : undefined;
 
 				return (
 					<CharacterEdit
 						key={item?.id || `create-${createCounter}`}
 						character={character}
 						initialTags={initialTags}
-						onClose={() => {
-							const checkbox = document.getElementById(
-								"indexview-drawer"
-							) as HTMLInputElement;
-							if (checkbox) checkbox.checked = false;
-						}}
+						onClose={() => closeDrawer?.()}
 					/>
 				);
 			}}

@@ -9,7 +9,7 @@ import React, {
 import { TerrainType, TERRAIN_COLORS } from "../../domains/Terrain/Terrain";
 import { useFormReadOnly } from "../Form/Form";
 
-type Tool = "paint" | "raise" | "lower";
+type Tool = "paint" | "raise" | "lower" | "set";
 
 export interface TerrainEditorProps {
 	width: number;
@@ -81,6 +81,7 @@ export function TerrainEditor({
 	const [tool, setTool] = useState<Tool>("paint");
 	const [brushSize, setBrushSize] = useState<number>(1);
 	const [selectedColor, setSelectedColor] = useState<TerrainType>("green");
+	const [targetHeight, setTargetHeight] = useState<number>(8);
 
 	// Layout: calculate tile size to fill container
 	const containerRef = useRef<HTMLDivElement | null>(null);
@@ -195,12 +196,22 @@ export function TerrainEditor({
 						0,
 						16
 					);
+				} else if (tool === "set") {
+					workHeightsRef.current![y][x] = clamp(targetHeight, 0, 16);
 				}
 			});
 
 			scheduleCommit();
 		},
-		[brushSize, width, length, selectedColor, tool, scheduleCommit]
+		[
+			brushSize,
+			width,
+			length,
+			selectedColor,
+			tool,
+			targetHeight,
+			scheduleCommit,
+		]
 	);
 
 	// Grid-level pointer handling
@@ -251,11 +262,30 @@ export function TerrainEditor({
 	}, [endStroke]);
 
 	// Actions
-	const doFillBaseColor = useCallback(() => {
+	const doFillAll = useCallback(() => {
 		if (isReadOnly) return;
-		const nextColors = colorMap.map((row) => row.map(() => selectedColor));
-		onChange({ width, length, heightMap, colorMap: nextColors });
-	}, [colorMap, heightMap, length, onChange, selectedColor, width, isReadOnly]);
+		if (tool === "set") {
+			// Fill the entire grid with the target height, keep colors as-is
+			const nextHeights = heightMap.map((row) =>
+				row.map(() => clamp(targetHeight, 0, 16))
+			);
+			onChange({ width, length, heightMap: nextHeights, colorMap });
+		} else {
+			// Paint mode behavior (unchanged)
+			const nextColors = colorMap.map((row) => row.map(() => selectedColor));
+			onChange({ width, length, heightMap, colorMap: nextColors });
+		}
+	}, [
+		isReadOnly,
+		tool,
+		heightMap,
+		colorMap,
+		targetHeight,
+		selectedColor,
+		onChange,
+		width,
+		length,
+	]);
 
 	const palette: TerrainType[] = useMemo(
 		() => ["green", "white", "blue", "yellow", "brown", "red", "grey", "black"],
@@ -321,9 +351,34 @@ export function TerrainEditor({
 						>
 							<span className="icon-[mdi--arrow-down-bold]" />
 						</button>
+						<button
+							type="button"
+							className={`btn btn-sm join-item ${
+								tool === "set" ? "btn-primary" : ""
+							}`}
+							onClick={() => setTool("set")}
+							disabled={isReadOnly}
+							title="Set fixed height"
+						>
+							<span className="icon-[mdi--ruler]" />
+						</button>
 					</div>
 				</div>
-
+				{/* Set Height input */}
+				<div className="flex items-center gap-2">
+					<input
+						type="number"
+						min={0}
+						max={16}
+						step={1}
+						value={targetHeight}
+						onChange={(e) =>
+							setTargetHeight(clamp(Number(e.target.value) || 0, 0, 16))
+						}
+						className="input input-sm input-bordered w-12 text-center"
+						disabled={isReadOnly || tool !== "set"}
+					/>
+				</div>
 				<div className="flex items-center gap-2">
 					<span className="text-sm opacity-70">Brush</span>
 					<input
@@ -333,7 +388,7 @@ export function TerrainEditor({
 						step={1}
 						value={brushSize}
 						onChange={(e) => setBrushSize(Number(e.target.value))}
-						className="range range-xs w-40"
+						className="range range-xs w-20"
 						disabled={isReadOnly}
 					/>
 					<span className="text-xs tabular-nums w-6 text-center">
@@ -362,10 +417,14 @@ export function TerrainEditor({
 					</div>
 					<button
 						type="button"
-						onClick={doFillBaseColor}
+						onClick={doFillAll}
 						className="btn btn-sm"
 						disabled={isReadOnly}
-						title="Fill all tiles with selected color"
+						title={
+							tool === "set"
+								? "Set height for all tiles"
+								: "Fill all tiles with selected color"
+						}
 					>
 						Fill All
 					</button>

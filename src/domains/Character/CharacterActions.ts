@@ -261,16 +261,9 @@ export const CharacterActions = {
 
 		// Apply all updates
 		params.updates.forEach((update) => {
-			// Try to find in roster first, then in gamestate
-			let character = campaign.CharacterRoster.find(
+			const character = campaign.CharacterRoster.find(
 				(c) => c.Id === update.characterId
 			);
-			if (!character) {
-				character = campaign.GameState.Characters.find(
-					(c) => c.Id === update.characterId
-				);
-			}
-
 			if (character) {
 				character.Tags = update.tags;
 				successCount++;
@@ -281,7 +274,6 @@ export const CharacterActions = {
 			}
 		});
 
-		// Single log entry for the entire bulk operation
 		LogActions.create(
 			{
 				action: "Characters organized",

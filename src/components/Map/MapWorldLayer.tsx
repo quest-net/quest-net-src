@@ -11,7 +11,7 @@
 // - Occlusion detection (diagonal scan) can be added later to conditionally
 //   draw ghosts, but for now ghosts always render per your plan.
 
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import type { Terrain } from "../../domains/Terrain/Terrain";
 import type { Character } from "../../domains/Character/Character";
 import type { Entity } from "../../domains/Entity/Entity";
@@ -31,6 +31,7 @@ import {
 	easeInOut,
 } from "./MapUtilities";
 import type { Graphics as PixiGraphics } from "pixi.js";
+import type { TextStyleOptions, TextStyleAlign } from "pixi.js";
 import { SpriteDisplay } from "../../domains/Image/SpriteDisplay";
 
 // -------------------------- Tunables --------------------------
@@ -47,16 +48,21 @@ const TOKEN_H = TILE_W * 0.8;
 const CORNER_RADIUS = Math.min(TOKEN_W, TOKEN_H) * 0.45;
 const OUTLINE_OUTER_WIDTH = 2;
 
-const RANGE_COLOR = 0x002bff; // movement range
-const HOVER_COLOR = 0xffffff; // hovered tile
+const RANGE_COLOR = 0xfa4398; // movement range
+const HOVER_COLOR = 0x002bff; // hovered tile
 
 // ----------------- Elevation shading (height cues) -----------------
 // Style toggle: 'bright' to push high → lighter, low → darker. Easy to extend later.
 const ELEVATION_STYLE: "off" | "bright" = "bright";
 // Strength per face (t ∈ [0,1]): how far we lerp toward white/black from the base color
 const ELEV_TOP_STRENGTH = 0.45;
-const ELEV_SIDE_STRENGTH = 0.30;
-const ELEV_HIGHLIGHT_TOP_STRENGTH = 0.25;
+const ELEV_SIDE_STRENGTH = 0.3;
+
+const HEIGHT_MIN = 0;
+const HEIGHT_MAX = 16;
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const normAbsolute = (h: number) =>
+	clamp01((h - HEIGHT_MIN) / (HEIGHT_MAX - HEIGHT_MIN));
 
 function lerpColor(rgb: number, target: number, t: number): number {
 	const r = (rgb >> 16) & 0xff,
@@ -95,24 +101,67 @@ function shadowParams(heightDelta: number) {
 function FallbackToken({
 	cx,
 	cy,
+	name,
 	alpha = 1,
+	selected = false,
 }: {
 	cx: number;
 	cy: number;
+	name?: string;
 	alpha?: number;
+	selected?: boolean;
 }) {
-	const draw = useMemo(
+	const R = TILE_W * 0.35;
+	const centerX = cx;
+	const centerY = cy - TILE_H;
+
+	const drawCircle = useMemo(
 		() => (g: PixiGraphics) => {
 			g.clear();
-			g.setFillStyle({ color: 0x4b5563, alpha: 0.95 * alpha });
-			g.setStrokeStyle({ width: 2, color: 0xffffff, alpha: 0.65 * alpha });
-			g.circle(cx, cy - TILE_H, TILE_W * 0.28);
+			// Fill
+			g.setFillStyle({ color: 0x4b5563, alpha: alpha });
+			// Outline mirrors image-token outline
+			const outlineColor = selected ? 0x002bff : 0x323333;
+			const outlineWidth = selected ? 3 : OUTLINE_OUTER_WIDTH;
+			g.setStrokeStyle({ width: outlineWidth, color: outlineColor, alpha });
+			g.circle(centerX, centerY, R);
 			g.fill();
 			g.stroke();
 		},
-		[cx, cy, alpha]
+		[centerX, centerY, R, alpha, selected]
 	);
-	return <pixiGraphics draw={draw} />;
+
+	// v8 text style (typed)
+	const fontSize = Math.max(10, Math.round(TILE_W * 0.22));
+	const align: TextStyleAlign = "center";
+	const textStyle = useMemo<TextStyleOptions>(
+		() => ({
+			fontSize,
+			fontFamily: "Inter, system-ui, sans-serif",
+			fill: 0xffffff,
+			align,
+			stroke: { color: 0x000000, width: 2 },
+			wordWrap: true,
+		}),
+		[align, fontSize]
+	);
+
+	return (
+		<pixiContainer>
+			<pixiGraphics draw={drawCircle} />
+			{!!name && (
+				<pixiText
+					text={name}
+					x={centerX}
+					y={centerY}
+					anchor={{ x: 0.5, y: 0.5 }}
+					style={textStyle}
+					alpha={alpha}
+					resolution={2}
+				/>
+			)}
+		</pixiContainer>
+	);
 }
 
 function Token({
@@ -122,6 +171,7 @@ function Token({
 	alpha = 1,
 	drawOutline = true,
 	selected = false,
+	name,
 }: {
 	imageId?: string;
 	cx: number;
@@ -129,28 +179,16 @@ function Token({
 	alpha?: number;
 	drawOutline?: boolean;
 	selected?: boolean;
+	name?: string;
 }) {
-	const maskRef = useRef<PixiGraphics | null>(null);
+	// Same geometry as before
 	const rx = -TOKEN_W * 0.5;
 	const ry = -TOKEN_H * 1.25;
 	const MASK_CENTER_Y = -TOKEN_H * 0.75;
 
-	const drawMask = useMemo(
-		() => (g: PixiGraphics) => {
-			g.clear();
-			g.setFillStyle({ color: 0xffffff, alpha: 1 });
-			g.beginPath();
-			g.roundRect(rx, ry, TOKEN_W, TOKEN_H, CORNER_RADIUS);
-			g.closePath();
-			g.fill();
-		},
-		[rx, ry]
-	);
-
 	const drawOutlinePath = useMemo(
 		() => (g: PixiGraphics) => {
 			g.clear();
-			// Use primary color if selected, otherwise use default neutral color
 			const outlineColor = selected ? 0x002bff : 0x323333;
 			const outlineWidth = selected ? 3 : OUTLINE_OUTER_WIDTH;
 			g.setStrokeStyle({
@@ -167,23 +205,31 @@ function Token({
 	);
 
 	if (!imageId) {
-		return <FallbackToken cx={cx} cy={cy} alpha={alpha} />;
+		return (
+			<FallbackToken
+				cx={cx}
+				cy={cy}
+				alpha={alpha}
+				selected={selected}
+				name={name}
+			/>
+		); // NEW
 	}
 
 	return (
 		<pixiContainer x={cx} y={cy}>
-			<pixiGraphics ref={maskRef} draw={drawMask} />
-			<pixiContainer mask={maskRef.current ?? undefined}>
-				<SpriteDisplay
-					imageId={imageId}
-					x={0}
-					y={MASK_CENTER_Y}
-					anchor={{ x: 0.5, y: 0.5 }}
-					width={TOKEN_W}
-					height={TOKEN_H}
-					alpha={alpha}
-				/>
-			</pixiContainer>
+			{/* Internal rounded mask handled by SpriteDisplay itself */}
+			<SpriteDisplay
+				imageId={imageId}
+				x={0}
+				y={MASK_CENTER_Y}
+				anchor={{ x: 0.5, y: 0.5 }}
+				width={TOKEN_W}
+				height={TOKEN_H}
+				alpha={alpha}
+				rounded // (default true, but explicit here)
+				cornerRadius={CORNER_RADIUS} // matches your outline exactly
+			/>
 			{drawOutline && <pixiGraphics draw={drawOutlinePath} />}
 		</pixiContainer>
 	);
@@ -268,20 +314,6 @@ export function MapWorldLayer({
 			? animationState.from
 			: animationState.to
 		: orientation;
-
-	// Height range for normalization (guards divide-by-zero)
-	const { hMin, hMax } = useMemo(() => {
-	let lo = Infinity, hi = -Infinity;
-	for (const t of baseTiles) {
-		if (t.h < lo) lo = t.h;
-		if (t.h > hi) hi = t.h;
-	}
-	if (!isFinite(lo) || !isFinite(hi) || lo === hi) {
-		// flat terrain → treat everything as mid (0.5)
-		return { hMin: 0, hMax: 1 };
-	}
-	return { hMin: lo, hMax: hi };
-	}, [baseTiles]);
 
 	// ---------------- Tiles grouped by diagonal row (rx+ry) ----------------
 	const rows = useMemo(() => {
@@ -423,7 +455,7 @@ export function MapWorldLayer({
 			const cx = proj.cx;
 			const cy = proj.cy;
 			const color = base.color;
-			const hNorm = (base.h - hMin) / (hMax - hMin);
+			const hNorm = normAbsolute(base.h);
 
 			// Diamond corners
 			const topX = cx,
@@ -479,14 +511,8 @@ export function MapWorldLayer({
 
 			// Top face (diamond)
 			// Apply elevation tint, but let movement/hover hard-override for clarity
-			const topBase  = applyElevationTint(color, hNorm, ELEV_TOP_STRENGTH);
-        	const isHovered = hoveredIndex != null && i === hoveredIndex;
-        	const inRange   = !!movementRangeIndices && movementRangeIndices.has(i);
-        	const highlightBase = isHovered ? HOVER_COLOR : RANGE_COLOR;
-        	const topFill = (isHovered || inRange)
-        	  ? applyElevationTint(highlightBase, hNorm, ELEV_HIGHLIGHT_TOP_STRENGTH)
-        	  : topBase;
-	        g.setFillStyle({ color: topFill });
+			const topBase = applyElevationTint(color, hNorm, ELEV_TOP_STRENGTH);
+			g.setFillStyle({ color: topBase });
 			g.setStrokeStyle({ width: 1, color: 0x000000, alpha: 0.12 });
 			g.beginPath();
 			g.moveTo(topX, topY);
@@ -496,6 +522,34 @@ export function MapWorldLayer({
 			g.closePath();
 			g.fill();
 			g.stroke();
+
+			// Stroke-only highlight
+			const isHovered = hoveredIndex != null && i === hoveredIndex;
+			const inRange = !!movementRangeIndices && movementRangeIndices.has(i);
+			if (isHovered || inRange) {
+				const outlineColor = isHovered ? HOVER_COLOR : RANGE_COLOR;
+				const outlineWidth = isHovered ? 4 : 2;
+
+				// Inset the diamond by half the stroke width so the outer edge
+				// never extends beyond the original tile boundary.
+				const inset = outlineWidth / 2;
+				const iHalfW = Math.max(1, halfW - inset);
+				const iHalfH = Math.max(1, halfH - inset);
+
+				g.setStrokeStyle({
+					width: outlineWidth,
+					color: outlineColor,
+					alpha: 0.5,
+					miterLimit: 2,
+				});
+				g.beginPath();
+				g.moveTo(cx, cy - iHalfH);
+				g.lineTo(cx + iHalfW, cy);
+				g.lineTo(cx, cy + iHalfH);
+				g.lineTo(cx - iHalfW, cy);
+				g.closePath();
+				g.stroke();
+			}
 		}
 	};
 
@@ -539,6 +593,7 @@ export function MapWorldLayer({
 							alpha={MAIN_ALPHA}
 							drawOutline
 							selected={a.selected}
+							name={a.name}
 						/>
 					))}
 				</pixiContainer>
@@ -555,6 +610,7 @@ export function MapWorldLayer({
 						alpha={GHOST_ALPHA}
 						drawOutline
 						selected={a.selected}
+						name={a.name}
 					/>
 				))}
 			</pixiContainer>

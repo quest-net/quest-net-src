@@ -1,221 +1,269 @@
-// domains/Image/SpriteDisplay.tsx
+// domains/Image/SpriteDisplay.tsx (updated)
+// Adds: in-memory Texture cache + internal rounded-rect mask with one-frame
+// gating so corners never flash on remount.
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Texture, ImageSource } from "pixi.js";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 
 interface SpriteDisplayProps {
-	imageId: string | undefined;
-	x: number;
-	y: number;
-	anchor?: { x: number; y: number };
-	scale?: { x: number; y: number };
-	alpha?: number;
-	tint?: number;
-	width?: number; // Default 64
-	height?: number; // Default 64
+  imageId: string | undefined;
+  x: number;
+  y: number;
+  anchor?: { x: number; y: number };
+  scale?: { x: number; y: number };
+  alpha?: number;
+  tint?: number;
+  width?: number; // Default 64
+  height?: number; // Default 64
+  /** If true (default), clip to a rounded-rectangle mask drawn inside this component */
+  rounded?: boolean;
+  /** Optional corner radius (pixels). Defaults to min(width, height) * 0.45 */
+  cornerRadius?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Simple in-memory Texture cache by imageId. Prevents reload flashes if a
+// token remounts (e.g., when it changes z-order/row during animation).
+// ---------------------------------------------------------------------------
+const textureCache = new Map<string, Texture>();
+
 export function SpriteDisplay({
-	imageId,
-	x,
-	y,
-	anchor = { x: 0.5, y: 0.5 }, // center
-	scale = { x: 1, y: 1 },
-	alpha = 1,
-	tint = 0xffffff,
-	width = 64,
-	height = 64,
+  imageId,
+  x,
+  y,
+  anchor = { x: 0.5, y: 0.5 }, // center
+  scale = { x: 1, y: 1 },
+  alpha = 1,
+  tint = 0xffffff,
+  width = 64,
+  height = 64,
+  rounded = false,
+  cornerRadius,
 }: SpriteDisplayProps) {
-	const context = useQuestContext();
-	const { actionService } = useActionService();
-	const [texture, setTexture] = useState<Texture | null>(null);
-	const [isLoading, setIsLoading] = useState(false);
-	const [error, setError] = useState<string | null>(null);
+  const context = useQuestContext();
+  const { actionService } = useActionService();
+  const [texture, setTexture] = useState<Texture | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-	// Track current load to prevent race conditions
-	const currentLoadId = useRef(0);
+  // Track current load to prevent race conditions
+  const currentLoadId = useRef(0);
 
-	const isDM = context.User.Role === "dm";
+  // Internal mask wiring
+  const maskRef = useRef<any>(null); // Pixi Graphics
+  const spriteRef = useRef<any>(null); // Pixi Sprite
+  const [isMasked, setIsMasked] = useState(false); // one-frame gate to avoid unmasked flash
 
-	useEffect(() => {
-		// Reset state when imageId changes
-		setTexture(null);
-		setError(null);
+  const isDM = context.User.Role === "dm";
 
-		if (!imageId) {
-			return;
-		}
+  // ---------- Texture load with cache ----------
+  useEffect(() => {
+    // Reset errors on new id
+    setError(null);
 
-		// Increment load counter to invalidate previous loads
-		const loadId = ++currentLoadId.current;
+    // Fast-path: use cached texture immediately if available
+    if (imageId) {
+      const cached = textureCache.get(imageId);
+      if (cached) {
+        setTexture(cached);
+        setIsLoading(false);
+        return;
+      }
+    }
 
-		let objectUrl: string | null = null;
-		let imageElement: HTMLImageElement | null = null;
-		let createdTexture: Texture | null = null;
+    setTexture(null);
 
-		const loadImage = async () => {
-			setIsLoading(true);
+    if (!imageId) {
+      setIsLoading(false);
+      return;
+    }
 
-			try {
-				// STEP 1: Try IndexedDB first (works offline for everyone)
-				const cached = await IndexedDBUtilities.load(imageId);
+    const loadId = ++currentLoadId.current;
 
-				let blob: Blob | null = null;
+    let objectUrl: string | null = null;
+    let imageElement: HTMLImageElement | null = null;
+    let createdTexture: Texture | null = null;
+    let cancelled = false;
 
-				if (cached) {
-					blob = cached.data as Blob;
-				} else if (!isDM) {
-					// STEP 2: If not cached and we're a player, request from DM
-					if (!actionService) {
-						if (loadId === currentLoadId.current) {
-							setError("Not connected");
-							setIsLoading(false);
-						}
-						return;
-					}
+    const loadImage = async () => {
+      setIsLoading(true);
 
-					const imageService = (actionService as any).imageService;
-					if (!imageService) {
-						if (loadId === currentLoadId.current) {
-							setError("Image service not available");
-							setIsLoading(false);
-						}
-						return;
-					}
+      try {
+        // STEP 1: Try IndexedDB first (works offline for everyone)
+        const cached = await IndexedDBUtilities.load(imageId);
 
-					// Request from DM (this will cache it in IndexedDB)
-					blob = await imageService.getImage(imageId);
+        let blob: Blob | null = null;
 
-					if (!blob) {
-						if (loadId === currentLoadId.current) {
-							setError("Image not found");
-							setIsLoading(false);
-						}
-						return;
-					}
-				} else {
-					// STEP 3: Image not found (shouldn't happen for DM)
-					if (loadId === currentLoadId.current) {
-						setError("Image not found in IndexedDB");
-						setIsLoading(false);
-					}
-					return;
-				}
+        if (cached) {
+          blob = cached.data as Blob;
+        } else if (!isDM) {
+          // STEP 2: If not cached and we're a player, request from DM
+          if (!actionService) {
+            if (loadId === currentLoadId.current && !cancelled) {
+              setError("Not connected");
+              setIsLoading(false);
+            }
+            return;
+          }
 
-				// Check if this load is still current
-				if (loadId !== currentLoadId.current) return;
+          const imageService = (actionService as any).imageService;
+          if (!imageService) {
+            if (loadId === currentLoadId.current && !cancelled) {
+              setError("Image service not available");
+              setIsLoading(false);
+            }
+            return;
+          }
 
-				// STEP 4: Create texture from blob using PixiJS v8 API
-				objectUrl = URL.createObjectURL(blob);
-				imageElement = new Image();
+          // Request from DM (this will cache it in IndexedDB)
+          blob = await imageService.getImage(imageId);
 
-				// Wait for image to load
-				await new Promise<void>((resolve, reject) => {
-					imageElement!.onload = () => resolve();
-					imageElement!.onerror = () =>
-						reject(new Error("Failed to load image"));
-					imageElement!.src = objectUrl!;
-				});
+          if (!blob) {
+            if (loadId === currentLoadId.current && !cancelled) {
+              setError("Image not found");
+              setIsLoading(false);
+            }
+            return;
+          }
+        } else {
+          // STEP 3: Image not found for DM (unexpected)
+          if (loadId === currentLoadId.current && !cancelled) {
+            setError("Image not found in IndexedDB");
+            setIsLoading(false);
+          }
+          return;
+        }
 
-				// Check again if this load is still current
-				if (loadId !== currentLoadId.current) return;
+        if (loadId !== currentLoadId.current || cancelled) return;
 
-				// Create ImageSource and Texture using PixiJS v8 API
-				const source = new ImageSource({ resource: imageElement });
-				createdTexture = new Texture({ source });
+        // STEP 4: Create texture from blob using PixiJS v8 API
+        objectUrl = URL.createObjectURL(blob);
+        imageElement = new Image();
 
-				setTexture(createdTexture);
-				setIsLoading(false);
-			} catch (err) {
-				console.error(`[SpriteDisplay] Error loading image ${imageId}:`, err);
-				if (loadId === currentLoadId.current) {
-					setError("Failed to load image");
-					setIsLoading(false);
-				}
-			}
-		};
+        await new Promise<void>((resolve, reject) => {
+          imageElement!.onload = () => resolve();
+          imageElement!.onerror = () => reject(new Error("Failed to load image"));
+          imageElement!.src = objectUrl!;
+        });
 
-		loadImage();
+        if (loadId !== currentLoadId.current || cancelled) return;
 
-		// Cleanup: revoke object URL and destroy texture to prevent memory leaks
-		return () => {
-			currentLoadId.current++; // Invalidate this load
-			if (objectUrl) URL.revokeObjectURL(objectUrl);
-			if (createdTexture && loadId === currentLoadId.current - 1) {
-				createdTexture.destroy(true);
-			}
-		};
-	}, [imageId, isDM]); // actionService intentionally removed from deps!
+        const source = new ImageSource({ resource: imageElement });
+        createdTexture = new Texture({ source });
 
-	// No imageId provided - render placeholder
-	if (!imageId) {
-		return (
-			<pixiGraphics
-				x={x}
-				y={y}
-				draw={(g) => {
-					g.clear();
-					g.circle(0, 0, Math.min(width, height) / 2);
-					g.fill({ color: 0x666666, alpha: 0.3 });
-				}}
-			/>
-		);
-	}
+        textureCache.set(imageId, createdTexture);
+        setTexture(createdTexture);
+        setIsLoading(false);
 
-	// Loading state - render placeholder
-	if (isLoading || !texture) {
-		return (
-			<pixiGraphics
-				x={x}
-				y={y}
-				draw={(g) => {
-					g.clear();
-					g.circle(0, 0, Math.min(width, height) / 2);
-					g.fill({ color: 0x666666, alpha: 0.5 });
-				}}
-			/>
-		);
-	}
+        if (objectUrl) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+        }
+      } catch (err) {
+        console.error(`[SpriteDisplay] Error loading image ${imageId}:`, err);
+        if (loadId === currentLoadId.current && !cancelled) {
+          setError("Failed to load image");
+          setIsLoading(false);
+        }
+      }
+    };
 
-	// Error state - render error placeholder
-	if (error) {
-		return (
-			<pixiGraphics
-				x={x}
-				y={y}
-				draw={(g) => {
-					g.clear();
-					g.circle(0, 0, Math.min(width, height) / 2);
-					g.fill({ color: 0xff0000, alpha: 0.5 });
-				}}
-			/>
-		);
-	}
+    loadImage();
 
-	// Success - render actual sprite with scale calculation
-	// Safety check: ensure texture has valid dimensions
-	const textureWidth = texture.width || 1;
-	const textureHeight = texture.height || 1;
+    return () => {
+      cancelled = true;
+      currentLoadId.current++; // Invalidate this load
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      // Note: createdTexture is kept alive via textureCache. Do not destroy here.
+    };
+  }, [imageId, isDM, actionService]);
 
-	// COVER strategy: scale to fill the entire area, maintaining aspect ratio
-	// (parts that exceed bounds will be clipped by the container/mask)
-	const scaleToFill = Math.max(width / textureWidth, height / textureHeight);
+  // ---------- Hook up mask after both nodes mount ----------
+  useEffect(() => {
+    if (!rounded) {
+      setIsMasked(true); // nothing to do
+      return;
+    }
+    const m = maskRef.current;
+    const s = spriteRef.current;
+    if (m && s) {
+      s.mask = m;
+      setIsMasked(true); // flip alpha to real value next render
+    } else {
+      setIsMasked(false);
+    }
+  }, [rounded, texture]);
 
-	const scaleX = scaleToFill * scale.x;
-	const scaleY = scaleToFill * scale.y;
+  // Draw function for the rounded-rect mask and placeholders
+  const drawRoundedRect = useMemo(
+    () => (g: any) => {
+      g.clear();
+      // Position rect so it matches the sprite's anchor inside this container
+      const rx = -width * (anchor?.x ?? 0.5);
+      const ry = -height * (anchor?.y ?? 0.5);
+      const r = cornerRadius ?? Math.min(width, height) * 0.45;
+      g.setFillStyle({ color: 0xffffff, alpha: 1 });
+      g.beginPath();
+      g.roundRect(rx, ry, width, height, r);
+      g.closePath();
+      g.fill();
+    },
+    [width, height, anchor?.x, anchor?.y, cornerRadius]
+  );
 
-	return (
-		<pixiSprite
-			texture={texture}
-			x={x}
-			y={y}
-			anchor={anchor}
-			scale={{ x: scaleX, y: scaleY }}
-			alpha={alpha}
-			tint={tint}
-		/>
-	);
+  // Placeholder that visually matches the rounded token (no corner flicker)
+  const RoundedPlaceholder = ({ fillAlpha }: { fillAlpha: number }) => (
+    <pixiGraphics draw={(g) => {
+      g.clear();
+      const rx = -width * (anchor?.x ?? 0.5);
+      const ry = -height * (anchor?.y ?? 0.5);
+      const r = cornerRadius ?? Math.min(width, height) * 0.45;
+      g.setFillStyle({ color: 0x666666, alpha: fillAlpha });
+      g.beginPath();
+      g.roundRect(rx, ry, width, height, r);
+      g.closePath();
+      g.fill();
+    }} />
+  );
+
+  // COVER strategy: scale to fill desired WxH while keeping aspect
+  const textureWidth = texture?.width || 1;
+  const textureHeight = texture?.height || 1;
+  const scaleToFill = Math.max(width / textureWidth, height / textureHeight);
+  const scaleX = scaleToFill * scale.x;
+  const scaleY = scaleToFill * scale.y;
+
+  // ---------- Render ----------
+  // We wrap everything in a container so mask + sprite share coordinates.
+  return (
+    <pixiContainer x={x} y={y}>
+      {rounded && <pixiGraphics ref={maskRef} draw={drawRoundedRect} />}
+
+      {/* No imageId provided */}
+      {!imageId && <RoundedPlaceholder fillAlpha={0.3} />}
+
+      {/* Loading state or no texture yet */}
+      {(isLoading || (!!imageId && !texture)) && <RoundedPlaceholder fillAlpha={0.5} />}
+
+      {/* Error state */}
+      {error && <RoundedPlaceholder fillAlpha={0.5} />}
+
+      {/* Success: sprite masked internally. We gate alpha until mask is applied */}
+      {texture && !error && (
+        <pixiSprite
+          ref={spriteRef}
+          texture={texture}
+          x={0}
+          y={0}
+          anchor={anchor}
+          scale={{ x: scaleX, y: scaleY }}
+          alpha={isMasked ? alpha : 0}
+          tint={tint}
+        />
+      )}
+    </pixiContainer>
+  );
 }
