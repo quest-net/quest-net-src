@@ -4,11 +4,11 @@ export interface Item {
 	Description?: string;
 	Image?: string;
 	Tags?: string[];
-	
+
 	// Item properties
-	MaxUses?: number;			  // undefined = infinite uses
+	MaxUses?: number; // undefined = infinite uses
 	IsEquippable: boolean;
-	
+
 	// Dice roll functionality
-	DiceRoll?: string;			 // "3d6", "1d20+5", "2d10-2"
+	DiceRoll?: string; // "3d6", "1d20+5", "2d10-2"
 }

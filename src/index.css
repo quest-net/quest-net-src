@@ -5,47 +5,46 @@
 
 /* Define your custom questnet theme */
 
-
 @plugin "daisyui/theme" {
-  name: "light";
-  default: true;
-  prefersdark: false;
-  color-scheme: "light";
-  --color-base-100: oklch(0.972 0.006 52.4);
-  --color-base-200: oklch(0.947 0.023 88.7);
-  --color-base-300: oklch(0.240 0.000 197.1);
-  --color-base-content: oklch(0.000 0.000 197.1);
-  --color-primary: #002bff;
-  --color-primary-content: #ffffff;
-  --color-secondary: #fa4398;
-  --color-secondary-content: #ffffff;
-  --color-accent: oklch(0.511 0.149 263.7);
-  --color-accent-content: oklch(1.000 0.006 188.4);
-  --color-neutral: #323333;
-  --color-neutral-content: #ffffff;
-  --color-info: oklch(0.847 0.259 232.7);
-  --color-info-content: oklch(29% 0.066 243.157);
-  --color-success: oklch(0.589 0.247 163.2);
-  --color-success-content: oklch(1.000 0.000 168.9);
-  --color-warning: oklch(0.587 0.300 84.4);
-  --color-warning-content: oklch(1.000 0.000 33.1);
-  --color-error: oklch(0.302 0.370 29.0);
-  --color-error-content: oklch(1.000 0.000 12.1);
-  --radius-selector: 0.5rem;
-  --radius-field: 0.5rem;
-  --radius-box: 0.5rem;
-  --size-selector: 0.28125rem;
-  --size-field: 0.25rem;
-  --border: 2px;
-  --depth: 1;
-  --noise: 0;
+	name: "light";
+	default: true;
+	prefersdark: false;
+	color-scheme: "light";
+	--color-base-100: oklch(0.972 0.006 52.4);
+	--color-base-200: oklch(0.947 0.023 88.7);
+	--color-base-300: oklch(0.24 0 197.1);
+	--color-base-content: oklch(0 0 197.1);
+	--color-primary: #002bff;
+	--color-primary-content: #ffffff;
+	--color-secondary: #fa4398;
+	--color-secondary-content: #ffffff;
+	--color-accent: oklch(0.511 0.149 263.7);
+	--color-accent-content: oklch(1 0.006 188.4);
+	--color-neutral: #323333;
+	--color-neutral-content: #ffffff;
+	--color-info: oklch(0.847 0.259 232.7);
+	--color-info-content: oklch(29% 0.066 243.157);
+	--color-success: oklch(0.589 0.247 163.2);
+	--color-success-content: oklch(1 0 168.9);
+	--color-warning: oklch(0.587 0.3 84.4);
+	--color-warning-content: oklch(1 0 33.1);
+	--color-error: oklch(0.302 0.37 29);
+	--color-error-content: oklch(1 0 12.1);
+	--radius-selector: 0.5rem;
+	--radius-field: 0.5rem;
+	--radius-box: 0.5rem;
+	--size-selector: 0.28125rem;
+	--size-field: 0.25rem;
+	--border: 2px;
+	--depth: 1;
+	--noise: 0;
 }
 
 body {
-  @apply bg-base-200 text-base-content;
-  min-height: 100vh;
+	@apply bg-base-200 text-base-content;
+	min-height: 100vh;
 }
 
 [data-theme="light"] .bg-base-300 {
-  @apply text-white;
+	@apply text-white;
 }

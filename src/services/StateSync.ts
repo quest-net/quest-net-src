@@ -2,236 +2,253 @@
 
 import { Campaign } from "../domains/Campaign/Campaign";
 import { Room } from "../domains/Room/Room";
-import { compare, applyPatch, Operation } from 'fast-json-patch';
+import { compare, applyPatch, Operation } from "fast-json-patch";
 
 export interface StateUpdate {
-  type: 'full' | 'delta';
-  timestamp: number;
-  data?: Campaign;        // For 'full' updates
-  patches?: Operation[];  // For 'delta' updates
-  baseVersion?: number;   // Version number for patch tracking
+	type: "full" | "delta";
+	timestamp: number;
+	data?: Campaign; // For 'full' updates
+	patches?: Operation[]; // For 'delta' updates
+	baseVersion?: number; // Version number for patch tracking
 }
 
 export class StateSync {
-  private room: Room;
-  private sendState!: (data: StateUpdate) => void;
-  private onUpdateCallback?: (campaign: Campaign) => void;
-  private actionExecute: (actionKey: string, params: any) => void;
+	private room: Room;
+	private sendState!: (data: StateUpdate) => void;
+	private onUpdateCallback?: (campaign: Campaign) => void;
+	private actionExecute: (actionKey: string, params: any) => void;
 
-  // State tracking for differential updates
-  private lastBroadcastState: Campaign | null = null;
-  private currentState: Campaign | null = null;
-  private version = 0;
-  private updateCount = 0;
-  
-  // Configuration
-  private fullStateInterval = 30; // Send full state every N updates as fallback
+	// State tracking for differential updates
+	private lastBroadcastState: Campaign | null = null;
+	private currentState: Campaign | null = null;
+	private version = 0;
+	private updateCount = 0;
 
-  constructor(room: Room, actionExecute: (actionKey: string, params: any) => void = () => {}) {
-    this.room = room;
-    this.actionExecute = actionExecute;
-    this.setupChannel();
-  }
+	// Configuration
+	private fullStateInterval = 30; // Send full state every N updates as fallback
 
-  /**
-   * Sets up the Trystero channel for state updates
-   * Note: Trystero has 12-byte limit for action names
-   */
-  private setupChannel() {
-    const [send, receive] = this.room.makeAction('stateSync');
-    
-    this.sendState = send;
-    
-    // Listen for incoming state updates
-    receive(this.handleIncomingState.bind(this));
-  }
+	constructor(
+		room: Room,
+		actionExecute: (actionKey: string, params: any) => void = () => {}
+	) {
+		this.room = room;
+		this.actionExecute = actionExecute;
+		this.setupChannel();
+	}
 
-  /**
-   * Sanitizes campaign for player consumption
-   * Replaces the DM's secret Campaign ID with the public RoomCode
-   */
-  private sanitizeForPlayers(campaign: Campaign): Campaign {
-    const sanitized = structuredClone(campaign);
-    // Replace secret Campaign ID with room code so players can identify it
-    sanitized.Id = campaign.RoomCode;
-    return sanitized;
-  }
+	/**
+	 * Sets up the Trystero channel for state updates
+	 * Note: Trystero has 12-byte limit for action names
+	 */
+	private setupChannel() {
+		const [send, receive] = this.room.makeAction("stateSync");
 
-  private triggerFullSyncRequest(): void {
-    console.log('[StateSync] Requesting full state sync from DM via log command.');
-    this.actionExecute('log:create', {
-      action: '/REQUEST_FULL_SYNC',
-      category: 'system',
-      level: 'verbose',
-      visibility: ['dm'], // Ensure only the DM sees this command log
-    });
-  }
+		this.sendState = send;
 
-  /**
-   * Broadcasts the campaign state to all peers (DM only)
-   */
-  broadcast(campaign: Campaign): void {
-    this.updateCount++;
-    
-    // Sanitize campaign before broadcasting to hide DM's secret ID
-    const sanitizedCampaign = this.sanitizeForPlayers(campaign);
-    
-    // Periodically send full state to recover from any desync
-    const shouldSendFull = !this.lastBroadcastState || 
-                           this.updateCount % this.fullStateInterval === 0;
-    
-    if (shouldSendFull) {
-      this.broadcastFull(sanitizedCampaign);
-    } else {
-      this.broadcastDelta(sanitizedCampaign);
-    }
-    
-    // Store sanitized version for next comparison
-    this.lastBroadcastState = structuredClone(sanitizedCampaign);
-  }
+		// Listen for incoming state updates
+		receive(this.handleIncomingState.bind(this));
+	}
 
-  /**
-   * Broadcasts a full state update
-   */
-  broadcastFull(campaign: Campaign): void {
-    const sanitized = this.sanitizeForPlayers(campaign);
-    
-    const update: StateUpdate = {
-      type: 'full',
-      timestamp: Date.now(),
-      data: sanitized,
-    };
+	/**
+	 * Sanitizes campaign for player consumption
+	 * Replaces the DM's secret Campaign ID with the public RoomCode
+	 */
+	private sanitizeForPlayers(campaign: Campaign): Campaign {
+		const sanitized = structuredClone(campaign);
+		// Replace secret Campaign ID with room code so players can identify it
+		sanitized.Id = campaign.RoomCode;
+		return sanitized;
+	}
 
-    console.log('[StateSync] Broadcasting full state (Campaign ID sanitized to room code)');
-    this.sendState(update);
-    
-    // Store sanitized version for next comparison
-    this.lastBroadcastState = structuredClone(sanitized);
-    
-    // Reset version counter on full state
-    this.version = 0;
-    this.updateCount = 0;
-  }
+	private triggerFullSyncRequest(): void {
+		console.log(
+			"[StateSync] Requesting full state sync from DM via log command."
+		);
+		this.actionExecute("log:create", {
+			action: "/REQUEST_FULL_SYNC",
+			category: "system",
+			level: "verbose",
+			visibility: ["dm"], // Ensure only the DM sees this command log
+		});
+	}
 
-  /**
-   * Broadcasts a differential update
-   */
-  private broadcastDelta(campaign: Campaign): void {
-    
-    if (!this.lastBroadcastState) {
-      // Fallback to full state if we don't have a previous state
-      this.broadcastFull(campaign);
-      return;
-    }
+	/**
+	 * Broadcasts the campaign state to all peers (DM only)
+	 */
+	broadcast(campaign: Campaign): void {
+		this.updateCount++;
 
-    // Generate patches
-    const patches = compare(this.lastBroadcastState, campaign);
-    
-    if (patches.length === 0) {
-      console.log('[StateSync] No changes detected, skipping broadcast');
-      return;
-    }
+		// Sanitize campaign before broadcasting to hide DM's secret ID
+		const sanitizedCampaign = this.sanitizeForPlayers(campaign);
 
-    const update: StateUpdate = {
-      type: 'delta',
-      timestamp: Date.now(),
-      patches,
-      baseVersion: this.version
-    };
+		// Periodically send full state to recover from any desync
+		const shouldSendFull =
+			!this.lastBroadcastState ||
+			this.updateCount % this.fullStateInterval === 0;
 
-    console.log(`[StateSync] Broadcasting delta (${patches.length} patches)`, patches);
-    this.sendState(update);
-    
-    this.version++;
-  }
+		if (shouldSendFull) {
+			this.broadcastFull(sanitizedCampaign);
+		} else {
+			this.broadcastDelta(sanitizedCampaign);
+		}
 
-  /**
-   * Registers a callback to be called when state updates are received
-   */
-  onUpdate(callback: (campaign: Campaign) => void): void {
-    this.onUpdateCallback = callback;
-  }
+		// Store sanitized version for next comparison
+		this.lastBroadcastState = structuredClone(sanitizedCampaign);
+	}
 
-  /**
-   * Handles incoming state updates from DM
-   */
-  private handleIncomingState(update: StateUpdate, peerId: string): void {
-    console.log(`[StateSync] Received ${update.type} update from ${peerId}`);
+	/**
+	 * Broadcasts a full state update
+	 */
+	broadcastFull(campaign: Campaign): void {
+		const sanitized = this.sanitizeForPlayers(campaign);
 
-    try {
-      switch (update.type) {
-        case 'full':
-          this.handleFullUpdate(update);
-          break;
-        
-        case 'delta':
-          this.handleDeltaUpdate(update);
-          break;
-        
-        default:
-          console.warn('Unknown update type:', (update as any).type);
-      }
-    } catch (error) {
-      console.error('[StateSync] Error applying update:', error);
-      // On error, we'll wait for the next full state broadcast
-    }
-  }
+		const update: StateUpdate = {
+			type: "full",
+			timestamp: Date.now(),
+			data: sanitized,
+		};
 
-  /**
-   * Handles full state updates
-   */
-  private handleFullUpdate(update: StateUpdate): void {
-    if (!update.data) {
-      console.warn('[StateSync] Full update missing data');
-      return;
-    }
+		console.log(
+			"[StateSync] Broadcasting full state (Campaign ID sanitized to room code)"
+		);
+		this.sendState(update);
 
-    console.log('[StateSync] Applying full state update');
-    console.log('[StateSync] Campaign ID in update:', update.data.Id);
-    console.log('[StateSync] Campaign RoomCode in update:', update.data.RoomCode);
-    
-    this.currentState = update.data;
-    this.version = 0;
-    
-    if (this.onUpdateCallback) {
-      this.onUpdateCallback(update.data);
-    }
-  }
+		// Store sanitized version for next comparison
+		this.lastBroadcastState = structuredClone(sanitized);
 
-  /**
-   * Handles differential updates
-   */
-  private handleDeltaUpdate(update: StateUpdate): void {
-    if (!update.patches || update.patches.length === 0) {
-      console.warn('[StateSync] Delta update missing patches');
-      return;
-    }
+		// Reset version counter on full state
+		this.version = 0;
+		this.updateCount = 0;
+	}
 
-    if (!this.currentState) {
-      console.warn('[StateSync] No current state to apply patches to, waiting for full state');
-      return;
-    }
+	/**
+	 * Broadcasts a differential update
+	 */
+	private broadcastDelta(campaign: Campaign): void {
+		if (!this.lastBroadcastState) {
+			// Fallback to full state if we don't have a previous state
+			this.broadcastFull(campaign);
+			return;
+		}
 
-    if (update.baseVersion !== this.version) {
-      console.warn(`[StateSync] Version mismatch. Expected ${this.version}, got ${update.baseVersion}.`);
-      this.triggerFullSyncRequest();
-      return;
-    }
+		// Generate patches
+		const patches = compare(this.lastBroadcastState, campaign);
 
-    console.log(`[StateSync] Applying ${update.patches.length} patches`);
+		if (patches.length === 0) {
+			console.log("[StateSync] No changes detected, skipping broadcast");
+			return;
+		}
 
-    // Apply patches to current state
-    const result = applyPatch(this.currentState, update.patches, true, false);
-    
-    if (result.newDocument) {
-      this.currentState = result.newDocument;
-      this.version = (update.baseVersion ?? 0) + 1;
-      
-      if (this.onUpdateCallback) {
-        this.onUpdateCallback(result.newDocument);
-      }
-    } else {
-      console.error('[StateSync] Failed to apply patches');
-    }
-  }
+		const update: StateUpdate = {
+			type: "delta",
+			timestamp: Date.now(),
+			patches,
+			baseVersion: this.version,
+		};
+
+		console.log(
+			`[StateSync] Broadcasting delta (${patches.length} patches)`,
+			patches
+		);
+		this.sendState(update);
+
+		this.version++;
+	}
+
+	/**
+	 * Registers a callback to be called when state updates are received
+	 */
+	onUpdate(callback: (campaign: Campaign) => void): void {
+		this.onUpdateCallback = callback;
+	}
+
+	/**
+	 * Handles incoming state updates from DM
+	 */
+	private handleIncomingState(update: StateUpdate, peerId: string): void {
+		console.log(`[StateSync] Received ${update.type} update from ${peerId}`);
+
+		try {
+			switch (update.type) {
+				case "full":
+					this.handleFullUpdate(update);
+					break;
+
+				case "delta":
+					this.handleDeltaUpdate(update);
+					break;
+
+				default:
+					console.warn("Unknown update type:", (update as any).type);
+			}
+		} catch (error) {
+			console.error("[StateSync] Error applying update:", error);
+			// On error, we'll wait for the next full state broadcast
+		}
+	}
+
+	/**
+	 * Handles full state updates
+	 */
+	private handleFullUpdate(update: StateUpdate): void {
+		if (!update.data) {
+			console.warn("[StateSync] Full update missing data");
+			return;
+		}
+
+		console.log("[StateSync] Applying full state update");
+		console.log("[StateSync] Campaign ID in update:", update.data.Id);
+		console.log(
+			"[StateSync] Campaign RoomCode in update:",
+			update.data.RoomCode
+		);
+
+		this.currentState = update.data;
+		this.version = 0;
+
+		if (this.onUpdateCallback) {
+			this.onUpdateCallback(update.data);
+		}
+	}
+
+	/**
+	 * Handles differential updates
+	 */
+	private handleDeltaUpdate(update: StateUpdate): void {
+		if (!update.patches || update.patches.length === 0) {
+			console.warn("[StateSync] Delta update missing patches");
+			return;
+		}
+
+		if (!this.currentState) {
+			console.warn(
+				"[StateSync] No current state to apply patches to, waiting for full state"
+			);
+			return;
+		}
+
+		if (update.baseVersion !== this.version) {
+			console.warn(
+				`[StateSync] Version mismatch. Expected ${this.version}, got ${update.baseVersion}.`
+			);
+			this.triggerFullSyncRequest();
+			return;
+		}
+
+		console.log(`[StateSync] Applying ${update.patches.length} patches`);
+
+		// Apply patches to current state
+		const result = applyPatch(this.currentState, update.patches, true, false);
+
+		if (result.newDocument) {
+			this.currentState = result.newDocument;
+			this.version = (update.baseVersion ?? 0) + 1;
+
+			if (this.onUpdateCallback) {
+				this.onUpdateCallback(result.newDocument);
+			}
+		} else {
+			console.error("[StateSync] Failed to apply patches");
+		}
+	}
 }

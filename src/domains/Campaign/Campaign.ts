@@ -11,22 +11,22 @@ import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
 import { Terrain } from "../Terrain/Terrain";
 
 export interface Campaign {
-    Id: string;
-    Name: string;
-    RoomCode: string;
-    //Global Collections
-    CharacterRoster: Character[];
-    ItemTemplates: Item[];
-    SkillTemplates: Skill[];
-    StatuseTemplates: Status[];
-    EntityTemplates: Entity[];
-    Terrains: Terrain[];
-    Audios: Audio[];
-    Images: Image[];
-    //GameState
-    GameState: GameState;
-    //Campaign Log
-    Log: LogEntry[];
-    //Campaign-specific settings
-    Settings: CampaignSettings;
+	Id: string;
+	Name: string;
+	RoomCode: string;
+	//Global Collections
+	CharacterRoster: Character[];
+	ItemTemplates: Item[];
+	SkillTemplates: Skill[];
+	StatuseTemplates: Status[];
+	EntityTemplates: Entity[];
+	Terrains: Terrain[];
+	Audios: Audio[];
+	Images: Image[];
+	//GameState
+	GameState: GameState;
+	//Campaign Log
+	Log: LogEntry[];
+	//Campaign-specific settings
+	Settings: CampaignSettings;
 }

@@ -3,6 +3,6 @@ export interface Status {
 	Name: string;
 	Description: string;
 	Image?: string;
-	IsBuff: boolean;			   // True = positive, False = negative
+	IsBuff: boolean; // True = positive, False = negative
 	Duration: number;
 }

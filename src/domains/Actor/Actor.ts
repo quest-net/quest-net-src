@@ -5,7 +5,7 @@ export interface Actor {
 	Name: string;
 	Description?: string;
 	Image?: string;
-	
+
 	// Stats
 	Stats: StatDefinition[];
 
@@ -16,13 +16,13 @@ export interface Actor {
 	Position: Position;
 	MoveSpeed: number;
 	CanFly: boolean;
-	
+
 	// Collections
 	Inventory: InventorySlot[];
-	Equipment: EquipmentSlot[];		  // Item IDs that are equipped
-	Skills: SkillSlot[];			 // Skill IDs the character knows
-	Statuses: StatusSlot[];	  // StatusEffect IDs currently active
-	
+	Equipment: EquipmentSlot[]; // Item IDs that are equipped
+	Skills: SkillSlot[]; // Skill IDs the character knows
+	Statuses: StatusSlot[]; // StatusEffect IDs currently active
+
 	// Optional
 	Tags?: string[];
 }
@@ -35,7 +35,6 @@ export interface InventorySlot {
 export interface EquipmentSlot {
 	Id: string;
 	UsesLeft?: number;
-
 }
 
 export interface SkillSlot {
@@ -49,7 +48,7 @@ export interface StatusSlot {
 }
 
 export interface Position {
-  x: number;
-  y: number;
-  h: number;
+	x: number;
+	y: number;
+	h: number;
 }

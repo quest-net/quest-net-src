@@ -1,68 +1,68 @@
 {
-  "name": "quest-net",
-  "version": "1.0.0",
-  "homepage": "https://quest-net.github.io",
-  "private": true,
-  "dependencies": {
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
-    "@pixi/react": "^8.0.3",
-    "@tailwindcss/vite": "^4.1.14",
-    "fast-json-patch": "^3.1.1",
-    "firebase": "^11.0.1",
-    "pixi.js": "^8.14.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "react-router-dom": "^7.9.4",
-    "react-use": "^17.6.0",
-    "trystero": "^0.21.0",
-    "uuid": "^11.0.2",
-    "web-vitals": "^2.1.4"
-  },
-  "scripts": {
-    "push:src": "git add . && git diff --cached --quiet && echo \"No changes to commit\" || (git commit -m \"chore(src): update\" && git push)",
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d build",
-    "deploy:beta": "gh-pages -d build -b beta",
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
-  },
-  "eslintConfig": {
-    "extends": [
-      "react-app",
-      "react-app/jest"
-    ]
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
-  },
-  "devDependencies": {
-    "@iconify/json": "^2.2.396",
-    "@iconify/tailwind4": "^1.0.6",
-    "@pixi/devtools": "^2.0.1",
-    "@types/lodash": "^4.17.13",
-    "@types/node": "^24.9.1",
-    "@types/react": "^19.2.2",
-    "@types/react-dom": "^19.2.2",
-    "@types/uuid": "^11.0.0",
-    "@vitejs/plugin-react": "^5.0.4",
-    "autoprefixer": "^10.4.20",
-    "daisyui": "^5.2.3",
-    "gh-pages": "^6.2.0",
-    "postcss": "^8.4.47",
-    "tailwindcss": "^4.1.14",
-    "typescript": "^5.9.3",
-    "vite": "^7.1.9"
-  }
+	"name": "quest-net",
+	"version": "1.0.0",
+	"homepage": "https://quest-net.github.io",
+	"private": true,
+	"dependencies": {
+		"@dnd-kit/core": "^6.3.1",
+		"@dnd-kit/sortable": "^10.0.0",
+		"@dnd-kit/utilities": "^3.2.2",
+		"@pixi/react": "^8.0.3",
+		"@tailwindcss/vite": "^4.1.14",
+		"fast-json-patch": "^3.1.1",
+		"firebase": "^11.0.1",
+		"pixi.js": "^8.14.0",
+		"react": "^19.2.0",
+		"react-dom": "^19.2.0",
+		"react-router-dom": "^7.9.4",
+		"react-use": "^17.6.0",
+		"trystero": "^0.21.0",
+		"uuid": "^11.0.2",
+		"web-vitals": "^2.1.4"
+	},
+	"scripts": {
+		"push:src": "git add . && git diff --cached --quiet && echo \"No changes to commit\" || (git commit -m \"chore(src): update\" && git push)",
+		"predeploy": "npm run build",
+		"deploy": "gh-pages -d build",
+		"deploy:beta": "gh-pages -d build -b beta",
+		"dev": "vite",
+		"build": "tsc && vite build",
+		"preview": "vite preview"
+	},
+	"eslintConfig": {
+		"extends": [
+			"react-app",
+			"react-app/jest"
+		]
+	},
+	"browserslist": {
+		"production": [
+			">0.2%",
+			"not dead",
+			"not op_mini all"
+		],
+		"development": [
+			"last 1 chrome version",
+			"last 1 firefox version",
+			"last 1 safari version"
+		]
+	},
+	"devDependencies": {
+		"@iconify/json": "^2.2.396",
+		"@iconify/tailwind4": "^1.0.6",
+		"@pixi/devtools": "^2.0.1",
+		"@types/lodash": "^4.17.13",
+		"@types/node": "^24.9.1",
+		"@types/react": "^19.2.2",
+		"@types/react-dom": "^19.2.2",
+		"@types/uuid": "^11.0.0",
+		"@vitejs/plugin-react": "^5.0.4",
+		"autoprefixer": "^10.4.20",
+		"daisyui": "^5.2.3",
+		"gh-pages": "^6.2.0",
+		"postcss": "^8.4.47",
+		"tailwindcss": "^4.1.14",
+		"typescript": "^5.9.3",
+		"vite": "^7.1.9"
+	}
 }

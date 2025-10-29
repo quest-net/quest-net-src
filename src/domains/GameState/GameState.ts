@@ -13,7 +13,7 @@ export interface GameState {
 }
 
 export interface CombatState {
-  isActive: boolean;
-  currentTurn: number;
-  initiativeSide: 'party' | 'enemies';
+	isActive: boolean;
+	currentTurn: number;
+	initiativeSide: "party" | "enemies";
 }

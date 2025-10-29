@@ -1,5 +1,5 @@
 export interface Note {
-    title: string;
-    content? : string;
-    lastUpdated: Date;
+	title: string;
+	content?: string;
+	lastUpdated: Date;
 }

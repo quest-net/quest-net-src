@@ -1,4 +1,3 @@
-
 import { Campaign } from "../Campaign/Campaign";
 import { User } from "../User/User";
 
@@ -8,5 +7,5 @@ export interface Context {
 	// List of Campaigns
 	Campaigns: Campaign[];
 	// App Preferences
-	AppSettings: Record<string,string>;
+	AppSettings: Record<string, string>;
 }
