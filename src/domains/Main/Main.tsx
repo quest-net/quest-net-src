@@ -13,7 +13,6 @@ export function Main() {
 			characters={campaign.GameState.Characters}
 			entities={campaign.GameState.Entities}
 			combatState={campaign.GameState.CombatState}
-			scene={campaign.GameState.Scene}
 			terrain={campaign.Terrains.find(
 				(t) => t.Id === campaign.GameState.TerrainId
 			)}

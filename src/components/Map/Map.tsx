@@ -90,7 +90,6 @@ function useMeasuredContainer<T extends HTMLElement>() {
 export default function Map({
 	characters,
 	entities,
-	scene,
 	terrain,
 	preview = false,
 	allowPanZoom = true,

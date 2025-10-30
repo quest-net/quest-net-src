@@ -11,8 +11,8 @@ export const TerrainActions = {
 	 * This terrain cannot be deleted and is always available
 	 */
 	createDefault(): Terrain {
-		const width = 20;
-		const length = 20;
+		const width = 16;
+		const length = 16;
 
 		// Initialize empty height map (all 8s)
 		const heightMap: number[][] = Array(length)
@@ -282,112 +282,6 @@ export const TerrainActions = {
 				context
 			);
 		}
-	},
-
-	/**
-	 * Updates a single tile in the terrain
-	 */
-	updateTile(
-		params: {
-			terrainId: string;
-			x: number;
-			y: number;
-			height?: number;
-			color?: TerrainType;
-		},
-		context: Context
-	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
-
-		const terrain = campaign.Terrains.find((t) => t.Id === params.terrainId);
-		if (!terrain) {
-			console.warn(`Terrain not found: ${params.terrainId}`);
-			return;
-		}
-
-		// Validate coordinates
-		if (
-			params.y < 0 ||
-			params.y >= terrain.Length ||
-			params.x < 0 ||
-			params.x >= terrain.Width
-		) {
-			console.warn(`Invalid coordinates: (${params.x}, ${params.y})`);
-			return;
-		}
-
-		// Update height if provided
-		if (params.height !== undefined) {
-			// Clamp to 0-16 range
-			terrain.HeightMap[params.y][params.x] = Math.max(
-				0,
-				Math.min(16, params.height)
-			);
-		}
-
-		// Update color if provided
-		if (params.color !== undefined) {
-			terrain.ColorMap[params.y][params.x] = params.color;
-		}
-	},
-
-	/**
-	 * Resizes a terrain (preserves existing data where possible)
-	 */
-	resize(
-		params: {
-			terrainId: string;
-			newWidth: number;
-			newLength: number;
-		},
-		context: Context
-	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
-
-		const terrain = campaign.Terrains.find((t) => t.Id === params.terrainId);
-		if (!terrain) {
-			console.warn(`Terrain not found: ${params.terrainId}`);
-			return;
-		}
-
-		const { newWidth, newLength } = params;
-
-		// Create new maps with default values
-		const newHeightMap: number[][] = Array(newLength)
-			.fill(null)
-			.map(() => Array(newWidth).fill(0));
-
-		const newColorMap: TerrainType[][] = Array(newLength)
-			.fill(null)
-			.map(() => Array(newWidth).fill("green" as TerrainType));
-
-		// Copy existing data
-		const copyLength = Math.min(terrain.Length, newLength);
-		const copyWidth = Math.min(terrain.Width, newWidth);
-
-		for (let y = 0; y < copyLength; y++) {
-			for (let x = 0; x < copyWidth; x++) {
-				newHeightMap[y][x] = terrain.HeightMap[y][x];
-				newColorMap[y][x] = terrain.ColorMap[y][x];
-			}
-		}
-
-		// Update terrain
-		terrain.Width = newWidth;
-		terrain.Length = newLength;
-		terrain.HeightMap = newHeightMap;
-		terrain.ColorMap = newColorMap;
-
-		LogActions.create(
-			{
-				action: "Terrain resized",
-				details: `${terrain.Name} resized to ${newWidth}×${newLength}`,
-				category: "system",
-				level: "info",
-				visibility: ["dm"],
-			},
-			context
-		);
 	},
 
 	/**
