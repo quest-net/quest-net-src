@@ -2,10 +2,9 @@
 
 import type { Terrain, TerrainType } from "../../domains/Terrain/Terrain";
 import { TERRAIN_COLORS } from "../../domains/Terrain/Terrain";
+import { getTokenDimensions } from "./Token";
+import { TILE_H, TILE_W, V_SCALE } from "./Terrain";
 
-export const TILE_W = 64;
-export const TILE_H = 32;
-export const V_SCALE = 20;
 export const MIN_SCALE = 0.5;
 export const MAX_SCALE = 4;
 
@@ -383,16 +382,11 @@ export interface ActorHitCandidate {
 	y: number;
 	h: number;
 	moveSpeed: number;
+	size: "small" | "medium" | "large";
 	cx: number; // screen position
 	cy: number; // screen position
 	depth: number; // for sorting (higher = more forward)
 }
-
-/**
- * Token dimensions (must match MapWorldLayer.tsx)
- */
-const TOKEN_W = TILE_W * 0.8;
-const TOKEN_H = TILE_W * 0.8;
 
 /**
  * Check if a point is inside a token's bounding box
@@ -402,13 +396,17 @@ export function isPointInToken(
 	px: number,
 	py: number,
 	tokenCx: number,
-	tokenCy: number
+	tokenCy: number,
+	size: "small" | "medium" | "large" = "small"
 ): boolean {
-	const halfW = TOKEN_W / 2;
-	const halfH = TOKEN_H / 2;
+	// Use the same dimensions calculation as the Token component
+	const { width: TOKEN_W_SCALED, height: TOKEN_H_SCALED } = getTokenDimensions(size);
+	
+	const halfW = TOKEN_W_SCALED / 2;
+	const halfH = TOKEN_H_SCALED / 2;
 
 	// Token is anchored at bottom center, so offset upward
-	const centerY = tokenCy - TOKEN_H * 0.625;
+	const centerY = tokenCy - TOKEN_H_SCALED * 0.625;
 
 	const dx = Math.abs(px - tokenCx);
 	const dy = Math.abs(py - centerY);
@@ -437,7 +435,7 @@ export function screenToActor(
 	let bestActor: ActorHitCandidate | null = null;
 
 	for (const actor of actors) {
-		if (isPointInToken(worldX, worldY, actor.cx, actor.cy)) {
+		if (isPointInToken(worldX, worldY, actor.cx, actor.cy, actor.size)) {
 			// Keep the actor with highest depth (most forward/topmost)
 			if (!bestActor || actor.depth > bestActor.depth) {
 				bestActor = actor;
@@ -474,7 +472,8 @@ export function buildActorHitCandidates(
 		x: number,
 		y: number,
 		h: number,
-		moveSpeed: number
+		moveSpeed: number,
+		size: "small" | "medium" | "large" = "small"
 	) => {
 		if (x < 0 || x >= W || y < 0 || y >= L) return;
 
@@ -499,6 +498,7 @@ export function buildActorHitCandidates(
 			y,
 			h,
 			moveSpeed,
+			size,
 			cx,
 			cy,
 			depth,
@@ -507,7 +507,7 @@ export function buildActorHitCandidates(
 
 	for (const c of characters ?? []) {
 		const { x, y, h } = c.Position ?? { x: 0, y: 0, h: 0 };
-		addActor(c.Id, "character", x, y, h ?? 0, c.MoveSpeed ?? 30);
+		addActor(c.Id, "character", x, y, h ?? 0, c.MoveSpeed ?? 30, c.Size ?? "small");
 	}
 
 	for (const e of entities ?? []) {
@@ -518,7 +518,8 @@ export function buildActorHitCandidates(
 			pos.x,
 			pos.y,
 			pos.h ?? 0,
-			(e as any).MoveSpeed ?? 30
+			(e as any).MoveSpeed ?? 30,
+			(e as any).Size ?? "small"
 		);
 	}
 
@@ -543,7 +544,7 @@ export function calculateMovementRange(
 	const range: Array<{ x: number; y: number }> = [];
 
 	// moveSpeed represents the number of tiles the actor can move
-	const maxDistance = Math.floor(moveSpeed / 5); // Convert moveSpeed to tile distance (assuming 5ft per tile)
+	const maxDistance = Math.floor(moveSpeed / 1); // Convert moveSpeed to tile distance (assuming 1ft per tile)
 
 	for (let dy = -maxDistance; dy <= maxDistance; dy++) {
 		for (let dx = -maxDistance; dx <= maxDistance; dx++) {

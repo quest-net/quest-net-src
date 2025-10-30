@@ -1,5 +1,7 @@
 import { StatDefinition } from "../CampaignSetting/CampaignSetting";
 
+export type ActorSize = "small" | "medium" | "large";
+
 export interface Actor {
 	Id: string;
 	Name: string;
@@ -16,6 +18,7 @@ export interface Actor {
 	Position: Position;
 	MoveSpeed: number;
 	CanFly: boolean;
+	Size?: ActorSize;
 
 	// Collections
 	Inventory: InventorySlot[];

@@ -170,6 +170,14 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 							className="toggle toggle-primary"
 						/>
 					</FormField>
+
+					<FormField label="Size">
+						<select defaultValue="small" className="select" onChange={(e) => handleFieldChange("Size", e.target.value)}>
+							<option>small</option>
+							<option>medium</option>
+							<option>large</option>
+						</select>
+					</FormField>
 				</FormGrid>
 			</FormSection>
 

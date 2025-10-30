@@ -7,7 +7,6 @@ import {
 	useState,
 	useLayoutEffect,
 	useCallback,
-	useEffect,
 } from "react";
 import { Application, extend } from "@pixi/react";
 import {
@@ -32,11 +31,7 @@ import type { Scene } from "../../domains/Scene/Scene";
 import type { Terrain } from "../../domains/Terrain/Terrain";
 
 import {
-	MIN_SCALE,
-	MAX_SCALE,
 	type Orientation,
-	type AnimationState,
-	type GridBounds,
 	easeInOut,
 	buildBaseTiles,
 	projectTiles,
@@ -44,7 +39,6 @@ import {
 	calculateGridBounds,
 	centerGridInView,
 	lerpCenter,
-	clampPan,
 	screenToTile,
 	buildActorHitCandidates,
 	screenToActor,
@@ -53,7 +47,13 @@ import {
 } from "./MapUtilities";
 
 import { MapWorldLayer } from "./MapWorldLayer";
-import { useActorAnimations } from "./useActorAnimations";
+import { useActorAnimations } from "./hooks/useActorAnimations";
+import {
+	useMapRotation,
+	useMapPanZoom,
+	useMapInteraction,
+	useMapSelection,
+} from "./hooks";
 
 interface MapProps {
 	characters: Character[];
@@ -65,8 +65,6 @@ interface MapProps {
 	allowPanZoom?: boolean; // enable wheel + middle/right drag
 	showControls?: boolean; // rotate buttons + HUD
 }
-
-const PAN_PADDING = 500;
 
 function useMeasuredContainer<T extends HTMLElement>() {
 	const ref = useRef<T | null>(null);
@@ -99,76 +97,36 @@ export default function Map({
 	showControls = true,
 }: MapProps) {
 	const { ref, w, h } = useMeasuredContainer<HTMLDivElement>();
-	const { startAnimation, getActorPosition, hasActiveAnimations } =
-		useActorAnimations();
+	const { startAnimation, getActorPosition } = useActorAnimations();
 	const { actionService } = useActionService();
 	const dpr = typeof window !== "undefined" ? window.devicePixelRatio : 1;
 
-	// Actor selection state
-	const [selectedActor, setSelectedActor] = useState<{
-		id: string;
-		kind: "character" | "entity";
-		moveSpeed: number;
-	} | null>(null);
-
-	// ============================================================================
-	// ROTATION STATE & ANIMATION
-	// ============================================================================
-	const [orientation, setOrientation] = useState<Orientation>(0);
-	const [anim, setAnim] = useState<AnimationState | null>(null);
-	const DURATION = 180;
-
-	const startRotate = (dir: 1 | -1) => {
-		const now = performance.now();
-		let base = orientation;
-		if (anim) base = anim.t < 0.5 ? anim.from : anim.to;
-		const to = ((base + (dir === 1 ? 1 : 3)) & 3) as Orientation;
-		setOrientation(base);
-		setAnim({ from: base, to, t: 0, start: now });
-	};
-
-	const rotateCW = () => startRotate(1);
-	const rotateCCW = () => startRotate(-1);
-
-	useEffect(() => {
-		if (!anim) return;
-		let raf = 0;
-		const loop = () => {
-			const t = Math.min(1, (performance.now() - anim.start) / DURATION);
-			setAnim((prev) => (prev ? { ...prev, t } : null));
-			if (t < 1) {
-				raf = requestAnimationFrame(loop);
-			} else {
-				setOrientation(anim.to);
-				setAnim(null);
-			}
-		};
-		raf = requestAnimationFrame(loop);
-		return () => cancelAnimationFrame(raf);
-	}, [anim?.start]);
-
-	// ============================================================================
-	// PAN & ZOOM STATE
-	// ============================================================================
-	const [scale, setScale] = useState(1);
-	const [pan, setPan] = useState({ x: 0, y: 0 });
-	const panRef = useRef(pan);
-	const scaleRef = useRef(scale);
-	const centerRef = useRef({ x: 0, y: 0 });
-	const boundsRef = useRef<GridBounds | null>(null);
-	panRef.current = pan;
-	scaleRef.current = scale;
-
-	const [isPanning, setIsPanning] = useState(false);
-	const dragStart = useRef<{ x: number; y: number } | null>(null);
-
-	// ============================================================================
-	// TILE SELECTION STATE
-	// ============================================================================
-	const [hoveredTile, setHoveredTile] = useState<{
-		x: number;
-		y: number;
-	} | null>(null);
+	// Custom hooks for state management
+	const { orientation, animationState, rotateCW, rotateCCW } = useMapRotation();
+	const {
+		scale,
+		pan,
+		panRef,
+		scaleRef,
+		centerRef,
+		updateCenter,
+		updateBounds,
+		handleZoom,
+		applyPan,
+	} = useMapPanZoom();
+	const {
+		selectedActor,
+		hoveredTile,
+		toggleActorSelection,
+		clearSelection,
+		updateHoveredTile,
+	} = useMapSelection();
+	const { isPanning, handlers } = useMapInteraction({
+		containerRef: ref,
+		allowPanZoom,
+		onPan: applyPan,
+		onZoom: handleZoom,
+	});
 
 	// ============================================================================
 	// TERRAIN DATA & PROJECTIONS
@@ -178,9 +136,9 @@ export default function Map({
 		[terrain]
 	);
 
-	const fromO = anim ? anim.from : orientation;
-	const toO = anim ? anim.to : orientation;
-	const tNorm = anim ? easeInOut(anim.t) : 1;
+	const fromO = animationState ? animationState.from : orientation;
+	const toO = animationState ? animationState.to : orientation;
+	const tNorm = animationState ? easeInOut(animationState.t) : 1;
 
 	const projFrom = useMemo(
 		() =>
@@ -233,17 +191,16 @@ export default function Map({
 						entities,
 						terrain,
 						orientation,
-						anim
+						animationState
 				  )
 				: [],
-		[terrain, orientation, anim, actorPositionsKey]
+		[terrain, orientation, animationState, actorPositionsKey]
 	);
 
 	// Calculate movement range for selected actor
 	const movementRange = useMemo(() => {
 		if (!selectedActor || !terrain) return [];
 
-		// Find the actor to get its current position
 		const actor = actorHitCandidates.find((a) => a.id === selectedActor.id);
 		if (!actor) return [];
 
@@ -270,112 +227,21 @@ export default function Map({
 	const centerTo = useMemo(() => {
 		if (projTo.length === 0) return { cx: w / 2, cy: h / 2 };
 		const bounds = calculateGridBounds(projTo);
-		boundsRef.current = bounds;
+		updateBounds(bounds);
 		return centerGridInView(bounds, w, h);
-	}, [projTo, w, h]);
+	}, [projTo, w, h, updateBounds]);
 
 	const currentCenter = useMemo(
 		() => lerpCenter(centerFrom, centerTo, tNorm),
 		[centerFrom, centerTo, tNorm]
 	);
 
-	centerRef.current = { x: currentCenter.cx, y: currentCenter.cy };
+	// Update center ref when it changes
+	updateCenter(currentCenter.cx, currentCenter.cy);
 
 	// ============================================================================
-	// INTERACTION HANDLERS
+	// POINTER INTERACTION HANDLERS
 	// ============================================================================
-	const onWheel = useCallback(
-		(e: WheelEvent) => {
-			if (!allowPanZoom) return;
-			if (!ref.current || !boundsRef.current) return;
-			e.preventDefault(); // Now this will work!
-			const zoomIntensity = 0.0015;
-			const zoom = Math.exp(-e.deltaY * zoomIntensity);
-			const newScaleUnclamped = scaleRef.current * zoom;
-			const newScale = Math.max(
-				MIN_SCALE,
-				Math.min(MAX_SCALE, newScaleUnclamped)
-			);
-			const actual = newScale / scaleRef.current;
-			if (actual === 1) return;
-
-			const rect = ref.current.getBoundingClientRect();
-			const mx = e.clientX - rect.left;
-			const my = e.clientY - rect.top;
-
-			const cx = centerRef.current.x;
-			const cy = centerRef.current.y;
-			const worldX = (mx - (cx + panRef.current.x)) / scaleRef.current;
-			const worldY = (my - (cy + panRef.current.y)) / scaleRef.current;
-			const nextPanX = mx - cx - worldX * newScale;
-			const nextPanY = my - cy - worldY * newScale;
-
-			const clampedPan = clampPan(
-				{ x: nextPanX, y: nextPanY },
-				centerRef.current,
-				boundsRef.current,
-				newScale,
-				rect.width,
-				rect.height,
-				PAN_PADDING
-			);
-
-			setScale(newScale);
-			setPan(clampedPan);
-		},
-		[allowPanZoom]
-	);
-
-	// Add this useEffect to attach the wheel listener with passive: false
-	useEffect(() => {
-		const element = ref.current;
-		if (!element) return;
-
-		// Attach with passive: false to allow preventDefault
-		element.addEventListener("wheel", onWheel, { passive: false });
-
-		return () => {
-			element.removeEventListener("wheel", onWheel);
-		};
-	}, [onWheel]);
-
-	const onMouseDown = useCallback(
-		(e: React.MouseEvent<HTMLDivElement>) => {
-			if (!allowPanZoom) return;
-			if (e.button !== 1 && e.button !== 2) return;
-			e.preventDefault();
-			setIsPanning(true);
-			dragStart.current = { x: e.clientX, y: e.clientY };
-		},
-		[allowPanZoom]
-	);
-
-	const onMouseMove = useCallback(
-		(e: React.MouseEvent<HTMLDivElement>) => {
-			if (!isPanning || !dragStart.current || !boundsRef.current) return;
-			const dx = e.clientX - dragStart.current.x;
-			const dy = e.clientY - dragStart.current.y;
-			dragStart.current = { x: e.clientX, y: e.clientY };
-			setPan((p) =>
-				clampPan(
-					{ x: p.x + dx, y: p.y + dy },
-					centerRef.current,
-					boundsRef.current!,
-					scaleRef.current,
-					w,
-					h,
-					PAN_PADDING
-				)
-			);
-		},
-		[isPanning, w, h]
-	);
-
-	const endPan = useCallback(() => {
-		setIsPanning(false);
-		dragStart.current = null;
-	}, []);
-
 	const handlePointerMove = useCallback(
 		(e: React.PointerEvent<HTMLDivElement>) => {
 			if (!ref.current || !terrain || isPanning) return;
@@ -384,11 +250,15 @@ export default function Map({
 			const screenX = e.clientX - rect.left;
 			const screenY = e.clientY - rect.top;
 
-			const currentOrientation: Orientation = anim ? anim.to : orientation;
+			const currentOrientation: Orientation = animationState
+				? animationState.to
+				: orientation;
+
 			if (!selectedActor) {
-				setHoveredTile(null);
+				updateHoveredTile(null);
 				return;
 			}
+
 			const tile = screenToTile(
 				screenX,
 				screenY,
@@ -403,9 +273,19 @@ export default function Map({
 				terrain.HeightMap
 			);
 
-			setHoveredTile(tile);
+			updateHoveredTile(tile);
 		},
-		[terrain, isPanning, anim, orientation, selectedActor]
+		[
+			terrain,
+			isPanning,
+			animationState,
+			orientation,
+			selectedActor,
+			updateHoveredTile,
+			centerRef,
+			panRef,
+			scaleRef,
+		]
 	);
 
 	const handlePointerDown = useCallback(
@@ -428,13 +308,9 @@ export default function Map({
 				actorHitCandidates
 			);
 
-			// NEW: clicking the currently selected token unselects it
+			// Handle actor selection/deselection
 			if (clickedActor) {
-				if (selectedActor && selectedActor.id === clickedActor.id) {
-					setSelectedActor(null);
-					return;
-				}
-				setSelectedActor({
+				toggleActorSelection({
 					id: clickedActor.id,
 					kind: clickedActor.kind,
 					moveSpeed: clickedActor.moveSpeed,
@@ -443,37 +319,33 @@ export default function Map({
 				return;
 			}
 
-			// existing move-on-empty-tile logic
-			if (hoveredTile) {
-				if (selectedActor && actionService) {
-					const tileHeight =
-						terrain.HeightMap?.[hoveredTile.y]?.[hoveredTile.x] ?? 0;
+			// Handle movement on empty tile
+			if (hoveredTile && selectedActor && actionService) {
+				const tileHeight =
+					terrain.HeightMap?.[hoveredTile.y]?.[hoveredTile.x] ?? 0;
 
-					const actor = actorHitCandidates.find(
-						(a) => a.id === selectedActor.id
+				const actor = actorHitCandidates.find((a) => a.id === selectedActor.id);
+				if (actor) {
+					startAnimation(
+						selectedActor.id,
+						{ x: actor.x, y: actor.y, h: actor.h },
+						{ x: hoveredTile.x, y: hoveredTile.y, h: tileHeight }
 					);
-					if (actor) {
-						startAnimation(
-							selectedActor.id,
-							{ x: actor.x, y: actor.y, h: actor.h },
-							{ x: hoveredTile.x, y: hoveredTile.y, h: tileHeight }
-						);
-					}
-
-					if (selectedActor.kind === "character") {
-						actionService.execute("character:move", {
-							characterId: selectedActor.id,
-							position: { x: hoveredTile.x, y: hoveredTile.y, h: tileHeight },
-						});
-					} else {
-						actionService.execute("entity:move", {
-							entityId: selectedActor.id,
-							position: { x: hoveredTile.x, y: hoveredTile.y, h: tileHeight },
-						});
-					}
-
-					setSelectedActor(null);
 				}
+
+				if (selectedActor.kind === "character") {
+					actionService.execute("character:move", {
+						characterId: selectedActor.id,
+						position: { x: hoveredTile.x, y: hoveredTile.y, h: tileHeight },
+					});
+				} else {
+					actionService.execute("entity:move", {
+						entityId: selectedActor.id,
+						position: { x: hoveredTile.x, y: hoveredTile.y, h: tileHeight },
+					});
+				}
+
+				clearSelection();
 			}
 		},
 		[
@@ -484,6 +356,11 @@ export default function Map({
 			actionService,
 			actorHitCandidates,
 			startAnimation,
+			toggleActorSelection,
+			clearSelection,
+			centerRef,
+			panRef,
+			scaleRef,
 		]
 	);
 
@@ -492,6 +369,7 @@ export default function Map({
 	// ============================================================================
 	const ready = w > 0 && h > 0;
 	const cursorClass = isPanning ? "cursor-grabbing" : "cursor-default";
+
 	// Build fast lookup sets for highlighting inside terrain paint
 	const movementRangeIndices = useMemo(() => {
 		if (!terrain || movementRange.length === 0) return new Set<number>();
@@ -505,14 +383,12 @@ export default function Map({
 		if (!terrain || !hoveredTile) return null;
 		return getTileIndex(hoveredTile.x, hoveredTile.y, terrain.Width);
 	}, [terrain, hoveredTile]);
+
 	return (
 		<div
 			ref={ref}
 			className={`relative h-full w-full bg-base-200 overflow-hidden select-none ${cursorClass}`}
-			onMouseDown={onMouseDown}
-			onMouseMove={onMouseMove}
-			onMouseUp={endPan}
-			onMouseLeave={endPan}
+			{...handlers}
 			onPointerMove={handlePointerMove}
 			onPointerDown={handlePointerDown}
 			onContextMenu={(e) => e.preventDefault()}
@@ -535,7 +411,7 @@ export default function Map({
 							baseTiles={baseTiles}
 							currentProjections={currentProjections}
 							orientation={orientation}
-							animationState={anim}
+							animationState={animationState}
 							characters={characters}
 							entities={entities}
 							selectedActorId={selectedActor?.id}
@@ -575,9 +451,9 @@ export default function Map({
 				<span className="font-mono">{terrain?.Name ?? "-"}</span>{" "}
 				<span className="opacity-70">| Rot:</span>{" "}
 				<span className="font-mono">
-					{(anim ? anim.to : orientation) * 90}°
+					{(animationState ? animationState.to : orientation) * 90}°
 				</span>{" "}
-				{anim && (
+				{animationState && (
 					<span className="opacity-60">({Math.round(tNorm * 100)}%)</span>
 				)}
 				{hoveredTile && (

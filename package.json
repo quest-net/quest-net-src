@@ -11,7 +11,7 @@
 		"@tailwindcss/vite": "^4.1.14",
 		"fast-json-patch": "^3.1.1",
 		"firebase": "^11.0.1",
-		"pixi.js": "^8.14.0",
+		"pixi.js": "https://pkg.pr.new/pixijs/pixijs/pixi.js@11712",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0",
 		"react-router-dom": "^7.9.4",
