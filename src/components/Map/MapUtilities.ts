@@ -390,7 +390,7 @@ export interface ActorHitCandidate {
 
 /**
  * Check if a point is inside a token's bounding box
- * Tokens are rendered as rounded rectangles centered at (cx, cy - TOKEN_H * 0.625)
+ * Tokens are rendered as rounded rectangles centered at (cx, cy - TOKEN_H * 0.75)
  */
 export function isPointInToken(
 	px: number,
@@ -399,19 +399,44 @@ export function isPointInToken(
 	tokenCy: number,
 	size: "small" | "medium" | "large" = "small"
 ): boolean {
-	// Use the same dimensions calculation as the Token component
-	const { width: TOKEN_W_SCALED, height: TOKEN_H_SCALED } = getTokenDimensions(size);
+	const { width: TOKEN_W_SCALED, height: TOKEN_H_SCALED, cornerRadius } = getTokenDimensions(size);
 	
 	const halfW = TOKEN_W_SCALED / 2;
 	const halfH = TOKEN_H_SCALED / 2;
 
-	// Token is anchored at bottom center, so offset upward
-	const centerY = tokenCy - TOKEN_H_SCALED * 0.625;
+	// Token is centered at -0.75 * TOKEN_H (matching MASK_CENTER_Y in Token.tsx)
+	const centerY = tokenCy - TOKEN_H_SCALED * 0.75;
 
-	const dx = Math.abs(px - tokenCx);
-	const dy = Math.abs(py - centerY);
+	// Relative position from token center
+	const dx = px - tokenCx;
+	const dy = py - centerY;
 
-	return dx <= halfW && dy <= halfH;
+	// Quick rejection test - outside bounding box
+	if (Math.abs(dx) > halfW || Math.abs(dy) > halfH) {
+		return false;
+	}
+
+	// Rounded rectangle hit test:
+	// Check if point is in the center rectangles (non-rounded areas)
+	const innerX = halfW - cornerRadius;
+	const innerY = halfH - cornerRadius;
+
+	// Inside horizontal center strip
+	if (Math.abs(dy) <= innerY) {
+		return Math.abs(dx) <= halfW;
+	}
+
+	// Inside vertical center strip
+	if (Math.abs(dx) <= innerX) {
+		return Math.abs(dy) <= halfH;
+	}
+
+	// In corner region - check distance to corner circle center
+	const cornerCenterX = dx > 0 ? innerX : -innerX;
+	const cornerCenterY = dy > 0 ? innerY : -innerY;
+	const distSq = (dx - cornerCenterX) ** 2 + (dy - cornerCenterY) ** 2;
+
+	return distSq <= cornerRadius ** 2;
 }
 
 /**

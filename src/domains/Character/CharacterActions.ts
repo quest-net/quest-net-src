@@ -6,6 +6,7 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { ActorActions } from "../Actor/ActorActions";
 import { Position } from "../Actor/Actor";
+import { TerrainActions } from "../Terrain/TerrainActions";
 
 /**
  * Character action handlers
@@ -19,7 +20,6 @@ export const CharacterActions = {
 	createDefault(context: Context): Character {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
-		// Initialize stats from campaign settings with Current = Max
 		const stats = campaign.Settings.StatDefinitions.map((statDef) => ({
 			...statDef,
 			Current: statDef.Max,
@@ -33,7 +33,7 @@ export const CharacterActions = {
 			Stats: stats,
 			Attributes: {},
 			Position: { x: 0, y: 0, h: 0 },
-			MoveSpeed: 30,
+			MoveSpeed: 5,
 			CanFly: false,
 			Size: "small",
 			Inventory: [],
@@ -45,16 +45,12 @@ export const CharacterActions = {
 		};
 	},
 
-	/**
-	 * Creates a new character and adds to the roster
-	 */
 	create(
 		params: { character: Omit<Character, "playedBy"> },
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
-		// Initialize character with empty Notes if not provided
 		const character: Character = {
 			...params.character,
 			Notes: params.character.Notes || [],
@@ -77,6 +73,7 @@ export const CharacterActions = {
 
 	/**
 	 * Spawns a character from roster onto the field (MOVE operation)
+	 * Position defaults to origin if not provided
 	 * DM only - handled by ACTION_REGISTRY
 	 */
 	spawn(
@@ -85,7 +82,6 @@ export const CharacterActions = {
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
-		// Find character in roster
 		const rosterIndex = campaign.CharacterRoster.findIndex(
 			(c) => c.Id === params.characterId
 		);
@@ -94,7 +90,6 @@ export const CharacterActions = {
 			return;
 		}
 
-		// Check if already spawned (safety check - shouldn't happen with proper UI)
 		const alreadySpawned = campaign.GameState.Characters.some(
 			(c) => c.Id === params.characterId
 		);
@@ -106,9 +101,11 @@ export const CharacterActions = {
 		// MOVE: Remove from roster
 		const [character] = campaign.CharacterRoster.splice(rosterIndex, 1);
 
-		// Update position if provided
+		// Set position to origin if not provided
 		if (params.position) {
 			character.Position = params.position;
+		} else {
+			character.Position = { x: 0, y: 0, h: 0 };
 		}
 
 		// Add to GameState
@@ -125,6 +122,9 @@ export const CharacterActions = {
 			},
 			context
 		);
+
+		// Validate actors after spawning
+		TerrainActions.validateActors(context);
 	},
 
 	/**
@@ -135,7 +135,6 @@ export const CharacterActions = {
 	remove(params: { characterId: string }, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
-		// Find the spawned character
 		const gameStateIndex = campaign.GameState.Characters.findIndex(
 			(c) => c.Id === params.characterId
 		);
@@ -144,7 +143,6 @@ export const CharacterActions = {
 			return;
 		}
 
-		// Check if already in roster (safety check - shouldn't happen)
 		const alreadyInRoster = campaign.CharacterRoster.some(
 			(c) => c.Id === params.characterId
 		);
@@ -175,11 +173,6 @@ export const CharacterActions = {
 		);
 	},
 
-	/**
-	 * Edits a character's properties
-	 * Works on characters in either Roster or GameState
-	 * Players can edit their own characters, DM can edit any
-	 */
 	edit(
 		params: { characterId: string; updates: Partial<Character> },
 		context: Context
@@ -191,15 +184,9 @@ export const CharacterActions = {
 		);
 	},
 
-	/**
-	 * Deletes a character from the roster permanently
-	 * Character must NOT be in GameState (must be removed first)
-	 * DM only - handled by ACTION_REGISTRY
-	 */
 	delete(params: { characterId: string }, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
-		// Safety check: Don't delete if character is currently spawned
 		const isSpawned = campaign.GameState.Characters.some(
 			(c) => c.Id === params.characterId
 		);
@@ -246,12 +233,11 @@ export const CharacterActions = {
 			{ actorId: params.characterId, position: params.position },
 			context
 		);
+
+		// Validate actors after moving
+		TerrainActions.validateActors(context);
 	},
 
-	/**
-	 * Bulk edit tags for multiple characters
-	 * More efficient than individual edits - single log entry, single state sync
-	 */
 	bulkEditTags(
 		params: { updates: Array<{ characterId: string; tags: string[] }> },
 		context: Context
@@ -260,7 +246,6 @@ export const CharacterActions = {
 
 		let successCount = 0;
 
-		// Apply all updates
 		params.updates.forEach((update) => {
 			const character = campaign.CharacterRoster.find(
 				(c) => c.Id === update.characterId

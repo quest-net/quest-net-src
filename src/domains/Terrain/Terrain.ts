@@ -8,6 +8,8 @@ export interface Terrain {
 	Tags?: string[];
 }
 
+export const MAX_HEIGHT = 16;
+
 // Predefined colors
 export type TerrainType =
 	| "green"
