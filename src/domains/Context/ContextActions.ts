@@ -18,7 +18,6 @@ export const ContextActions = {
 		};
 
 		this.save(context);
-		console.log("[Context] Created new context:", context);
 		return context;
 	},
 
@@ -48,6 +47,5 @@ export const ContextActions = {
 	 */
 	setUserRole(params: { role: "dm" | "player" }, context: Context): void {
 		context.User.Role = params.role;
-		console.log(`[Context] User role set to: ${params.role}`);
 	},
 };

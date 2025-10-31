@@ -14,7 +14,7 @@ export interface StateUpdate {
 
 export class StateSync {
 	private room: Room;
-	private sendState!: (data: StateUpdate) => void;
+	private sendState!: (data: any, targetPeers?: string | string[] | null) => void;
 	private onUpdateCallback?: (campaign: Campaign) => void;
 	private actionExecute: (actionKey: string, params: any) => void;
 
@@ -42,11 +42,14 @@ export class StateSync {
 	 */
 	private setupChannel() {
 		const [send, receive] = this.room.makeAction("stateSync");
-
+	
 		this.sendState = send;
-
+	
 		// Listen for incoming state updates
-		receive(this.handleIncomingState.bind(this));
+		// Trystero's receive expects (data, peerId, metadata) but we only need data
+		receive((data: any) => {
+			this.handleIncomingState(data as StateUpdate);
+		});
 	}
 
 	/**
@@ -108,9 +111,7 @@ export class StateSync {
 			data: sanitized,
 		};
 
-		console.log(
-			"[StateSync] Broadcasting full state (Campaign ID sanitized to room code)"
-		);
+
 		this.sendState(update);
 
 		// Store sanitized version for next comparison
@@ -135,7 +136,6 @@ export class StateSync {
 		const patches = compare(this.lastBroadcastState, campaign);
 
 		if (patches.length === 0) {
-			console.log("[StateSync] No changes detected, skipping broadcast");
 			return;
 		}
 
@@ -146,10 +146,6 @@ export class StateSync {
 			baseVersion: this.version,
 		};
 
-		console.log(
-			`[StateSync] Broadcasting delta (${patches.length} patches)`,
-			patches
-		);
 		this.sendState(update);
 
 		this.version++;
@@ -165,9 +161,7 @@ export class StateSync {
 	/**
 	 * Handles incoming state updates from DM
 	 */
-	private handleIncomingState(update: StateUpdate, peerId: string): void {
-		console.log(`[StateSync] Received ${update.type} update from ${peerId}`);
-
+	private handleIncomingState(update: StateUpdate): void {
 		try {
 			switch (update.type) {
 				case "full":
@@ -195,13 +189,6 @@ export class StateSync {
 			console.warn("[StateSync] Full update missing data");
 			return;
 		}
-
-		console.log("[StateSync] Applying full state update");
-		console.log("[StateSync] Campaign ID in update:", update.data.Id);
-		console.log(
-			"[StateSync] Campaign RoomCode in update:",
-			update.data.RoomCode
-		);
 
 		this.currentState = update.data;
 		this.version = 0;
@@ -234,8 +221,6 @@ export class StateSync {
 			this.triggerFullSyncRequest();
 			return;
 		}
-
-		console.log(`[StateSync] Applying ${update.patches.length} patches`);
 
 		// Apply patches to current state
 		const result = applyPatch(this.currentState, update.patches, true, false);

@@ -84,9 +84,6 @@ export class ImageService {
 			// DM listens for image requests
 			getRequest((data, peerId) => {
 				const imageId = data as string;
-				console.log(
-					`[ImageService] DM received request for image ${imageId} from ${peerId}`
-				);
 				this.handleImageRequest(imageId, peerId);
 			});
 
@@ -94,9 +91,6 @@ export class ImageService {
 			getUpload((data, peerId, metadata) => {
 				const arrayBuffer = data as ArrayBuffer;
 				const meta = metadata as any;
-				console.log(
-					`[ImageService] DM received upload from ${peerId}: ${meta.name}`
-				);
 				this.handlePlayerUpload(arrayBuffer, meta, meta.uploadId, peerId);
 			});
 		} else {
@@ -104,14 +98,12 @@ export class ImageService {
 			getData((data, _peerId, metadata) => {
 				const arrayBuffer = data as ArrayBuffer;
 				const { imageId } = metadata as any;
-				console.log(`[ImageService] Received image data for ${imageId}`);
 				this.handleImageData(arrayBuffer, imageId);
 			});
 
 			// Players listen for upload confirmations
 			getCreated((data, _peerId) => {
 				const meta = data as any;
-				console.log(`[ImageService] Upload confirmed for ${meta.name}`);
 				this.handleUploadConfirmation(meta.uploadId, {
 					Id: meta.imageId,
 					Name: meta.name,
@@ -200,7 +192,6 @@ export class ImageService {
 					uploadId,
 				});
 
-				console.log(`[ImageService] Sent upload to DM: ${name}`);
 			} catch (error) {
 				reject(error);
 			}
@@ -255,9 +246,6 @@ export class ImageService {
 				peerId
 			);
 
-			console.log(
-				`[ImageService] Created image ${image.Name} from player upload`
-			);
 		} catch (error) {
 			console.error(`[ImageService] Error handling player upload:`, error);
 		}
@@ -282,7 +270,6 @@ export class ImageService {
 		// Check cache first
 		const cached = await IndexedDBUtilities.load(imageId);
 		if (cached) {
-			console.log(`[ImageService] Image ${imageId} found in cache`);
 			return cached.data as Blob;
 		}
 
@@ -294,14 +281,10 @@ export class ImageService {
 
 		// Check if already requesting this image
 		if (this.pendingRequests.has(imageId)) {
-			console.log(
-				`[ImageService] Image ${imageId} already being requested, waiting...`
-			);
 			return this.pendingRequests.get(imageId)!;
 		}
 
 		// Request from DM
-		console.log(`[ImageService] Requesting image ${imageId} from DM`);
 		const promise = this.requestFromDM(imageId);
 		this.pendingRequests.set(imageId, promise);
 
@@ -355,7 +338,6 @@ export class ImageService {
 
 			// Send to requesting peer with metadata
 			this.sendImageData(arrayBuffer, peerId, { imageId });
-			console.log(`[ImageService] Sent image ${imageId} to ${peerId}`);
 		} catch (error) {
 			console.error(`[ImageService] Error sending image ${imageId}:`, error);
 		}
@@ -374,7 +356,6 @@ export class ImageService {
 
 			// Store in IndexedDB
 			await IndexedDBUtilities.save(imageId, blob);
-			console.log(`[ImageService] Cached image ${imageId}`);
 		} catch (error) {
 			console.error(`[ImageService] Error caching image ${imageId}:`, error);
 		}

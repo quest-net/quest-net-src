@@ -3,138 +3,191 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import type { Position } from "../../../domains/Actor/Actor";
+import type { Character } from "../../../domains/Character/Character";
+import type { Entity } from "../../../domains/Entity/Entity";
 
 interface ActorAnimation {
-	actorId: string;
-	from: Position;
-	to: Position;
-	startTime: number;
-	duration: number;
+  actorId: string;
+  from: Position;
+  to: Position;
+  startTime: number;
+  duration: number;
 }
 
 interface AnimatedPosition extends Position {
-	isAnimating: boolean;
+  isAnimating: boolean;
 }
 
-// Tunable animation duration (in milliseconds)
-const MOVEMENT_DURATION = 500;
+type StartOptions = { duration?: number; local?: boolean };
 
-// Easing function for smooth movement
+const DEFAULT_DURATION = 500;
+
 function easeInOutCubic(t: number): number {
-	return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
-export function useActorAnimations() {
-	const [animations, setAnimations] = useState<Map<string, ActorAnimation>>(
-		new Map()
-	);
-	const animationsRef = useRef(animations);
-	const rafRef = useRef<number>(0);
+type UseActorAnimationsOpts = {
+  /** If provided, the hook will auto-animate when these positions change (remote updates). */
+  autoSource?: {
+    characters?: Character[] | null;
+    entities?: Entity[] | null;
+  };
+};
 
-	// Keep ref in sync with state
-	useEffect(() => {
-		animationsRef.current = animations;
-	}, [animations]);
+/**
+ * useActorAnimations
+ * - startAnimation(): start a tween; pass { local: true } to suppress the next auto-animate
+ * - getActorPosition(): returns interpolated (x,y,h) + isAnimating
+ * - auto-animates remote moves if `opts.autoSource` is provided
+ */
+export function useActorAnimations(opts?: UseActorAnimationsOpts) {
+  const [animations, setAnimations] = useState<Map<string, ActorAnimation>>(new Map());
+  const animationsRef = useRef(animations);
+  const rafRef = useRef<number>(0);
 
-	// Start a new animation for an actor
-	const startAnimation = useCallback(
-		(
-			actorId: string,
-			from: Position,
-			to: Position,
-			duration: number = MOVEMENT_DURATION
-		) => {
-			setAnimations((prev) => {
-				const next = new Map(prev);
-				next.set(actorId, {
-					actorId,
-					from,
-					to,
-					startTime: performance.now(),
-					duration,
-				});
-				return next;
-			});
-		},
-		[]
-	);
+  // Snapshot of last-seen positions for auto-animate diffing
+  const prevPositionsRef = useRef<Map<string, Position> | null>(null);
+  // When we initiate an animation locally, skip the very next auto-animate for that actor id
+  const suppressNextAutoRef = useRef<Set<string>>(new Set());
 
-	// Animation loop
-	useEffect(() => {
-		if (animations.size === 0) {
-			if (rafRef.current) {
-				cancelAnimationFrame(rafRef.current);
-				rafRef.current = 0;
-			}
-			return;
-		}
+  useEffect(() => {
+    animationsRef.current = animations;
+  }, [animations]);
 
-		const loop = () => {
-			const now = performance.now();
-			const current = animationsRef.current;
-			let hasChanges = false;
+  const startAnimation = useCallback(
+    (
+      actorId: string,
+      from: Position,
+      to: Position,
+      options?: StartOptions
+    ) => {
+      const duration = options?.duration ?? DEFAULT_DURATION;
 
-			// Check for completed animations
-			const next = new Map(current);
-			for (const [actorId, anim] of current) {
-				const elapsed = now - anim.startTime;
-				if (elapsed >= anim.duration) {
-					next.delete(actorId);
-					hasChanges = true;
-				}
-			}
+      if (options?.local) {
+        suppressNextAutoRef.current.add(actorId);
+      }
 
-			// Always update state to force re-render during animation
-			// This ensures smooth interpolation is visible
-			if (hasChanges) {
-				setAnimations(next);
-			} else if (next.size > 0) {
-				// Trigger re-render even if no animations completed
-				// by creating a new Map reference
-				setAnimations(new Map(next));
-			}
+      setAnimations((prev) => {
+        const next = new Map(prev);
+        next.set(actorId, {
+          actorId,
+          from,
+          to,
+          startTime: typeof performance !== "undefined" ? performance.now() : Date.now(),
+          duration,
+        });
+        return next;
+      });
+    },
+    []
+  );
 
-			// Continue loop if there are still animations
-			if (next.size > 0) {
-				rafRef.current = requestAnimationFrame(loop);
-			}
-		};
+  // Animation loop
+  useEffect(() => {
+    if (animations.size === 0) {
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
+      return;
+    }
 
-		rafRef.current = requestAnimationFrame(loop);
+    const loop = () => {
+      const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
+      const current = animationsRef.current;
+      let hasChanges = false;
 
-		return () => {
-			if (rafRef.current) {
-				cancelAnimationFrame(rafRef.current);
-			}
-		};
-	}, [animations.size]);
+      const next = new Map(current);
+      for (const [actorId, anim] of current) {
+        const elapsed = now - anim.startTime;
+        if (elapsed >= anim.duration) {
+          next.delete(actorId);
+          hasChanges = true;
+        }
+      }
 
-	// Get interpolated position for an actor
-	const getActorPosition = useCallback(
-		(actorId: string, actualPosition: Position): AnimatedPosition => {
-			const anim = animations.get(actorId);
+      setAnimations(hasChanges ? next : new Map(next));
 
-			if (!anim) {
-				return { ...actualPosition, isAnimating: false };
-			}
+      if (next.size > 0) {
+        rafRef.current = requestAnimationFrame(loop);
+      }
+    };
 
-			const elapsed = performance.now() - anim.startTime;
-			const progress = Math.min(1, elapsed / anim.duration);
-			const t = easeInOutCubic(progress);
+    rafRef.current = requestAnimationFrame(loop);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [animations.size]);
 
-			return {
-				x: anim.from.x + (anim.to.x - anim.from.x) * t,
-				y: anim.from.y + (anim.to.y - anim.from.y) * t,
-				h: anim.from.h + (anim.to.h - anim.from.h) * t,
-				isAnimating: true,
-			};
-		},
-		[animations]
-	);
+  const getActorPosition = useCallback(
+    (actorId: string, actualPosition: Position): AnimatedPosition => {
+      const anim = animations.get(actorId);
+      if (!anim) return { ...actualPosition, isAnimating: false };
 
-	return {
-		startAnimation,
-		getActorPosition,
-		hasActiveAnimations: animations.size > 0,
-	};
+      const now = (typeof performance !== "undefined" ? performance.now() : Date.now());
+      const elapsed = now - anim.startTime;
+      const progress = Math.min(1, anim.duration ? elapsed / anim.duration : 1);
+      const t = easeInOutCubic(progress);
+
+      return {
+        x: anim.from.x + (anim.to.x - anim.from.x) * t,
+        y: anim.from.y + (anim.to.y - anim.from.y) * t,
+        h: anim.from.h + (anim.to.h - anim.from.h) * t,
+        isAnimating: true,
+      };
+    },
+    [animations]
+  );
+
+  // -------------------- Auto-animate REMOTE updates --------------------
+  useEffect(() => {
+    const src = opts?.autoSource;
+    if (!src) return;
+
+    const chars = src.characters ?? [];
+    const ents = src.entities ?? [];
+
+    // Build current snapshot
+    const next = new Map<string, Position>();
+    for (const c of chars) {
+      const p = c?.Position ?? { x: 0, y: 0, h: 0 };
+      next.set(c.Id, { x: p.x, y: p.y, h: p.h ?? 0 });
+    }
+    for (const e of ents) {
+      const p = (e as any)?.Position ?? { x: 0, y: 0, h: 0 };
+      next.set(e.Id, { x: p.x, y: p.y, h: p.h ?? 0 });
+    }
+
+    // First run: seed & exit
+    if (!prevPositionsRef.current) {
+      prevPositionsRef.current = next;
+      return;
+    }
+
+    const prev = prevPositionsRef.current;
+
+    // Diff and animate
+    for (const [id, toPos] of next) {
+      const fromPos = prev.get(id);
+      if (!fromPos) continue;
+
+      const moved = (fromPos.x !== toPos.x) || (fromPos.y !== toPos.y) || (fromPos.h !== toPos.h);
+      if (!moved) continue;
+
+      // Skip one cycle if we already started this animation locally
+      if (suppressNextAutoRef.current.delete(id)) {
+        continue;
+      }
+
+      startAnimation(id, fromPos, toPos);
+    }
+
+    prevPositionsRef.current = next;
+  }, [opts?.autoSource?.characters, opts?.autoSource?.entities, startAnimation]);
+
+  return {
+    startAnimation,
+    getActorPosition,
+    hasActiveAnimations: animations.size > 0,
+  };
 }

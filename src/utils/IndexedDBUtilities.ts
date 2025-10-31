@@ -28,7 +28,6 @@ export class IndexedDBUtilities {
 
 			request.onsuccess = () => {
 				this.db = request.result;
-				console.log("[IndexedDB] Database opened successfully");
 				resolve(request.result);
 			};
 
@@ -38,7 +37,6 @@ export class IndexedDBUtilities {
 				// Create object store for images if it doesn't exist
 				if (!db.objectStoreNames.contains(STORE_NAME)) {
 					db.createObjectStore(STORE_NAME, { keyPath: "id" });
-					console.log("[IndexedDB] Created images object store");
 				}
 			};
 		});
@@ -68,7 +66,6 @@ export class IndexedDBUtilities {
 			const request = store.put(record);
 
 			request.onsuccess = () => {
-				console.log(`[IndexedDB] Saved data with id: ${id}`);
 				resolve();
 			};
 
@@ -97,7 +94,6 @@ export class IndexedDBUtilities {
 
 			request.onsuccess = () => {
 				if (request.result) {
-					console.log(`[IndexedDB] Loaded data with id: ${id}`);
 					resolve({
 						data: request.result.data,
 						metadata: request.result.metadata || {},
@@ -127,7 +123,6 @@ export class IndexedDBUtilities {
 			const request = store.delete(id);
 
 			request.onsuccess = () => {
-				console.log(`[IndexedDB] Removed data with id: ${id}`);
 				resolve();
 			};
 
@@ -150,7 +145,6 @@ export class IndexedDBUtilities {
 			const request = store.getAllKeys();
 
 			request.onsuccess = () => {
-				console.log(`[IndexedDB] Listed ${request.result.length} ids`);
 				resolve(request.result as string[]);
 			};
 
@@ -173,7 +167,6 @@ export class IndexedDBUtilities {
 			const request = store.clear();
 
 			request.onsuccess = () => {
-				console.log("[IndexedDB] Cleared all data");
 				resolve();
 			};
 

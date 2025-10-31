@@ -46,7 +46,6 @@ export const UserActions = {
 		const newName = params.name.trim();
 		if (newName) {
 			context.User.Name = newName;
-			console.log(`[User] User name updated to: ${newName}`);
 		}
 	},
 
@@ -69,8 +68,5 @@ export const UserActions = {
 			// null characterId means unselect
 			delete context.User.SelectedCharacters[params.campaignId];
 		}
-		console.log(
-			`[User] Character selection updated for campaign ${params.campaignId}`
-		);
 	},
 };

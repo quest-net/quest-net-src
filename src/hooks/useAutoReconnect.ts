@@ -31,7 +31,7 @@ export function useAutoReconnect(
 	const maxAttempts = config.maxAttempts ?? Infinity;
 
 	const zeroPeersSinceRef = useRef<number | null>(null);
-	const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+	const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const attemptCountRef = useRef(0);
 	const onReconnectRef = useRef(onReconnect);
 

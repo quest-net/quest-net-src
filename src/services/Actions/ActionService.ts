@@ -2,6 +2,7 @@
 
 import { Context } from "../../domains/Context/Context";
 import { canPerformAction, ACTION_REGISTRY } from "./ActionRegistry";
+import type { Campaign } from "../../domains/Campaign/Campaign";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { StateSync } from "../StateSync";
 import { ImageService } from "../ImageService";
@@ -72,8 +73,6 @@ export class ActionService {
 		if (this.context.User.Role === "player") {
 			// Players listen for state updates and apply them to context
 			this.stateSync.onUpdate((campaign) => {
-				console.log("[ActionService] Received campaign update");
-				console.log("[ActionService] Campaign ID in update:", campaign.Id);
 
 				// Find existing campaign by ID (which is the room code for players)
 				const index = this.context.Campaigns.findIndex(
@@ -81,13 +80,8 @@ export class ActionService {
 				);
 
 				if (index !== -1) {
-					console.log(
-						"[ActionService] Updating existing campaign at index",
-						index
-					);
 					this.context.Campaigns[index] = campaign;
 				} else {
-					console.log("[ActionService] Adding new campaign from DM");
 					this.context.Campaigns.push(campaign);
 				}
 				// If a one-time callback is registered, execute and clear it.
@@ -103,7 +97,6 @@ export class ActionService {
 	private setupPeerHandlers() {
 		this.room.onPeerJoin((peerId) => {
 			if (this.context.User.Role === "dm") {
-				console.log(`[DM] Sending initial state to ${peerId}`);
 				const campaign = CampaignActions.getActiveCampaign(this.context);
 				// Force full state for new peer
 				this.stateSync.broadcastFull(campaign);
@@ -145,13 +138,15 @@ export class ActionService {
 	 * DM executes action directly and broadcasts result
 	 */
 	private executeDM(actionKey: string, params: any): void {
-		console.log(`[DM] Executing action: ${actionKey}`, params);
 
 		// Execute the domain action (modifies Context/Campaign)
 		this.runDomainAction(actionKey, params);
 
 		// Broadcast updated campaign to all players
 		const campaign = CampaignActions.getActiveCampaign(this.context);
+
+		this.bumpMapRefs(campaign);
+
 		this.stateSync.broadcast(campaign);
 
 		triggerContextUpdate();
@@ -161,7 +156,6 @@ export class ActionService {
 	 * Player sends action request to DM
 	 */
 	private executePlayer(actionKey: string, params: any): void {
-		console.log(`[Player] Sending action request: ${actionKey}`, params);
 
 		// Send request to DM (fire and forget)
 		this.sendActionRequest({
@@ -175,16 +169,15 @@ export class ActionService {
 	 * DM receives and processes player action requests
 	 */
 	private handlePlayerRequest(data: any) {
-		console.log(
-			`[DM] Received action request from ${data.playerId}: ${data.actionKey}`,
-			data.params
-		);
 
 		// Execute the domain action
 		this.runDomainAction(data.actionKey, data.params);
 
 		// Broadcast updated campaign to all players
 		const campaign = CampaignActions.getActiveCampaign(this.context);
+
+		this.bumpMapRefs(campaign);
+
 		if (LogActions.isCommand(data.params, "/REQUEST_FULL_SYNC")) {
 			this.stateSync.broadcastFull(campaign);
 		} else {
@@ -205,7 +198,6 @@ export class ActionService {
 		}
 
 		try {
-			console.log(`[ActionService] Executing ${actionKey}`, params);
 			action.handler(params, this.context);
 		} catch (error) {
 			console.error(`[ActionService] Error executing ${actionKey}:`, error);
@@ -214,7 +206,6 @@ export class ActionService {
 	}
 
 	cleanup(): void {
-		console.log("[ActionService] Cleaning up and leaving room.");
 		if (this.room) {
 			RoomActions.leave(this.room);
 		}
@@ -222,4 +213,18 @@ export class ActionService {
 		this.onPeerJoinCallback = undefined;
 		this.onPeerLeaveCallback = undefined;
 	}
+
+	/** 
+   * Make new references for collections the Map memoizes against.
+   * This avoids stale useMemo caches when domain code mutates in place.
+   */
+  private bumpMapRefs(campaign: Campaign): void {
+    campaign.GameState = {
+      ...campaign.GameState,
+      Characters: [...campaign.GameState.Characters],
+      Entities:   [...campaign.GameState.Entities],
+    };
+    // If you ever memoize by terrain arrays too, uncomment:
+    // campaign.Terrains = [...campaign.Terrains];
+  }
 }

@@ -125,8 +125,6 @@ export const CampaignActions = {
 		context.Campaigns.push(campaign);
 		ContextActions.save(context);
 
-		console.log(`[Campaign] Created: ${campaign.Name} (${campaign.Id})`);
-
 		return campaign;
 	},
 
@@ -143,11 +141,8 @@ export const CampaignActions = {
 			return;
 		}
 
-		const campaign = context.Campaigns[index];
 		context.Campaigns.splice(index, 1);
 		ContextActions.save(context);
-
-		console.log(`[Campaign] Deleted: ${campaign.Name}`);
 	},
 
 	/**
@@ -166,8 +161,6 @@ export const CampaignActions = {
 
 		Object.assign(campaign, params.updates);
 		ContextActions.save(context);
-
-		console.log(`[Campaign] Updated: ${campaign.Name}`);
 	},
 
 	/**
@@ -195,8 +188,6 @@ export const CampaignActions = {
 		link.click();
 		document.body.removeChild(link);
 		URL.revokeObjectURL(url);
-
-		console.log(`[Campaign] Downloaded: ${campaign.Name}`);
 	},
 
 	/**
@@ -221,8 +212,6 @@ export const CampaignActions = {
 
 			context.Campaigns.push(campaign);
 			ContextActions.save(context);
-
-			console.log(`[Campaign] Imported: ${campaign.Name} (${campaign.Id})`);
 
 			return campaign;
 		} catch (error) {

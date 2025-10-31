@@ -27,7 +27,6 @@ export const RoomActions = {
 		if (!roomCode) {
 			roomCode = "ROOMCODE";
 		}
-		console.log(`[Room] Joining room: ${roomCode}`);
 
 		const config = {
 			appId: APP_ID,
@@ -44,11 +43,9 @@ export const RoomActions = {
 	 * @param room - The room to leave
 	 */
 	leave(room: Room): void {
-		console.log("[Room] Leaving room");
 
 		try {
 			room.leave();
-			console.log("[Room] Successfully left room");
 		} catch (error) {
 			console.error("[Room] Error leaving room:", error);
 		}

@@ -11,7 +11,6 @@ export class LocalStorageUtilities {
 		try {
 			const json = JSON.stringify(data);
 			localStorage.setItem(key, json);
-			console.log(`[LocalStorage] Saved data to key: ${key}`);
 		} catch (error) {
 			console.error(`[LocalStorage] Failed to save to key ${key}:`, error);
 			throw error;
@@ -30,7 +29,6 @@ export class LocalStorageUtilities {
 			}
 
 			const data = JSON.parse(json) as T;
-			console.log(`[LocalStorage] Loaded data from key: ${key}`);
 			return data;
 		} catch (error) {
 			console.error(`[LocalStorage] Failed to load from key ${key}:`, error);
@@ -43,7 +41,6 @@ export class LocalStorageUtilities {
 	 */
 	static remove(key: string): void {
 		localStorage.removeItem(key);
-		console.log(`[LocalStorage] Removed key: ${key}`);
 	}
 
 	/**
@@ -58,6 +55,5 @@ export class LocalStorageUtilities {
 	 */
 	static clear(): void {
 		localStorage.clear();
-		console.log("[LocalStorage] Cleared all data");
 	}
 }

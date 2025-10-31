@@ -340,9 +340,10 @@ export const TerrainActions = {
 		const toRemove: string[] = [];
 
 		for (const actor of actors) {
-			const tileKey = `${actor.Position.x},${actor.Position.y}`;
+			// Include height in the key so actors can be at same x,y but different heights
+			const tileKey = `${actor.Position.x},${actor.Position.y},${actor.Position.h}`;
 
-			// Check if position is valid (in bounds and not occupied)
+			// Check if position is valid (in bounds and not occupied at this height)
 			const isValid =
 				this.isInBounds(actor.Position.x, actor.Position.y, terrain) &&
 				!occupiedTiles.has(tileKey);
@@ -356,7 +357,7 @@ export const TerrainActions = {
 					actor.Position.x = validPosition.x;
 					actor.Position.y = validPosition.y;
 					this.adjustHeight(actor, terrain);
-					occupiedTiles.add(`${validPosition.x},${validPosition.y}`);
+					occupiedTiles.add(`${validPosition.x},${validPosition.y},${actor.Position.h}`);
 				} else {
 					// No valid position found - mark for despawn
 					toRemove.push(actor.Id);

@@ -277,7 +277,27 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	// ============================================================================
 	//TERRAIN ACTIONS
 	// ============================================================================
-	...registerDomain("terrain", TerrainActions, ["dm"]),
+
+	"terrain:create": {
+		roles: ["dm"],
+		handler: TerrainActions.create,
+	},
+	"terrain:edit": {
+		roles: ["dm"],
+		handler: TerrainActions.edit,
+	},
+	"terrain:delete": {
+		roles: ["dm"],
+		handler: TerrainActions.delete,
+	},
+	"terrain:setActive": {
+		roles: ["dm"],
+		handler: TerrainActions.setActive,
+	},
+	"terrain:bulkEditTags": {
+		roles: ["dm"],
+		handler: TerrainActions.bulkEditTags,
+	},
 };
 
 // ============================================================================

@@ -543,7 +543,7 @@ export function buildActorHitCandidates(
 			x,
 			y,
 			h ?? 0,
-			c.MoveSpeed ?? 30,
+			c.MoveSpeed ?? 5,
 			c.Size ?? "small"
 		);
 	}
@@ -556,7 +556,7 @@ export function buildActorHitCandidates(
 			pos.x,
 			pos.y,
 			pos.h ?? 0,
-			e.MoveSpeed ?? 30,
+			e.MoveSpeed ?? 5,
 			e.Size ?? "small"
 		);
 	}

@@ -100,7 +100,7 @@ export function ImageDisplay({ imageId, alt, ...props }: ImageDisplayProps) {
 				URL.revokeObjectURL(objectUrl);
 			}
 		};
-	}, [imageId, isDM]); // actionService intentionally removed from deps!
+	}, [imageId, isDM]);
 
 	// No imageId provided
 	if (!imageId) {

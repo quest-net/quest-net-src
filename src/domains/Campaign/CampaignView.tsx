@@ -59,11 +59,6 @@ export function CampaignView() {
 		}
 
 		const isDM = isGUID(identifier);
-		console.log(
-			`[CampaignView] Initializing in ${
-				isDM ? "DM" : "Player"
-			} mode for: ${identifier}`
-		);
 
 		// Setup variables that need cleanup
 		let room: ReturnType<typeof RoomActions.join> | null = null;
@@ -96,13 +91,9 @@ export function CampaignView() {
 						triggerContextUpdate();
 					}
 
-					console.log(`[CampaignView] DM found campaign: ${campaign.Name}`);
 				} else {
 					// Player mode: Campaign might not exist yet
 					if (!campaign) {
-						console.log(
-							"[CampaignView] Player: Campaign not in context, checking localStorage"
-						);
 
 						// Check if we have a saved version from a previous session
 						// Players save received campaigns as: campaign_${roomCode}
@@ -114,9 +105,7 @@ export function CampaignView() {
 								campaign = JSON.parse(savedCampaign) as Campaign;
 								context.Campaigns.push(campaign);
 								triggerContextUpdate();
-								console.log(
-									"[CampaignView] Player: Loaded campaign from localStorage"
-								);
+
 							} catch (error) {
 								console.error(
 									"[CampaignView] Failed to parse saved campaign:",
@@ -132,15 +121,6 @@ export function CampaignView() {
 						triggerContextUpdate();
 					}
 
-					if (campaign) {
-						console.log(
-							`[CampaignView] Player found campaign: ${campaign.Name}`
-						);
-					} else {
-						console.log(
-							"[CampaignView] Player waiting for DM to send initial state"
-						);
-					}
 				}
 
 				// =====================================================================
@@ -155,7 +135,6 @@ export function CampaignView() {
 				// =====================================================================
 				service = new ActionService(context, room);
 				setActionService(service);
-				console.log("[CampaignView] ActionService created");
 
 				// =====================================================================
 				// STEP 4: Handle initial state for players without campaign
@@ -167,9 +146,6 @@ export function CampaignView() {
 					const firstUpdatePromise = new Promise<void>((resolve) => {
 						service?.onFirstUpdate(() => {
 							if (isSubscribed) {
-								console.log(
-									"[CampaignView] Player received initial state via callback."
-								);
 								resolve();
 							}
 						});
@@ -222,7 +198,6 @@ export function CampaignView() {
 		// CLEANUP
 		// =====================================================================
 		return () => {
-			console.log("[CampaignView] Cleaning up");
 			isSubscribed = false;
 
 			if (room) {

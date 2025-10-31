@@ -25,64 +25,30 @@ export function usePeerTracking(): PeerTrackingData {
 	const sendUserRef = useRef<((data: any, peerId?: string) => void) | null>(
 		null
 	);
-	const pingIntervalsRef = useRef<Record<string, NodeJS.Timeout>>({});
+	const pingIntervalsRef = useRef<
+		Record<string, ReturnType<typeof setInterval>>
+	>({});
 
 	useEffect(() => {
-		console.log("[usePeerTracking] Effect triggered", {
-			hasActionService: !!actionService,
-			userRole: context.User.Role,
-			userId: context.User.Id,
-			userName: context.User.Name,
-		});
 
 		if (!actionService) {
-			console.log(
-				"[usePeerTracking] No actionService, returning early (NOT clearing state)"
-			);
 			return;
 		}
 
 		const room = actionService["room"];
 		if (!room) {
-			console.log(
-				"[usePeerTracking] No room found in actionService, returning early (NOT clearing state)"
-			);
 			return;
 		}
-
-		console.log(
-			"[usePeerTracking] Valid actionService and room found, proceeding with setup"
-		);
-
-		console.log("[usePeerTracking] Setting up peer tracking for room");
-
-		// Get initial peer list
-		const initialPeers = RoomActions.getConnectedPeerIds(room);
-		console.log("[usePeerTracking] Initial connected peers:", initialPeers);
 
 		// Send full User object
 		const [sendUser, getUser] = room.makeAction("userState");
 		sendUserRef.current = sendUser;
 
-		console.log("[usePeerTracking] Created userState action channel");
-
 		// Broadcast our User object to all existing peers
-		console.log(
-			"[usePeerTracking] Broadcasting initial user state to all peers",
-			{
-				user: context.User,
-				peerCount: initialPeers.length,
-			}
-		);
 		sendUser(context.User as any);
 
 		// Listen for other peers' User objects
 		getUser((userData, peerId) => {
-			console.log("[usePeerTracking] Received user data from peer", {
-				peerId,
-				userData,
-				isValidObject: typeof userData === "object" && userData !== null,
-			});
 
 			if (typeof userData === "object" && userData !== null) {
 				setPeerUsers((current) => {
@@ -91,23 +57,10 @@ export function usePeerTracking(): PeerTrackingData {
 						...current,
 						[peerId]: userData as unknown as User,
 					};
-					console.log("[usePeerTracking] Updated peer users", {
-						peerId,
-						userName: (userData as any).Name,
-						totalPeers: Object.keys(updated).length,
-						isNewPeer,
-					});
 
 					// If this is the first time we're hearing from this peer,
 					// respond by sending our user data back to ensure mutual awareness
 					if (isNewPeer && sendUserRef.current) {
-						console.log(
-							"[usePeerTracking] New peer detected, sending user data back",
-							{
-								peerId,
-								ourUser: context.User,
-							}
-						);
 						sendUserRef.current(context.User as any, peerId);
 					}
 
@@ -117,7 +70,6 @@ export function usePeerTracking(): PeerTrackingData {
 		});
 
 		const startPingingPeer = (peerId: string) => {
-			console.log("[usePeerTracking] Starting to ping peer:", peerId);
 
 			if (pingIntervalsRef.current[peerId]) {
 				clearInterval(pingIntervalsRef.current[peerId]);
@@ -126,7 +78,6 @@ export function usePeerTracking(): PeerTrackingData {
 			room
 				.ping(peerId)
 				.then((ms) => {
-					console.log("[usePeerTracking] Initial ping result:", { peerId, ms });
 					setPeerPings((current) => ({
 						...current,
 						[peerId]: ms,
@@ -157,18 +108,9 @@ export function usePeerTracking(): PeerTrackingData {
 
 		// Set up peer join handler
 		actionService.setOnPeerJoin((peerId) => {
-			console.log("[usePeerTracking] Peer joined!", {
-				peerId,
-				currentPeerCount: Object.keys(peerUsers).length,
-				willBroadcastTo: peerId,
-			});
 
 			// Send our User object to the new peer
 			if (sendUserRef.current) {
-				console.log("[usePeerTracking] Sending user state to new peer", {
-					peerId,
-					user: context.User,
-				});
 				sendUserRef.current(context.User as any, peerId);
 			} else {
 				console.warn(
@@ -182,18 +124,10 @@ export function usePeerTracking(): PeerTrackingData {
 
 		// Set up peer leave handler
 		actionService.setOnPeerLeave((peerId) => {
-			console.log("[usePeerTracking] Peer left:", {
-				peerId,
-				currentPeerCount: Object.keys(peerUsers).length,
-			});
 
 			setPeerUsers((current) => {
 				const updated = { ...current };
 				delete updated[peerId];
-				console.log("[usePeerTracking] Removed peer from users", {
-					peerId,
-					remainingPeers: Object.keys(updated).length,
-				});
 				return updated;
 			});
 
@@ -211,21 +145,15 @@ export function usePeerTracking(): PeerTrackingData {
 
 		// Start pinging current peers
 		const currentPeers = RoomActions.getConnectedPeerIds(room);
-		console.log(
-			"[usePeerTracking] Starting ping intervals for existing peers:",
-			currentPeers
-		);
+
 		currentPeers.forEach((peerId) => startPingingPeer(peerId));
 
 		return () => {
-			console.log(
-				"[usePeerTracking] Cleaning up peer tracking - clearing intervals and state"
-			);
-			Object.values(pingIntervalsRef.current).forEach((interval) => {
-				clearInterval(interval);
-			});
+			Object.values(pingIntervalsRef.current).forEach(clearInterval);
 			pingIntervalsRef.current = {};
-
+			// neutralize the userState receiver so unmounted closures never fire
+			getUser(() => {});
+			sendUserRef.current = null;
 			// Clear state on cleanup - this only happens when actionService changes
 			setPeerUsers({});
 			setPeerPings({});
@@ -236,15 +164,8 @@ export function usePeerTracking(): PeerTrackingData {
 	const userJson = JSON.stringify(context.User);
 
 	useEffect(() => {
-		console.log("[usePeerTracking] User changed, re-broadcasting", {
-			user: context.User,
-			hasSendUserRef: !!sendUserRef.current,
-		});
 
 		if (sendUserRef.current) {
-			console.log(
-				"[usePeerTracking] Broadcasting updated user state to all peers"
-			);
 			sendUserRef.current(context.User as any);
 		}
 	}, [userJson]);

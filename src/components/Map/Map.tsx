@@ -17,7 +17,6 @@ extend({
 	Sprite: PixiSprites,
 	Text: PixiText,
 });
-
 import type { Character } from "../../domains/Character/Character";
 import type { Entity } from "../../domains/Entity/Entity";
 import { MAX_HEIGHT, type Terrain } from "../../domains/Terrain/Terrain";
@@ -94,7 +93,9 @@ export default function Map({
 	showControls = true,
 }: MapProps) {
 	const { ref, w, h } = useMeasuredContainer<HTMLDivElement>();
-	const { startAnimation, getActorPosition } = useActorAnimations();
+	const { startAnimation, getActorPosition } = useActorAnimations({
+		autoSource: { characters, entities }
+	  });
 	const { actionService } = useActionService();
 	const dpr = typeof window !== "undefined" ? window.devicePixelRatio : 1;
 	const [hoveredLadderHeight, setHoveredLadderHeight] = useState<number | null>(
@@ -103,7 +104,6 @@ export default function Map({
 
 	// Custom hooks for state management
 	const { orientation, animationState, rotateCW, rotateCCW } = useMapRotation();
-
 	const {
 		scale,
 		pan,
@@ -165,31 +165,6 @@ export default function Map({
 		[projFrom, projTo, tNorm]
 	);
 
-	const actorPositionsKeyString =
-		characters
-			.map(
-				(c) =>
-					`${c.Id}:${c.Position?.x ?? 0},${c.Position?.y ?? 0},${
-						c.Position?.h ?? 0
-					}`
-			)
-			.join("|") +
-		"|" +
-		entities
-			.map(
-				(e: any) =>
-					`${e.Id}:${e.Position?.x ?? 0},${e.Position?.y ?? 0},${
-						e.Position?.h ?? 0
-					}`
-			)
-			.join("|");
-
-	// Create a stable reference that only updates when the string value changes
-	const actorPositionsKeyRef = useRef(actorPositionsKeyString);
-	if (actorPositionsKeyRef.current !== actorPositionsKeyString) {
-		actorPositionsKeyRef.current = actorPositionsKeyString;
-	}
-
 	const actorHitCandidates = useMemo(
 		() =>
 			terrain
@@ -201,7 +176,7 @@ export default function Map({
 						animationState
 				  )
 				: [],
-		[terrain, orientation, animationState, actorPositionsKeyRef.current]
+		[terrain, orientation, animationState, characters, entities]
 	);
 
 	// Calculate movement range for selected actor
@@ -473,9 +448,9 @@ export default function Map({
 						startAnimation(
 							selectedActor.id,
 							{ x: actorX, y: actorY, h: fromHeight },
-							{ x: actorX, y: actorY, h: targetHeight }
-						);
-
+							{ x: actorX, y: actorY, h: targetHeight },
+							{ local: true }         // suppress remote double-animate once
+							);
 						if (selectedActor.kind === "character") {
 							actionService?.execute("character:move", {
 								characterId: selectedActor.id,
@@ -540,8 +515,9 @@ export default function Map({
 					startAnimation(
 						selectedActor.id,
 						{ x: actor.x, y: actor.y, h: actor.h },
-						{ x: hoveredTile.x, y: hoveredTile.y, h: targetHeight }
-					);
+						{ x: hoveredTile.x, y: hoveredTile.y, h: targetHeight },
+						{ local: true }         // suppress remote double-animate once
+					  );
 				}
 
 				// Dispatch the move with the computed targetHeight
