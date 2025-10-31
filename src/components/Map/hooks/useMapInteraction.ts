@@ -14,7 +14,12 @@ export interface MapInteractionHandlers {
 interface UseMapInteractionOptions {
 	containerRef: React.RefObject<HTMLDivElement | null>;
 	allowPanZoom: boolean;
-	onPan: (dx: number, dy: number, viewWidth: number, viewHeight: number) => void;
+	onPan: (
+		dx: number,
+		dy: number,
+		viewWidth: number,
+		viewHeight: number
+	) => void;
 	onZoom: (
 		deltaY: number,
 		mouseX: number,

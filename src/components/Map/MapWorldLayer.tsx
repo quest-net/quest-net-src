@@ -3,9 +3,10 @@
 
 import { useMemo } from "react";
 import type { Graphics as PixiGraphics } from "pixi.js";
-import type { Terrain } from "../../domains/Terrain/Terrain";
+import { Terrain } from "../../domains/Terrain/Terrain";
 import type { Character } from "../../domains/Character/Character";
 import type { Entity } from "../../domains/Entity/Entity";
+import type { ActorSize } from "../../domains/Actor/Actor";
 import {
 	type Orientation,
 	type AnimationState,
@@ -18,7 +19,13 @@ import {
 	rotXY,
 	easeInOut,
 } from "./MapUtilities";
-import { Token, MAIN_ALPHA, GHOST_ALPHA } from "./Token";
+import {
+	Token,
+	MAIN_ALPHA,
+	GHOST_ALPHA,
+	makeDrawShadowsCallback,
+	makeDrawElevationIndicatorsCallback,
+} from "./Token";
 import {
 	RANGE_COLOR,
 	HOVER_COLOR,
@@ -42,6 +49,7 @@ import {
 	TILE_W,
 	TILE_H,
 } from "./Terrain";
+import { Ladder, type LadderInfo } from "./Ladder";
 
 // ----------------------- Types -------------------------------
 type Kind = "character" | "entity";
@@ -50,7 +58,7 @@ interface ActorView {
 	kind: Kind;
 	name: string;
 	imageId?: string;
-	size: "small" | "medium" | "large";
+	size: ActorSize; // Now using the imported type
 	x: number;
 	y: number;
 	h: number; // actor elevation (tile levels)
@@ -91,6 +99,8 @@ export interface MapWorldLayerProps {
 	};
 	movementRangeIndices?: Set<number>;
 	hoveredIndex?: number | null;
+	ladderInfo?: LadderInfo | null;
+	hoveredLadderHeight?: number | null;
 }
 
 export function MapWorldLayer({
@@ -105,6 +115,8 @@ export function MapWorldLayer({
 	getActorPosition,
 	movementRangeIndices,
 	hoveredIndex,
+	ladderInfo,
+	hoveredLadderHeight,
 }: MapWorldLayerProps) {
 	if (!terrain || baseTiles.length === 0 || currentProjections.length === 0)
 		return null;
@@ -168,7 +180,7 @@ export function MapWorldLayer({
 
 			if (ax < 0 || ax >= W || ay < 0 || ay >= L) return;
 
-			const tileH = (hmap[Math.floor(ay)]?.[Math.floor(ax)] ?? 0) | 0;
+			const tileH = (hmap[Math.round(ay)]?.[Math.round(ax)] ?? 0) | 0;
 			const selected = selectedActorId === id;
 
 			const rf = rotXY(ax, ay, W, L, fromO);
@@ -215,16 +227,25 @@ export function MapWorldLayer({
 
 		for (const c of characters ?? []) {
 			const { x, y, h } = c.Position ?? { x: 0, y: 0, h: 0 };
-			pushActor(c.Id, "character", c.Name, c.Image, (c as any).Size ?? "small", x, y, h ?? 0);
+			pushActor(
+				c.Id,
+				"character",
+				c.Name,
+				c.Image,
+				c.Size ?? "small",
+				x,
+				y,
+				h ?? 0
+			);
 		}
 		for (const e of entities ?? []) {
-			const pos = (e as any).Position ?? { x: 0, y: 0, h: 0 };
+			const pos = e.Position ?? { x: 0, y: 0, h: 0 };
 			pushActor(
 				e.Id,
 				"entity",
-				(e as any).Name ?? "Entity",
-				(e as any).Image,
-				(e as any).Size ?? "small",
+				e.Name ?? "Entity",
+				e.Image,
+				e.Size ?? "small",
 				pos.x,
 				pos.y,
 				pos.h ?? 0
@@ -335,9 +356,17 @@ export function MapWorldLayer({
 			const inRange = !!movementRangeIndices && movementRangeIndices.has(i);
 			if (isHovered || inRange) {
 				const outlineColor = isHovered ? HOVER_COLOR : RANGE_COLOR;
-				const outlineWidth = isHovered ? HOVER_OUTLINE_WIDTH : RANGE_OUTLINE_WIDTH;
+				const outlineWidth = isHovered
+					? HOVER_OUTLINE_WIDTH
+					: RANGE_OUTLINE_WIDTH;
 				const inset = outlineWidth / 2;
-				const insetCorners = getInsetDiamondCorners(cx, cy, halfW, halfH, inset);
+				const insetCorners = getInsetDiamondCorners(
+					cx,
+					cy,
+					halfW,
+					halfH,
+					inset
+				);
 
 				g.setStrokeStyle({
 					width: outlineWidth,
@@ -356,38 +385,27 @@ export function MapWorldLayer({
 		}
 	};
 
-	// -------------------- Shadow drawer per row (batched) -------------------
-	const makeDrawShadowsRow = (rowActors: ActorView[]) => (g: PixiGraphics) => {
-		g.clear();
-		if (!rowActors || rowActors.length === 0) return;
-
-		const SHADOW_SCALE_K = 0.35;
-		const SHADOW_SCALE_MIN = 0.25;
-		const SHADOW_ALPHA_BASE = 0.2;
-		const SHADOW_ALPHA_MIN = 0.12;
-
-		for (const a of rowActors) {
-			const diff = a.h - a.tileH;
-			const d = Math.max(0, diff);
-			const scale = Math.max(SHADOW_SCALE_MIN, 1 / (1 + SHADOW_SCALE_K * d));
-			const alpha = Math.max(SHADOW_ALPHA_MIN, SHADOW_ALPHA_BASE * scale);
-			const rx = TILE_W * 0.3 * scale;
-			const ry = TILE_H * 0.3 * scale;
-			g.setFillStyle({ color: 0x000000, alpha });
-			g.ellipse(a.scx, a.scy, rx, ry);
-			g.fill();
-		}
-	};
-
 	// ----------------------------- Render -----------------------------------
 	return (
 		<>
-			{/* Per-row painter: terrain → shadows → main tokens */}
+			{/* Per-row painter: terrain → shadows → ladder → main tokens */}
 			{rows.map((tileIdxs, s) => (
 				<pixiContainer key={`row-${s}`}>
 					<pixiGraphics draw={makeDrawTerrainRow(tileIdxs)} />
 					{!!actorsByRow[s]?.length && (
-						<pixiGraphics draw={makeDrawShadowsRow(actorsByRow[s])} />
+						<pixiGraphics draw={makeDrawShadowsCallback(actorsByRow[s])} />
+					)}
+					{/* Add elevation indicators after shadows, before ladder */}
+					{!!actorsByRow[s]?.length && (
+						<pixiGraphics
+							draw={makeDrawElevationIndicatorsCallback(actorsByRow[s])}
+						/>
+					)}
+					{ladderInfo && s === ladderInfo.rowS && (
+						<Ladder
+							ladderInfo={ladderInfo}
+							hoveredHeight={hoveredLadderHeight}
+						/>
 					)}
 					{actorsByRow[s]?.map((a) => (
 						<Token

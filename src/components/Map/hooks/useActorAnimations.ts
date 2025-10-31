@@ -2,12 +2,7 @@
 // Manages smooth movement animations for actors on the map
 
 import { useState, useCallback, useEffect, useRef } from "react";
-
-export interface Position {
-	x: number;
-	y: number;
-	h: number;
-}
+import type { Position } from "../../../domains/Actor/Actor";
 
 interface ActorAnimation {
 	actorId: string;

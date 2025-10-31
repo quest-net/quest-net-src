@@ -2,19 +2,21 @@
 // Token rendering constants and configuration
 
 import { TILE_W } from "../Terrain";
+import type { ActorSize } from "../../../domains/Actor/Actor";
+
+// Re-export ActorSize for convenience
+export type { ActorSize };
 
 // Token base dimensions (for "small" size)
 export const TOKEN_W = TILE_W * 0.8;
 export const TOKEN_H = TILE_W * 0.8;
 export const CORNER_RADIUS = Math.min(TOKEN_W, TOKEN_H) * 0.45;
 
-// Actor size types and scaling factors
-export type ActorSize = "small" | "medium" | "large";
-
+// Actor size scaling factors
 export const SIZE_SCALE: Record<ActorSize, number> = {
-	small: 1.0,   // Default size (current)
-	medium: 1.5,  // 50% larger
-	large: 2.0,   // 2x larger
+	small: 1.0, // Default size (current)
+	medium: 1.5, // 50% larger
+	large: 2.0, // 2x larger
 };
 
 // Outline styling
@@ -27,11 +29,13 @@ export const OUTLINE_SELECTED_COLOR = 0x002bff;
 export const MAIN_ALPHA = 1.0;
 export const GHOST_ALPHA = 0.15;
 
-// Shadow parameters (note: shadows don't scale with token size)
-export const SHADOW_SCALE_K = 0.35;
-export const SHADOW_SCALE_MIN = 0.25;
-export const SHADOW_ALPHA_BASE = 0.2;
-export const SHADOW_ALPHA_MIN = 0.12;
+// Shadow scaling constants
+export const SHADOW_SCALE_K = 0.1;
+export const SHADOW_SCALE_MIN = 0.5;
+
+// Shadow opacity constants
+export const SHADOW_ALPHA_BASE = 0.3;
+export const SHADOW_ALPHA_MIN = 0.15;
 
 /**
  * Get scaled token dimensions based on actor size

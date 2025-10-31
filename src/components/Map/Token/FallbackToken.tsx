@@ -2,7 +2,11 @@
 // Fallback token component for actors without images
 
 import { useMemo } from "react";
-import type { Graphics as PixiGraphics, TextStyleOptions, TextStyleAlign } from "pixi.js";
+import type {
+	Graphics as PixiGraphics,
+	TextStyleOptions,
+	TextStyleAlign,
+} from "pixi.js";
 import { TILE_W, TILE_H } from "../Terrain";
 import {
 	OUTLINE_OUTER_WIDTH,
@@ -40,7 +44,9 @@ export function FallbackToken({
 			// Fill
 			g.setFillStyle({ color: 0x4b5563, alpha: alpha });
 			// Outline
-			const outlineColor = selected ? OUTLINE_SELECTED_COLOR : OUTLINE_DEFAULT_COLOR;
+			const outlineColor = selected
+				? OUTLINE_SELECTED_COLOR
+				: OUTLINE_DEFAULT_COLOR;
 			const outlineWidth = selected ? 3 : OUTLINE_OUTER_WIDTH;
 			g.setStrokeStyle({ width: outlineWidth, color: outlineColor, alpha });
 			g.circle(centerX, centerY, R);

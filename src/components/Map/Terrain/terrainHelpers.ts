@@ -33,15 +33,15 @@ export function lerpColor(rgb: number, target: number, t: number): number {
 	const r = (rgb >> 16) & 0xff;
 	const g = (rgb >> 8) & 0xff;
 	const b = rgb & 0xff;
-	
+
 	const tr = (target >> 16) & 0xff;
 	const tg = (target >> 8) & 0xff;
 	const tb = target & 0xff;
-	
+
 	const nr = Math.round(r + (tr - r) * t);
 	const ng = Math.round(g + (tg - g) * t);
 	const nb = Math.round(b + (tb - b) * t);
-	
+
 	return (nr << 16) | (ng << 8) | nb;
 }
 
@@ -49,7 +49,7 @@ export function lerpColor(rgb: number, target: number, t: number): number {
  * Apply elevation-based tinting to a base color
  * Low elevation → darker (toward black)
  * High elevation → lighter (toward white)
- * 
+ *
  * @param base - Base color as hex number
  * @param hNorm - Normalized height (0-1, where 0=lowest, 1=highest)
  * @param strength - Tinting strength (0-1)
@@ -62,11 +62,11 @@ export function applyElevationTint(
 	style: ElevationStyle = ELEVATION_STYLE
 ): number {
 	if (style === "off") return base;
-	
+
 	// Map normalized height to -1..1 range (centered at 0.5)
 	// -1 = lowest (toward black), +1 = highest (toward white)
 	const x = (hNorm - 0.5) * 2;
-	
+
 	if (x >= 0) {
 		// High elevation → lerp toward white
 		return lerpColor(base, 0xffffff, Math.min(1, x * strength));
@@ -114,7 +114,7 @@ export function getInsetDiamondCorners(
 ) {
 	const iHalfW = Math.max(1, halfW - inset);
 	const iHalfH = Math.max(1, halfH - inset);
-	
+
 	return {
 		top: { x: cx, y: cy - iHalfH },
 		right: { x: cx + iHalfW, y: cy },

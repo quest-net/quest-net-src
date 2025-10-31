@@ -35,8 +35,12 @@ export function Token({
 	name,
 	size = "small",
 }: TokenProps) {
-	const { width: TOKEN_W, height: TOKEN_H, cornerRadius } = getTokenDimensions(size);
-	
+	const {
+		width: TOKEN_W,
+		height: TOKEN_H,
+		cornerRadius,
+	} = getTokenDimensions(size);
+
 	const rx = -TOKEN_W * 0.5;
 	const ry = -TOKEN_H * 1.25;
 	const MASK_CENTER_Y = -TOKEN_H * 0.75;
@@ -44,8 +48,12 @@ export function Token({
 	const drawOutlinePath = useMemo(
 		() => (g: PixiGraphics) => {
 			g.clear();
-			const outlineColor = selected ? OUTLINE_SELECTED_COLOR : OUTLINE_DEFAULT_COLOR;
-			const outlineWidth = selected ? OUTLINE_SELECTED_WIDTH : OUTLINE_OUTER_WIDTH;
+			const outlineColor = selected
+				? OUTLINE_SELECTED_COLOR
+				: OUTLINE_DEFAULT_COLOR;
+			const outlineWidth = selected
+				? OUTLINE_SELECTED_WIDTH
+				: OUTLINE_OUTER_WIDTH;
 			g.setStrokeStyle({
 				width: outlineWidth,
 				color: outlineColor,

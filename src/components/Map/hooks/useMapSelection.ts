@@ -15,7 +15,9 @@ export interface HoveredTile {
 }
 
 export function useMapSelection() {
-	const [selectedActor, setSelectedActor] = useState<SelectedActor | null>(null);
+	const [selectedActor, setSelectedActor] = useState<SelectedActor | null>(
+		null
+	);
 	const [hoveredTile, setHoveredTile] = useState<HoveredTile | null>(null);
 
 	const selectActor = useCallback((actor: SelectedActor | null) => {

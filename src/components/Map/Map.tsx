@@ -1,13 +1,7 @@
 // Map.tsx - React 19 + @pixi/react v8
 // Isometric map orchestrator - delegates rendering to layer components
 
-import {
-	useMemo,
-	useRef,
-	useState,
-	useLayoutEffect,
-	useCallback,
-} from "react";
+import { useMemo, useRef, useState, useLayoutEffect, useCallback } from "react";
 import { Application, extend } from "@pixi/react";
 import {
 	Container as PixiContainer,
@@ -26,9 +20,7 @@ extend({
 
 import type { Character } from "../../domains/Character/Character";
 import type { Entity } from "../../domains/Entity/Entity";
-import type { CombatState } from "../../domains/GameState/GameState";
-import type { Scene } from "../../domains/Scene/Scene";
-import type { Terrain } from "../../domains/Terrain/Terrain";
+import { MAX_HEIGHT, type Terrain } from "../../domains/Terrain/Terrain";
 
 import {
 	type Orientation,
@@ -44,6 +36,8 @@ import {
 	screenToActor,
 	calculateMovementRange,
 	getTileIndex,
+	rotXY,
+	findActor,
 } from "./MapUtilities";
 
 import { MapWorldLayer } from "./MapWorldLayer";
@@ -55,11 +49,15 @@ import {
 	useMapSelection,
 } from "./hooks";
 
+import {
+	calculateLadderInfo,
+	checkLadderOcclusion,
+	screenToLadder,
+} from "./Ladder";
+
 interface MapProps {
 	characters: Character[];
 	entities: Entity[];
-	combatState?: CombatState;
-	scene?: Scene;
 	terrain?: Terrain | null;
 	preview?: boolean; // disables actor selection/movement + actionService calls
 	allowPanZoom?: boolean; // enable wheel + middle/right drag
@@ -99,9 +97,13 @@ export default function Map({
 	const { startAnimation, getActorPosition } = useActorAnimations();
 	const { actionService } = useActionService();
 	const dpr = typeof window !== "undefined" ? window.devicePixelRatio : 1;
+	const [hoveredLadderHeight, setHoveredLadderHeight] = useState<number | null>(
+		null
+	);
 
 	// Custom hooks for state management
 	const { orientation, animationState, rotateCW, rotateCCW } = useMapRotation();
+
 	const {
 		scale,
 		pan,
@@ -163,7 +165,7 @@ export default function Map({
 		[projFrom, projTo, tNorm]
 	);
 
-	const actorPositionsKey =
+	const actorPositionsKeyString =
 		characters
 			.map(
 				(c) =>
@@ -182,6 +184,12 @@ export default function Map({
 			)
 			.join("|");
 
+	// Create a stable reference that only updates when the string value changes
+	const actorPositionsKeyRef = useRef(actorPositionsKeyString);
+	if (actorPositionsKeyRef.current !== actorPositionsKeyString) {
+		actorPositionsKeyRef.current = actorPositionsKeyString;
+	}
+
 	const actorHitCandidates = useMemo(
 		() =>
 			terrain
@@ -193,7 +201,7 @@ export default function Map({
 						animationState
 				  )
 				: [],
-		[terrain, orientation, animationState, actorPositionsKey]
+		[terrain, orientation, animationState, actorPositionsKeyRef.current]
 	);
 
 	// Calculate movement range for selected actor
@@ -239,6 +247,43 @@ export default function Map({
 	updateCenter(currentCenter.cx, currentCenter.cy);
 
 	// ============================================================================
+	// LADDER CALCULATION
+	// ============================================================================
+	const selectedActorObj = useMemo(() => {
+		if (!selectedActor) return null;
+		return findActor(
+			selectedActor.id,
+			selectedActor.kind,
+			characters,
+			entities
+		);
+	}, [selectedActor, characters, entities]);
+
+	const ladderInfo = useMemo(() => {
+		if (!terrain) return null;
+
+		return calculateLadderInfo({
+			selectedActorId: selectedActor?.id ?? null,
+			characters,
+			entities,
+			terrain,
+			fromOrientation: fromO,
+			toOrientation: toO,
+			tweenProgress: tNorm,
+			getActorPosition,
+		});
+	}, [
+		terrain,
+		selectedActor,
+		characters,
+		entities,
+		fromO,
+		toO,
+		tNorm,
+		getActorPosition,
+	]);
+
+	// ============================================================================
 	// POINTER INTERACTION HANDLERS
 	// ============================================================================
 	const handlePointerMove = useCallback(
@@ -249,10 +294,77 @@ export default function Map({
 			const screenX = e.clientX - rect.left;
 			const screenY = e.clientY - rect.top;
 
-			const currentOrientation: Orientation = animationState
-				? animationState.to
-				: orientation;
+			const o: Orientation = animationState ? animationState.to : orientation;
 
+			// Default: clear ladder hover
+			let newHoveredHeight: number | null = null;
+
+			// If a flier is selected, attempt ladder hover first
+			if (selectedActor && selectedActorObj?.CanFly && ladderInfo) {
+				// Get ladder position
+				const actorCandidate = actorHitCandidates.find(
+					(a) => a.id === selectedActor.id
+				);
+				const actorX = actorCandidate?.x ?? selectedActorObj.Position?.x ?? 0;
+				const actorY = actorCandidate?.y ?? selectedActorObj.Position?.y ?? 0;
+
+				const { rx: ladderRx, ry: ladderRy } = rotXY(
+					actorX,
+					actorY,
+					terrain.Width,
+					terrain.Length,
+					o
+				);
+
+				// Check for occlusion
+				const occlusionResult = checkLadderOcclusion({
+					screenX,
+					screenY,
+					ladderRx,
+					ladderRy,
+					terrain,
+					orientation: o,
+					centerX: centerRef.current.x,
+					centerY: centerRef.current.y,
+					panX: panRef.current.x,
+					panY: panRef.current.y,
+					scale: scaleRef.current,
+				});
+
+				if (!occlusionResult.isOccluded) {
+					// Try ladder hit test
+					const targetHeight = screenToLadder({
+						screenX,
+						screenY,
+						centerX: centerRef.current.x,
+						centerY: centerRef.current.y,
+						panX: panRef.current.x,
+						panY: panRef.current.y,
+						scale: scaleRef.current,
+						terrain,
+						actorX,
+						actorY,
+						orientation: o,
+						maxHeight: MAX_HEIGHT,
+						visibleCyTop: Math.min(ladderInfo.cyTop, ladderInfo.cyBottom),
+						visibleCyBottom: Math.max(ladderInfo.cyTop, ladderInfo.cyBottom),
+					});
+
+					if (targetHeight !== null) {
+						newHoveredHeight = targetHeight;
+					}
+				}
+			}
+
+			setHoveredLadderHeight(newHoveredHeight);
+
+			// Visual exclusivity: if ladder is hovered, suppress tile hover
+			if (newHoveredHeight !== null) {
+				updateHoveredTile(null);
+				return;
+			}
+
+			// Otherwise, proceed with tile hover if an actor is selected
 			if (!selectedActor) {
 				updateHoveredTile(null);
 				return;
@@ -268,7 +380,7 @@ export default function Map({
 				scaleRef.current,
 				terrain.Width,
 				terrain.Length,
-				currentOrientation,
+				o,
 				terrain.HeightMap
 			);
 
@@ -280,10 +392,13 @@ export default function Map({
 			animationState,
 			orientation,
 			selectedActor,
-			updateHoveredTile,
+			selectedActorObj,
+			ladderInfo,
+			actorHitCandidates,
 			centerRef,
 			panRef,
 			scaleRef,
+			updateHoveredTile,
 		]
 	);
 
@@ -296,6 +411,92 @@ export default function Map({
 			const screenX = e.clientX - rect.left;
 			const screenY = e.clientY - rect.top;
 
+			const o: Orientation = animationState ? animationState.to : orientation;
+
+			// ========================================================================
+			// 1) LADDER CLICK (priority when a flier is selected)
+			// ========================================================================
+			if (selectedActor && selectedActorObj?.CanFly && ladderInfo) {
+				const actorCandidate = actorHitCandidates.find(
+					(a) => a.id === selectedActor.id
+				);
+				const actorX = actorCandidate?.x ?? selectedActorObj.Position?.x ?? 0;
+				const actorY = actorCandidate?.y ?? selectedActorObj.Position?.y ?? 0;
+
+				const { rx: ladderRx, ry: ladderRy } = rotXY(
+					actorX,
+					actorY,
+					terrain.Width,
+					terrain.Length,
+					o
+				);
+
+				// Check for occlusion
+				const occlusionResult = checkLadderOcclusion({
+					screenX,
+					screenY,
+					ladderRx,
+					ladderRy,
+					terrain,
+					orientation: o,
+					centerX: centerRef.current.x,
+					centerY: centerRef.current.y,
+					panX: panRef.current.x,
+					panY: panRef.current.y,
+					scale: scaleRef.current,
+				});
+
+				if (!occlusionResult.isOccluded) {
+					// Try ladder hit test
+					const targetHeight = screenToLadder({
+						screenX,
+						screenY,
+						centerX: centerRef.current.x,
+						centerY: centerRef.current.y,
+						panX: panRef.current.x,
+						panY: panRef.current.y,
+						scale: scaleRef.current,
+						terrain,
+						actorX,
+						actorY,
+						orientation: o,
+						maxHeight: MAX_HEIGHT,
+						visibleCyTop: Math.min(ladderInfo.cyTop, ladderInfo.cyBottom),
+						visibleCyBottom: Math.max(ladderInfo.cyTop, ladderInfo.cyBottom),
+					});
+
+					if (targetHeight !== null) {
+						// Execute vertical movement
+						const fromHeight =
+							actorCandidate?.h ?? selectedActorObj.Position?.h ?? 0;
+
+						startAnimation(
+							selectedActor.id,
+							{ x: actorX, y: actorY, h: fromHeight },
+							{ x: actorX, y: actorY, h: targetHeight }
+						);
+
+						if (selectedActor.kind === "character") {
+							actionService?.execute("character:move", {
+								characterId: selectedActor.id,
+								position: { x: actorX, y: actorY, h: targetHeight },
+							});
+						} else {
+							actionService?.execute("entity:move", {
+								entityId: selectedActor.id,
+								position: { x: actorX, y: actorY, h: targetHeight },
+							});
+						}
+
+						clearSelection();
+						return; // ladder click handled
+					}
+				}
+			}
+
+			// ========================================================================
+			// 2) ACTOR SELECTION
+			// ========================================================================
 			const clickedActor = screenToActor(
 				screenX,
 				screenY,
@@ -307,40 +508,52 @@ export default function Map({
 				actorHitCandidates
 			);
 
-			// Handle actor selection/deselection
 			if (clickedActor) {
 				toggleActorSelection({
 					id: clickedActor.id,
 					kind: clickedActor.kind,
 					moveSpeed: clickedActor.moveSpeed,
 				});
-				console.log(`Selected ${clickedActor.kind}: ${clickedActor.id}`);
 				return;
 			}
 
-			// Handle movement on empty tile
+			// ========================================================================
+			// 3) TILE MOVE (ground movement)
+			// ========================================================================
 			if (hoveredTile && selectedActor && actionService) {
 				const tileHeight =
 					terrain.HeightMap?.[hoveredTile.y]?.[hoveredTile.x] ?? 0;
 
+				// Find the current animated actor (for from position + current height)
 				const actor = actorHitCandidates.find((a) => a.id === selectedActor.id);
+
+				// Determine current height safely (animated > actual)
+				const currentHeight = actor?.h ?? selectedActorObj?.Position?.h ?? 0;
+
+				// if the selected actor can fly, keep altitude when moving onto lower tiles
+				const targetHeight = selectedActorObj?.CanFly
+					? Math.max(tileHeight, currentHeight) // keep altitude if tile lower
+					: tileHeight; // normal ground unit: snap to tile
+
+				// Animate from current -> target (use actor if available for smoother from-pos)
 				if (actor) {
 					startAnimation(
 						selectedActor.id,
 						{ x: actor.x, y: actor.y, h: actor.h },
-						{ x: hoveredTile.x, y: hoveredTile.y, h: tileHeight }
+						{ x: hoveredTile.x, y: hoveredTile.y, h: targetHeight }
 					);
 				}
 
+				// Dispatch the move with the computed targetHeight
 				if (selectedActor.kind === "character") {
 					actionService.execute("character:move", {
 						characterId: selectedActor.id,
-						position: { x: hoveredTile.x, y: hoveredTile.y, h: tileHeight },
+						position: { x: hoveredTile.x, y: hoveredTile.y, h: targetHeight },
 					});
 				} else {
 					actionService.execute("entity:move", {
 						entityId: selectedActor.id,
-						position: { x: hoveredTile.x, y: hoveredTile.y, h: tileHeight },
+						position: { x: hoveredTile.x, y: hoveredTile.y, h: targetHeight },
 					});
 				}
 
@@ -349,17 +562,22 @@ export default function Map({
 		},
 		[
 			preview,
-			hoveredTile,
 			terrain,
+			ref,
 			selectedActor,
+			selectedActorObj,
+			ladderInfo,
 			actionService,
 			actorHitCandidates,
-			startAnimation,
-			toggleActorSelection,
-			clearSelection,
+			hoveredTile,
+			animationState,
+			orientation,
 			centerRef,
 			panRef,
 			scaleRef,
+			startAnimation,
+			toggleActorSelection,
+			clearSelection,
 		]
 	);
 
@@ -367,7 +585,11 @@ export default function Map({
 	// RENDER
 	// ============================================================================
 	const ready = w > 0 && h > 0;
-	const cursorClass = isPanning ? "cursor-grabbing" : "cursor-default";
+	const cursorClass = isPanning
+		? "cursor-grabbing"
+		: hoveredLadderHeight !== null
+		? "cursor-ns-resize"
+		: "cursor-default";
 
 	// Build fast lookup sets for highlighting inside terrain paint
 	const movementRangeIndices = useMemo(() => {
@@ -417,6 +639,8 @@ export default function Map({
 							getActorPosition={getActorPosition}
 							movementRangeIndices={movementRangeIndices}
 							hoveredIndex={hoveredIndex}
+							ladderInfo={ladderInfo}
+							hoveredLadderHeight={hoveredLadderHeight}
 						/>
 					</pixiContainer>
 				</Application>

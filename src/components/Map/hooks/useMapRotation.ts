@@ -35,7 +35,10 @@ export function useMapRotation() {
 
 		let raf = 0;
 		const loop = () => {
-			const t = Math.min(1, (performance.now() - anim.start) / ROTATION_DURATION);
+			const t = Math.min(
+				1,
+				(performance.now() - anim.start) / ROTATION_DURATION
+			);
 			setAnim((prev) => (prev ? { ...prev, t } : null));
 			if (t < 1) {
 				raf = requestAnimationFrame(loop);

@@ -177,7 +177,7 @@ export const TerrainActions = {
 		);
 
 		// Validate actors after terrain changes
-		this.validateActors(context);
+		TerrainActions.validateActors(context);
 	},
 
 	delete(params: { terrainId: string }, context: Context): void {
@@ -254,7 +254,7 @@ export const TerrainActions = {
 		}
 
 		// Validate actors after terrain change
-		this.validateActors(context);
+		TerrainActions.validateActors(context);
 	},
 
 	bulkEditTags(
@@ -309,7 +309,7 @@ export const TerrainActions = {
 		const occupiedTiles = new Set<string>();
 
 		// Validate entities first (they have priority)
-		this.validateActorArray(
+		TerrainActions.validateActorArray(
 			campaign.GameState.Entities,
 			terrain,
 			occupiedTiles,
@@ -318,7 +318,7 @@ export const TerrainActions = {
 		);
 
 		// Then validate characters
-		this.validateActorArray(
+		TerrainActions.validateActorArray(
 			campaign.GameState.Characters,
 			terrain,
 			occupiedTiles,

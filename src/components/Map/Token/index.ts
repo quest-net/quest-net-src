@@ -3,6 +3,5 @@
 
 export { Token } from "./Token";
 export { FallbackToken } from "./FallbackToken";
-export { TokenShadow } from "./TokenShadow";
 export * from "./tokenConstants";
 export * from "./tokenHelpers";

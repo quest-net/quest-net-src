@@ -2,9 +2,14 @@
 // Hook for managing map pan and zoom state
 
 import { useState, useRef, useCallback } from "react";
-import { MIN_SCALE, MAX_SCALE, clampPan, type GridBounds } from "../MapUtilities";
+import {
+	MIN_SCALE,
+	MAX_SCALE,
+	clampPan,
+	type GridBounds,
+} from "../MapUtilities";
 
-const PAN_PADDING = 500;
+const PAN_PADDING = 50;
 
 export interface PanZoomState {
 	scale: number;
@@ -55,7 +60,10 @@ export function useMapPanZoom() {
 			const zoomIntensity = 0.0015;
 			const zoom = Math.exp(-deltaY * zoomIntensity);
 			const newScaleUnclamped = scaleRef.current * zoom;
-			const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScaleUnclamped));
+			const newScale = Math.max(
+				MIN_SCALE,
+				Math.min(MAX_SCALE, newScaleUnclamped)
+			);
 			const actual = newScale / scaleRef.current;
 
 			if (actual === 1) return;
@@ -86,21 +94,24 @@ export function useMapPanZoom() {
 	/**
 	 * Apply a pan delta
 	 */
-	const applyPan = useCallback((dx: number, dy: number, viewWidth: number, viewHeight: number) => {
-		if (!boundsRef.current) return;
+	const applyPan = useCallback(
+		(dx: number, dy: number, viewWidth: number, viewHeight: number) => {
+			if (!boundsRef.current) return;
 
-		setPan((p) =>
-			clampPan(
-				{ x: p.x + dx, y: p.y + dy },
-				centerRef.current,
-				boundsRef.current!,
-				scaleRef.current,
-				viewWidth,
-				viewHeight,
-				PAN_PADDING
-			)
-		);
-	}, []);
+			setPan((p) =>
+				clampPan(
+					{ x: p.x + dx, y: p.y + dy },
+					centerRef.current,
+					boundsRef.current!,
+					scaleRef.current,
+					viewWidth,
+					viewHeight,
+					PAN_PADDING
+				)
+			);
+		},
+		[]
+	);
 
 	return {
 		scale,

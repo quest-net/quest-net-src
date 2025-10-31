@@ -1,7 +1,10 @@
 // MapUtilities.ts - Pure functions and utilities for isometric map rendering
 
 import type { Terrain, TerrainType } from "../../domains/Terrain/Terrain";
-import { TERRAIN_COLORS } from "../../domains/Terrain/Terrain";
+import type { Character } from "../../domains/Character/Character";
+import type { Entity } from "../../domains/Entity/Entity";
+import type { ActorSize } from "../../domains/Actor/Actor";
+import { MAX_HEIGHT, TERRAIN_COLORS } from "../../domains/Terrain/Terrain";
 import { getTokenDimensions } from "./Token";
 import { TILE_H, TILE_W, V_SCALE } from "./Terrain";
 
@@ -302,8 +305,6 @@ export function isPointInDiamond(
 	return dx / halfW + dy / halfH <= 1;
 }
 
-// Cached search radius to avoid recalculation
-const MAX_HEIGHT = 16;
 const SEARCH_RADIUS = Math.ceil((MAX_HEIGHT * V_SCALE) / TILE_H) + 1;
 
 /**
@@ -382,7 +383,7 @@ export interface ActorHitCandidate {
 	y: number;
 	h: number;
 	moveSpeed: number;
-	size: "small" | "medium" | "large";
+	size: ActorSize; // Now using the imported type
 	cx: number; // screen position
 	cy: number; // screen position
 	depth: number; // for sorting (higher = more forward)
@@ -397,10 +398,14 @@ export function isPointInToken(
 	py: number,
 	tokenCx: number,
 	tokenCy: number,
-	size: "small" | "medium" | "large" = "small"
+	size: ActorSize = "small"
 ): boolean {
-	const { width: TOKEN_W_SCALED, height: TOKEN_H_SCALED, cornerRadius } = getTokenDimensions(size);
-	
+	const {
+		width: TOKEN_W_SCALED,
+		height: TOKEN_H_SCALED,
+		cornerRadius,
+	} = getTokenDimensions(size);
+
 	const halfW = TOKEN_W_SCALED / 2;
 	const halfH = TOKEN_H_SCALED / 2;
 
@@ -475,8 +480,8 @@ export function screenToActor(
  * Build actor hit candidates from characters and entities
  */
 export function buildActorHitCandidates(
-	characters: any[],
-	entities: any[],
+	characters: Character[],
+	entities: Entity[],
 	terrain: { Width: number; Length: number; HeightMap: number[][] },
 	orientation: Orientation,
 	animationState: AnimationState | null
@@ -498,7 +503,7 @@ export function buildActorHitCandidates(
 		y: number,
 		h: number,
 		moveSpeed: number,
-		size: "small" | "medium" | "large" = "small"
+		size: ActorSize = "small"
 	) => {
 		if (x < 0 || x >= W || y < 0 || y >= L) return;
 
@@ -532,7 +537,15 @@ export function buildActorHitCandidates(
 
 	for (const c of characters ?? []) {
 		const { x, y, h } = c.Position ?? { x: 0, y: 0, h: 0 };
-		addActor(c.Id, "character", x, y, h ?? 0, c.MoveSpeed ?? 30, c.Size ?? "small");
+		addActor(
+			c.Id,
+			"character",
+			x,
+			y,
+			h ?? 0,
+			c.MoveSpeed ?? 30,
+			c.Size ?? "small"
+		);
 	}
 
 	for (const e of entities ?? []) {
@@ -543,8 +556,8 @@ export function buildActorHitCandidates(
 			pos.x,
 			pos.y,
 			pos.h ?? 0,
-			(e as any).MoveSpeed ?? 30,
-			(e as any).Size ?? "small"
+			e.MoveSpeed ?? 30,
+			e.Size ?? "small"
 		);
 	}
 
@@ -595,4 +608,26 @@ export function calculateMovementRange(
 	}
 
 	return range;
+}
+export function findActor(
+	actorId: string,
+	kind: "character" | "entity" | undefined,
+	characters: Character[],
+	entities: Entity[]
+): Character | Entity | null {
+	// Optimized path: search only the specified array
+	if (kind === "character") {
+		return characters.find((c) => c.Id === actorId) ?? null;
+	}
+	if (kind === "entity") {
+		return entities.find((e) => e.Id === actorId) ?? null;
+	}
+
+	// Fallback: search both arrays when kind is unknown
+	// Characters first (arbitrary choice, both are equally valid)
+	return (
+		characters.find((c) => c.Id === actorId) ??
+		entities.find((e) => e.Id === actorId) ??
+		null
+	);
 }
