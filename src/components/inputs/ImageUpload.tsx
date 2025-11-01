@@ -366,27 +366,27 @@ export function ImageUpload({
 				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
 				className={`
-          border-2 border-dashed rounded-lg p-8
-          flex flex-col items-center justify-center
-          transition-colors cursor-pointer min-h-[200px]
-          ${dragOver ? "border-primary bg-primary/10" : "border-base-300"}
-          ${readOnly ? "opacity-50 cursor-not-allowed" : "hover:border-primary"}
-          ${
-						uploadState === "processing" || uploadState === "uploading"
-							? "cursor-wait"
-							: ""
+					border-2 border-dashed rounded-lg p-8
+					flex flex-col items-center justify-center
+					transition-colors cursor-pointer min-h-[200px] m-0
+					${dragOver ? "border-primary bg-primary/10" : "border-base-300"}
+					${readOnly ? "opacity-50 cursor-not-allowed" : "hover:border-primary"}
+					${
+					uploadState === "processing" || uploadState === "uploading"
+						? "cursor-wait"
+						: ""
 					}
-        `}
+        		`}
 				onClick={!readOnly && uploadState === "idle" ? handleBrowse : undefined}
 			>
 				{uploadState === "idle" && fileStatuses.length === 0 && (
 					<>
 						<span className="icon-[mdi--cloud-upload] w-12 h-12 mb-2 opacity-50"></span>
-						<p className="text-sm font-medium mb-1">
+						<p className="text-sm font-medium">
 							Drop {multiple ? "images" : "an image"} here or click to browse
 						</p>
-						<p className="text-xs opacity-60">
-							Max 1 MB per image, up to 2048px. JPEG/GIF supported.
+						<p className="text-s">
+							Any image type + GIFs under 1 MB supported.
 						</p>
 					</>
 				)}
@@ -419,7 +419,7 @@ export function ImageUpload({
 
 				{/* Multi-file status display */}
 				{fileStatuses.length > 0 && (
-					<div className="w-full space-y-2">
+					<div className="flex flex-wrap justify-between gap-4">
 						{fileStatuses.map((status, index) => (
 							<div key={index} className="flex items-center gap-2 text-sm">
 								{status.state === "processing" && (

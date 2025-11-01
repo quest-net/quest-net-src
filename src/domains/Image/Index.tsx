@@ -52,11 +52,10 @@ export function ImageIndex() {
 	}));
 
 	return (
-		<div className="space-y-6 p-6">
+		<div className="space-y-6">
 			{/* Upload Section - Above IndexView */}
-			<div className="card border-2 bg-base-100">
+			<div className="card border-2 bg-base-100 m-6">
 				<div className="card-body">
-					<h3 className="text-lg font-semibold mb-2">Upload New Image</h3>
 					<ImageUpload
 						value={uploadingImageId}
 						onChange={handleUploadComplete}

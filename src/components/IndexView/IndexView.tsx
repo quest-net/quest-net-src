@@ -45,6 +45,9 @@ interface IndexViewProps {
 	searchEnabled?: boolean;
 	searchPlaceholder?: string;
 
+	// NEW: Pagination
+	itemsPerPage?: number; // Default: 20
+
 	// Drawer content
 	renderEditForm: (
 		item: IndexViewItem | null,
@@ -72,6 +75,7 @@ export function IndexView({
 	onCreateClick,
 	searchEnabled = true,
 	searchPlaceholder = "Search...",
+	itemsPerPage = 25,
 	renderEditForm,
 	onBulkUpdateItemTags,
 	emptyMessage = "No items yet. Create one to get started!",
@@ -88,6 +92,9 @@ export function IndexView({
 		new Set()
 	);
 	const [moveToPath, setMoveToPath] = useState("");
+
+	// Pagination state
+	const [currentPage, setCurrentPage] = useState(1);
 
 	// When searching, show all items that match (ignore folders)
 	// When not searching, filter by current path
@@ -109,8 +116,25 @@ export function IndexView({
 		)
 	).sort();
 
-	// Clear selection when navigating or searching
+	// NEW: Combine folders and items for unified pagination
+	// Folders come first, then items (just like a file browser)
+	type DisplayEntry = 
+		| { type: 'folder'; data: FolderInfo }
+		| { type: 'item'; data: IndexViewItem };
+
+	const combinedEntries: DisplayEntry[] = [
+		...folders.map(f => ({ type: 'folder' as const, data: f })),
+		...filteredItems.map(i => ({ type: 'item' as const, data: i }))
+	];
+
+	// NEW: Calculate pagination on combined entries
+	const totalPages = Math.ceil(combinedEntries.length / itemsPerPage);
+	const startIdx = (currentPage - 1) * itemsPerPage;
+	const paginatedEntries = combinedEntries.slice(startIdx, startIdx + itemsPerPage);
+
+	// NEW: Reset to page 1 when navigating or searching
 	useEffect(() => {
+		setCurrentPage(1);
 		setSelectedItemIds(new Set());
 	}, [currentPath, searchQuery]);
 
@@ -164,6 +188,8 @@ export function IndexView({
 		setSelectedItemIds(newSelected);
 	};
 
+	// NEW: Select all filtered items (across all pages)
+	// Note: Only selects items, not folders
 	const handleSelectAll = () => {
 		const allItemIds = filteredItems.map((item) => item.id);
 		setSelectedItemIds(new Set(allItemIds));
@@ -224,6 +250,15 @@ export function IndexView({
 		handleExitSelectionMode();
 	};
 
+	// NEW: Pagination handlers
+	const handlePrevPage = () => {
+		setCurrentPage((prev) => Math.max(1, prev - 1));
+	};
+
+	const handleNextPage = () => {
+		setCurrentPage((prev) => Math.min(totalPages, prev + 1));
+	};
+
 	return (
 		<div className="drawer">
 			<input
@@ -232,12 +267,12 @@ export function IndexView({
 				className="drawer-toggle"
 				checked={isDrawerOpen}
 				onChange={(e) => {
-				const open = e.target.checked;
-				setDrawerOpen(open);
-				if (!open) {
-					setSelectedItem(null);
-					setIsCreating(false);
-				}
+					const open = e.target.checked;
+					setDrawerOpen(open);
+					if (!open) {
+						setSelectedItem(null);
+						setIsCreating(false);
+					}
 				}}
 			/>
 
@@ -281,8 +316,14 @@ export function IndexView({
 						{/* Selection Mode Controls */}
 						{isSelectionMode && (
 							<div className="flex gap-2 items-center">
+								{/* NEW: Show if selection spans multiple pages */}
 								<span className="text-sm font-medium">
 									{selectedItemIds.size} selected
+									{selectedItemIds.size > 0 && totalPages > 1 && (
+										<span className="text-xs opacity-60 ml-1">
+											(across all pages)
+										</span>
+									)}
 								</span>
 
 								{/* Move controls - only show if items are selected */}
@@ -404,7 +445,7 @@ export function IndexView({
 					</div>
 
 					{/* Items or Empty State */}
-					{folders.length === 0 && filteredItems.length === 0 ? (
+					{combinedEntries.length === 0 ? (
 						<div className="text-center py-12 border-2 border-dashed border-base-300 rounded-lg">
 							<span className="icon-[f7--question-circle] w-16 h-16 opacity-30 inline-block mb-4"></span>
 							<p className="text-xl mb-2">
@@ -417,28 +458,67 @@ export function IndexView({
 							)}
 						</div>
 					) : (
-						<div className="flex flex-wrap gap-4">
-							{/* Render Folders First (only when not searching) */}
-							{folders.map((folder) => (
-								<FolderCard
-									key={folder.fullPath}
-									folder={folder}
-									onClick={() => handleFolderClick(folder)}
-								/>
-							))}
+						<>
+							<div className="flex flex-wrap gap-4 justify-between">
+								{/* Render paginated entries (folders and items together) */}
+								{paginatedEntries.map((entry) => {
+									if (entry.type === 'folder') {
+										return (
+											<FolderCard
+												key={entry.data.fullPath}
+												folder={entry.data}
+												onClick={() => handleFolderClick(entry.data)}
+											/>
+										);
+									} else {
+										return (
+											<ItemCard
+												key={entry.data.id}
+												item={entry.data}
+												onCardClick={() => handleOpenEdit(entry.data)}
+												isSelectionMode={isSelectionMode}
+												isSelected={selectedItemIds.has(entry.data.id)}
+												onToggleSelection={() => handleToggleSelection(entry.data.id)}
+											/>
+										);
+									}
+								})}
 
-							{/* Render Items */}
-							{filteredItems.map((item) => (
-								<ItemCard
-									key={item.id}
-									item={item}
-									onCardClick={() => handleOpenEdit(item)}
-									isSelectionMode={isSelectionMode}
-									isSelected={selectedItemIds.has(item.id)}
-									onToggleSelection={() => handleToggleSelection(item.id)}
-								/>
-							))}
-						</div>
+								{/* Ghost divs to align last row left */}
+								{[...Array(10)].map((_, i) => (
+									<div key={`ghost-${i}`} className="w-64" aria-hidden="true" />
+								))}
+							</div>
+
+							{/* NEW: Pagination Controls */}
+							{totalPages > 1 && (
+								<div className="flex justify-center items-center gap-4 pt-4 pb-2">
+									<button
+										onClick={handlePrevPage}
+										disabled={currentPage === 1}
+										className="btn btn-sm btn-ghost"
+										aria-label="Previous page"
+									>
+										<span className="icon-[mdi--chevron-left] w-5 h-5" />
+										Prev
+									</button>
+
+									<span className="text-sm">
+										Page {currentPage} of {totalPages}
+									</span>
+
+									<button
+										onClick={handleNextPage}
+										disabled={currentPage === totalPages}
+										className="btn btn-sm btn-ghost"
+										aria-label="Next page"
+									>
+										Next
+										<span className="icon-[mdi--chevron-right] w-5 h-5" />
+									</button>
+								</div>
+							)}
+						</>
 					)}
 				</div>
 			</div>
@@ -546,6 +626,7 @@ function ItemCard({
 							<ImageDisplay
 								imageId={item.imageId}
 								className="w-full h-full object-cover"
+								style={{ overflowClipMargin: "unset" }}
 								alt={item.label}
 							/>
 						) : item.icon ? (

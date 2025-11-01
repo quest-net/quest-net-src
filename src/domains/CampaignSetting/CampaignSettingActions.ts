@@ -16,9 +16,6 @@ export const CampaignSettingActions = {
 				playersSeeDMRolls: false,
 				playersSeePeerRolls: true,
 			},
-			MapSettings: {
-				is3D: true,
-			},
 		};
 	},
 

@@ -1,7 +1,6 @@
 export interface CampaignSettings {
 	StatDefinitions: StatDefinition[];
 	VisibilitySettings: VisibilitySettings;
-	MapSettings: MapSettings;
 }
 
 export interface StatDefinition {
@@ -18,6 +17,4 @@ export interface VisibilitySettings {
 	playersSeePeerRolls: boolean;
 }
 
-export interface MapSettings {
-	is3D: boolean;
-}
+//TODO: Calendar Settings

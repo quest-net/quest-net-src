@@ -45,9 +45,9 @@ export function DMView() {
 			{/* Header */}
 			<header className="navbar border-b-2 px-6 justify-between">
 				<div className="flex items-center gap-4">
-					<div className="badge badge-primary badge-lg font-mono">
-						{campaign.RoomCode}
-					</div>
+					<button className="btn btn-primary h-8 p-2 font-mono" onClick={() => navigator.clipboard.writeText(campaign.RoomCode)}>
+						{campaign.RoomCode}<span className="icon-[heroicons-solid--clipboard-copy] h-5 w-5"></span>
+					</button>
 					<PeerStatus connectionStatus={connectionStatus} peers={peers} />
 				</div>
 				<h1 className="text-xl font-bold">{campaign.Name}</h1>

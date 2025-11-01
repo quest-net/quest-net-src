@@ -45,9 +45,8 @@ import {
 	useMapRotation,
 	useMapPanZoom,
 	useMapInteraction,
-	useMapSelection,
 } from "./hooks";
-
+import { useMapState } from './MapStateProvider';
 import {
 	calculateLadderInfo,
 	checkLadderOcclusion,
@@ -115,13 +114,12 @@ export default function Map({
 		handleZoom,
 		applyPan,
 	} = useMapPanZoom();
-	const {
-		selectedActor,
-		hoveredTile,
-		toggleActorSelection,
-		clearSelection,
-		updateHoveredTile,
-	} = useMapSelection();
+	const { selectedActor, 
+		hoveredTile, 
+		toggleActorSelection, 
+		clearSelection, 
+		updateHoveredTile 
+	} = useMapState();
 	const { isPanning, handlers } = useMapInteraction({
 		containerRef: ref,
 		allowPanZoom,

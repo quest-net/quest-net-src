@@ -123,23 +123,6 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 					</FormField>
 				</FormGrid>
 			</FormSection>
-
-			{/* Map Settings */}
-			<FormSection
-				title="Map Settings"
-				description="Configure the game map display"
-			>
-				<FormField label="3D Mode">
-					<input
-						type="checkbox"
-						checked={data.MapSettings.is3D}
-						onChange={(e) =>
-							handleSettingChange("MapSettings", "is3D", e.target.checked)
-						}
-						className="toggle toggle-primary"
-					/>
-				</FormField>
-			</FormSection>
 		</>
 	);
 }

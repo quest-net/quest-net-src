@@ -151,7 +151,7 @@ export function SpriteDisplay({
 
         if (loadId !== currentLoadId.current || cancelled) return;
 
-        const source = new ImageSource({ resource: imageElement });
+        const source = new ImageSource({ resource: imageElement, autoGenerateMipmaps: true, });
         createdTexture = new Texture({ source });
 
         textureCache.set(imageId, createdTexture);
