@@ -15,6 +15,7 @@ export interface StatDefinition {
 export interface VisibilitySettings {
 	playersSeeDMRolls: boolean;
 	playersSeePeerRolls: boolean;
+	playersSeeEntityHealth: boolean;
 }
 
 //TODO: Calendar Settings

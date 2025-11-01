@@ -10,7 +10,7 @@ import {
 	Text as PixiText,
 } from "pixi.js";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-
+import { usePeerTracking } from "../../hooks/usePeerTracking";
 extend({
 	Container: PixiContainer,
 	Graphics: PixiGraphics,
@@ -52,6 +52,7 @@ import {
 	checkLadderOcclusion,
 	screenToLadder,
 } from "./Ladder";
+import { HardDestroyOnUnmount } from "./MapCleanup";
 
 interface MapProps {
 	characters: Character[];
@@ -96,6 +97,7 @@ export default function Map({
 		autoSource: { characters, entities }
 	  });
 	const { actionService } = useActionService();
+	const { canAccessActor } = usePeerTracking();
 	const dpr = typeof window !== "undefined" ? window.devicePixelRatio : 1;
 	const [hoveredLadderHeight, setHoveredLadderHeight] = useState<number | null>(
 		null
@@ -120,6 +122,11 @@ export default function Map({
 		clearSelection, 
 		updateHoveredTile 
 	} = useMapState();
+	// Is the currently selected actor actually controllable by this user?
+	const canControlSelected = useMemo(
+		() => (selectedActor ? canAccessActor(selectedActor.id) : false),
+		[selectedActor, canAccessActor]
+	);
 	const { isPanning, handlers } = useMapInteraction({
 		containerRef: ref,
 		allowPanZoom,
@@ -180,7 +187,8 @@ export default function Map({
 	// Calculate movement range for selected actor
 	const movementRange = useMemo(() => {
 		if (!selectedActor || !terrain) return [];
-
+		// Hide range if the user doesn't control the selected actor
+		if (!canControlSelected) return [];
 		const actor = actorHitCandidates.find((a) => a.id === selectedActor.id);
 		if (!actor) return [];
 
@@ -191,7 +199,7 @@ export default function Map({
 			terrain.Width,
 			terrain.Length
 		);
-	}, [selectedActor, actorHitCandidates, terrain]);
+	}, [selectedActor, actorHitCandidates, terrain, canControlSelected]);
 
 	// ============================================================================
 	// CENTERING & BOUNDS
@@ -268,12 +276,17 @@ export default function Map({
 			const screenY = e.clientY - rect.top;
 
 			const o: Orientation = animationState ? animationState.to : orientation;
-
+			// If a non-controlling user has someone selected, suppress all hover affordances
+			if (selectedActor && !canControlSelected) {
+			setHoveredLadderHeight(null);
+			updateHoveredTile(null);
+			return;
+			}
 			// Default: clear ladder hover
 			let newHoveredHeight: number | null = null;
 
 			// If a flier is selected, attempt ladder hover first
-			if (selectedActor && selectedActorObj?.CanFly && ladderInfo) {
+			if (selectedActor && canControlSelected && selectedActorObj?.CanFly && ladderInfo) {
 				// Get ladder position
 				const actorCandidate = actorHitCandidates.find(
 					(a) => a.id === selectedActor.id
@@ -372,6 +385,7 @@ export default function Map({
 			panRef,
 			scaleRef,
 			updateHoveredTile,
+			canControlSelected,
 		]
 	);
 
@@ -385,11 +399,11 @@ export default function Map({
 			const screenY = e.clientY - rect.top;
 
 			const o: Orientation = animationState ? animationState.to : orientation;
-
+			const isAuthorized = selectedActor ? canAccessActor(selectedActor.id) : false;
 			// ========================================================================
 			// 1) LADDER CLICK (priority when a flier is selected)
 			// ========================================================================
-			if (selectedActor && selectedActorObj?.CanFly && ladderInfo) {
+			if (selectedActor && isAuthorized && selectedActorObj?.CanFly && ladderInfo) {
 				const actorCandidate = actorHitCandidates.find(
 					(a) => a.id === selectedActor.id
 				);
@@ -493,7 +507,7 @@ export default function Map({
 			// ========================================================================
 			// 3) TILE MOVE (ground movement)
 			// ========================================================================
-			if (hoveredTile && selectedActor && actionService) {
+			if (hoveredTile && selectedActor && actionService && isAuthorized) {
 				const tileHeight =
 					terrain.HeightMap?.[hoveredTile.y]?.[hoveredTile.x] ?? 0;
 
@@ -552,6 +566,7 @@ export default function Map({
 			startAnimation,
 			toggleActorSelection,
 			clearSelection,
+			canAccessActor,
 		]
 	);
 
@@ -593,9 +608,13 @@ export default function Map({
 					resizeTo={ref}
 					antialias
 					autoDensity
+					sharedTicker={false}
+					autoStart
 					resolution={dpr}
 					backgroundAlpha={0}
+					preference="webgl"
 				>
+					<HardDestroyOnUnmount />
 					<pixiContainer
 						x={currentCenter.cx + pan.x}
 						y={currentCenter.cy + pan.y}
@@ -642,27 +661,6 @@ export default function Map({
 					</div>
 				</>
 			)}
-
-			<div className="pointer-events-none absolute right-3 bottom-3 rounded-xl bg-base-100/70 px-2 py-1 text-[11px] shadow">
-				<span className="opacity-70">Terrain:</span>{" "}
-				<span className="font-mono">{terrain?.Name ?? "-"}</span>{" "}
-				<span className="opacity-70">| Rot:</span>{" "}
-				<span className="font-mono">
-					{(animationState ? animationState.to : orientation) * 90}°
-				</span>{" "}
-				{animationState && (
-					<span className="opacity-60">({Math.round(tNorm * 100)}%)</span>
-				)}
-				{hoveredTile && (
-					<>
-						{" "}
-						<span className="opacity-70">| Hover:</span>{" "}
-						<span className="font-mono">
-							({hoveredTile.x}, {hoveredTile.y})
-						</span>
-					</>
-				)}
-			</div>
 		</div>
 	);
 }

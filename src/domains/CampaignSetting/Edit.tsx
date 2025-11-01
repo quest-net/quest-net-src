@@ -121,6 +121,21 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 							className="toggle toggle-primary"
 						/>
 					</FormField>
+
+					<FormField label="Players can see entities' max health">
+						<input
+							type="checkbox"
+							checked={data.VisibilitySettings.playersSeeEntityHealth}
+							onChange={(e) =>
+								handleSettingChange(
+									"VisibilitySettings",
+									"playersSeeEntityHealth",
+									e.target.checked
+								)
+							}
+							className="toggle toggle-primary"
+						/>
+					</FormField>
 				</FormGrid>
 			</FormSection>
 		</>

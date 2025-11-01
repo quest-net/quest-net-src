@@ -1,7 +1,7 @@
 // hooks/useActorAnimations.ts
 // Manages smooth movement animations for actors on the map
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { Position } from "../../../domains/Actor/Actor";
 import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
@@ -139,15 +139,16 @@ export function useActorAnimations(opts?: UseActorAnimationsOpts) {
     [animations]
   );
 
-  // -------------------- Auto-animate REMOTE updates --------------------
-  useEffect(() => {
-    const src = opts?.autoSource;
-    if (!src) return;
+  // -------------------- Auto-animate REMOTE updates (SYNCHRONOUS) --------------------
+  // Run during render phase to prevent teleport flicker
+  // By detecting position changes and starting animations synchronously during render,
+  // we ensure animations are already running when getActorPosition is called
+  
+  const chars = opts?.autoSource?.characters ?? [];
+  const ents = opts?.autoSource?.entities ?? [];
 
-    const chars = src.characters ?? [];
-    const ents = src.entities ?? [];
-
-    // Build current snapshot
+  // Build current snapshot synchronously during render using useMemo
+  const currentPositions = useMemo(() => {
     const next = new Map<string, Position>();
     for (const c of chars) {
       const p = c?.Position ?? { x: 0, y: 0, h: 0 };
@@ -157,17 +158,16 @@ export function useActorAnimations(opts?: UseActorAnimationsOpts) {
       const p = (e as any)?.Position ?? { x: 0, y: 0, h: 0 };
       next.set(e.Id, { x: p.x, y: p.y, h: p.h ?? 0 });
     }
+    return next;
+  }, [chars, ents]);
 
-    // First run: seed & exit
-    if (!prevPositionsRef.current) {
-      prevPositionsRef.current = next;
-      return;
-    }
-
+  // Detect changes and start animations synchronously during render
+  // This happens BEFORE getActorPosition is called, preventing teleport flicker
+  if (prevPositionsRef.current) {
     const prev = prevPositionsRef.current;
 
     // Diff and animate
-    for (const [id, toPos] of next) {
+    for (const [id, toPos] of currentPositions) {
       const fromPos = prev.get(id);
       if (!fromPos) continue;
 
@@ -175,15 +175,20 @@ export function useActorAnimations(opts?: UseActorAnimationsOpts) {
       if (!moved) continue;
 
       // Skip one cycle if we already started this animation locally
-      if (suppressNextAutoRef.current.delete(id)) {
+      if (suppressNextAutoRef.current.has(id)) {
+        suppressNextAutoRef.current.delete(id);
         continue;
       }
 
-      startAnimation(id, fromPos, toPos);
+      // Only start animation if not already animating to avoid restarting mid-animation
+      if (!animationsRef.current.has(id)) {
+        startAnimation(id, fromPos, toPos);
+      }
     }
+  }
 
-    prevPositionsRef.current = next;
-  }, [opts?.autoSource?.characters, opts?.autoSource?.entities, startAnimation]);
+  // Update previous positions after diffing (on every render)
+  prevPositionsRef.current = currentPositions;
 
   return {
     startAnimation,

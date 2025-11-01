@@ -12,6 +12,7 @@ import {
 import Map from "../../components/Map/Map";
 import { TagEditor } from "../../components/inputs/TagEditor";
 import TerrainEditor from "../../components/inputs/TerrainEditor";
+import { MapStateProvider } from "../../components/Map/MapStateProvider";
 
 // ============================================================================
 // MAIN COMPONENT
@@ -211,14 +212,16 @@ function TerrainForm({ data, onChange }: TerrainFormProps) {
 				title="Live Map Preview"
 			>
 				<div className="h-168 w-full rounded-lg border bg-base-200 overflow-hidden">
-				<Map
-					preview
-					allowPanZoom
-					showControls
-					characters={[]}
-					entities={[]}
-					terrain={data}
-				/>
+					<MapStateProvider>
+						<Map
+							preview
+							allowPanZoom
+							showControls
+							characters={[]}
+							entities={[]}
+							terrain={data}
+						/>
+				</MapStateProvider>
 				</div>
 			</FormSection>
 			{/* Tags */}

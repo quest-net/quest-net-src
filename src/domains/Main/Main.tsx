@@ -3,7 +3,7 @@
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import Map from "../../components/Map/Map";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { MapStateProvider } from "../../components/Map/MapStateProvider";
 import { Inspector } from "./Inspector";
 
@@ -19,8 +19,6 @@ type DMBottomTab = "inspector";
 export function Main() {
 	const context = useQuestContext();
 	const campaign = CampaignActions.getActiveCampaign(context);
-	const [mapKey, setMapKey] = useState(0);
-
 	const isDM = context.User.Role === "dm";
 
 	// Top tabs state (same for everyone)
@@ -30,11 +28,6 @@ export function Main() {
 	const [activeBottomTab, setActiveBottomTab] = useState<
 		PlayerBottomTab | DMBottomTab
 	>(isDM ? "inspector" : "character");
-
-	// Force map remount when component becomes visible again
-	useEffect(() => {
-		setMapKey((prev) => prev + 1);
-	}, []);
 
 	// Get the selected character for players
 	const selectedCharacterId =
@@ -61,7 +54,6 @@ export function Main() {
 				{/* Left 70%: Map */}
 				<div className="flex-1 overflow-hidden">
 					<Map
-						key={mapKey}
 						characters={campaign.GameState.Characters}
 						entities={campaign.GameState.Entities}
 						terrain={campaign.Terrains.find(

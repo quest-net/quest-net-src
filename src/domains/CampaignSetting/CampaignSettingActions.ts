@@ -15,6 +15,7 @@ export const CampaignSettingActions = {
 			VisibilitySettings: {
 				playersSeeDMRolls: false,
 				playersSeePeerRolls: true,
+				playersSeeEntityHealth: false,
 			},
 		};
 	},
