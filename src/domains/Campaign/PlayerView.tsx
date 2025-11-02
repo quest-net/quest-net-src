@@ -12,6 +12,7 @@ import { PeerStatus } from "../Room/PeerStatus";
 import { CharacterSelect } from "../Character/CharacterSelect";
 import { usePeerTracking } from "../../hooks/usePeerTracking";
 import { Main } from "../Main/Main";
+import { AudioPlayer } from "../Audio/AudioPlayer";
 
 export function PlayerView() {
 	const { identifier } = useParams<{ identifier: string }>();
@@ -54,6 +55,7 @@ export function PlayerView() {
 
 	return (
 		<div className="flex flex-col h-screen">
+			<AudioPlayer/>
 			{/* Header - Always Visible */}
 			<header className="navbar border-b-2 px-6 justify-between">
 				<div className="flex items-center gap-4">
@@ -61,11 +63,6 @@ export function PlayerView() {
 				</div>
 				<h1 className="text-xl font-bold">{campaign.Name}</h1>
 				<div className="flex items-center gap-2">
-					{selectedCharacter && (
-						<div className="badge badge-primary badge-lg">
-							Playing as: {selectedCharacter.Name}
-						</div>
-					)}
 					{hasSelectedCharacter && (
 						<button
 							className="btn btn-neutral btn-sm"

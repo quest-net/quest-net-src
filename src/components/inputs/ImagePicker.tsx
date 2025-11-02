@@ -63,12 +63,6 @@ export function ImagePicker({
 		}
 	};
 
-	const formatFileSize = (bytes: number): string => {
-		if (bytes < 1024) return `${bytes} B`;
-		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-		return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-	};
-
 	return (
 		<div className="space-y-2">
 			{/* Current Image Preview */}
@@ -201,8 +195,8 @@ export function ImagePicker({
 											key={image.Id}
 											onClick={() => setSelectedImageId(image.Id)}
 											className={`
-                        card bg-base-100 border-2 cursor-pointer transition-all
-                        ${
+												card bg-base-100 border-2 cursor-pointer transition-all
+												${
 													selectedImageId === image.Id
 														? "border-primary ring-2 ring-primary"
 														: "border-base-300 hover:border-primary"
@@ -210,7 +204,7 @@ export function ImagePicker({
                       `}
 										>
 											<figure className="px-2 pt-2">
-												<div className="w-full h-24 bg-base-200 rounded-lg overflow-hidden flex items-center justify-center">
+												<div className="w-full h-32 bg-base-200 rounded-lg overflow-hidden flex items-center justify-center">
 													<ImageDisplay
 														imageId={image.Id}
 														className="w-full h-full object-contain"
@@ -225,12 +219,6 @@ export function ImagePicker({
 												>
 													{image.Name}
 												</h4>
-												<div className="text-xs opacity-60">
-													<div>{formatFileSize(image.FileSize)}</div>
-													<div className="font-mono">
-														{image.Width}×{image.Height}
-													</div>
-												</div>
 												{selectedImageId === image.Id && (
 													<div className="badge badge-primary badge-xs">
 														Selected

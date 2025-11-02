@@ -11,6 +11,7 @@ import {
 	FormGrid,
 } from "../../components/Form/Form";
 import { StatDefinitionsEditor } from "../../components/inputs/StatDefinitionEditor";
+import CalendarConfigEditor from "../../components/inputs/CalendarConfigEditor";
 
 export function CampaignSettingEdit() {
 	const context = useQuestContext();
@@ -137,6 +138,16 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 						/>
 					</FormField>
 				</FormGrid>
+			</FormSection>
+			{/* Calendar Settings */}
+			<FormSection
+				title="Calendar Settings"
+				description="Customize your world’s calendar (days, weeks, months, labels, names)."
+			>
+				<CalendarConfigEditor
+					value={data.CalendarSettings}
+					onChange={(CalendarSettings) => updateSettings({ CalendarSettings })}
+				/>
 			</FormSection>
 		</>
 	);

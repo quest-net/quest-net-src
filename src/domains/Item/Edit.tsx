@@ -12,6 +12,7 @@ import {
 } from "../../components/Form/Form";
 import { TagEditor } from "../../components/inputs/TagEditor";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
+import { RestoreRuleEditor } from "../../components/inputs/RestoreRuleEditor";
 
 interface ItemEditProps {
 	item?: Item;
@@ -184,6 +185,17 @@ function ItemForm({ data, onChange }: ItemFormProps) {
 						/>
 					</FormField>
 				</FormGrid>
+			</FormSection>
+
+			{/* Restore Rules */}
+			<FormSection
+				title="Restore Rules"
+				description="Configure how this item's uses restore after rests"
+			>
+				<RestoreRuleEditor
+					value={data.RestoreRule}
+					onChange={(rule) => handleFieldChange("RestoreRule", rule)}
+				/>
 			</FormSection>
 
 			{/* Tags */}

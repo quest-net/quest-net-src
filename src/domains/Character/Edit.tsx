@@ -14,6 +14,7 @@ import { StatDefinitionsEditor } from "../../components/inputs/StatDefinitionEdi
 import { AttributeEditor } from "../../components/inputs/AttributeEditor";
 import { TagEditor } from "../../components/inputs/TagEditor";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
+import { isDmAccess } from "../../utils/UrlParser";
 
 interface CharacterEditProps {
 	character?: Character;
@@ -41,7 +42,12 @@ export function CharacterEdit({
 
 		if (!character) {
 			// Create mode
+			if (isDmAccess())
 			actionService.execute("character:create", {
+				character: data,
+			});
+			else
+			actionService.execute("character:createAndSpawn", {
 				character: data,
 			});
 		} else {

@@ -1,5 +1,6 @@
 // domains/Character/CharacterSelect.tsx
 
+import { useState } from "react";
 import {
 	useQuestContext,
 	triggerContextUpdate,
@@ -8,6 +9,8 @@ import { PeerInfo } from "../../hooks/usePeerTracking";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { UserActions } from "../User/UserActions";
 import { Character } from "./Character";
+import { CharacterEdit } from "./Edit";
+import { ImageDisplay } from "../Image/ImageDisplay";
 
 interface CharacterSelectProps {
 	peers: PeerInfo[];
@@ -17,9 +20,10 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 	const context = useQuestContext();
 	const campaign = CampaignActions.getActiveCampaign(context);
 
+	const [isDrawerOpen, setDrawerOpen] = useState(false);
+	const [createCounter, setCreateCounter] = useState(0);
+
 	// Collect all character IDs selected by peers for this campaign
-	// IMPORTANT: Use RoomCode as the key since that's what all users use
-	// (players receive sanitized campaigns where Id = RoomCode)
 	const selectedByPeers = new Set<string>();
 	peers.forEach((peer) => {
 		const selectedCharId = peer.user.SelectedCharacters[campaign.RoomCode];
@@ -36,7 +40,7 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 	const handleSelectCharacter = (character: Character) => {
 		UserActions.selectCharacter(
 			{
-				campaignId: campaign.RoomCode, // Use RoomCode for consistency
+				campaignId: campaign.RoomCode,
 				characterId: character.Id,
 			},
 			context
@@ -44,65 +48,116 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 		triggerContextUpdate();
 	};
 
+	const handleOpenCreate = () => {
+		setCreateCounter((prev) => prev + 1);
+		setDrawerOpen(true);
+	};
+
+	const handleCloseDrawer = () => {
+		setDrawerOpen(false);
+	};
+
 	return (
-		<div className="max-w-6xl mx-auto">
-			<div className="text-center mb-8">
-				<h1 className="text-3xl font-bold mb-2">Select Your Character</h1>
-				<p className="text-base-content/60">
-					Choose a character to play in this campaign
-				</p>
+		<div className="drawer">
+			<input
+				id="character-select-drawer"
+				type="checkbox"
+				className="drawer-toggle"
+				checked={isDrawerOpen}
+				onChange={(e) => setDrawerOpen(e.target.checked)}
+			/>
+
+			{/* Main Content */}
+			<div className="drawer-content">
+				<div className="max-w-6xl mx-auto">
+					<div className="text-center mb-8">
+						<h1 className="text-3xl font-bold mb-2">Select Your Character</h1>
+						<p className="text-base-content/60">
+							Choose a character to play in this campaign
+						</p>
+					</div>
+
+					{/* Create Button - Always Visible */}
+					<div className="flex justify-center mb-6">
+						<button onClick={handleOpenCreate} className="btn btn-primary">
+							<span className="icon-[mdi--plus] w-5 h-5 mr-1" />
+							Create New Character
+						</button>
+					</div>
+
+					{availableCharacters.length === 0 ? (
+						<div className="text-center py-12">
+							<div className="text-6xl mb-4">🎭</div>
+							<p className="text-xl mb-2">No characters available</p>
+							<p className="text-base-content/60">
+								All spawned characters are currently taken by other players.
+								Create a new character to get started!
+							</p>
+						</div>
+					) : (
+						<div className="flex flex-wrap gap-4 justify-center">
+							{availableCharacters.map((character) => (
+								<div
+									key={character.Id}
+									onClick={() => handleSelectCharacter(character)}
+									className="card bg-base-100 border-2 border-base-300 hover:border-primary transition-colors w-64 cursor-pointer"
+								>
+									<figure className="px-4 pt-4">
+										<div className="w-full aspect-square bg-base-200 rounded-lg overflow-hidden flex items-center justify-center">
+											{character.Image ? (
+												<ImageDisplay
+													imageId={character.Image}
+													className="w-full h-full object-cover"
+													style={{ overflowClipMargin: "unset" }}
+													alt={character.Name}
+												/>
+											) : (
+												<span className="icon-[mdi--account] w-24 h-24 opacity-30"></span>
+											)}
+										</div>
+									</figure>
+									<div className="card-body p-4">
+										<h3 className="card-title text-center justify-center">
+											{character.Name}
+										</h3>
+										<div className="min-h-10">
+											{character.Description && (
+												<p className="text-sm text-center line-clamp-2">
+													{character.Description}
+												</p>
+											)}
+										</div>
+									</div>
+								</div>
+							))}
+
+							{/* Ghost divs to align last row left */}
+							{[...Array(10)].map((_, i) => (
+								<div key={`ghost-${i}`} className="w-64" aria-hidden="true" />
+							))}
+						</div>
+					)}
+				</div>
 			</div>
 
-			{availableCharacters.length === 0 ? (
-				<div className="text-center py-12">
-					<div className="text-6xl mb-4">🎭</div>
-					<p className="text-xl mb-2">No characters available</p>
-					<p className="text-base-content/60">
-						All spawned characters are currently taken by other players, or no
-						characters have been spawned yet.
-					</p>
+			{/* Drawer */}
+			<div className="drawer-side z-50">
+				<label
+					htmlFor="character-select-drawer"
+					aria-label="close sidebar"
+					className="drawer-overlay"
+					onClick={handleCloseDrawer}
+				></label>
+				<div className="bg-base-200 min-h-full w-full max-w-4xl p-6 overflow-y-auto">
+					{isDrawerOpen && (
+						<CharacterEdit
+							key={`create-${createCounter}`}
+							character={undefined}
+							onClose={handleCloseDrawer}
+						/>
+					)}
 				</div>
-			) : (
-				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-					{availableCharacters.map((character) => (
-						<button
-							key={character.Id}
-							onClick={() => handleSelectCharacter(character)}
-							className="card bg-base-100 border-2 border-base-300 hover:border-primary hover:shadow-lg transition-all cursor-pointer text-left"
-						>
-							<figure className="px-4 pt-4">
-								{/* TODO: Image handling not implemented yet */}
-								<div className="w-full h-32 bg-base-200 rounded-lg flex items-center justify-center">
-									<span className="text-4xl">👤</span>
-								</div>
-							</figure>
-							<div className="card-body">
-								<h3 className="card-title justify-center">{character.Name}</h3>
-								{character.Description && (
-									<p className="text-sm text-base-content/60 line-clamp-2">
-										{character.Description}
-									</p>
-								)}
-
-								{/* Stats preview */}
-								<div className="mt-2 space-y-1">
-									{character.Stats.slice(0, 3).map((stat) => (
-										<div key={stat.Id} className="flex items-center gap-2">
-											<div
-												className="w-3 h-3 rounded-full"
-												style={{ backgroundColor: stat.Color }}
-											/>
-											<span className="text-xs">
-												{stat.Name}: {stat.Current ?? stat.Max}/{stat.Max}
-											</span>
-										</div>
-									))}
-								</div>
-							</div>
-						</button>
-					))}
-				</div>
-			)}
+			</div>
 		</div>
 	);
 }

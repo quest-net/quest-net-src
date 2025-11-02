@@ -13,12 +13,17 @@ import { LogDisplay } from "../Log/LogDisplay";
 import { PeerStatus } from "../Room/PeerStatus";
 import { usePeerTracking } from "../../hooks/usePeerTracking";
 import { ItemIndex } from "../Item/Index";
+import { AudioIndex } from "../Audio/Index";
+import { AudioPlayer } from "../Audio/AudioPlayer";
+import { SkillIndex } from "../Skill/Index";
 
 type TabView =
 	| "main"
 	| "characters"
 	| "items"
+	| "skills"
 	| "images"
+	| "audios"
 	| "terrains"
 	| "settings";
 
@@ -42,6 +47,7 @@ export function DMView() {
 
 	return (
 		<div className="flex flex-col h-screen">
+			<AudioPlayer/>
 			{/* Header */}
 			<header className="navbar border-b-2 px-6 justify-between">
 				<div className="flex items-center gap-4">
@@ -63,10 +69,10 @@ export function DMView() {
 			<div className="flex flex-1 overflow-hidden">
 				{/* Sidebar */}
 				<aside className="border-r-2">
-					<ul className="menu menu-lg">
+					<ul className="menu menu-lg gap-1">
 						<li>
 							<button
-								className={activeTab === "main" ? "active" : ""}
+								className={activeTab === "main" ? "menu-active" : ""}
 								onClick={() => setActiveTab("main")}
 							>
 								Main
@@ -74,7 +80,7 @@ export function DMView() {
 						</li>
 						<li>
 							<button
-								className={activeTab === "characters" ? "active" : ""}
+								className={activeTab === "characters" ? "menu-active" : ""}
 								onClick={() => setActiveTab("characters")}
 							>
 								Characters
@@ -82,7 +88,7 @@ export function DMView() {
 						</li>
 						<li>
 							<button
-								className={activeTab === "items" ? "active" : ""}
+								className={activeTab === "items" ? "menu-active" : ""}
 								onClick={() => setActiveTab("items")}
 							>
 								Items
@@ -90,15 +96,15 @@ export function DMView() {
 						</li>
 						<li>
 							<button
-								className={activeTab === "characters" ? "active" : ""}
-								onClick={() => setActiveTab("characters")}
+								className={activeTab === "skills" ? "menu-active" : ""}
+								onClick={() => setActiveTab("skills")}
 							>
 								Skills
 							</button>
 						</li>
 						<li>
 							<button
-								className={activeTab === "images" ? "active" : ""}
+								className={activeTab === "images" ? "menu-active" : ""}
 								onClick={() => setActiveTab("images")}
 							>
 								Images
@@ -106,7 +112,15 @@ export function DMView() {
 						</li>
 						<li>
 							<button
-								className={activeTab === "terrains" ? "active" : ""}
+								className={activeTab === "audios" ? "menu-active" : ""}
+								onClick={() => setActiveTab("audios")}
+							>
+								Audios
+							</button>
+						</li>
+						<li>
+							<button
+								className={activeTab === "terrains" ? "menu-active" : ""}
 								onClick={() => setActiveTab("terrains")}
 							>
 								Terrains
@@ -114,7 +128,7 @@ export function DMView() {
 						</li>
 						<li>
 							<button
-								className={activeTab === "settings" ? "active" : ""}
+								className={activeTab === "settings" ? "menu-active" : ""}
 								onClick={() => setActiveTab("settings")}
 							>
 								Settings
@@ -128,7 +142,9 @@ export function DMView() {
 					{activeTab === "main" && <Main />}
 					{activeTab === "characters" && <CharacterIndex />}
 					{activeTab === "items" && <ItemIndex />}
+					{activeTab === "skills" && <SkillIndex />}
 					{activeTab === "images" && <ImageIndex />}
+					{activeTab === "audios" && <AudioIndex />}
 					{activeTab === "terrains" && <TerrainIndex />}
 					{activeTab === "settings" && <CampaignSettingEdit />}
 				</main>

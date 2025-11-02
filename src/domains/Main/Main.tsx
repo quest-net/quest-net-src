@@ -6,6 +6,13 @@ import Map from "../../components/Map/Map";
 import { useState } from "react";
 import { MapStateProvider } from "../../components/Map/MapStateProvider";
 import { Inspector } from "./Inspector";
+import CalendarDisplay from "../Calendar/CalendarDisplay";
+import TerrainDisplay from "../Terrain/TerrainDisplay";
+import { AudioDisplay } from "../Audio/AudioDisplay";
+import { SceneDisplay } from "../Scene/SceneDisplay";
+import { isDmAccess } from "../../utils/UrlParser";
+import { SceneEdit } from "../Scene/Edit";
+import { DiceRoller } from "../../components/Dice/DiceRoller";
 
 type TopTab = "music" | "calendar" | "terrain";
 type PlayerBottomTab =
@@ -14,15 +21,16 @@ type PlayerBottomTab =
 	| "skills"
 	| "party"
 	| "inspector";
-type DMBottomTab = "inspector";
+type DMBottomTab = "inspector" | "scene";
 
 export function Main() {
 	const context = useQuestContext();
 	const campaign = CampaignActions.getActiveCampaign(context);
-	const isDM = context.User.Role === "dm";
+	const isDM = isDmAccess();
 
 	// Top tabs state (same for everyone)
 	const [activeTopTab, setActiveTopTab] = useState<TopTab>("calendar");
+
 
 	// Bottom tabs state (different defaults based on role)
 	const [activeBottomTab, setActiveBottomTab] = useState<
@@ -41,6 +49,7 @@ export function Main() {
 		switch (activeTopTab) {
 			case "music":
 				return "Audio";
+
 			case "calendar":
 				return "Calendar";
 			case "terrain":
@@ -52,7 +61,8 @@ export function Main() {
 		<MapStateProvider>
 			<div className="flex h-full">
 				{/* Left 70%: Map */}
-				<div className="flex-1 overflow-hidden">
+				<div className="flex-1 overflow-hidden relative">
+					<SceneDisplay />
 					<Map
 						characters={campaign.GameState.Characters}
 						entities={campaign.GameState.Entities}
@@ -60,6 +70,8 @@ export function Main() {
 							(t) => t.Id === campaign.GameState.TerrainId
 						)}
 					/>
+					{/* Dice Roller */}
+					<DiceRoller />
 				</div>
 
 				{/* Right 30%: Side Panel */}
@@ -89,6 +101,15 @@ export function Main() {
 										title="Inspector"
 									>
 										<span className="icon-[mdi--magnify] w-6 h-6" />
+									</button>
+									<button
+										className={`btn btn-square btn-neutral ${
+											activeBottomTab === "scene" ? "btn-active" : ""
+										}`}
+										onClick={() => setActiveBottomTab("scene")}
+										title="Scene"
+									>
+										<span className="icon-[mdi--image] w-6 h-6" />
 									</button>
 								</>
 							) : (
@@ -186,19 +207,13 @@ export function Main() {
 							{/* Top Tab Content */}
 							<div className="flex-1 overflow-auto p-4 bg-base-100">
 								{activeTopTab === "music" && (
-									<div className="text-center text-sm opacity-60">
-										Music Player - Coming Soon
-									</div>
+									<AudioDisplay/>
 								)}
 								{activeTopTab === "calendar" && (
-									<div className="text-center text-sm opacity-60">
-										Calendar - Coming Soon
-									</div>
+									<CalendarDisplay/>
 								)}
 								{activeTopTab === "terrain" && (
-									<div className="text-center text-sm opacity-60">
-										Terrain Info - Coming Soon
-									</div>
+									<TerrainDisplay/>
 								)}
 							</div>
 						</div>
@@ -226,6 +241,7 @@ export function Main() {
 								</div>
 							)}
 							{activeBottomTab === "inspector" && <Inspector/>}
+							{activeBottomTab === "scene" && <SceneEdit />}
 						</div>
 					</div>
 				</div>

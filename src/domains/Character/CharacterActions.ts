@@ -46,7 +46,7 @@ export const CharacterActions = {
 	},
 
 	create(
-		params: { character: Omit<Character, "playedBy"> },
+		params: { character: Character },
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
@@ -69,6 +69,40 @@ export const CharacterActions = {
 			},
 			context
 		);
+	},
+	/**
+	 * Creates a new character and immediately spawns them into the game
+	 * Used by players during character selection
+	 */
+	createAndSpawn(
+		params: { character: Character },
+		context: Context
+	): void {
+		const campaign = CampaignActions.getActiveCampaign(context);
+
+		const character: Character = {
+			...params.character,
+			Notes: params.character.Notes || [],
+			Position: { x: 0, y: 0, h: 0 }, // Set to origin
+		};
+
+		// Add directly to GameState (skip roster entirely)
+		campaign.GameState.Characters.push(character);
+
+		LogActions.create(
+			{
+				action: "Character created and spawned",
+				details: `${character.Name} joined the game`,
+				category: "character",
+				level: "important",
+				visibility: ["all"],
+				actorId: character.Id,
+			},
+			context
+		);
+
+		// Validate actors after spawning
+		TerrainActions.validateActors(context);
 	},
 
 	/**
@@ -223,9 +257,6 @@ export const CharacterActions = {
 				console.warn(`Character not found in GameState: ${params.characterId}`);
 				return;
 			}
-
-			// TODO: Add ownership validation here when implemented
-			// if (character.OwnerId !== context.User.Id) { return; }
 		}
 
 		ActorActions.moveActor(

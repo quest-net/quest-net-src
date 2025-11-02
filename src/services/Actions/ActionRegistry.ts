@@ -9,6 +9,10 @@ import { ImageActions } from "../../domains/Image/ImageActions";
 import { TerrainActions } from "../../domains/Terrain/TerrainActions";
 import { ItemActions } from "../../domains/Item/ItemActions";
 import { EntityActions } from "../../domains/Entity/EntityActions";
+import { CalendarActions } from "../../domains/Calendar/CalendarActions";
+import { AudioActions } from "../../domains/Audio/AudioActions";
+import { SkillActions } from "../../domains/Skill/SkillActions";
+import { SceneActions } from "../../domains/Scene/SceneActions";
 // Import other action modules as they're created
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
@@ -38,6 +42,10 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"character:spawn": {
 		roles: ["dm"],
 		handler: CharacterActions.spawn,
+	},
+	"character:createAndSpawn": {
+		roles: ["dm", "player"],
+		handler: CharacterActions.createAndSpawn,
 	},
 	"character:remove": {
 		roles: ["dm"],
@@ -107,34 +115,22 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	// ============================================================================
 	// SKILL ACTIONS (uncomment when SkillActions is implemented)
 	// ============================================================================
-	// 'skill:use': {
-	//   roles: ['dm', 'player'],
-	//   handler: SkillActions.use
-	// },
-	// 'skill:remove': {
-	//   roles: ['dm', 'player'],
-	//   handler: SkillActions.remove
-	// },
-	// 'skill:grant': {
-	//   roles: ['dm'],
-	//   handler: SkillActions.grant
-	// },
-	// 'skill:restore': {
-	//   roles: ['dm'],
-	//   handler: SkillActions.restore
-	// },
-	// 'skill:create': {
-	//   roles: ['dm'],
-	//   handler: SkillActions.create
-	// },
-	// 'skill:edit': {
-	//   roles: ['dm'],
-	//   handler: SkillActions.edit
-	// },
-	// 'skill:delete': {
-	//   roles: ['dm'],
-	//   handler: SkillActions.delete
-	// },
+	"skill:create": {
+		roles: ["dm"],
+		handler: SkillActions.create,
+	},
+	"skill:edit": {
+		roles: ["dm"],
+		handler: SkillActions.edit,
+	},
+	"skill:delete": {
+		roles: ["dm"],
+		handler: SkillActions.delete,
+	},
+	"skill:bulkEditTags": {
+		roles: ["dm"],
+		handler: SkillActions.bulkEditTags,
+	},
 
 	//   ============================================================================
 	//   ENTITY ACTIONS (uncomment when EntityActions is implemented)
@@ -187,38 +183,18 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	// ============================================================================
 	// AUDIO ACTIONS (uncomment when AudioActions is implemented)
 	// ============================================================================
-	// 'audio:play': {
-	//   roles: ['dm'],
-	//   handler: AudioActions.play
-	// },
-	// 'audio:stop': {
-	//   roles: ['dm'],
-	//   handler: AudioActions.stop
-	// },
-	// 'audio:setVolume': {
-	//   roles: ['dm'],
-	//   handler: AudioActions.setVolume
-	// },
-	// 'audio:create': {
-	//   roles: ['dm'],
-	//   handler: AudioActions.create
-	// },
-	// 'audio:delete': {
-	//   roles: ['dm'],
-	//   handler: AudioActions.delete
-	// },
-
+	...registerDomain("audio", AudioActions, ["dm"]),
 	// ============================================================================
-	// IMAGE/SCENE ACTIONS (uncomment when SceneActions/ImageActions is implemented)
+	// IMAGE/SCENE ACTIONS
 	// ============================================================================
-	// 'scene:setEnvironment': {
-	//   roles: ['dm'],
-	//   handler: SceneActions.setEnvironment
-	// },
-	// 'scene:setFocus': {
-	//   roles: ['dm'],
-	//   handler: SceneActions.setFocus
-	// },
+	'scene:setEnvironmentImage': {
+	  roles: ['dm'],
+	  handler: SceneActions.setEnvironmentImage
+	},
+	'scene:setFocusImage': {
+	  roles: ['dm'],
+	  handler: SceneActions.setFocusImage
+	},
 	"image:create": {
 		roles: ["dm", "player"],
 		handler: ImageActions.create,
@@ -274,6 +250,11 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	// CAMPAIGN SETTING ACTIONS
 	// ============================================================================
 	...registerDomain("setting", CampaignSettingActions, ["dm"]),
+
+	// ============================================================================
+	// CAMPAIGN SETTING ACTIONS
+	// ============================================================================
+	...registerDomain("calendar", CalendarActions, ["dm"]),
 	// ============================================================================
 	//TERRAIN ACTIONS
 	// ============================================================================

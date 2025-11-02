@@ -68,6 +68,8 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 				FocusImageId: "",
 			},
 			TerrainId: "DEFAULT_TERRAIN",
+			CalendarDay: 0,
+			RemainingShortRests: 2,
 		},
 		Log: [],
 		Settings: CampaignSettingActions.createDefault(),

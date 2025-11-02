@@ -1,3 +1,5 @@
+import { RestoreRule } from "../CampaignSetting/CampaignSetting";
+
 export interface Item {
 	Id: string;
 	Name: string;
@@ -11,4 +13,5 @@ export interface Item {
 
 	// Dice roll functionality
 	DiceRoll?: string; // "3d6", "1d20+5", "2d10-2"
+	RestoreRule?: RestoreRule;
 }
