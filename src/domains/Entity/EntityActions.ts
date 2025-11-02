@@ -175,9 +175,7 @@ export const EntityActions = {
 
 		// Safety check: Don't delete template if any instances are spawned
 		// Note: Instances have different IDs, so this checks the template ID
-		const hasSpawnedInstances = campaign.GameState.Entities.some((e) => {
-			// This would need a better way to track which template spawned which instance
-			// For now, we allow deletion since instances have unique IDs
+		const hasSpawnedInstances = campaign.GameState.Entities.some(() => {
 			return false;
 		});
 

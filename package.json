@@ -19,7 +19,7 @@
 		"react-dom": "^19.2.0",
 		"react-router-dom": "^7.9.4",
 		"react-use": "^17.6.0",
-		"three": "^0.181.0",
+		"three": "0.180.0",
 		"trystero": "^0.21.0",
 		"uuid": "^11.0.2",
 		"web-vitals": "^2.1.4"
@@ -27,8 +27,9 @@
 	"scripts": {
 		"push:src": "git add . && git diff --cached --quiet && echo \"No changes to commit\" || (git commit -m \"chore(src): update\" && git push)",
 		"predeploy": "npm run build",
-		"deploy": "gh-pages -d build",
-		"deploy:beta": "gh-pages -d build -b beta",
+		"deploy": "gh-pages -d build -r https://github.com/quest-net/quest-net.github.io.git",
+		"deploy:beta": "gh-pages -d build -b beta -r https://github.com/quest-net/quest-net.github.io.git",
+		"deploy:2.0": "gh-pages -d build -b 2.0 -r https://github.com/quest-net/quest-net.github.io.git",
 		"dev": "vite",
 		"build": "tsc && vite build",
 		"preview": "vite preview"
