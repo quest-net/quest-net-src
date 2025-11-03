@@ -568,47 +568,64 @@ export function buildActorHitCandidates(
 // MOVEMENT RANGE CALCULATION
 // ============================================================================
 
+// MapUtilities.ts
+
+// NEW: helpers
+export function maxManhattanDistance(terrainWidth: number, terrainLength: number): number {
+  return Math.max(0, (terrainWidth - 1) + (terrainLength - 1));
+}
+
+export function clampMoveTiles(
+  moveSpeed: number | undefined | null,
+  terrainWidth: number,
+  terrainLength: number
+): number {
+  const raw = Math.floor(Number(moveSpeed) || 0);
+  const safe = Math.max(0, raw);
+  const cap = maxManhattanDistance(terrainWidth, terrainLength);
+  return Math.min(safe, cap);
+}
+
 /**
  * Calculate all tiles within manhattan distance of a position
  * Returns array of {x, y} coordinates
  */
 export function calculateMovementRange(
-	fromX: number,
-	fromY: number,
-	moveSpeed: number,
-	terrainWidth: number,
-	terrainLength: number
+  fromX: number,
+  fromY: number,
+  moveSpeed: number,
+  terrainWidth: number,
+  terrainLength: number
 ): Array<{ x: number; y: number }> {
-	const range: Array<{ x: number; y: number }> = [];
+  // Hard clamp to what's actually reachable on this board.
+  const maxDistance = clampMoveTiles(moveSpeed, terrainWidth, terrainLength);
 
-	// moveSpeed represents the number of tiles the actor can move
-	const maxDistance = Math.floor(moveSpeed / 1); // Convert moveSpeed to tile distance (assuming 1ft per tile)
+  // Nothing to do? Return at least the origin tile (matches prior behavior)
+  if (maxDistance <= 0) {
+    // NOTE: if you prefer "no highlight at all", return [] instead.
+    return [{ x: fromX, y: fromY }];
+  }
 
-	for (let dy = -maxDistance; dy <= maxDistance; dy++) {
-		for (let dx = -maxDistance; dx <= maxDistance; dx++) {
-			const targetX = fromX + dx;
-			const targetY = fromY + dy;
+  const range: Array<{ x: number; y: number }> = [];
 
-			// Check bounds
-			if (
-				targetX < 0 ||
-				targetX >= terrainWidth ||
-				targetY < 0 ||
-				targetY >= terrainLength
-			) {
-				continue;
-			}
+  // Tighten the scan window to the board to avoid wasted iterations.
+  const minDx = Math.max(-maxDistance, -fromX);
+  const maxDx = Math.min( maxDistance, (terrainWidth  - 1) - fromX);
+  const minDy = Math.max(-maxDistance, -fromY);
+  const maxDy = Math.min( maxDistance, (terrainLength - 1) - fromY);
 
-			// Check manhattan distance
-			const distance = Math.abs(dx) + Math.abs(dy);
-			if (distance <= maxDistance) {
-				range.push({ x: targetX, y: targetY });
-			}
-		}
-	}
+  for (let dy = minDy; dy <= maxDy; dy++) {
+    for (let dx = minDx; dx <= maxDx; dx++) {
+      const distance = Math.abs(dx) + Math.abs(dy);
+      if (distance <= maxDistance) {
+        range.push({ x: fromX + dx, y: fromY + dy });
+      }
+    }
+  }
 
-	return range;
+  return range;
 }
+
 export function findActor(
 	actorId: string,
 	kind: "character" | "entity" | undefined,

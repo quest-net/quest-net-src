@@ -16,6 +16,7 @@ import { ItemIndex } from "../Item/Index";
 import { AudioIndex } from "../Audio/Index";
 import { AudioPlayer } from "../Audio/AudioPlayer";
 import { SkillIndex } from "../Skill/Index";
+import { AudioStateProvider } from "../Audio/AudioContext";
 
 type TabView =
 	| "main"
@@ -46,6 +47,7 @@ export function DMView() {
 	}
 
 	return (
+		<AudioStateProvider>
 		<div className="flex flex-col h-screen">
 			<AudioPlayer/>
 			{/* Header */}
@@ -152,5 +154,6 @@ export function DMView() {
 				<LogDisplay />
 			</div>
 		</div>
+		</AudioStateProvider>
 	);
 }

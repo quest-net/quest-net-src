@@ -13,7 +13,7 @@
 		"firebase": "^11.0.1",
 		"gsap": "^3.13.0",
 		"motion": "^12.23.24",
-		"pixi.js": "8.2.6",
+		"pixi.js": "^8.9.2",
 		"postprocessing": "^6.37.8",
 		"react": "^19.2.0",
 		"react-dom": "^19.2.0",

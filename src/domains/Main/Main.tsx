@@ -3,7 +3,8 @@
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import Map from "../../components/Map/Map";
-import { useState } from "react";
+import TwoDMap from "../../components/Map/2DMap";
+import { useEffect, useState } from "react";
 import { MapStateProvider } from "../../components/Map/MapStateProvider";
 import { Inspector } from "./Inspector";
 import CalendarDisplay from "../Calendar/CalendarDisplay";
@@ -28,9 +29,22 @@ export function Main() {
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const isDM = isDmAccess();
 
+	// 2D/3D mode (persist per browser)
+	const [is2D, setIs2D] = useState<boolean>(() => {
+		try {
+			return (localStorage.getItem("questnet.mapMode") || "3d") === "2d";
+		} catch {
+			return false;
+		}
+	});
+	useEffect(() => {
+		try {
+			localStorage.setItem("questnet.mapMode", is2D ? "2d" : "3d");
+		} catch {}
+	}, [is2D]);
+
 	// Top tabs state (same for everyone)
 	const [activeTopTab, setActiveTopTab] = useState<TopTab>("calendar");
-
 
 	// Bottom tabs state (different defaults based on role)
 	const [activeBottomTab, setActiveBottomTab] = useState<
@@ -63,13 +77,41 @@ export function Main() {
 				{/* Left 70%: Map */}
 				<div className="flex-1 overflow-hidden relative">
 					<SceneDisplay />
-					<Map
-						characters={campaign.GameState.Characters}
-						entities={campaign.GameState.Entities}
-						terrain={campaign.Terrains.find(
-							(t) => t.Id === campaign.GameState.TerrainId
-						)}
-					/>
+					{/* 2D / 3D toggle button (placed outside Map.tsx so we can swap components) */}
+					<div
+						className="absolute right-2 bottom-2 z-20"
+					>
+						<button
+							className="btn btn-square btn-lg rounded-lg btn-info shadow-lg"
+							onClick={() => setIs2D((v) => !v)}
+							title={is2D ? "Switch to 3D" : "Switch to 2D"}
+						>
+							{is2D ? (
+								<span className="icon-[mdi--cube-outline] w-6 h-6" />
+							) : (
+								<span className="icon-[mdi--grid] w-6 h-6" />
+							)}
+						</button>
+					</div>
+
+					{/* Swap the renderer */}
+					{is2D ? (
+						<TwoDMap
+							characters={campaign.GameState.Characters}
+							entities={campaign.GameState.Entities}
+							terrain={campaign.Terrains.find(
+								(t) => t.Id === campaign.GameState.TerrainId
+							)}
+						/>
+					) : (
+						<Map
+							characters={campaign.GameState.Characters}
+							entities={campaign.GameState.Entities}
+							terrain={campaign.Terrains.find(
+								(t) => t.Id === campaign.GameState.TerrainId
+							)}
+						/>
+					)}
 					{/* Dice Roller */}
 					<DiceRoller />
 				</div>
@@ -206,15 +248,9 @@ export function Main() {
 
 							{/* Top Tab Content */}
 							<div className="flex-1 overflow-auto p-4 bg-base-100">
-								{activeTopTab === "music" && (
-									<AudioDisplay/>
-								)}
-								{activeTopTab === "calendar" && (
-									<CalendarDisplay/>
-								)}
-								{activeTopTab === "terrain" && (
-									<TerrainDisplay/>
-								)}
+								{activeTopTab === "music" && <AudioDisplay />}
+								{activeTopTab === "calendar" && <CalendarDisplay />}
+								{activeTopTab === "terrain" && <TerrainDisplay />}
 							</div>
 						</div>
 
@@ -240,7 +276,7 @@ export function Main() {
 									Party - Coming Soon
 								</div>
 							)}
-							{activeBottomTab === "inspector" && <Inspector/>}
+							{activeBottomTab === "inspector" && <Inspector />}
 							{activeBottomTab === "scene" && <SceneEdit />}
 						</div>
 					</div>

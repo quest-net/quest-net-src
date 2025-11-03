@@ -13,6 +13,7 @@ import { CharacterSelect } from "../Character/CharacterSelect";
 import { usePeerTracking } from "../../hooks/usePeerTracking";
 import { Main } from "../Main/Main";
 import { AudioPlayer } from "../Audio/AudioPlayer";
+import { AudioStateProvider } from "../Audio/AudioContext";
 
 export function PlayerView() {
 	const { identifier } = useParams<{ identifier: string }>();
@@ -54,6 +55,7 @@ export function PlayerView() {
 	};
 
 	return (
+		<AudioStateProvider>
 		<div className="flex flex-col h-screen">
 			<AudioPlayer/>
 			{/* Header - Always Visible */}
@@ -99,5 +101,6 @@ export function PlayerView() {
 			{/* Log Display */}
 			<LogDisplay />
 		</div>
+		</AudioStateProvider>
 	);
 }

@@ -642,7 +642,7 @@ export default function Map({
 					<div className="absolute left-3 top-3 z-10 flex gap-2">
 						<button
 							type="button"
-							className="btn btn-lg rounded-md bg-base-100 shadow hover:bg-base-300"
+							className="btn btn-lg btn-square btn-info shadow-lg"
 							onClick={rotateCCW}
 							title="Rotate 90 degrees counter-clockwise"
 						>
@@ -650,7 +650,7 @@ export default function Map({
 						</button>
 						<button
 							type="button"
-							className="btn btn-lg rounded-md bg-base-100 shadow hover:bg-base-300"
+							className="btn btn-lg btn-square btn-info shadow-lg"
 							onClick={rotateCW}
 							title="Rotate 90 degrees clockwise"
 						>

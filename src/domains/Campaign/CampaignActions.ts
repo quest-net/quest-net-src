@@ -61,7 +61,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 				currentTurn: 0,
 				initiativeSide: "party",
 			},
-			Audio: "",
+			Audio: [],
 			Volume: 0.5,
 			Scene: {
 				EnvironmentImageId: "",

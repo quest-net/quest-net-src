@@ -136,11 +136,6 @@ export const AudioActions = {
 		const audio = campaign.Audios[index];
 		campaign.Audios.splice(index, 1);
 
-		// If this was the currently playing track, stop it
-		if (campaign.GameState.Audio === params.audioId) {
-			campaign.GameState.Audio = "";
-		}
-
 		LogActions.create(
 			{
 				action: "Audio track removed",
@@ -153,32 +148,40 @@ export const AudioActions = {
 		);
 	},
 
-	/**
-	 * Sets the currently playing track
-	 * Immediately starts playing the new track
-	 */
-	setTrack(params: { audioId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
-
-		const audio = campaign.Audios.find((a) => a.Id === params.audioId);
-		if (!audio) {
-			console.warn(`Audio not found: ${params.audioId}`);
-			return;
-		}
-
-		campaign.GameState.Audio = params.audioId;
-
-		LogActions.create(
-			{
-				action: "Music changed",
-				details: audio.Name,
-				category: "system",
-				level: "info",
-				visibility: ["all"],
-			},
-			context
-		);
-	},
+	// Modify setTrack to accept single OR array
+setTrack(params: { audioId: string | string[] }, context: Context): void {
+  const audioIds = Array.isArray(params.audioId) 
+    ? params.audioId 
+    : [params.audioId];
+  
+  // Validate all IDs exist
+  const campaign = CampaignActions.getActiveCampaign(context);
+  const validIds = audioIds.filter(id => 
+    campaign.Audios.find(a => a.Id === id)
+  );
+  
+  campaign.GameState.Audio = validIds;
+  
+  // Log message
+  if (validIds.length > 1) {
+    LogActions.create({
+      action: "Playlist started",
+      details: `${validIds.length} tracks`,
+      category: "system",
+      level: "info",
+      visibility: ["all"],
+    }, context);
+  } else if (validIds.length === 1) {
+    const audio = campaign.Audios.find(a => a.Id === validIds[0]);
+    LogActions.create({
+      action: "Music changed",
+      details: audio?.Name,
+      category: "system",
+      level: "info",
+      visibility: ["all"],
+    }, context);
+  }
+},
 
 	/**
 	 * Sets the DM's volume level (0.0 to 1.0)
@@ -203,7 +206,7 @@ export const AudioActions = {
 			return; // Nothing playing
 		}
 
-		campaign.GameState.Audio = "";
+		campaign.GameState.Audio = [];
 
 		LogActions.create(
 			{

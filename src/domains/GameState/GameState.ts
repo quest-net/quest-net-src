@@ -7,7 +7,7 @@ export interface GameState {
 	Characters: Character[];
 	Entities: Entity[];
 	CombatState: CombatState;
-	Audio: string;
+	Audio: string[];
 	Volume: number;
 	Scene: Scene;
 	TerrainId: string;

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { AppSettingActions } from "../AppSetting/AppSettingActions";
+import { useAudioState } from "./AudioContext";
 
 // YouTube IFrame API types
 declare global {
@@ -17,7 +18,7 @@ export function AudioPlayer() {
 	const context = useQuestContext();
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const playerRef = useRef<any>(null);
-	const currentVideoIdRef = useRef<string>("");
+	const currentVideoIdsRef = useRef<string>("");
 	const playerContainerRef = useRef<HTMLDivElement>(null);
 
 	// Get volumes
@@ -25,12 +26,14 @@ export function AudioPlayer() {
 	const playerVolume = AppSettingActions.getPlayerVolume(context);
 	const finalVolume = dmVolume * playerVolume * 0.5 * 100; // YouTube uses 0-100 scale
 
-	// Get current audio
-	const currentAudioId = campaign.GameState.Audio;
-	const currentAudio = currentAudioId
-		? campaign.Audios.find((a) => a.Id === currentAudioId)
-		: null;
-	const youtubeId = currentAudio?.YoutubeId || "";
+	// Get current audio(s) and convert to YouTube IDs
+	const currentAudioIds = campaign.GameState.Audio;
+	const youtubeIds = currentAudioIds
+		.map(audioId => campaign.Audios.find(a => a.Id === audioId)?.YoutubeId)
+		.filter((id): id is string => !!id);
+
+	// Create a stable string representation for comparison
+	const youtubeIdsString = youtubeIds.join(',');
 
 	// Load YouTube IFrame API
 	useEffect(() => {
@@ -81,6 +84,7 @@ export function AudioPlayer() {
 				fs: 0,
 				modestbranding: 1,
 				playsinline: 1,
+				loop: 1,
 			},
 			events: {
 				onReady: onPlayerReady,
@@ -90,26 +94,51 @@ export function AudioPlayer() {
 	};
 
 	const onPlayerReady = () => {
-		// Player is ready, load video if we have one
-		if (youtubeId && youtubeId !== currentVideoIdRef.current) {
-			loadAndPlayVideo(youtubeId);
+		// Player is ready, load video(s) if we have any
+		if (youtubeIds.length > 0 && youtubeIdsString !== currentVideoIdsRef.current) {
+			loadAndPlayVideo(youtubeIds);
 		}
 	};
 
-	const onPlayerStateChange = (event: any) => {
-		// Loop video when it ends
-		if (event.data === window.YT.PlayerState.ENDED) {
-			playerRef.current?.playVideo();
+	const { setCurrentTrackIndex } = useAudioState();
+
+	const onPlayerStateChange = () => {
+		// Update current track index when playlist advances
+		if (playerRef.current && youtubeIds.length > 1) {
+			try {
+				const index = playerRef.current.getPlaylistIndex();
+				if (index !== -1) {
+					setCurrentTrackIndex(index);
+				}
+			} catch (e) {
+				console.warn("Error getting playlist index:", e);
+			}
 		}
+		// No need for manual loop handling - YouTube handles it now
 	};
 
-	const loadAndPlayVideo = (videoId: string) => {
-		if (!playerRef.current || !videoId) return;
-
+	const loadAndPlayVideo = (videoIds: string[]) => {
+		if (!playerRef.current || videoIds.length === 0) return;
+	
 		try {
-			playerRef.current.loadVideoById(videoId);
+			if (videoIds.length === 1) {
+				// Single track mode
+				playerRef.current.loadVideoById({
+					videoId: videoIds[0],
+					startSeconds: 0,
+				});
+			} else {
+				// Playlist mode with loop
+				playerRef.current.loadPlaylist({
+					playlist: videoIds,
+					index: 0,
+					startSeconds: 0,
+				});
+				// Explicitly enable looping for playlists
+				playerRef.current.setLoop(true);
+			}
 			playerRef.current.setVolume(finalVolume);
-			currentVideoIdRef.current = videoId;
+			currentVideoIdsRef.current = videoIds.join(',');
 		} catch (e) {
 			console.error("Error loading video:", e);
 		}
@@ -119,19 +148,19 @@ export function AudioPlayer() {
 	useEffect(() => {
 		if (!playerRef.current) return;
 
-		if (youtubeId && youtubeId !== currentVideoIdRef.current) {
-			loadAndPlayVideo(youtubeId);
-		} else if (!youtubeId && currentVideoIdRef.current) {
+		if (youtubeIds.length > 0 && youtubeIdsString !== currentVideoIdsRef.current) {
+			loadAndPlayVideo(youtubeIds);
+		} else if (youtubeIds.length === 0 && currentVideoIdsRef.current) {
 			// Stop playback
 			try {
 				playerRef.current.stopVideo();
-				currentVideoIdRef.current = "";
+				currentVideoIdsRef.current = "";
 			} catch (e) {
 				console.warn("Error stopping video:", e);
 			}
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [youtubeId]);
+	}, [youtubeIdsString]);
 
 	// Handle volume changes
 	useEffect(() => {

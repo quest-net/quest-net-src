@@ -165,6 +165,7 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 							}
 							className="input input-bordered w-full"
 							min={0}
+							max={99}
 						/>
 					</FormField>
 
