@@ -94,8 +94,8 @@ export function Main() {
 								// DM Tabs
 								<>
 									<button
-										className={`btn btn-square btn-neutral ${
-											activeBottomTab === "inspector" ? "btn-active" : ""
+										className={`btn btn-square ${
+											activeBottomTab === "inspector" ? "btn-neutral" : ""
 										}`}
 										onClick={() => setActiveBottomTab("inspector")}
 										title="Inspector"
@@ -103,8 +103,8 @@ export function Main() {
 										<span className="icon-[mdi--magnify] w-6 h-6" />
 									</button>
 									<button
-										className={`btn btn-square btn-neutral ${
-											activeBottomTab === "scene" ? "btn-active" : ""
+										className={`btn btn-square ${
+											activeBottomTab === "scene" ? "btn-neutral" : ""
 										}`}
 										onClick={() => setActiveBottomTab("scene")}
 										title="Scene"
@@ -116,8 +116,8 @@ export function Main() {
 								// Player Tabs
 								<>
 									<button
-										className={`btn btn-square btn-neutral ${
-											activeBottomTab === "character" ? "btn-active" : ""
+										className={`btn btn-square ${
+											activeBottomTab === "character" ? "btn-neutral" : ""
 										}`}
 										onClick={() => setActiveBottomTab("character")}
 										title={
@@ -129,8 +129,8 @@ export function Main() {
 										<span className="icon-[mdi--account] w-6 h-6" />
 									</button>
 									<button
-										className={`btn btn-square btn-neutral ${
-											activeBottomTab === "inventory" ? "btn-active" : ""
+										className={`btn btn-square ${
+											activeBottomTab === "inventory" ? "btn-neutral" : ""
 										}`}
 										onClick={() => setActiveBottomTab("inventory")}
 										title="Inventory"
@@ -138,8 +138,8 @@ export function Main() {
 										<span className="icon-[mdi--bag-personal] w-6 h-6" />
 									</button>
 									<button
-										className={`btn btn-square btn-neutral ${
-											activeBottomTab === "skills" ? "btn-active" : ""
+										className={`btn btn-square ${
+											activeBottomTab === "skills" ? "btn-neutral" : ""
 										}`}
 										onClick={() => setActiveBottomTab("skills")}
 										title="Skills"
@@ -147,8 +147,8 @@ export function Main() {
 										<span className="icon-[mdi--star] w-6 h-6" />
 									</button>
 									<button
-										className={`btn btn-square btn-neutral ${
-											activeBottomTab === "party" ? "btn-active" : ""
+										className={`btn btn-square ${
+											activeBottomTab === "party" ? "btn-neutral" : ""
 										}`}
 										onClick={() => setActiveBottomTab("party")}
 										title="Party"
@@ -156,8 +156,8 @@ export function Main() {
 										<span className="icon-[mdi--account-group] w-6 h-6" />
 									</button>
 									<button
-										className={`btn btn-square btn-neutral ${
-											activeBottomTab === "inspector" ? "btn-active" : ""
+										className={`btn btn-square ${
+											activeBottomTab === "inspector" ? "btn-neutral" : ""
 										}`}
 										onClick={() => setActiveBottomTab("inspector")}
 										title="Inspector"

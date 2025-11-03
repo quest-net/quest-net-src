@@ -1,7 +1,7 @@
 // Map.tsx - React 19 + @pixi/react v8
 // Isometric map orchestrator - delegates rendering to layer components
 
-import { useMemo, useRef, useState, useLayoutEffect, useCallback } from "react";
+import { useMemo, useRef, useState, useLayoutEffect, useCallback} from "react";
 import { Application, extend } from "@pixi/react";
 import {
 	Container as PixiContainer,
@@ -52,7 +52,6 @@ import {
 	checkLadderOcclusion,
 	screenToLadder,
 } from "./Ladder";
-import { HardDestroyOnUnmount } from "./MapCleanup";
 
 interface MapProps {
 	characters: Character[];
@@ -614,7 +613,6 @@ export default function Map({
 					backgroundAlpha={0}
 					preference="webgl"
 				>
-					<HardDestroyOnUnmount />
 					<pixiContainer
 						x={currentCenter.cx + pan.x}
 						y={currentCenter.cy + pan.y}
