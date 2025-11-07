@@ -24,6 +24,8 @@ import {
 	calculateTargetHeight,
 	isTileOccupiedAtHeight,
 } from "./MapUtilities";
+import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { useQuestContext } from "../../domains/Context/ContextProvider";
 
 // ----------------------------------------------------------------------------
 // Types
@@ -80,6 +82,7 @@ export default function TwoDMap({
 }: TwoDMapProps) {
 	const { actionService } = useActionService();
 	const { canAccessActor } = usePeerTracking();
+	const context = useQuestContext();
 	const {
 		selectedActor,
 		selectActor,
@@ -126,20 +129,30 @@ export default function TwoDMap({
 	}, [selectedActor, terrain, characters, entities]);
 
 	// Movement range (only if a controllable selection exists)
-	// This is just for visual indication - not a movement restriction
 	const movementSet = useMemo(() => {
-		if (!terrain || !selectedActor || !selectedActorInfo) return new Set<string>();
+		if (!terrain || !selectedActor || !selectedActorInfo)
+			return new Set<string>();
 		if (!canAccessActor(selectedActor.id)) return new Set<string>();
+
+		// Get campaign settings for movement costs
+		const campaign = CampaignActions.getActiveCampaign(context);
+		const { heightCostLookup, flyingIgnoresHeight } =
+			campaign.Settings.MovementSettings;
 
 		const allTiles = calculateMovementRange(
 			selectedActorInfo.x,
 			selectedActorInfo.y,
+			selectedActorInfo.h,
 			selectedActor.moveSpeed,
+			selectedActorInfo.canFly,
 			W,
-			L
+			L,
+			terrain.HeightMap,
+			heightCostLookup,
+			flyingIgnoresHeight
 		);
 
-		// No filtering - just convert to set for quick lookup
+		// Convert to set for quick lookup
 		const s = new Set<string>();
 		for (const t of allTiles) s.add(`${t.x},${t.y}`);
 		return s;
@@ -150,6 +163,7 @@ export default function TwoDMap({
 		canAccessActor,
 		W,
 		L,
+		context,
 	]);
 
 	// Cycle state for stacked tiles
@@ -158,7 +172,7 @@ export default function TwoDMap({
 	const handleTileClick = useCallback(
 		(x: number, y: number) => {
 			if (!terrain || preview) return;
-	
+
 			// Actors at tile (characters first, then entities)
 			const hereChars = (characters || []).filter(
 				(c) => c.Position?.x === x && c.Position?.y === y
@@ -166,7 +180,7 @@ export default function TwoDMap({
 			const hereEnts = (entities || []).filter(
 				(e: any) => e.Position?.x === x && e.Position?.y === y
 			);
-	
+
 			const actorsHere = [
 				...hereChars.map((c) => ({
 					id: c.Id,
@@ -179,13 +193,13 @@ export default function TwoDMap({
 					moveSpeed: e.MoveSpeed ?? 5,
 				})),
 			];
-	
+
 			// If there are actors on this tile, cycle selection among them
 			if (actorsHere.length > 0) {
 				const key = `${x},${y}`;
 				const idx = cycleRef.current.get(key) ?? 0;
 				const next = actorsHere[idx % actorsHere.length];
-	
+
 				// If only one, toggle selection; if multiple, explicitly select next
 				if (actorsHere.length === 1) {
 					toggleActorSelection(next);
@@ -195,11 +209,11 @@ export default function TwoDMap({
 				}
 				return;
 			}
-	
+
 			// Otherwise, attempt a move if we have a selected, authorized actor
 			if (!selectedActor || !canAccessActor(selectedActor.id) || !actionService)
 				return;
-	
+
 			const actorObj = findActor(
 				selectedActor.id,
 				selectedActor.kind,
@@ -207,13 +221,13 @@ export default function TwoDMap({
 				entities
 			);
 			if (!actorObj) return;
-	
+
 			const currentH = actorObj.Position?.h ?? 0;
 			const canFly = actorObj.CanFly ?? false;
-	
+
 			// Use the helper function for target height calculation
 			const targetH = calculateTargetHeight(x, y, currentH, canFly, terrain);
-	
+
 			// Check occupancy - this is the ONLY restriction
 			if (
 				isTileOccupiedAtHeight(
@@ -227,7 +241,7 @@ export default function TwoDMap({
 			) {
 				return; // Position is occupied, can't move here
 			}
-	
+
 			// Valid move - execute it
 			if (selectedActor.kind === "character") {
 				actionService.execute("character:move", {
@@ -240,7 +254,7 @@ export default function TwoDMap({
 					position: { x, y, h: targetH },
 				});
 			}
-	
+
 			clearSelection();
 		},
 		[
@@ -381,7 +395,14 @@ export default function TwoDMap({
 
 				{/* Name label on tile hover */}
 				{isHovered && visible.length > 0 && (
-					<div className="absolute left-1 top-1 pointer-events-none px-1.5 py-0.5 rounded bg-base-100/90 text-[11px] leading-4 border border-base-300 shadow">
+					<div
+						className="absolute left-1/2 -translate-x-1/2 top-1 pointer-events-none px-1.5 py-0.5 rounded bg-base-100/90 text-[11px] leading-4 border border-base-300 shadow whitespace-nowrap z-50"
+						style={{
+							maxWidth: "300px",
+							overflow: "hidden",
+							textOverflow: "ellipsis",
+						}}
+					>
 						{visible.map((v) => v.name || "Unnamed").join(", ")}
 						{extraCount > 0 ? ` +${extraCount}` : ""}
 					</div>

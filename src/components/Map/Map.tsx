@@ -50,6 +50,8 @@ import {
 	checkLadderOcclusion,
 	screenToLadder,
 } from "./Ladder";
+import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { useQuestContext } from "../../domains/Context/ContextProvider";
 
 interface MapProps {
 	characters: Character[];
@@ -94,6 +96,7 @@ export default function Map({
 		autoSource: { characters, entities },
 	});
 	const { actionService } = useActionService();
+	const context = useQuestContext();
 	const { canAccessActor } = usePeerTracking();
 	const dpr = typeof window !== "undefined" ? window.devicePixelRatio : 1;
 	const [hoveredLadderHeight, setHoveredLadderHeight] = useState<number | null>(
@@ -250,6 +253,7 @@ export default function Map({
 	// ============================================================================
 	// Calculate movement range for selected actor
 	// Calculate movement range for selected actor
+	// Calculate movement range for selected actor
 	const movementRange = useMemo(() => {
 		if (!selectedActor || !terrain) return [];
 		// Hide range if the user doesn't control the selected actor
@@ -257,19 +261,30 @@ export default function Map({
 		const actor = actorHitCandidates.find((a) => a.id === selectedActor.id);
 		if (!actor) return [];
 
-		// Just calculate range - don't filter by occupancy
+		// Get campaign settings for movement costs
+		const campaign = CampaignActions.getActiveCampaign(context);
+		const { heightCostLookup, flyingIgnoresHeight } = campaign.Settings.MovementSettings;
+
+		// Calculate pathfinding-based movement range
 		return calculateMovementRange(
 			actor.x,
 			actor.y,
+			actor.h,
 			selectedActor.moveSpeed,
+			selectedActorObj?.CanFly ?? false,
 			terrain.Width,
-			terrain.Length
+			terrain.Length,
+			terrain.HeightMap,
+			heightCostLookup,
+			flyingIgnoresHeight
 		);
 	}, [
 		selectedActor,
 		actorHitCandidates,
 		terrain,
 		canControlSelected,
+		selectedActorObj,
+		context,
 	]);
 	const handlePointerMove = useCallback(
 		(e: React.PointerEvent<HTMLDivElement>) => {
