@@ -239,7 +239,7 @@ export function CampaignIndex() {
 													</div>
 													<div className="badge badge-outline gap-1">
 														<span className="icon-[mdi--account-group] w-3 h-3" />
-														{campaign.CharacterRoster.length} characters
+														{campaign.CharacterRoster.length + campaign.GameState.Characters.length} characters
 													</div>
 												</div>
 

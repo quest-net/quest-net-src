@@ -13,6 +13,7 @@ import { CalendarActions } from "../../domains/Calendar/CalendarActions";
 import { AudioActions } from "../../domains/Audio/AudioActions";
 import { SkillActions } from "../../domains/Skill/SkillActions";
 import { SceneActions } from "../../domains/Scene/SceneActions";
+import { NoteActions } from "../../domains/Note/NoteActions";
 // Import other action modules as they're created
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
@@ -245,6 +246,19 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"log:log": {
 		roles: ["dm", "player"],
 		handler: LogActions.log,
+	},
+	// NOTE ACTIONS
+	"note:create": {
+		roles: ["player"],
+		handler: NoteActions.create,
+	},
+	"note:edit": {
+		roles: ["player"],
+		handler: NoteActions.edit,
+	},
+	"note:delete": {
+		roles: ["player"],
+		handler: NoteActions.delete,
 	},
 	// ============================================================================
 	// CAMPAIGN SETTING ACTIONS

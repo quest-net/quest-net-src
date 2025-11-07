@@ -15,6 +15,8 @@ import { isDmAccess } from "../../utils/UrlParser";
 import { SceneEdit } from "../Scene/Edit";
 import { DiceRoller } from "../../components/Dice/DiceRoller";
 import { LogDisplay } from "../Log/LogDisplay";
+import { NoteDisplay } from "../Note/NoteDisplay";
+import { CharacterSheet } from "../Character/CharacterSheet";
 
 type TopTab = "music" | "calendar" | "terrain";
 type PlayerBottomTab =
@@ -23,7 +25,8 @@ type PlayerBottomTab =
 	| "skills"
 	| "party"
 	| "inspector"
-	| "log";
+	| "log"
+	| "notes";
 type DMBottomTab = "inspector" | "scene" | "log";
 
 export function Main() {
@@ -223,6 +226,15 @@ export function Main() {
 									>
 										<span className="icon-[mdi--message-text] w-6 h-6" />
 									</button>
+									<button
+										className={`btn btn-square ${
+											activeBottomTab === "notes" ? "btn-neutral" : ""
+										}`}
+										onClick={() => setActiveBottomTab("notes")}
+										title="Notes"
+									>
+										<span className="icon-[mdi--notebook] w-6 h-6" />
+									</button>
 								</>
 							)}
 						</div>
@@ -273,11 +285,7 @@ export function Main() {
 
 						{/* Bottom 80%: Bottom Tab Content */}
 						<div className="flex-1 overflow-auto p-4 border-t-2 bg-base-100">
-							{activeBottomTab === "character" && (
-								<div className="text-center text-sm opacity-60">
-									Character Info - Coming Soon
-								</div>
-							)}
+							{activeBottomTab === "character" && <CharacterSheet/>}
 							{activeBottomTab === "inventory" && (
 								<div className="text-center text-sm opacity-60">
 									Inventory - Coming Soon
@@ -293,6 +301,7 @@ export function Main() {
 									Party - Coming Soon
 								</div>
 							)}
+							{activeBottomTab === "notes" && <NoteDisplay />}
 							{activeBottomTab === "inspector" && <Inspector />}
 							{activeBottomTab === "scene" && <SceneEdit />}
 							{activeBottomTab === "log" && <LogDisplay />}

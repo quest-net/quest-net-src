@@ -716,12 +716,26 @@ export function DiceRoller() {
 					if (selectedCharacterId) actorId = selectedCharacterId;
 				}
 
+				// Determine visibility based on campaign settings
+				const visibilitySettings = campaign.Settings.VisibilitySettings;
+				let visibility: ("dm" | "player" | "owner" | "all")[];
+
+				if (userRole === "dm") {
+					// DM roll - check if players should see it
+					visibility = visibilitySettings.playersSeeDMRolls ? ["all"] : ["dm"];
+				} else {
+					// Player roll - check if other players should see it
+					visibility = visibilitySettings.playersSeePeerRolls
+						? ["all"]
+						: ["dm", "owner"];
+				}
+
 				actionService.execute("log:create", {
 					action: `${rollerName} ${makeRollLogText(r)}`,
 					details: `Breakdown: ${r.breakdown}`,
 					category: "dice",
 					level: "important",
-					visibility: ["all"],
+					visibility,
 					actorId,
 				});
 			}

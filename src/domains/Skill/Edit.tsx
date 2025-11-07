@@ -133,7 +133,7 @@ function SkillForm({ data, onChange }: SkillFormProps) {
 							value={data.Description || ""}
 							onChange={(e) => handleFieldChange("Description", e.target.value)}
 							className="textarea textarea-bordered w-full"
-							rows={3}
+							rows={6}
 							placeholder="Skill description..."
 						/>
 					</FormField>
