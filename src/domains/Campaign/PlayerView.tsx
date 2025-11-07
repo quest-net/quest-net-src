@@ -1,4 +1,4 @@
-// domains/Campaign/PlayerView.tsx
+// domains/Campaign/PlayerView.tsx - Updated
 
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -7,7 +7,7 @@ import {
 } from "../Context/ContextProvider";
 import { CampaignActions } from "./CampaignActions";
 import { UserActions } from "../User/UserActions";
-import { LogDisplay } from "../Log/LogDisplay";
+import { LogAlerts } from "../Log/LogAlerts";
 import { PeerStatus } from "../Room/PeerStatus";
 import { CharacterSelect } from "../Character/CharacterSelect";
 import { usePeerTracking } from "../../hooks/usePeerTracking";
@@ -56,51 +56,51 @@ export function PlayerView() {
 
 	return (
 		<AudioStateProvider>
-		<div className="flex flex-col h-screen">
-			<AudioPlayer/>
-			{/* Header - Always Visible */}
-			<header className="navbar border-b-2 px-6 justify-between">
-				<div className="flex items-center gap-4">
-					<PeerStatus connectionStatus={connectionStatus} peers={peers} />
-				</div>
-				<h1 className="text-xl font-bold">{campaign.Name}</h1>
-				<div className="flex items-center gap-2">
-					{hasSelectedCharacter && (
+			<div className="flex flex-col h-screen">
+				<AudioPlayer />
+				{/* Header - Always Visible */}
+				<header className="navbar border-b-2 px-6 justify-between">
+					<div className="flex items-center gap-4">
+						<PeerStatus connectionStatus={connectionStatus} peers={peers} />
+					</div>
+					<h1 className="text-xl font-bold">{campaign.Name}</h1>
+					<div className="flex items-center gap-2">
+						{hasSelectedCharacter && (
+							<button
+								className="btn btn-neutral btn-sm"
+								onClick={handleChangeCharacter}
+								title="Change character"
+							>
+								<span className="icon-[mdi--account-switch] w-5 h-5" />
+							</button>
+						)}
 						<button
-							className="btn btn-neutral btn-sm"
-							onClick={handleChangeCharacter}
-							title="Change character"
+							className="btn btn-neutral"
+							onClick={() => navigate("/campaigns")}
 						>
-							<span className="icon-[mdi--account-switch] w-5 h-5" />
+							Leave Campaign
 						</button>
-					)}
-					<button
-						className="btn btn-neutral"
-						onClick={() => navigate("/campaigns")}
-					>
-						Leave Campaign
-					</button>
-				</div>
-			</header>
+					</div>
+				</header>
 
-			{/* Main Content - Conditional */}
-			{!hasSelectedCharacter ? (
-				<main className="flex-1 overflow-auto p-6">
-					<CharacterSelect peers={peers} />
-				</main>
-			) : selectedCharacter ? (
-				<main className="flex-1 overflow-hidden">
-					<Main />
-				</main>
-			) : (
-				<main className="flex-1 overflow-auto p-6">
-					<p className="text-center">Character not found</p>
-				</main>
-			)}
+				{/* Main Content - Conditional */}
+				{!hasSelectedCharacter ? (
+					<main className="flex-1 overflow-auto p-6">
+						<CharacterSelect peers={peers} />
+					</main>
+				) : selectedCharacter ? (
+					<main className="flex-1 overflow-hidden">
+						<Main />
+					</main>
+				) : (
+					<main className="flex-1 overflow-auto p-6">
+						<p className="text-center">Character not found</p>
+					</main>
+				)}
 
-			{/* Log Display */}
-			<LogDisplay />
-		</div>
+				{/* Log Alerts */}
+				<LogAlerts />
+			</div>
 		</AudioStateProvider>
 	);
 }

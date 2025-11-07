@@ -42,6 +42,7 @@ export const CharacterActions = {
 			Statuses: [],
 			Tags: [],
 			Notes: [],
+			CritMessage: undefined,
 		};
 	},
 

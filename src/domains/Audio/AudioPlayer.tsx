@@ -20,6 +20,7 @@ export function AudioPlayer() {
 	const playerRef = useRef<any>(null);
 	const currentVideoIdsRef = useRef<string>("");
 	const playerContainerRef = useRef<HTMLDivElement>(null);
+	const checkIntervalRef = useRef<number | null>(null);
 
 	// Get volumes
 	const dmVolume = campaign.GameState.Volume;
@@ -34,6 +35,8 @@ export function AudioPlayer() {
 
 	// Create a stable string representation for comparison
 	const youtubeIdsString = youtubeIds.join(',');
+
+	const { currentTrackIndex, setCurrentTrackIndex } = useAudioState();
 
 	// Load YouTube IFrame API
 	useEffect(() => {
@@ -65,6 +68,9 @@ export function AudioPlayer() {
 					console.warn("Error destroying player:", e);
 				}
 				playerRef.current = null;
+			}
+			if (checkIntervalRef.current) {
+				clearInterval(checkIntervalRef.current);
 			}
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -98,35 +104,79 @@ export function AudioPlayer() {
 		if (youtubeIds.length > 0 && youtubeIdsString !== currentVideoIdsRef.current) {
 			loadAndPlayVideo(youtubeIds);
 		}
+		
+		// Start polling for track changes when playing a playlist
+		if (youtubeIds.length > 1) {
+			startTrackPolling();
+		}
 	};
 
-	const { setCurrentTrackIndex } = useAudioState();
-
-	const onPlayerStateChange = () => {
-		// Update current track index when playlist advances
-		if (playerRef.current && youtubeIds.length > 1) {
-			try {
-				const index = playerRef.current.getPlaylistIndex();
-				if (index !== -1) {
-					setCurrentTrackIndex(index);
-				}
-			} catch (e) {
-				console.warn("Error getting playlist index:", e);
-			}
+	const onPlayerStateChange = (event: any) => {
+		// When video starts playing, check the track index
+		if (event.data === 1 && youtubeIds.length > 1) { // 1 = playing
+			updateCurrentTrackIndex();
 		}
-		// No need for manual loop handling - YouTube handles it now
+	};
+
+	const updateCurrentTrackIndex = () => {
+		if (!playerRef.current || youtubeIds.length <= 1) return;
+
+		try {
+			// Get the current video URL
+			const currentUrl = playerRef.current.getVideoUrl();
+			if (!currentUrl) return;
+
+			// Extract video ID from URL
+			const match = currentUrl.match(/[?&]v=([^&]+)/);
+			if (!match) return;
+
+			const currentVideoId = match[1];
+
+			// Find this video ID in our playlist
+			const newIndex = youtubeIds.findIndex(id => id === currentVideoId);
+			
+			if (newIndex !== -1 && newIndex !== currentTrackIndex) {
+				console.log(`[AudioPlayer] Track changed from ${currentTrackIndex} to ${newIndex}`);
+				setCurrentTrackIndex(newIndex);
+			}
+		} catch (e) {
+			console.warn("Error updating track index:", e);
+		}
+	};
+
+	const startTrackPolling = () => {
+		// Clear any existing interval
+		if (checkIntervalRef.current) {
+			clearInterval(checkIntervalRef.current);
+		}
+
+		// Poll every second to check if track changed
+		checkIntervalRef.current = window.setInterval(() => {
+			updateCurrentTrackIndex();
+		}, 1000);
+	};
+
+	const stopTrackPolling = () => {
+		if (checkIntervalRef.current) {
+			clearInterval(checkIntervalRef.current);
+			checkIntervalRef.current = null;
+		}
 	};
 
 	const loadAndPlayVideo = (videoIds: string[]) => {
 		if (!playerRef.current || videoIds.length === 0) return;
 	
 		try {
+			// Reset track index when loading new playlist
+			setCurrentTrackIndex(0);
+			
 			if (videoIds.length === 1) {
 				// Single track mode
 				playerRef.current.loadVideoById({
 					videoId: videoIds[0],
 					startSeconds: 0,
 				});
+				stopTrackPolling();
 			} else {
 				// Playlist mode with loop
 				playerRef.current.loadPlaylist({
@@ -136,6 +186,7 @@ export function AudioPlayer() {
 				});
 				// Explicitly enable looping for playlists
 				playerRef.current.setLoop(true);
+				startTrackPolling();
 			}
 			playerRef.current.setVolume(finalVolume);
 			currentVideoIdsRef.current = videoIds.join(',');
@@ -155,6 +206,8 @@ export function AudioPlayer() {
 			try {
 				playerRef.current.stopVideo();
 				currentVideoIdsRef.current = "";
+				setCurrentTrackIndex(0);
+				stopTrackPolling();
 			} catch (e) {
 				console.warn("Error stopping video:", e);
 			}
@@ -172,6 +225,13 @@ export function AudioPlayer() {
 			console.warn("Error setting volume:", e);
 		}
 	}, [finalVolume]);
+
+	// Cleanup polling on unmount
+	useEffect(() => {
+		return () => {
+			stopTrackPolling();
+		};
+	}, []);
 
 	// Hidden container for the player
 	return <div ref={playerContainerRef} style={{ display: "none" }} />;

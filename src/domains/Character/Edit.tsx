@@ -156,6 +156,23 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 						/>
 					</FormField>
 
+					<FormField 
+						label="Critical Success Message" 
+						span={2}
+					>
+						<input
+							type="text"
+							value={data.CritMessage || ""}
+							onChange={(e) => {
+								const value = e.target.value.slice(0, 50);
+								handleFieldChange("CritMessage", value || undefined);
+							}}
+							className="input input-bordered w-full"
+							placeholder="e.g., 'Flawless execution!', 'By Pelor's light!'"
+							maxLength={50}
+						/>
+					</FormField>
+
 					<FormField label="Move Speed">
 						<input
 							type="number"

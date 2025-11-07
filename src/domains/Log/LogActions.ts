@@ -1,4 +1,4 @@
-// LogActions.ts
+// LogActions.ts - Updated
 import { Context } from "../Context/Context";
 import {
 	LogEntry,
@@ -82,5 +82,38 @@ export const LogActions = {
 
 		// Check for the specific command, trimming whitespace
 		return params.action.trim() === command;
+	},
+
+	/**
+	 * Determines if a user can see a specific log entry
+	 * Centralized visibility logic used by both LogDisplay and LogAlerts
+	 */
+	canUserSeeEntry(
+		entry: LogEntry,
+		userRole: "dm" | "player" | undefined,
+		selectedCharacterId: string | undefined
+	): boolean {
+		// Everyone can see "all" visibility
+		if (entry.Visibility.includes("all")) return true;
+
+		// DMs can see DM-only entries
+		if (userRole === "dm" && entry.Visibility.includes("dm")) return true;
+
+		// Players have special rules
+		if (userRole === "player") {
+			// Players can see player-visible entries
+			if (entry.Visibility.includes("player")) return true;
+
+			// Players can see entries where they own the actor
+			if (
+				entry.Visibility.includes("owner") &&
+				selectedCharacterId &&
+				entry.ActorId === selectedCharacterId
+			) {
+				return true;
+			}
+		}
+
+		return false;
 	},
 };

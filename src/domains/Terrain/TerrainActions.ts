@@ -1,7 +1,7 @@
 // domains/Terrain/TerrainActions.ts
 
 import { Context } from "../Context/Context";
-import { Terrain, TerrainType } from "./Terrain";
+import { MAX_HEIGHT, Terrain, TerrainType } from "./Terrain";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { Actor } from "../Actor/Actor";
@@ -287,197 +287,245 @@ export const TerrainActions = {
 	},
 
 	// ============================================================================
-	// VALIDATION SYSTEM
-	// ============================================================================
+// VALIDATION SYSTEM
+// ============================================================================
 
-	/**
-	 * Validates all actors in the game state against the current terrain
-	 * Fixes invalid positions, heights, and collisions
-	 * Despawns actors that cannot be placed
-	 */
-	validateActors(context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
-		const terrain = campaign.Terrains.find(
-			(t) => t.Id === campaign.GameState.TerrainId
-		);
+/**
+ * Validates all actors in the game state against the current terrain
+ * Fixes invalid positions, heights, and collisions
+ * Despawns actors that cannot be placed
+ */
+validateActors(context: Context): void {
+	const campaign = CampaignActions.getActiveCampaign(context);
+	const terrain = campaign.Terrains.find(
+		(t) => t.Id === campaign.GameState.TerrainId
+	);
 
-		if (!terrain) {
-			console.warn("No active terrain found for validation");
-			return;
-		}
+	if (!terrain) {
+		console.warn("No active terrain found for validation");
+		return;
+	}
 
-		const occupiedTiles = new Set<string>();
+	const occupiedTiles = new Set<string>();
 
-		// Validate entities first (they have priority)
-		TerrainActions.validateActorArray(
-			campaign.GameState.Entities,
-			terrain,
-			occupiedTiles,
-			"entity",
-			context
-		);
+	// Validate entities first (they have priority)
+	TerrainActions.validateActorArray(
+		campaign.GameState.Entities,
+		terrain,
+		occupiedTiles,
+		"entity",
+		context
+	);
 
-		// Then validate characters
-		TerrainActions.validateActorArray(
-			campaign.GameState.Characters,
-			terrain,
-			occupiedTiles,
-			"character",
-			context
-		);
-	},
+	// Then validate characters
+	TerrainActions.validateActorArray(
+		campaign.GameState.Characters,
+		terrain,
+		occupiedTiles,
+		"character",
+		context
+	);
+},
 
-	/**
-	 * Validates an array of actors (either entities or characters)
-	 */
-	validateActorArray(
-		actors: Actor[],
-		terrain: Terrain,
-		occupiedTiles: Set<string>,
-		type: "entity" | "character",
-		context: Context
-	): void {
-		const toRemove: string[] = [];
+/**
+ * Validates an array of actors (either entities or characters)
+ */
+validateActorArray(
+	actors: Actor[],
+	terrain: Terrain,
+	occupiedTiles: Set<string>,
+	type: "entity" | "character",
+	context: Context
+): void {
+	const toRemove: string[] = [];
 
-		for (const actor of actors) {
-			// Include height in the key so actors can be at same x,y but different heights
-			const tileKey = `${actor.Position.x},${actor.Position.y},${actor.Position.h}`;
+	for (const actor of actors) {
+		// Check if position is in bounds
+		if (!this.isInBounds(actor.Position.x, actor.Position.y, terrain)) {
+			// Out of bounds - try to find a valid position
+			const validPosition = this.findValidPosition(actor, terrain, occupiedTiles);
 
-			// Check if position is valid (in bounds and not occupied at this height)
-			const isValid =
-				this.isInBounds(actor.Position.x, actor.Position.y, terrain) &&
-				!occupiedTiles.has(tileKey);
-
-			if (!isValid) {
-				// Try to find a valid position
-				const validPosition = this.findValidTile(terrain, occupiedTiles);
-
-				if (validPosition) {
-					// Found a spot - move actor there
-					actor.Position.x = validPosition.x;
-					actor.Position.y = validPosition.y;
-					this.adjustHeight(actor, terrain);
-					occupiedTiles.add(`${validPosition.x},${validPosition.y},${actor.Position.h}`);
-				} else {
-					// No valid position found - mark for despawn
-					toRemove.push(actor.Id);
-				}
+			if (validPosition) {
+				actor.Position.x = validPosition.x;
+				actor.Position.y = validPosition.y;
+				actor.Position.h = validPosition.h;
+				occupiedTiles.add(`${validPosition.x},${validPosition.y},${validPosition.h}`);
 			} else {
-				// Position is valid - just adjust height and mark as occupied
-				this.adjustHeight(actor, terrain);
-				occupiedTiles.add(tileKey);
+				// No valid position found - mark for despawn
+				toRemove.push(actor.Id);
 			}
+			continue;
 		}
 
-		// Despawn actors that couldn't be placed
-		for (const actorId of toRemove) {
-			const index = actors.findIndex((a) => a.Id === actorId);
-			if (index !== -1) {
-				const actor = actors[index];
-				actors.splice(index, 1);
+		// Position is in bounds - adjust height based on terrain and flying ability
+		this.adjustHeight(actor, terrain);
 
-				LogActions.create(
-					{
-						action: `${type} despawned`,
-						details: `${actor.Name} was removed due to invalid position`,
-						category: "system",
-						level: "verbose",
-						visibility: ["dm"],
-						actorId: actor.Id,
-					},
-					context
-				);
+		// Now check if this exact position (x, y, h) is occupied
+		const tileKey = `${actor.Position.x},${actor.Position.y},${actor.Position.h}`;
+
+		if (occupiedTiles.has(tileKey)) {
+			// Position is occupied - try to find alternative
+			const validPosition = this.findValidPosition(actor, terrain, occupiedTiles);
+
+			if (validPosition) {
+				actor.Position.x = validPosition.x;
+				actor.Position.y = validPosition.y;
+				actor.Position.h = validPosition.h;
+				occupiedTiles.add(`${validPosition.x},${validPosition.y},${validPosition.h}`);
+			} else {
+				// No valid position found - mark for despawn
+				toRemove.push(actor.Id);
 			}
-		}
-	},
-
-	/**
-	 * Checks if a position is within terrain bounds
-	 */
-	isInBounds(x: number, y: number, terrain: Terrain): boolean {
-		return x >= 0 && x < terrain.Width && y >= 0 && y < terrain.Length;
-	},
-
-	/**
-	 * Adjusts actor height based on terrain and flying ability
-	 */
-	adjustHeight(actor: Actor, terrain: Terrain): void {
-		const terrainHeight = terrain.HeightMap[actor.Position.y][actor.Position.x];
-
-		if (actor.CanFly) {
-			// Flying actors: rise if terrain is taller, stay if terrain is shorter
-			actor.Position.h = Math.max(actor.Position.h, terrainHeight);
 		} else {
-			// Ground actors: always at terrain height
-			actor.Position.h = terrainHeight;
+			// Position is valid and unoccupied - mark as occupied
+			occupiedTiles.add(tileKey);
 		}
-	},
+	}
 
-	/**
-	 * Finds a valid unoccupied tile using spiral search from origin (0,0)
-	 * Returns null if no valid tile found
-	 */
-	findValidTile(
-		terrain: Terrain,
-		occupiedTiles: Set<string>
-	): { x: number; y: number } | null {
-		// Start from origin
-		let x = 0;
-		let y = 0;
+	// Despawn actors that couldn't be placed
+	for (const actorId of toRemove) {
+		const index = actors.findIndex((a) => a.Id === actorId);
+		if (index !== -1) {
+			const actor = actors[index];
+			actors.splice(index, 1);
 
-		// Check origin first
-		if (this.isInBounds(x, y, terrain) && !occupiedTiles.has(`${x},${y}`)) {
-			return { x, y };
+			LogActions.create(
+				{
+					action: `${type} despawned`,
+					details: `${actor.Name} was removed due to invalid position`,
+					category: "system",
+					level: "verbose",
+					visibility: ["dm"],
+					actorId: actor.Id,
+				},
+				context
+			);
 		}
+	}
+},
 
-		// Spiral search outward
-		let direction = 0; // 0: right, 1: down, 2: left, 3: up
-		let stepsInDirection = 1;
-		let stepsTaken = 0;
-		let directionChanges = 0;
+/**
+ * Checks if a position is within terrain bounds
+ */
+isInBounds(x: number, y: number, terrain: Terrain): boolean {
+	return x >= 0 && x < terrain.Width && y >= 0 && y < terrain.Length;
+},
 
-		const maxSearchRadius = terrain.Width * terrain.Length; // Search entire terrain
-		let totalSteps = 0;
+/**
+ * Adjusts actor height based on terrain and flying ability
+ */
+adjustHeight(actor: Actor, terrain: Terrain): void {
+	const terrainHeight = terrain.HeightMap[actor.Position.y][actor.Position.x];
 
-		while (totalSteps < maxSearchRadius) {
-			// Move in current direction
-			switch (direction) {
-				case 0:
-					x++;
-					break; // right
-				case 1:
-					y++;
-					break; // down
-				case 2:
-					x--;
-					break; // left
-				case 3:
-					y--;
-					break; // up
-			}
+	if (actor.CanFly) {
+		// Flying actors: rise if terrain is taller, stay if terrain is shorter
+		actor.Position.h = Math.max(actor.Position.h, terrainHeight);
+	} else {
+		// Ground actors: always at terrain height
+		actor.Position.h = terrainHeight;
+	}
+},
 
-			stepsTaken++;
-			totalSteps++;
+/**
+ * Finds a valid position for an actor, considering height stacking
+ * Returns {x, y, h} or null if no valid position found
+ */
+findValidPosition(
+	actor: Actor,
+	terrain: Terrain,
+	occupiedTiles: Set<string>
+): { x: number; y: number; h: number } | null {
+	// Helper: check if a specific x,y,h position is available
+	const isPositionAvailable = (x: number, y: number, h: number): boolean => {
+		return this.isInBounds(x, y, terrain) && 
+		       !occupiedTiles.has(`${x},${y},${h}`);
+	};
 
-			// Check if this tile is valid
-			if (this.isInBounds(x, y, terrain) && !occupiedTiles.has(`${x},${y}`)) {
-				return { x, y };
-			}
-
-			// Change direction if needed
-			if (stepsTaken === stepsInDirection) {
-				stepsTaken = 0;
-				direction = (direction + 1) % 4;
-				directionChanges++;
-
-				// Increase steps after every 2 direction changes
-				if (directionChanges % 2 === 0) {
-					stepsInDirection++;
-				}
+	// Helper: find an available height at given x,y
+	const findAvailableHeight = (x: number, y: number): number | null => {
+		if (!this.isInBounds(x, y, terrain)) return null;
+		
+		const terrainHeight = terrain.HeightMap[y][x];
+		
+		// For ground actors, they must be at terrain height
+		if (!actor.CanFly) {
+			return isPositionAvailable(x, y, terrainHeight) ? terrainHeight : null;
+		}
+		
+		// For flying actors, try terrain height first, then stack upward
+		for (let h = terrainHeight; h <= MAX_HEIGHT; h++) {
+			if (isPositionAvailable(x, y, h)) {
+				return h;
 			}
 		}
-
-		// No valid tile found
 		return null;
-	},
-};
+	};
+
+	// First, try to keep the actor at their current x,y by finding available height
+	const currentH = findAvailableHeight(actor.Position.x, actor.Position.y);
+	if (currentH !== null) {
+		return { x: actor.Position.x, y: actor.Position.y, h: currentH };
+	}
+
+	// Current x,y has no available heights - spiral search for new position
+	let x = 0;
+	let y = 0;
+
+	// Check origin
+	const originH = findAvailableHeight(x, y);
+	if (originH !== null) {
+		return { x, y, h: originH };
+	}
+
+	// Spiral search outward from origin
+	let direction = 0; // 0: right, 1: down, 2: left, 3: up
+	let stepsInDirection = 1;
+	let stepsTaken = 0;
+	let directionChanges = 0;
+
+	const maxSearchRadius = terrain.Width * terrain.Length;
+	let totalSteps = 0;
+
+	while (totalSteps < maxSearchRadius) {
+		// Move in current direction
+		switch (direction) {
+			case 0:
+				x++;
+				break; // right
+			case 1:
+				y++;
+				break; // down
+			case 2:
+				x--;
+				break; // left
+			case 3:
+				y--;
+				break; // up
+		}
+
+		stepsTaken++;
+		totalSteps++;
+
+		// Check if this x,y has an available height
+		const h = findAvailableHeight(x, y);
+		if (h !== null) {
+			return { x, y, h };
+		}
+
+		// Change direction if needed
+		if (stepsTaken === stepsInDirection) {
+			stepsTaken = 0;
+			direction = (direction + 1) % 4;
+			directionChanges++;
+
+			// Increase steps after every 2 direction changes
+			if (directionChanges % 2 === 0) {
+				stepsInDirection++;
+			}
+		}
+	}
+
+	// No valid position found anywhere
+	return null;
+}
+}

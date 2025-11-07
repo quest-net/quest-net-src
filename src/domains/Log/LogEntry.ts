@@ -21,6 +21,7 @@ export type LogCategory =
 	| "dice" // Dice rolls
 	| "movement" // Position changes
 	| "scene" // Environment/audio changes
+	| "chat" // Messaging
 	| "system"; // Meta events
 
 export type LogLevel =

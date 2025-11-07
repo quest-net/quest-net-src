@@ -12,6 +12,7 @@ import {
 } from "../../components/Form/Form";
 import { StatDefinitionsEditor } from "../../components/inputs/StatDefinitionEditor";
 import CalendarConfigEditor from "../../components/inputs/CalendarConfigEditor";
+import { MovementSettingsEditor } from "../../components/inputs/MovementSettingsEditor";
 
 export function CampaignSettingEdit() {
 	const context = useQuestContext();
@@ -148,6 +149,40 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 					value={data.CalendarSettings}
 					onChange={(CalendarSettings) => updateSettings({ CalendarSettings })}
 				/>
+			</FormSection>
+			<FormSection
+			title="Movement & Height"
+			description="Configure how terrain height affects movement cost"
+			>
+			<MovementSettingsEditor
+				formula={data.MovementSettings.heightCostFormula}
+				lookup={data.MovementSettings.heightCostLookup}
+				onChange={(formula, lookup) =>
+				updateSettings({
+					MovementSettings: {
+					...data.MovementSettings,
+					heightCostFormula: formula,
+					heightCostLookup: lookup,
+					},
+				})
+				}
+			/>
+			
+			<FormField label="Flying units ignore vertical costs">
+				<input
+				type="checkbox"
+				checked={data.MovementSettings.flyingIgnoresHeight}
+				onChange={(e) =>
+					updateSettings({
+					MovementSettings: {
+						...data.MovementSettings,
+						flyingIgnoresHeight: e.target.checked,
+					},
+					})
+				}
+				className="toggle toggle-primary"
+				/>
+			</FormField>
 			</FormSection>
 		</>
 	);

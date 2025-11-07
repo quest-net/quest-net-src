@@ -17,7 +17,13 @@ import {
 	HOVER_COLOR,
 	ELEV_TOP_STRENGTH,
 } from "./Terrain";
-import { calculateMovementRange, findActor, hexToNum } from "./MapUtilities";
+import {
+	calculateMovementRange,
+	findActor,
+	hexToNum,
+	calculateTargetHeight,
+	isTileOccupiedAtHeight,
+} from "./MapUtilities";
 
 // ----------------------------------------------------------------------------
 // Types
@@ -88,7 +94,7 @@ export default function TwoDMap({
 	const W = terrain?.Width ?? 0;
 	const L = terrain?.Length ?? 0;
 
-	// Compute tile size from container width, clamped 32..80
+	// Compute tile size from container width, clamped 32..72
 	const tileSize = useMemo(() => {
 		if (!terrain || W === 0) return 48; // default fallback
 		const ideal = Math.floor(w / W);
@@ -98,25 +104,53 @@ export default function TwoDMap({
 	const gridPxW = W * tileSize;
 	const gridPxH = L * tileSize;
 
-	// Movement range (only if a controllable selection exists)
-	const movementSet = useMemo(() => {
-		if (!terrain || !selectedActor) return new Set<string>();
-		if (!canAccessActor(selectedActor.id)) return new Set<string>();
+	// Get selected actor's current position and flying ability
+	const selectedActorInfo = useMemo(() => {
+		if (!selectedActor || !terrain) return null;
 
 		const actorObj = findActor(
 			selectedActor.id,
-			(selectedActor as any).kind,
+			selectedActor.kind,
 			characters,
 			entities
 		);
-		const ax = (actorObj as any)?.Position?.x ?? 0;
-		const ay = (actorObj as any)?.Position?.y ?? 0;
 
-		const range = calculateMovementRange(ax, ay, selectedActor.moveSpeed, W, L);
+		if (!actorObj) return null;
+
+		return {
+			x: actorObj.Position?.x ?? 0,
+			y: actorObj.Position?.y ?? 0,
+			h: actorObj.Position?.h ?? 0,
+			canFly: actorObj.CanFly ?? false,
+		};
+	}, [selectedActor, terrain, characters, entities]);
+
+	// Movement range (only if a controllable selection exists)
+	// This is just for visual indication - not a movement restriction
+	const movementSet = useMemo(() => {
+		if (!terrain || !selectedActor || !selectedActorInfo) return new Set<string>();
+		if (!canAccessActor(selectedActor.id)) return new Set<string>();
+
+		const allTiles = calculateMovementRange(
+			selectedActorInfo.x,
+			selectedActorInfo.y,
+			selectedActor.moveSpeed,
+			W,
+			L
+		);
+
+		// No filtering - just convert to set for quick lookup
 		const s = new Set<string>();
-		for (const t of range) s.add(`${t.x},${t.y}`);
+		for (const t of allTiles) s.add(`${t.x},${t.y}`);
 		return s;
-	}, [terrain, selectedActor, canAccessActor, characters, entities, W, L]);
+	}, [
+		terrain,
+		selectedActor,
+		selectedActorInfo,
+		canAccessActor,
+		W,
+		L,
+	]);
 
 	// Cycle state for stacked tiles
 	const cycleRef = useRef<Map<string, number>>(new Map());
@@ -124,7 +158,7 @@ export default function TwoDMap({
 	const handleTileClick = useCallback(
 		(x: number, y: number) => {
 			if (!terrain || preview) return;
-
+	
 			// Actors at tile (characters first, then entities)
 			const hereChars = (characters || []).filter(
 				(c) => c.Position?.x === x && c.Position?.y === y
@@ -132,7 +166,7 @@ export default function TwoDMap({
 			const hereEnts = (entities || []).filter(
 				(e: any) => e.Position?.x === x && e.Position?.y === y
 			);
-
+	
 			const actorsHere = [
 				...hereChars.map((c) => ({
 					id: c.Id,
@@ -145,13 +179,13 @@ export default function TwoDMap({
 					moveSpeed: e.MoveSpeed ?? 5,
 				})),
 			];
-
+	
 			// If there are actors on this tile, cycle selection among them
 			if (actorsHere.length > 0) {
 				const key = `${x},${y}`;
 				const idx = cycleRef.current.get(key) ?? 0;
 				const next = actorsHere[idx % actorsHere.length];
-
+	
 				// If only one, toggle selection; if multiple, explicitly select next
 				if (actorsHere.length === 1) {
 					toggleActorSelection(next);
@@ -161,26 +195,41 @@ export default function TwoDMap({
 				}
 				return;
 			}
-
+	
 			// Otherwise, attempt a move if we have a selected, authorized actor
 			if (!selectedActor || !canAccessActor(selectedActor.id) || !actionService)
 				return;
-
-			const tileH = terrain.HeightMap?.[y]?.[x] ?? 0;
-
+	
 			const actorObj = findActor(
 				selectedActor.id,
-				(selectedActor as any).kind,
+				selectedActor.kind,
 				characters,
 				entities
-			) as any;
+			);
 			if (!actorObj) return;
-
-			const canFly = !!actorObj.CanFly;
+	
 			const currentH = actorObj.Position?.h ?? 0;
-			const targetH = canFly ? Math.max(tileH, currentH) : tileH;
-
-			if ((selectedActor as any).kind === "character") {
+			const canFly = actorObj.CanFly ?? false;
+	
+			// Use the helper function for target height calculation
+			const targetH = calculateTargetHeight(x, y, currentH, canFly, terrain);
+	
+			// Check occupancy - this is the ONLY restriction
+			if (
+				isTileOccupiedAtHeight(
+					x,
+					y,
+					targetH,
+					characters,
+					entities,
+					selectedActor.id
+				)
+			) {
+				return; // Position is occupied, can't move here
+			}
+	
+			// Valid move - execute it
+			if (selectedActor.kind === "character") {
 				actionService.execute("character:move", {
 					characterId: selectedActor.id,
 					position: { x, y, h: targetH },
@@ -191,7 +240,7 @@ export default function TwoDMap({
 					position: { x, y, h: targetH },
 				});
 			}
-
+	
 			clearSelection();
 		},
 		[
@@ -278,8 +327,9 @@ export default function TwoDMap({
 				style={{
 					width: tileSize,
 					height: tileSize,
-					outline: "1px solid rgba(0,0,0,0.06)",
+					outline: "2px solid rgba(0,0,0,0.1)",
 					backgroundColor: bg,
+					cursor: "pointer",
 				}}
 				onClick={() => handleTileClick(x, y)}
 				onMouseEnter={() => handleTileEnter(x, y)}
@@ -382,20 +432,22 @@ export default function TwoDMap({
 	return (
 		<div
 			ref={ref}
-			className="h-full w-full overflow-auto bg-base-200 flex items-center justify-center select-none"
+			className="h-full w-full overflow-auto bg-base-200 select-none"
 			onMouseLeave={handleMouseLeaveGrid}
 		>
-			<div style={{ width: gridPxW, height: gridPxH }} className="relative">
-				<div
-					className="grid"
-					style={{
-						gridTemplateColumns: `repeat(${W}, ${tileSize}px)`,
-						gridAutoRows: `${tileSize}px`,
-					}}
-				>
-					{Array.from({ length: L }).map((_, y) => (
-						<>{Array.from({ length: W }).map((__, x) => renderTile(x, y))}</>
-					))}
+			<div className="min-h-full min-w-full flex items-center justify-center p-4">
+				<div style={{ width: gridPxW, height: gridPxH }} className="relative">
+					<div
+						className="grid"
+						style={{
+							gridTemplateColumns: `repeat(${W}, ${tileSize}px)`,
+							gridAutoRows: `${tileSize}px`,
+						}}
+					>
+						{Array.from({ length: L }).map((_, y) => (
+							<>{Array.from({ length: W }).map((__, x) => renderTile(x, y))}</>
+						))}
+					</div>
 				</div>
 			</div>
 		</div>

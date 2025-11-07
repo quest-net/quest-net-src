@@ -648,3 +648,53 @@ export function findActor(
 		null
 	);
 }
+/**
+ * Check if a tile is occupied at a specific height
+ */
+export function isTileOccupiedAtHeight(
+	x: number,
+	y: number,
+	h: number,
+	characters: Character[],
+	entities: Entity[],
+	excludeActorId?: string
+): boolean {
+	// Check characters
+	for (const c of characters) {
+		if (c.Id === excludeActorId) continue;
+		if (c.Position.x === x && c.Position.y === y && c.Position.h === h) {
+			return true;
+		}
+	}
+
+	// Check entities
+	for (const e of entities) {
+		if (e.Id === excludeActorId) continue;
+		if (e.Position.x === x && e.Position.y === y && e.Position.h === h) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * Calculate the height an actor would be at if they moved to a tile
+ */
+export function calculateTargetHeight(
+	tileX: number,
+	tileY: number,
+	currentHeight: number,
+	canFly: boolean,
+	terrain: Terrain
+): number {
+	const tileHeight = terrain.HeightMap?.[tileY]?.[tileX] ?? 0;
+
+	if (canFly) {
+		// Flying actors maintain altitude or rise to tile height
+		return Math.max(tileHeight, currentHeight);
+	} else {
+		// Ground actors snap to tile height
+		return tileHeight;
+	}
+}

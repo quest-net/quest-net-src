@@ -5,6 +5,7 @@ export interface CampaignSettings {
 	VisibilitySettings: VisibilitySettings;
 	CalendarSettings: CalendarSettings;
 	RestSettings: RestSettings;
+	MovementSettings: MovementSettings; // ← NEW
 }
 
 export interface StatDefinition {
@@ -24,7 +25,7 @@ export interface VisibilitySettings {
 }
 
 export interface CalendarSettings {
-	/** Number of days in a week. If 0, “weeks” concept is disabled. */
+	/** Number of days in a week. If 0, "weeks" concept is disabled. */
 	daysPerWeek: number;
 	/** Fixed length for every month. */
 	daysPerMonth: number;
@@ -36,7 +37,7 @@ export interface CalendarSettings {
 	/** Names for months (length should equal monthsPerYear). */
 	monthNames: string[];
 
-	/** Human labels (can be empty to “hide” the concept in UI). */
+	/** Human labels (can be empty to "hide" the concept in UI). */
 	weekLabel?: string;   // e.g., "week", "tenday"
 	monthLabel?: string;  // e.g., "month", "moonth"
 	yearLabel?: string;   // e.g., "Year", "Solar Cycle"
@@ -47,6 +48,32 @@ export interface RestSettings {
 	shortRestsPerDay: number;
 	/** Automatically advance calendar by 1 day when long rest is taken */
 	autoAdvanceDayOnLongRest: boolean;
+}
+
+/**
+ * MovementSettings controls how terrain height affects movement costs
+ */
+export interface MovementSettings {
+	/**
+	 * Formula for calculating movement cost based on height difference
+	 * Uses 'h' as the variable for absolute height difference
+	 * Examples: "floor(h/2)", "h", "2*h", "ceil(h/2)"
+	 */
+	heightCostFormula: string;
+	
+	/**
+	 * Pre-computed lookup table for movement costs
+	 * Index = height difference (0 to MAX_HEIGHT)
+	 * Value = movement cost for that height difference
+	 * This is built when the formula is saved to avoid runtime evaluation
+	 */
+	heightCostLookup: number[];
+	
+	/**
+	 * Whether flying actors ignore vertical movement costs
+	 * If true, CanFly actors only pay horizontal movement costs
+	 */
+	flyingIgnoresHeight: boolean;
 }
 
 /**

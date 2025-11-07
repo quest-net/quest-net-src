@@ -1,4 +1,4 @@
-// domains/Main/Main.tsx
+// domains/Main/Main.tsx - Updated
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
@@ -14,6 +14,7 @@ import { SceneDisplay } from "../Scene/SceneDisplay";
 import { isDmAccess } from "../../utils/UrlParser";
 import { SceneEdit } from "../Scene/Edit";
 import { DiceRoller } from "../../components/Dice/DiceRoller";
+import { LogDisplay } from "../Log/LogDisplay";
 
 type TopTab = "music" | "calendar" | "terrain";
 type PlayerBottomTab =
@@ -21,8 +22,9 @@ type PlayerBottomTab =
 	| "inventory"
 	| "skills"
 	| "party"
-	| "inspector";
-type DMBottomTab = "inspector" | "scene";
+	| "inspector"
+	| "log";
+type DMBottomTab = "inspector" | "scene" | "log";
 
 export function Main() {
 	const context = useQuestContext();
@@ -63,7 +65,6 @@ export function Main() {
 		switch (activeTopTab) {
 			case "music":
 				return "Audio";
-
 			case "calendar":
 				return "Calendar";
 			case "terrain":
@@ -78,9 +79,7 @@ export function Main() {
 				<div className="flex-1 overflow-hidden relative">
 					<SceneDisplay />
 					{/* 2D / 3D toggle button (placed outside Map.tsx so we can swap components) */}
-					<div
-						className="absolute right-2 bottom-2 z-20"
-					>
+					<div className="absolute right-2 bottom-2 z-20">
 						<button
 							className="btn btn-square btn-lg rounded-lg btn-info shadow-lg"
 							onClick={() => setIs2D((v) => !v)}
@@ -153,6 +152,15 @@ export function Main() {
 									>
 										<span className="icon-[mdi--image] w-6 h-6" />
 									</button>
+									<button
+										className={`btn btn-square ${
+											activeBottomTab === "log" ? "btn-neutral" : ""
+										}`}
+										onClick={() => setActiveBottomTab("log")}
+										title="Log"
+									>
+										<span className="icon-[mdi--message-text] w-6 h-6" />
+									</button>
 								</>
 							) : (
 								// Player Tabs
@@ -205,6 +213,15 @@ export function Main() {
 										title="Inspector"
 									>
 										<span className="icon-[mdi--magnify] w-6 h-6" />
+									</button>
+									<button
+										className={`btn btn-square ${
+											activeBottomTab === "log" ? "btn-neutral" : ""
+										}`}
+										onClick={() => setActiveBottomTab("log")}
+										title="Log"
+									>
+										<span className="icon-[mdi--message-text] w-6 h-6" />
 									</button>
 								</>
 							)}
@@ -278,6 +295,7 @@ export function Main() {
 							)}
 							{activeBottomTab === "inspector" && <Inspector />}
 							{activeBottomTab === "scene" && <SceneEdit />}
+							{activeBottomTab === "log" && <LogDisplay />}
 						</div>
 					</div>
 				</div>

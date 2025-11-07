@@ -1,3 +1,4 @@
+// hooks/usePeerTracking.ts
 import { useState, useEffect, useRef } from "react";
 import { useActionService } from "../services/Actions/ActionServiceProvider";
 import { useQuestContext } from "../domains/Context/ContextProvider";
@@ -6,13 +7,13 @@ import { User } from "../domains/User/User";
 import { CampaignActions } from "../domains/Campaign/CampaignActions";
 
 export interface PeerInfo {
-	peerId: string; // WebRTC connection ID
-	user: User; // Full user object (contains Id, Name, SelectedCharacters, etc.)
+	peerId: string;
+	user: User;
 	ping: number | null;
 }
 
 export interface PeerTrackingData {
-	peers: PeerInfo[]; // Clean array of peer info
+	peers: PeerInfo[];
 	connectionStatus: "online" | "connected";
 	getActorIdFromUserId: (userId: string) => string | null;
 	getUserIdFromActorId: (actorId: string) => string | null;
@@ -33,17 +34,13 @@ export function usePeerTracking(): PeerTrackingData {
 
 	// Convenience function: Get actor ID from user ID
 	const getActorIdFromUserId = (userId: string): string | null => {
-		// Find the peer with matching User.Id
 		const peer = Object.values(peerUsers).find((user) => user.Id === userId);
 		if (!peer) return null;
-
-		// Return their selected character for this campaign
 		return peer.SelectedCharacters[campaign.RoomCode] || null;
 	};
 
 	// Convenience function: Get user ID from actor ID
 	const getUserIdFromActorId = (actorId: string): string | null => {
-		// Find first user who has this actor selected
 		const peer = Object.values(peerUsers).find(
 			(user) => user.SelectedCharacters[campaign.RoomCode] === actorId
 		);
@@ -52,7 +49,6 @@ export function usePeerTracking(): PeerTrackingData {
 
 	// Convenience function: Get full user from actor ID
 	const getUserFromActorId = (actorId: string): User | null => {
-		// Find first user who has this actor selected
 		const peer = Object.values(peerUsers).find(
 			(user) => user.SelectedCharacters[campaign.RoomCode] === actorId
 		);
@@ -61,10 +57,7 @@ export function usePeerTracking(): PeerTrackingData {
 
 	// Convenience function: Check if current user can access this actor
 	const canAccessActor = (actorId: string): boolean => {
-		// DMs can access any actor
 		if (context.User.Role === "dm") return true;
-
-		// Players can only access their selected character
 		return context.User.SelectedCharacters[campaign.RoomCode] === actorId;
 	};
 
@@ -78,14 +71,11 @@ export function usePeerTracking(): PeerTrackingData {
 			return;
 		}
 
-		// Send full User object
+		// STEP 1: Create action
 		const [sendUser, getUser] = room.makeAction("userState");
 		sendUserRef.current = sendUser;
 
-		// Broadcast our User object to all existing peers
-		sendUser(context.User as any);
-
-		// Listen for other peers' User objects
+		// STEP 2: Set up receiver FIRST (before any broadcasting)
 		getUser((userData, peerId) => {
 			if (typeof userData === "object" && userData !== null) {
 				setPeerUsers((current) => {
@@ -105,6 +95,9 @@ export function usePeerTracking(): PeerTrackingData {
 				});
 			}
 		});
+
+		// STEP 3: NOW broadcast to all existing peers
+		sendUser(context.User as any);
 
 		const startPingingPeer = (peerId: string) => {
 			if (pingIntervalsRef.current[peerId]) {
@@ -179,7 +172,6 @@ export function usePeerTracking(): PeerTrackingData {
 
 		// Start pinging current peers
 		const currentPeers = RoomActions.getConnectedPeerIds(room);
-
 		currentPeers.forEach((peerId) => startPingingPeer(peerId));
 
 		return () => {

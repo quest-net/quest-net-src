@@ -1,7 +1,7 @@
 // Map.tsx - React 19 + @pixi/react v8
 // Isometric map orchestrator - delegates rendering to layer components
 
-import { useMemo, useRef, useState, useLayoutEffect, useCallback} from "react";
+import { useMemo, useRef, useState, useLayoutEffect, useCallback } from "react";
 import { Application, extend } from "@pixi/react";
 import {
 	Container as PixiContainer,
@@ -37,16 +37,14 @@ import {
 	getTileIndex,
 	rotXY,
 	findActor,
+	calculateTargetHeight,
+	isTileOccupiedAtHeight,
 } from "./MapUtilities";
 
 import { MapWorldLayer } from "./MapWorldLayer";
 import { useActorAnimations } from "./hooks/useActorAnimations";
-import {
-	useMapRotation,
-	useMapPanZoom,
-	useMapInteraction,
-} from "./hooks";
-import { useMapState } from './MapStateProvider';
+import { useMapRotation, useMapPanZoom, useMapInteraction } from "./hooks";
+import { useMapState } from "./MapStateProvider";
 import {
 	calculateLadderInfo,
 	checkLadderOcclusion,
@@ -93,8 +91,8 @@ export default function Map({
 }: MapProps) {
 	const { ref, w, h } = useMeasuredContainer<HTMLDivElement>();
 	const { startAnimation, getActorPosition } = useActorAnimations({
-		autoSource: { characters, entities }
-	  });
+		autoSource: { characters, entities },
+	});
 	const { actionService } = useActionService();
 	const { canAccessActor } = usePeerTracking();
 	const dpr = typeof window !== "undefined" ? window.devicePixelRatio : 1;
@@ -115,11 +113,12 @@ export default function Map({
 		handleZoom,
 		applyPan,
 	} = useMapPanZoom();
-	const { selectedActor, 
-		hoveredTile, 
-		toggleActorSelection, 
-		clearSelection, 
-		updateHoveredTile 
+	const {
+		selectedActor,
+		hoveredTile,
+		toggleActorSelection,
+		clearSelection,
+		updateHoveredTile,
 	} = useMapState();
 	// Is the currently selected actor actually controllable by this user?
 	const canControlSelected = useMemo(
@@ -182,23 +181,6 @@ export default function Map({
 				: [],
 		[terrain, orientation, animationState, characters, entities]
 	);
-
-	// Calculate movement range for selected actor
-	const movementRange = useMemo(() => {
-		if (!selectedActor || !terrain) return [];
-		// Hide range if the user doesn't control the selected actor
-		if (!canControlSelected) return [];
-		const actor = actorHitCandidates.find((a) => a.id === selectedActor.id);
-		if (!actor) return [];
-
-		return calculateMovementRange(
-			actor.x,
-			actor.y,
-			selectedActor.moveSpeed,
-			terrain.Width,
-			terrain.Length
-		);
-	}, [selectedActor, actorHitCandidates, terrain, canControlSelected]);
 
 	// ============================================================================
 	// CENTERING & BOUNDS
@@ -266,6 +248,29 @@ export default function Map({
 	// ============================================================================
 	// POINTER INTERACTION HANDLERS
 	// ============================================================================
+	// Calculate movement range for selected actor
+	// Calculate movement range for selected actor
+	const movementRange = useMemo(() => {
+		if (!selectedActor || !terrain) return [];
+		// Hide range if the user doesn't control the selected actor
+		if (!canControlSelected) return [];
+		const actor = actorHitCandidates.find((a) => a.id === selectedActor.id);
+		if (!actor) return [];
+
+		// Just calculate range - don't filter by occupancy
+		return calculateMovementRange(
+			actor.x,
+			actor.y,
+			selectedActor.moveSpeed,
+			terrain.Width,
+			terrain.Length
+		);
+	}, [
+		selectedActor,
+		actorHitCandidates,
+		terrain,
+		canControlSelected,
+	]);
 	const handlePointerMove = useCallback(
 		(e: React.PointerEvent<HTMLDivElement>) => {
 			if (!ref.current || !terrain || isPanning) return;
@@ -275,17 +280,24 @@ export default function Map({
 			const screenY = e.clientY - rect.top;
 
 			const o: Orientation = animationState ? animationState.to : orientation;
+
 			// If a non-controlling user has someone selected, suppress all hover affordances
 			if (selectedActor && !canControlSelected) {
-			setHoveredLadderHeight(null);
-			updateHoveredTile(null);
-			return;
+				setHoveredLadderHeight(null);
+				updateHoveredTile(null);
+				return;
 			}
+
 			// Default: clear ladder hover
 			let newHoveredHeight: number | null = null;
 
 			// If a flier is selected, attempt ladder hover first
-			if (selectedActor && canControlSelected && selectedActorObj?.CanFly && ladderInfo) {
+			if (
+				selectedActor &&
+				canControlSelected &&
+				selectedActorObj?.CanFly &&
+				ladderInfo
+			) {
 				// Get ladder position
 				const actorCandidate = actorHitCandidates.find(
 					(a) => a.id === selectedActor.id
@@ -301,7 +313,6 @@ export default function Map({
 					o
 				);
 
-				// Check for occlusion
 				const occlusionResult = checkLadderOcclusion({
 					screenX,
 					screenY,
@@ -317,7 +328,6 @@ export default function Map({
 				});
 
 				if (!occlusionResult.isOccluded) {
-					// Try ladder hit test
 					const targetHeight = screenToLadder({
 						screenX,
 						screenY,
@@ -369,7 +379,38 @@ export default function Map({
 				terrain.HeightMap
 			);
 
-			updateHoveredTile(tile);
+			// Validate the tile is in movement range and not occupied
+			if (tile) {
+				const actor = actorHitCandidates.find((a) => a.id === selectedActor.id);
+				if (actor) {
+					const targetHeight = calculateTargetHeight(
+						tile.x,
+						tile.y,
+						actor.h,
+						selectedActorObj?.CanFly ?? false,
+						terrain
+					);
+
+					const isOccupied = isTileOccupiedAtHeight(
+						tile.x,
+						tile.y,
+						targetHeight,
+						characters,
+						entities,
+						selectedActor.id
+					);
+
+					if (!isOccupied) {
+						updateHoveredTile(tile);
+					} else {
+						updateHoveredTile(null);
+					}
+				} else {
+					updateHoveredTile(null);
+				}
+			} else {
+				updateHoveredTile(null);
+			}
 		},
 		[
 			terrain,
@@ -385,6 +426,9 @@ export default function Map({
 			scaleRef,
 			updateHoveredTile,
 			canControlSelected,
+			movementRange,
+			characters,
+			entities,
 		]
 	);
 
@@ -398,11 +442,18 @@ export default function Map({
 			const screenY = e.clientY - rect.top;
 
 			const o: Orientation = animationState ? animationState.to : orientation;
-			const isAuthorized = selectedActor ? canAccessActor(selectedActor.id) : false;
+			const isAuthorized = selectedActor
+				? canAccessActor(selectedActor.id)
+				: false;
 			// ========================================================================
 			// 1) LADDER CLICK (priority when a flier is selected)
 			// ========================================================================
-			if (selectedActor && isAuthorized && selectedActorObj?.CanFly && ladderInfo) {
+			if (
+				selectedActor &&
+				isAuthorized &&
+				selectedActorObj?.CanFly &&
+				ladderInfo
+			) {
 				const actorCandidate = actorHitCandidates.find(
 					(a) => a.id === selectedActor.id
 				);
@@ -460,8 +511,8 @@ export default function Map({
 							selectedActor.id,
 							{ x: actorX, y: actorY, h: fromHeight },
 							{ x: actorX, y: actorY, h: targetHeight },
-							{ local: true }         // suppress remote double-animate once
-							);
+							{ local: true } // suppress remote double-animate once
+						);
 						if (selectedActor.kind === "character") {
 							actionService?.execute("character:move", {
 								characterId: selectedActor.id,
@@ -527,8 +578,8 @@ export default function Map({
 						selectedActor.id,
 						{ x: actor.x, y: actor.y, h: actor.h },
 						{ x: hoveredTile.x, y: hoveredTile.y, h: targetHeight },
-						{ local: true }         // suppress remote double-animate once
-					  );
+						{ local: true } // suppress remote double-animate once
+					);
 				}
 
 				// Dispatch the move with the computed targetHeight

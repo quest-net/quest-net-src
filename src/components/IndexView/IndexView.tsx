@@ -40,12 +40,13 @@ interface IndexViewProps {
 	description?: string;
 	createLabel?: string;
 	onCreateClick?: () => void;
+	extraButtons?: ReactNode;
 
 	// Features
 	searchEnabled?: boolean;
 	searchPlaceholder?: string;
 
-	// NEW: Pagination
+	// Pagination
 	itemsPerPage?: number; // Default: 20
 
 	// Drawer content
@@ -73,6 +74,7 @@ export function IndexView({
 	description,
 	createLabel = "Create",
 	onCreateClick,
+	extraButtons,
 	searchEnabled = true,
 	searchPlaceholder = "Search...",
 	itemsPerPage = 25,
@@ -279,7 +281,7 @@ export function IndexView({
 			{/* Main Content */}
 			<div className="drawer-content">
 				<div className="space-y-4 p-6">
-					{/* Header */}
+				{/* Header */}
 					<div className="flex justify-between items-center">
 						<div>
 							<h2 className="text-2xl font-bold">{title}</h2>
@@ -291,6 +293,9 @@ export function IndexView({
 						{/* Normal Mode Buttons */}
 						{!isSelectionMode && (
 							<div className="flex gap-2">
+								{/* Extra buttons slot */}
+								{extraButtons}
+								
 								{onBulkUpdateItemTags && (
 									<button
 										onClick={handleEnterSelectionMode}

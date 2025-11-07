@@ -4,6 +4,7 @@ import { Context } from "../Context/Context";
 import type { Audio } from "./Audio";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
+import { buildPathTag } from "../../utils/FolderUtils";
 
 /**
  * Extracts YouTube video ID from various URL formats
@@ -82,6 +83,58 @@ export const AudioActions = {
 	},
 
 	/**
+	 * Imports a YouTube playlist by ID (no API key required)
+	 * Creates tracks with generic names in a timestamped folder
+	 */
+	async importPlaylistByIds(
+		params: { playlistUrl: string },
+		context: Context
+	): Promise<void> {
+		const campaign = CampaignActions.getActiveCampaign(context);
+
+		// Extract playlist ID
+		const playlistId = extractPlaylistId(params.playlistUrl);
+		if (!playlistId) {
+			throw new Error("Invalid YouTube playlist URL or ID");
+		}
+
+		// Fetch video IDs using iframe API
+		const videoIds = await fetchPlaylistIds(playlistId);
+
+		if (videoIds.length === 0) {
+			throw new Error("Playlist is empty or could not be loaded");
+		}
+
+		// Create folder name with timestamp
+		const now = new Date();
+		const timestamp = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
+		const folderName = `YoutubePlaylist-${timestamp}`;
+		const folderTag = buildPathTag([folderName]);
+
+		// Create Audio entries
+		videoIds.forEach((videoId, index) => {
+			const audio: Audio = {
+				Id: crypto.randomUUID(),
+				Name: `Track No. ${index + 1}`,
+				YoutubeId: videoId,
+				Tags: [folderTag],
+			};
+			campaign.Audios.push(audio);
+		});
+
+		LogActions.create(
+			{
+				action: "YouTube playlist imported",
+				details: `${videoIds.length} tracks in folder "${folderName}"`,
+				category: "system",
+				level: "info",
+				visibility: ["dm"],
+			},
+			context
+		);
+	},
+
+	/**
 	 * Edits audio metadata
 	 */
 	edit(
@@ -149,39 +202,45 @@ export const AudioActions = {
 	},
 
 	// Modify setTrack to accept single OR array
-setTrack(params: { audioId: string | string[] }, context: Context): void {
-  const audioIds = Array.isArray(params.audioId) 
-    ? params.audioId 
-    : [params.audioId];
-  
-  // Validate all IDs exist
-  const campaign = CampaignActions.getActiveCampaign(context);
-  const validIds = audioIds.filter(id => 
-    campaign.Audios.find(a => a.Id === id)
-  );
-  
-  campaign.GameState.Audio = validIds;
-  
-  // Log message
-  if (validIds.length > 1) {
-    LogActions.create({
-      action: "Playlist started",
-      details: `${validIds.length} tracks`,
-      category: "system",
-      level: "info",
-      visibility: ["all"],
-    }, context);
-  } else if (validIds.length === 1) {
-    const audio = campaign.Audios.find(a => a.Id === validIds[0]);
-    LogActions.create({
-      action: "Music changed",
-      details: audio?.Name,
-      category: "system",
-      level: "info",
-      visibility: ["all"],
-    }, context);
-  }
-},
+	setTrack(params: { audioId: string | string[] }, context: Context): void {
+		const audioIds = Array.isArray(params.audioId)
+			? params.audioId
+			: [params.audioId];
+
+		// Validate all IDs exist
+		const campaign = CampaignActions.getActiveCampaign(context);
+		const validIds = audioIds.filter((id) =>
+			campaign.Audios.find((a) => a.Id === id)
+		);
+
+		campaign.GameState.Audio = validIds;
+
+		// Log message
+		if (validIds.length > 1) {
+			LogActions.create(
+				{
+					action: "Playlist started",
+					details: `${validIds.length} tracks`,
+					category: "system",
+					level: "info",
+					visibility: ["all"],
+				},
+				context
+			);
+		} else if (validIds.length === 1) {
+			const audio = campaign.Audios.find((a) => a.Id === validIds[0]);
+			LogActions.create(
+				{
+					action: "Music changed",
+					details: audio?.Name,
+					category: "system",
+					level: "info",
+					visibility: ["all"],
+				},
+				context
+			);
+		}
+	},
 
 	/**
 	 * Sets the DM's volume level (0.0 to 1.0)
@@ -254,3 +313,109 @@ setTrack(params: { audioId: string | string[] }, context: Context): void {
 		);
 	},
 };
+// HELPER METHODS
+/**
+ * Fetches video IDs from a YouTube playlist using the IFrame API
+ * No API key required!
+ */
+export async function fetchPlaylistIds(playlistId: string): Promise<string[]> {
+	return new Promise((resolve, reject) => {
+		// Create a temporary hidden div for the player
+		const container = document.createElement("div");
+		container.style.display = "none";
+		document.body.appendChild(container);
+
+		let player: any = null;
+		let timeout: ReturnType<typeof setTimeout>;
+
+		const cleanup = () => {
+			if (timeout) clearTimeout(timeout);
+			if (player) {
+				try {
+					player.destroy();
+				} catch (e) {
+					console.warn("Error destroying temp player:", e);
+				}
+			}
+			document.body.removeChild(container);
+		};
+
+		// Timeout after 10 seconds
+		timeout = setTimeout(() => {
+			cleanup();
+			reject(new Error("Timeout loading playlist"));
+		}, 10000);
+
+		// Wait for YouTube API to be ready
+		const initPlayer = () => {
+			player = new window.YT.Player(container, {
+				height: "0",
+				width: "0",
+				playerVars: {
+					listType: "playlist",
+					list: playlistId,
+				},
+				events: {
+					onReady: () => {
+						try {
+							// Get the playlist
+							const videoIds = player.getPlaylist();
+							cleanup();
+
+							if (videoIds && videoIds.length > 0) {
+								resolve(videoIds);
+							} else {
+								reject(new Error("Playlist not found or empty"));
+							}
+						} catch (error) {
+							cleanup();
+							reject(error);
+						}
+					},
+					onError: (event: any) => {
+						cleanup();
+						reject(new Error(`YouTube player error: ${event.data}`));
+					},
+				},
+			});
+		};
+
+		// Initialize if API is ready, otherwise wait
+		if (window.YT && window.YT.Player) {
+			initPlayer();
+		} else {
+			const checkInterval = setInterval(() => {
+				if (window.YT && window.YT.Player) {
+					clearInterval(checkInterval);
+					initPlayer();
+				}
+			}, 100);
+		}
+	});
+}
+
+/**
+ * Extracts playlist ID from various YouTube playlist URL formats
+ */
+export function extractPlaylistId(url: string): string | null {
+	const patterns = [
+		/[?&]list=([a-zA-Z0-9_-]+)/, // ?list=PLxxxx or &list=PLxxxx
+		/^PL[a-zA-Z0-9_-]+$/, // Just the ID starting with PL
+	];
+
+	const trimmed = url.trim();
+
+	for (const pattern of patterns) {
+		const match = trimmed.match(pattern);
+		if (match && match[1]) {
+			return match[1];
+		}
+	}
+
+	// Maybe they just pasted the ID
+	if (/^PL[a-zA-Z0-9_-]+$/.test(trimmed)) {
+		return trimmed;
+	}
+
+	return null;
+}
