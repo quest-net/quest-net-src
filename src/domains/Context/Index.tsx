@@ -6,7 +6,7 @@ import ASCIIText from "../../components/ASCIIText/ASCIIText";
 import Waves from "../../components/Waves/Waves";
 import { useThemeColors } from "../../utils/ThemeUtils";
 import TextType from "../../components/TextType/TextType";
-const APP_VERSION = "v1.0.0";
+const APP_VERSION = "v1.0.2";
 export function Home() {
   const context = useQuestContext();
   const navigate = useNavigate();

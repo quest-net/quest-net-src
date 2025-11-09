@@ -4,6 +4,7 @@ import { getUrlIdentifier, isGUID } from "../../utils/UrlParser";
 import { ContextActions } from "../Context/ContextActions";
 import { CampaignSettingActions } from "../CampaignSetting/CampaignSettingActions";
 import { TerrainActions } from "../Terrain/TerrainActions";
+import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 
 /**
  * Generates a random room code (lowercase, alphanumeric, max 32 chars)
@@ -74,6 +75,48 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 		Log: [],
 		Settings: CampaignSettingActions.createDefault(),
 	};
+}
+
+/**
+ * Converts a Blob to base64 string
+ */
+async function blobToBase64(blob: Blob): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onloadend = () => {
+			const result = reader.result as string;
+			// Remove the data URL prefix (e.g., "data:image/png;base64,")
+			const base64 = result.split(',')[1];
+			resolve(base64);
+		};
+		reader.onerror = reject;
+		reader.readAsDataURL(blob);
+	});
+}
+
+/**
+ * Converts base64 string to Blob
+ */
+function base64ToBlob(base64: string, mimeType: string): Blob {
+	const byteCharacters = atob(base64);
+	const byteNumbers = new Array(byteCharacters.length);
+	for (let i = 0; i < byteCharacters.length; i++) {
+		byteNumbers[i] = byteCharacters.charCodeAt(i);
+	}
+	const byteArray = new Uint8Array(byteNumbers);
+	return new Blob([byteArray], { type: mimeType });
+}
+
+export interface CampaignExportData {
+	version: string;
+	campaign: Campaign;
+	imageData: Record<string, { base64: string; mimeType: string }>;
+}
+
+export interface ExportProgress {
+	current: number;
+	total: number;
+	status: string;
 }
 
 export const CampaignActions = {
@@ -166,9 +209,13 @@ export const CampaignActions = {
 	},
 
 	/**
-	 * Downloads a campaign as a JSON file
+	 * Downloads a campaign as a JSON file with all image data included
 	 */
-	download(params: { campaignId: string }, context: Context): void {
+	async download(
+		params: { campaignId: string },
+		context: Context,
+		onProgress?: (progress: ExportProgress) => void
+	): Promise<void> {
 		const campaign = context.Campaigns.find((c) => c.Id === params.campaignId);
 
 		if (!campaign) {
@@ -176,32 +223,108 @@ export const CampaignActions = {
 			return;
 		}
 
-		const json = JSON.stringify(campaign, null, 2);
-		const blob = new Blob([json], { type: "application/json" });
-		const url = URL.createObjectURL(blob);
+		try {
+			onProgress?.({
+				current: 0,
+				total: campaign.Images.length,
+				status: "Starting export...",
+			});
 
-		const link = document.createElement("a");
-		link.href = url;
-		link.download = `${campaign.Name.replace(
-			/[^a-z0-9]/gi,
-			"_"
-		)}_${Date.now()}.json`;
-		document.body.appendChild(link);
-		link.click();
-		document.body.removeChild(link);
-		URL.revokeObjectURL(url);
+			// Collect all image data from IndexedDB
+			const imageData: Record<string, { base64: string; mimeType: string }> = {};
+			
+			for (let i = 0; i < campaign.Images.length; i++) {
+				const image = campaign.Images[i];
+				
+				onProgress?.({
+					current: i,
+					total: campaign.Images.length,
+					status: `Exporting image ${i + 1}/${campaign.Images.length}: ${image.Name}`,
+				});
+
+				const cached = await IndexedDBUtilities.load(image.Id);
+				if (cached) {
+					const blob = cached.data as Blob;
+					const base64 = await blobToBase64(blob);
+					imageData[image.Id] = {
+						base64,
+						mimeType: image.MimeType,
+					};
+				}
+			}
+
+			onProgress?.({
+				current: campaign.Images.length,
+				total: campaign.Images.length,
+				status: "Finalizing export...",
+			});
+
+			// Create export data structure
+			const exportData: CampaignExportData = {
+				version: "2.0",
+				campaign,
+				imageData,
+			};
+
+			// Download as JSON file
+			const json = JSON.stringify(exportData, null, 2);
+			const blob = new Blob([json], { type: "application/json" });
+			const url = URL.createObjectURL(blob);
+
+			const link = document.createElement("a");
+			link.href = url;
+			link.download = `${campaign.Name.replace(
+				/[^a-z0-9]/gi,
+				"_"
+			)}_${Date.now()}.json`;
+			document.body.appendChild(link);
+			link.click();
+			document.body.removeChild(link);
+			URL.revokeObjectURL(url);
+
+			onProgress?.({
+				current: campaign.Images.length,
+				total: campaign.Images.length,
+				status: "Export complete!",
+			});
+		} catch (error) {
+			throw new Error(
+				`Failed to export campaign: ${
+					error instanceof Error ? error.message : "Unknown error"
+				}`
+			);
+		}
 	},
 
 	/**
-	 * Imports a campaign from a JSON file
+	 * Imports a campaign from a JSON file with image data
 	 */
 	async importFromFile(
 		params: { file: File },
-		context: Context
+		context: Context,
+		onProgress?: (progress: ExportProgress) => void
 	): Promise<Campaign> {
 		try {
+			onProgress?.({
+				current: 0,
+				total: 1,
+				status: "Reading file...",
+			});
+
 			const text = await params.file.text();
-			const campaign = JSON.parse(text) as Campaign;
+			const data = JSON.parse(text);
+
+			// Check if this is a v2.0 export with images or older format
+			let campaign: Campaign;
+			let imageData: Record<string, { base64: string; mimeType: string }> = {};
+
+			if (data.version === "2.0" && data.campaign && data.imageData) {
+				campaign = data.campaign as Campaign;
+				imageData = data.imageData;
+			} else {
+				// Assume old format - just the campaign object
+				campaign = data as Campaign;
+			}
 
 			// Generate new ID to avoid conflicts
 			campaign.Id = crypto.randomUUID();
@@ -212,8 +335,38 @@ export const CampaignActions = {
 				campaign.RoomCode = generateRoomCode();
 			}
 
+			// Import images to IndexedDB
+			const imageIds = Object.keys(imageData);
+			const totalSteps = imageIds.length + 1; // +1 for final save
+
+			for (let i = 0; i < imageIds.length; i++) {
+				const imageId = imageIds[i];
+				const { base64, mimeType } = imageData[imageId];
+
+				onProgress?.({
+					current: i,
+					total: totalSteps,
+					status: `Importing image ${i + 1}/${imageIds.length}...`,
+				});
+
+				const blob = base64ToBlob(base64, mimeType);
+				await IndexedDBUtilities.save(imageId, blob);
+			}
+
+			onProgress?.({
+				current: imageIds.length,
+				total: totalSteps,
+				status: "Saving campaign...",
+			});
+
 			context.Campaigns.push(campaign);
 			ContextActions.save(context);
+
+			onProgress?.({
+				current: totalSteps,
+				total: totalSteps,
+				status: "Import complete!",
+			});
 
 			return campaign;
 		} catch (error) {

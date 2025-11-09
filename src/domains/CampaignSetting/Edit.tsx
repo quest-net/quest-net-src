@@ -1,8 +1,9 @@
 // domains/CampaignSetting/Edit.tsx
 
+import { useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignActions, ExportProgress } from "../Campaign/CampaignActions";
 import { CampaignSettings } from "./CampaignSetting";
 import {
 	FormWrapper,
@@ -18,6 +19,8 @@ export function CampaignSettingEdit() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const campaign = CampaignActions.getActiveCampaign(context);
+	const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
+	const [isExporting, setIsExporting] = useState(false);
 
 	const handleSave = (data: CampaignSettings) => {
 		if (!actionService) return;
@@ -25,6 +28,38 @@ export function CampaignSettingEdit() {
 		actionService.execute("setting:edit", {
 			updates: data,
 		});
+	};
+
+	const handleExport = async () => {
+		setIsExporting(true);
+		setExportProgress({
+			current: 0,
+			total: 1,
+			status: "Starting export...",
+		});
+
+		try {
+			await CampaignActions.download(
+				{ campaignId: campaign.Id },
+				context,
+				setExportProgress
+			);
+			
+			// Show success for a moment before clearing
+			setTimeout(() => {
+				setExportProgress(null);
+				setIsExporting(false);
+			}, 2000);
+		} catch (error) {
+			console.error("Export failed:", error);
+			alert(
+				`Export failed: ${
+					error instanceof Error ? error.message : "Unknown error"
+				}`
+			);
+			setExportProgress(null);
+			setIsExporting(false);
+		}
 	};
 
 	return (
@@ -41,6 +76,51 @@ export function CampaignSettingEdit() {
 			>
 				<CampaignSettingForm />
 			</FormWrapper>
+
+			{/* Export Section */}
+			<div className="card bg-base-100 shadow-xl border-2 border-base-300 mt-6 ml-48 w-120">
+				<div className="card-body">
+					<h2 className="card-title">Export Campaign Data</h2>
+					<p className="text-sm opacity-70 mb-4">
+						Export this campaign as a JSON file including all images. This may take
+						a moment for campaigns with many images.
+					</p>
+
+					{exportProgress && (
+						<div className="space-y-2 mb-4">
+							<div className="flex justify-between text-sm">
+								<span>{exportProgress.status}</span>
+								<span>
+									{exportProgress.current} / {exportProgress.total}
+								</span>
+							</div>
+							<progress
+								className="progress progress-primary w-full"
+								value={exportProgress.current}
+								max={exportProgress.total}
+							/>
+						</div>
+					)}
+
+					<button
+						onClick={handleExport}
+						disabled={isExporting}
+						className="btn btn-primary gap-2"
+					>
+						{isExporting ? (
+							<>
+								<span className="loading loading-spinner loading-sm" />
+								Exporting...
+							</>
+						) : (
+							<>
+								<span className="icon-[mdi--download] w-5 h-5" />
+								Export Campaign
+							</>
+						)}
+					</button>
+				</div>
+			</div>
 		</div>
 	);
 }
@@ -143,7 +223,7 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 			{/* Calendar Settings */}
 			<FormSection
 				title="Calendar Settings"
-				description="Customize your world’s calendar (days, weeks, months, labels, names)."
+				description="Customize your world's calendar (days, weeks, months, labels, names)."
 			>
 				<CalendarConfigEditor
 					value={data.CalendarSettings}

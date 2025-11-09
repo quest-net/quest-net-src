@@ -393,4 +393,54 @@ export const SkillActions = {
 
 		console.warn(`Skill not found in actor's skills: ${params.skillId}`);
 	},
+
+	/**
+	 * Adjusts the uses of a skill on an actor
+	 * Can set UsesLeft to a specific value or undefined (unlimited)
+	 */
+	adjustUses(
+		params: { actorId: string; skillId: string; usesLeft: number | undefined },
+		context: Context
+	): void {
+		const campaign = CampaignActions.getActiveCampaign(context);
+
+		// Find actor in all possible locations
+		const actors: Actor[] = getAllActors(campaign);
+
+		const actor = actors.find((a) => a.Id === params.actorId);
+		if (!actor) {
+			console.warn(`Actor not found: ${params.actorId}`);
+			return;
+		}
+
+		// Find the skill slot (first instance)
+		const slot = actor.Skills.find((s) => s.Id === params.skillId);
+		if (!slot) {
+			console.warn(`Skill not found in actor's skills: ${params.skillId}`);
+			return;
+		}
+
+		// Update uses
+		slot.UsesLeft = params.usesLeft;
+
+		// Find the skill template for logging
+		const skillTemplate = campaign.SkillTemplates.find((s) => s.Id === params.skillId);
+		const skillName = skillTemplate?.Name || "Unknown Skill";
+
+		const usesText = params.usesLeft === undefined 
+			? "unlimited" 
+			: `${params.usesLeft} use(s)`;
+
+		LogActions.create(
+			{
+				action: "Skill uses adjusted",
+				details: `${skillName} on ${actor.Name} set to ${usesText}`,
+				category: "skill",
+				level: "info",
+				visibility: ["dm", "owner"],
+				actorId: params.actorId,
+			},
+			context
+		);
+	},
 };

@@ -511,4 +511,58 @@ export const ItemActions = {
 
 		console.warn(`Item not found in actor's inventory or equipment: ${params.itemId}`);
 	},
+	/**
+	 * Adjusts the uses of an item on an actor
+	 * Can set UsesLeft to a specific value or undefined (unlimited)
+	 * Works with items in both inventory and equipment
+	 */
+	adjustUses(
+		params: { actorId: string; itemId: string; usesLeft: number | undefined },
+		context: Context
+	): void {
+		const campaign = CampaignActions.getActiveCampaign(context);
+
+		// Find actor in all possible locations
+		const actors: Actor[] = getAllActors(campaign);
+
+		const actor = actors.find((a) => a.Id === params.actorId);
+		if (!actor) {
+			console.warn(`Actor not found: ${params.actorId}`);
+			return;
+		}
+
+		// Find the item slot (first instance) - check inventory first, then equipment
+		let slot = actor.Inventory.find((s) => s.Id === params.itemId);
+		if (!slot) {
+			slot = actor.Equipment.find((s) => s.Id === params.itemId);
+		}
+
+		if (!slot) {
+			console.warn(`Item not found in actor's inventory or equipment: ${params.itemId}`);
+			return;
+		}
+
+		// Update uses
+		slot.UsesLeft = params.usesLeft;
+
+		// Find the item template for logging
+		const itemTemplate = campaign.ItemTemplates.find((i) => i.Id === params.itemId);
+		const itemName = itemTemplate?.Name || "Unknown Item";
+
+		const usesText = params.usesLeft === undefined 
+			? "unlimited" 
+			: `${params.usesLeft} use(s)`;
+
+		LogActions.create(
+			{
+				action: "Item uses adjusted",
+				details: `${itemName} on ${actor.Name} set to ${usesText}`,
+				category: "item",
+				level: "info",
+				visibility: ["dm", "owner"],
+				actorId: params.actorId,
+			},
+			context
+		);
+	},
 };
