@@ -55,7 +55,7 @@ export function StatusSlotDisplay({
 	}
 
 	const handleRemove = () => {
-		if (!actionService || !isDM) return;
+		if (!actionService) return;
 
 		if (removeClickCount === 0) {
 			setRemoveClickCount(1);
@@ -70,7 +70,7 @@ export function StatusSlotDisplay({
 	};
 
 	const handleAdjustDuration = () => {
-		if (!actionService || !isDM) return;
+		if (!actionService) return;
 
 		const newDuration = isPermanent ? undefined : localTurnsLeft;
 		
@@ -96,8 +96,8 @@ export function StatusSlotDisplay({
 		? `${slot.turnsLeft} turn${slot.turnsLeft === 1 ? '' : 's'} remaining`
 		: "Permanent (never expires)";
 
-	// Determine if image is editable (only if no image is set and user is DM)
-	const imageEditable = !status.Image && isDM;
+	// Determine if image is editable (only if no image is set)
+	const imageEditable = !status.Image;
 
 	return (
 		<div className="drawer drawer-start z-50">
@@ -149,66 +149,65 @@ export function StatusSlotDisplay({
 						</div>
 
 						{/* Actions */}
-						{isDM && (
-							<div className="flex-1 space-y-3">
-								<h3 className="font-semibold text-sm opacity-70 mb-4">Actions</h3>
+						<div className="flex-1 space-y-3">
+							<h3 className="font-semibold text-sm opacity-70 mb-4">Actions</h3>
 
-								{/* Duration Adjuster */}
-								<div className="card bg-base-100 border-2 border-base-300 p-4">
-									<h4 className="font-semibold text-sm mb-3">Adjust Duration</h4>
-									
-									<div className="form-control mb-3">
-										<label className="label cursor-pointer justify-start gap-2">
-											<input
-												type="checkbox"
-												className="toggle toggle-primary"
-												checked={isPermanent}
-												onChange={(e) => setIsPermanent(e.target.checked)}
-											/>
-											<span className="label-text">Permanent (never expires)</span>
-										</label>
-									</div>
-
-									{!isPermanent && (
-										<div className="flex gap-2 items-center mb-3">
-											<input
-												type="number"
-												value={localTurnsLeft}
-												onChange={(e) => setLocalTurnsLeft(Math.max(0, Number(e.target.value) || 0))}
-												className="input input-bordered input-sm flex-1"
-												min={0}
-												placeholder="Turns"
-											/>
-											<span className="text-sm opacity-70">turns</span>
-										</div>
-									)}
-
-									<button
-										onClick={handleAdjustDuration}
-										disabled={!actionService}
-										className="btn btn-sm btn-primary w-full"
-									>
-										<span className="icon-[mdi--clock-edit] w-4 h-4" />
-										Apply Duration
-									</button>
+							{/* Duration Adjuster */}
+							<div className="card bg-base-100 border-2 border-base-300 p-4">
+								<h4 className="font-semibold text-sm mb-3">Adjust Duration</h4>
+								
+								<div className="form-control mb-3">
+									<label className="label cursor-pointer justify-start gap-2">
+										<input
+											type="checkbox"
+											className="toggle toggle-primary"
+											checked={isPermanent}
+											onChange={(e) => setIsPermanent(e.target.checked)}
+										/>
+										<span className="label-text">Permanent (never expires)</span>
+									</label>
 								</div>
 
-								{/* Divider */}
-								<div className="divider my-2"></div>
+								{!isPermanent && (
+									<div className="flex gap-2 items-center mb-3">
+										<input
+											type="number"
+											value={localTurnsLeft}
+											onChange={(e) => setLocalTurnsLeft(Math.min(999, Math.max(0, Number(e.target.value) || 0)))}
+											className="input input-bordered input-sm flex-1"
+											min={0}
+											max={999}
+											placeholder="Turns"
+										/>
+										<span className="text-sm opacity-70">turns</span>
+									</div>
+								)}
 
-								{/* Remove Button */}
 								<button
-									onClick={handleRemove}
+									onClick={handleAdjustDuration}
 									disabled={!actionService}
-									className={`btn w-full justify-start ${
-										removeClickCount > 0 ? "btn-error" : "btn-ghost"
-									}`}
+									className="btn btn-sm btn-primary w-full"
 								>
-									<span className="icon-[mdi--delete] w-5 h-5" />
-									{removeClickCount > 0 ? "Confirm Remove?" : "Remove Status"}
+									<span className="icon-[mdi--clock-edit] w-4 h-4" />
+									Apply Duration
 								</button>
 							</div>
-						)}
+
+							{/* Divider */}
+							<div className="divider my-2"></div>
+
+							{/* Remove Button */}
+							<button
+								onClick={handleRemove}
+								disabled={!actionService}
+								className={`btn w-full justify-start ${
+									removeClickCount > 0 ? "btn-error" : "btn-ghost"
+								}`}
+							>
+								<span className="icon-[mdi--delete] w-5 h-5" />
+								{removeClickCount > 0 ? "Confirm Remove?" : "Remove Status"}
+							</button>
+						</div>
 					</div>
 
 					{/* Description - Full Width */}

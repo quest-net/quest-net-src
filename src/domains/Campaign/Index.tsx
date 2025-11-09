@@ -1,9 +1,9 @@
 // Campaign/Index.tsx
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { triggerContextUpdate } from "../Context/ContextProvider";
-import { CampaignActions } from "./CampaignActions";
+import { CampaignActions, ExportProgress } from "./CampaignActions";
 import { useNavigate } from "react-router-dom";
 import CircularText from "../../components/CircularText/CircularText";
 import PixelBlast from "../../components/PixelBlast/PixelBlast";
@@ -15,7 +15,11 @@ export function CampaignIndex() {
 	const [campaignName, setCampaignName] = useState("");
 	const [customRoomCode, setCustomRoomCode] = useState("");
 	const [joinRoomCode, setJoinRoomCode] = useState("");
+	const [importProgress, setImportProgress] = useState<ExportProgress | null>(null);
+	const [isImporting, setIsImporting] = useState(false);
+	const fileInputRef = useRef<HTMLInputElement>(null);
 	const colors = useThemeColors("neutral", "primary");
+
 	const handleCreateCampaign = () => {
 		if (!campaignName.trim()) {
 			alert("Please enter a campaign name");
@@ -78,8 +82,67 @@ export function CampaignIndex() {
 		triggerContextUpdate();
 	};
 
+	const handleImportClick = () => {
+		fileInputRef.current?.click();
+	};
+
+	const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+		const file = event.target.files?.[0];
+		if (!file) return;
+
+		setIsImporting(true);
+		setImportProgress({
+			current: 0,
+			total: 1,
+			status: "Starting import...",
+		});
+
+		try {
+			const campaign = await CampaignActions.importFromFile(
+				{ file },
+				context,
+				setImportProgress
+			);
+
+			// Manually trigger update
+			triggerContextUpdate();
+
+			// Show success for a moment
+			setTimeout(() => {
+				setImportProgress(null);
+				setIsImporting(false);
+				
+				// Navigate to the imported campaign
+				navigate(`/${campaign.Id}`);
+			}, 1500);
+		} catch (error) {
+			console.error("Import failed:", error);
+			alert(
+				`Import failed: ${
+					error instanceof Error ? error.message : "Unknown error"
+				}`
+			);
+			setImportProgress(null);
+			setIsImporting(false);
+		}
+
+		// Reset file input
+		if (fileInputRef.current) {
+			fileInputRef.current.value = "";
+		}
+	};
+
 	return (
 		<div className="relative h-screen w-screen overflow-hidden bg-base-200">
+			{/* Hidden file input for import */}
+			<input
+				ref={fileInputRef}
+				type="file"
+				accept=".json"
+				onChange={handleImportFile}
+				className="hidden"
+			/>
+
 			{/* PixelBlast Background */}
 			<div className="absolute inset-0 z-0">
 				<PixelBlast
@@ -132,8 +195,9 @@ export function CampaignIndex() {
 			{/* Main Content */}
 			<div className="relative z-1 h-full flex items-center justify-center p-8">
 				<div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-8">
-					{/* Left Column - Create Campaign */}
+					{/* Left Column - Create/Join Campaign */}
 					<div className="space-y-6">
+						{/* Create Campaign */}
 						<div className="card bg-base-100 shadow-xl border-2 border-base-300">
 							<div className="card-body">
 								<h2 className="card-title text-2xl mb-4">Create New Campaign</h2>
@@ -212,9 +276,46 @@ export function CampaignIndex() {
 					{/* Right Column - Campaign List */}
 					<div className="card bg-base-100 shadow-xl border-2 border-base-300">
 						<div className="card-body">
-							<h2 className="card-title text-2xl mb-4">
-								Your Campaigns ({context.Campaigns.length})
-							</h2>
+							<div className="flex items-center justify-between mb-4">
+								<h2 className="card-title text-2xl">
+									Your Campaigns ({context.Campaigns.length})
+								</h2>
+								
+								<button
+									onClick={handleImportClick}
+									disabled={isImporting}
+									className="btn btn-sm btn-neutral gap-2"
+									title="Import campaign from JSON file"
+								>
+									{isImporting ? (
+										<>
+											<span className="loading loading-spinner loading-xs" />
+											Importing...
+										</>
+									) : (
+										<>
+											<span className="icon-[mdi--upload] w-4 h-4" />
+											Import
+										</>
+									)}
+								</button>
+							</div>
+
+							{importProgress && (
+								<div className="space-y-2 mb-4 p-4 bg-base-200 rounded-lg border border-base-300">
+									<div className="flex justify-between text-sm">
+										<span>{importProgress.status}</span>
+										<span className="font-mono">
+											{importProgress.current} / {importProgress.total}
+										</span>
+									</div>
+									<progress
+										className="progress progress-success w-full"
+										value={importProgress.current}
+										max={importProgress.total}
+									/>
+								</div>
+							)}
 
 							<div className="overflow-auto max-h-[calc(100vh-16rem)] space-y-4">
 								{context.Campaigns.length === 0 ? (
@@ -240,6 +341,10 @@ export function CampaignIndex() {
 													<div className="badge badge-outline gap-1">
 														<span className="icon-[mdi--account-group] w-3 h-3" />
 														{campaign.CharacterRoster.length + campaign.GameState.Characters.length} characters
+													</div>
+													<div className="badge badge-outline gap-1">
+														<span className="icon-[mdi--image] w-3 h-3" />
+														{campaign.Images.length} images
 													</div>
 												</div>
 
