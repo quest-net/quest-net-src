@@ -4,7 +4,7 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import Map from "../../components/Map/Map";
 import TwoDMap from "../../components/Map/2DMap";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapStateProvider } from "../../components/Map/MapStateProvider";
 import { Inspector } from "./Inspector";
 import CalendarDisplay from "../Calendar/CalendarDisplay";
@@ -17,8 +17,12 @@ import { DiceRoller } from "../../components/Dice/DiceRoller";
 import { LogDisplay } from "../Log/LogDisplay";
 import { NoteDisplay } from "../Note/NoteDisplay";
 import { CharacterSheet } from "../Character/CharacterSheet";
+import { ItemCollection } from "../Item/Collection";
+import { Party } from "./Party";
+import { SkillCollection } from "../Skill/Collection";
+import { CombatDisplay } from "../Combat/CombatDisplay";
 
-type TopTab = "music" | "calendar" | "terrain";
+type TopTab = "music" | "calendar" | "terrain" | "combat";
 type PlayerBottomTab =
 	| "character"
 	| "inventory"
@@ -27,7 +31,7 @@ type PlayerBottomTab =
 	| "inspector"
 	| "log"
 	| "notes";
-type DMBottomTab = "inspector" | "scene" | "log";
+type DMBottomTab = "inspector" | "scene" | "log" | "party";
 
 export function Main() {
 	const context = useQuestContext();
@@ -62,7 +66,66 @@ export function Main() {
 	const selectedCharacter = selectedCharacterId
 		? campaign.GameState.Characters.find((c) => c.Id === selectedCharacterId)
 		: null;
+	// Track indicators for new items (players only)
+	const [showInventoryIndicator, setShowInventoryIndicator] = useState(false);
+	const [showSkillsIndicator, setShowSkillsIndicator] = useState(false);
+	// Track previous counts to detect increases
+	const prevCountsRef = useRef<{
+		inventory: number;
+		skills: number;
+	} | null>(null);
 
+	// Detect when item counts increase (only for players)
+	useEffect(() => {
+		if (isDM || !selectedCharacter) return;
+
+		const currentCounts = {
+			inventory: selectedCharacter.Inventory.length,
+			skills: selectedCharacter.Skills.length,
+		};
+
+		// Initialize on first render
+		if (!prevCountsRef.current) {
+			prevCountsRef.current = currentCounts;
+			return;
+		}
+
+		// Check if counts increased while tab is not active
+		if (
+			currentCounts.inventory > prevCountsRef.current.inventory &&
+			activeBottomTab !== "inventory"
+		) {
+			setShowInventoryIndicator(true);
+		}
+
+		if (
+			currentCounts.skills > prevCountsRef.current.skills &&
+			activeBottomTab !== "skills"
+		) {
+			setShowSkillsIndicator(true);
+		}
+
+		// Update ref
+		prevCountsRef.current = currentCounts;
+	}, [
+		selectedCharacter?.Inventory.length,
+		selectedCharacter?.Skills.length,
+		activeBottomTab,
+		isDM,
+		selectedCharacter,
+	]);
+
+	// Handle tab changes and clear indicators
+	const handleBottomTabChange = (tab: PlayerBottomTab | DMBottomTab) => {
+		setActiveBottomTab(tab);
+
+		// Clear indicators when switching to that tab
+		if (tab === "inventory") {
+			setShowInventoryIndicator(false);
+		} else if (tab === "skills") {
+			setShowSkillsIndicator(false);
+		}
+	};
 	// Get label for current top tab
 	const getTopTabLabel = () => {
 		switch (activeTopTab) {
@@ -72,6 +135,8 @@ export function Main() {
 				return "Calendar";
 			case "terrain":
 				return "Terrain";
+			case "combat":
+				return "Combat";
 		}
 	};
 
@@ -164,6 +229,15 @@ export function Main() {
 									>
 										<span className="icon-[mdi--message-text] w-6 h-6" />
 									</button>
+									<button
+										className={`btn btn-square ${
+											activeBottomTab === "party" ? "btn-neutral" : ""
+										}`}
+										onClick={() => setActiveBottomTab("party")}
+										title="Party"
+									>
+										<span className="icon-[mdi--account-group] w-6 h-6" />
+									</button>
 								</>
 							) : (
 								// Player Tabs
@@ -181,24 +255,35 @@ export function Main() {
 									>
 										<span className="icon-[mdi--account] w-6 h-6" />
 									</button>
-									<button
-										className={`btn btn-square ${
-											activeBottomTab === "inventory" ? "btn-neutral" : ""
-										}`}
-										onClick={() => setActiveBottomTab("inventory")}
-										title="Inventory"
-									>
-										<span className="icon-[mdi--bag-personal] w-6 h-6" />
-									</button>
-									<button
-										className={`btn btn-square ${
-											activeBottomTab === "skills" ? "btn-neutral" : ""
-										}`}
-										onClick={() => setActiveBottomTab("skills")}
-										title="Skills"
-									>
-										<span className="icon-[mdi--star] w-6 h-6" />
-									</button>
+									<div className={showInventoryIndicator ? "indicator" : ""}>
+										{showInventoryIndicator && (
+											<span className="indicator-item status status-info"></span>
+										)}
+										<button
+											className={`btn btn-square ${
+												activeBottomTab === "inventory" ? "btn-neutral" : ""
+											}`}
+											onClick={() => handleBottomTabChange("inventory")}
+											title="Inventory"
+										>
+											<span className="icon-[mdi--bag-personal] w-6 h-6" />
+										</button>
+									</div>
+
+									<div className={showSkillsIndicator ? "indicator" : ""}>
+										{showSkillsIndicator && (
+											<span className="indicator-item status status-info"></span>
+										)}
+										<button
+											className={`btn btn-square ${
+												activeBottomTab === "skills" ? "btn-neutral" : ""
+											}`}
+											onClick={() => handleBottomTabChange("skills")}
+											title="Skills"
+										>
+											<span className="icon-[mdi--star] w-6 h-6" />
+										</button>
+									</div>
 									<button
 										className={`btn btn-square ${
 											activeBottomTab === "party" ? "btn-neutral" : ""
@@ -265,13 +350,22 @@ export function Main() {
 									<span className="icon-[mdi--calendar] w-5 h-5" />
 								</button>
 								<button
-									className={`flex-auto tab border-r-0 border-t-0 ${
+									className={`flex-auto tab border-t-0 ${
 										activeTopTab === "terrain" ? "tab-active" : ""
 									}`}
 									onClick={() => setActiveTopTab("terrain")}
 									title="Terrain"
 								>
 									<span className="icon-[mdi--terrain] w-5 h-5" />
+								</button>
+								<button
+									className={`flex-auto tab border-r-0 border-t-0 ${
+										activeTopTab === "combat" ? "tab-active" : ""
+									}`}
+									onClick={() => setActiveTopTab("combat")}
+									title="Combat"
+								>
+									<span className="icon-[mdi--sword-cross] w-5 h-5" />
 								</button>
 							</div>
 
@@ -280,27 +374,20 @@ export function Main() {
 								{activeTopTab === "music" && <AudioDisplay />}
 								{activeTopTab === "calendar" && <CalendarDisplay />}
 								{activeTopTab === "terrain" && <TerrainDisplay />}
+								{activeTopTab === "combat" && <CombatDisplay />}
 							</div>
 						</div>
 
 						{/* Bottom 80%: Bottom Tab Content */}
 						<div className="flex-1 overflow-auto p-4 border-t-2 bg-base-100">
-							{activeBottomTab === "character" && <CharacterSheet/>}
-							{activeBottomTab === "inventory" && (
-								<div className="text-center text-sm opacity-60">
-									Inventory - Coming Soon
-								</div>
+							{activeBottomTab === "character" && <CharacterSheet />}
+							{activeBottomTab === "inventory" && selectedCharacter && (
+								<ItemCollection actor={selectedCharacter} mode="inventory" />
 							)}
-							{activeBottomTab === "skills" && (
-								<div className="text-center text-sm opacity-60">
-									Skills - Coming Soon
-								</div>
+							{activeBottomTab === "skills" && selectedCharacter && (
+								<SkillCollection actor={selectedCharacter} />
 							)}
-							{activeBottomTab === "party" && (
-								<div className="text-center text-sm opacity-60">
-									Party - Coming Soon
-								</div>
-							)}
+							{activeBottomTab === "party" && <Party />}
 							{activeBottomTab === "notes" && <NoteDisplay />}
 							{activeBottomTab === "inspector" && <Inspector />}
 							{activeBottomTab === "scene" && <SceneEdit />}

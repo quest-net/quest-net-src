@@ -1,5 +1,5 @@
 import { Context } from "../Context/Context";
-import { CampaignSettings } from "./CampaignSetting";
+import { CampaignSettings, RestoreRule } from "./CampaignSetting";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { MAX_HEIGHT } from "../Terrain/Terrain";
 import * as math from "mathjs";
@@ -66,6 +66,39 @@ export function validateAndBuildHeightCostLookup(
 	}
 
 	return { valid: true, lookup };
+}
+
+/**
+ * Formats a RestoreRule into human-readable text
+ * Returns an array of strings, one per restore type
+ */
+export function formatRestoreRule(rule?: RestoreRule): string[] {
+  if (!rule) return [];
+  
+  const lines: string[] = [];
+  
+  if (rule.shortRest !== undefined) {
+    const text = rule.shortRest === "max" 
+      ? "Restores fully on short rest"
+      : `Restores ${rule.shortRest} use${rule.shortRest === 1 ? '' : 's'} on short rest`;
+    lines.push(text);
+  }
+  
+  if (rule.longRest !== undefined) {
+    const text = rule.longRest === "max"
+      ? "Restores fully on long rest"
+      : `Restores ${rule.longRest} use${rule.longRest === 1 ? '' : 's'} on long rest`;
+    lines.push(text);
+  }
+  
+  if (rule.combatEnd !== undefined) {
+    const text = rule.combatEnd === "max"
+      ? "Restores fully at combat end"
+      : `Restores ${rule.combatEnd} use${rule.combatEnd === 1 ? '' : 's'} at combat end`;
+    lines.push(text);
+  }
+  
+  return lines;
 }
 // ============================================================================
 // CAMPAIGN SETTING ACTIONS

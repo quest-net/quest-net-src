@@ -14,6 +14,7 @@ import { AudioActions } from "../../domains/Audio/AudioActions";
 import { SkillActions } from "../../domains/Skill/SkillActions";
 import { SceneActions } from "../../domains/Scene/SceneActions";
 import { NoteActions } from "../../domains/Note/NoteActions";
+import { CombatActions } from "../../domains/Combat/CombatActions";
 // Import other action modules as they're created
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
@@ -70,32 +71,28 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	},
 
 	// ============================================================================
-	// ITEM ACTIONS (uncomment when ItemActions is implemented)
+	// ITEM ACTIONS
 	// ============================================================================
-	// 'item:use': {
-	//   roles: ['dm', 'player'],
-	//   handler: ItemActions.use
-	// },
-	// 'item:equip': {
-	//   roles: ['dm', 'player'],
-	//   handler: ItemActions.equip
-	// },
-	// 'item:unequip': {
-	//   roles: ['dm', 'player'],
-	//   handler: ItemActions.unequip
-	// },
-	// 'item:discard': {
-	//   roles: ['dm', 'player'],
-	//   handler: ItemActions.discard
-	// },
-	// 'item:restore': {
-	//   roles: ['dm'],
-	//   handler: ItemActions.restore
-	// },
-	// 'item:give': {
-	//   roles: ['dm'],
-	//   handler: ItemActions.give
-	// },
+	'item:use': {
+	  roles: ['dm', 'player'],
+	  handler: ItemActions.use
+	},
+	'item:equip': {
+	  roles: ['dm', 'player'],
+	  handler: ItemActions.equip
+	},
+	'item:unequip': {
+	  roles: ['dm', 'player'],
+	  handler: ItemActions.unequip
+	},
+	'item:discard': {
+	  roles: ['dm', 'player'],
+	  handler: ItemActions.discard
+	},
+	'item:give': {
+	  roles: ['dm'],
+	  handler: ItemActions.give
+	},
 	// 'item:transfer': {
 	//   roles: ['dm', 'player'],
 	//   handler: ItemActions.transfer
@@ -105,7 +102,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		handler: ItemActions.create,
 	},
 	"item:edit": {
-		roles: ["dm"],
+		roles: ["dm", "player"], //players can upload their own images
 		handler: ItemActions.edit,
 	},
 	"item:delete": {
@@ -121,13 +118,25 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		handler: SkillActions.create,
 	},
 	"skill:edit": {
-		roles: ["dm"],
+		roles: ["dm", "player"], //players can upload their own images
 		handler: SkillActions.edit,
 	},
 	"skill:delete": {
 		roles: ["dm"],
 		handler: SkillActions.delete,
 	},
+	"skill:use": {
+		roles: ["dm", "player"],
+		handler: SkillActions.delete,
+	},
+	"skill:discard": {
+		roles: ["dm", "player"],
+		handler: SkillActions.delete,
+	},
+	'skill:give': {
+		roles: ['dm'],
+		handler: ItemActions.give
+	  },
 	"skill:bulkEditTags": {
 		roles: ["dm"],
 		handler: SkillActions.bulkEditTags,
@@ -164,22 +173,22 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	// ============================================================================
 	// COMBAT ACTIONS (uncomment when CombatActions is implemented)
 	// ============================================================================
-	// 'combat:start': {
-	//   roles: ['dm'],
-	//   handler: CombatActions.start
-	// },
-	// 'combat:end': {
-	//   roles: ['dm'],
-	//   handler: CombatActions.end
-	// },
-	// 'combat:nextTurn': {
-	//   roles: ['dm'],
-	//   handler: CombatActions.nextTurn
-	// },
-	// 'combat:previousTurn': {
-	//   roles: ['dm'],
-	//   handler: CombatActions.previousTurn
-	// },
+	'combat:start': {
+	  roles: ['dm'],
+	  handler: CombatActions.start
+	},
+	'combat:end': {
+	  roles: ['dm'],
+	  handler: CombatActions.end
+	},
+	'combat:nextTurn': {
+	  roles: ['dm'],
+	  handler: CombatActions.incrementTurn
+	},
+	'combat:previousTurn': {
+	  roles: ['dm'],
+	  handler: CombatActions.decrementTurn
+	},
 
 	// ============================================================================
 	// AUDIO ACTIONS (uncomment when AudioActions is implemented)

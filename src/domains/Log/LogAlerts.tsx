@@ -24,8 +24,8 @@ const isCritRoll = (entry: LogEntry): boolean => {
 	const details = entry.Details || "";
 	
 	// Check if it's a d20 or d100 roll
-	const isD20 = /d20(?!\d)/i.test(action);
-	const isD100 = /d100/i.test(action);
+	const isD20 = /d20(?!\d)/i.test(action) || /d20(?!\d)/i.test(details);
+	const isD100 = /d100/i.test(action) || /d100/i.test(details);
 	
 	if (!isD20 && !isD100) return false;
 	

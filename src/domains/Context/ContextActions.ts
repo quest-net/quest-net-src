@@ -15,6 +15,7 @@ export const ContextActions = {
 			User: UserActions.createNewUser(),
 			Campaigns: [],
 			AppSettings: {},
+			version: "1.0.0"
 		};
 
 		this.save(context);

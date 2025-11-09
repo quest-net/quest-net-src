@@ -142,7 +142,6 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 						<ImagePicker
 							value={data.Image}
 							onChange={(imageId) => handleFieldChange("Image", imageId)}
-							label=""
 						/>
 					</FormField>
 

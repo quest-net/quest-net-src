@@ -130,15 +130,13 @@ export function NoteDisplay() {
 			setPendingDeleteId(noteId);
 		}
 	};
-
-	const formatDate = (date: Date) => {
-		const d = new Date(date);
+	const formatDate = (timestamp: number) => {
+		const d = new Date(timestamp);  // ← Convert from number to Date for display
 		return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { 
 			hour: '2-digit', 
 			minute: '2-digit' 
 		});
 	};
-
 	const isEditing = isCreatingNew || editingNoteId !== null;
 	const isPendingDelete = pendingDeleteId === editingNoteId;
 

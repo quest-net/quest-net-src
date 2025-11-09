@@ -226,6 +226,8 @@ export default function Map({
 
 	const ladderInfo = useMemo(() => {
 		if (!terrain) return null;
+		// Hide ladder if the user doesn't control the selected actor
+  		if (!canControlSelected) return null;
 
 		return calculateLadderInfo({
 			selectedActorId: selectedActor?.id ?? null,
@@ -270,7 +272,7 @@ export default function Map({
 			actor.x,
 			actor.y,
 			actor.h,
-			selectedActor.moveSpeed,
+			selectedActorObj?.MoveSpeed ?? 5,
 			selectedActorObj?.CanFly ?? false,
 			terrain.Width,
 			terrain.Length,

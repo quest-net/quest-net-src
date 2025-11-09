@@ -173,8 +173,9 @@ export const CalendarActions = {
 
 /**
  * Restores a character's stats, items, and skills based on the specified rest type
+ * Exported for use by CombatActions
  */
-function restoreCharacter(
+export function restoreCharacter(
 	character: Character,
 	restType: "shortRest" | "longRest" | "combatEnd",
 	campaign: any,

@@ -1,6 +1,7 @@
 // domains/Audio/AudioDisplay.tsx
 
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
@@ -47,10 +48,43 @@ export function AudioDisplay() {
 	const [localVolume, setLocalVolume] = useState(displayVolume * 100);
 	const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+	// Dropdown state and positioning
+	const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+	const buttonRef = useRef<HTMLButtonElement>(null);
+	const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
+
 	// Update local volume when external volume changes
 	useEffect(() => {
 		setLocalVolume(displayVolume * 100);
 	}, [displayVolume]);
+
+	// Update dropdown position when opened
+	useEffect(() => {
+		if (isDropdownOpen && buttonRef.current) {
+			const rect = buttonRef.current.getBoundingClientRect();
+			setDropdownPosition({
+				top: rect.bottom + 4, // 4px gap below button
+				right: window.innerWidth - rect.right,
+			});
+		}
+	}, [isDropdownOpen]);
+
+	// Close dropdown when clicking outside
+	useEffect(() => {
+		if (!isDropdownOpen) return;
+
+		const handleClickOutside = (e: MouseEvent) => {
+			if (
+				buttonRef.current &&
+				!buttonRef.current.contains(e.target as Node)
+			) {
+				setIsDropdownOpen(false);
+			}
+		};
+
+		document.addEventListener("mousedown", handleClickOutside);
+		return () => document.removeEventListener("mousedown", handleClickOutside);
+	}, [isDropdownOpen]);
 
 	// Debounced volume change
 	const handleVolumeChange = (value: number) => {
@@ -91,36 +125,50 @@ export function AudioDisplay() {
 		if (audioIds.length > 0) {
 			actionService.execute("audio:setTrack", { audioId: audioIds });
 		}
+
+		setIsDropdownOpen(false);
 	};
 
 	return (
 		<div className="space-y-4 relative">
-			{/* Floating Playlist Dropdown (DM only) */}
+			{/* Floating Playlist Button (DM only) */}
 			{isDM && allFolders.length > 0 && (
-				<div className="absolute top-1 right-1 z-10">
-					<div className="dropdown dropdown-end">
-						<label
-							tabIndex={0}
+				<>
+					<div className="absolute top-1 right-1 z-10">
+						<button
+							ref={buttonRef}
+							onClick={() => setIsDropdownOpen(!isDropdownOpen)}
 							className="btn btn-outline btn-square"
 							title="Play playlist"
 						>
 							<span className="icon-[mdi--playlist-music] w-5 h-5" />
-						</label>
-						<ul
-							tabIndex={0}
-							className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-52 max-h-64 overflow-y-auto"
-						>
-							<li className="menu-title">
-								<span>Play Playlist</span>
-							</li>
-							{allFolders.map((folder) => (
-								<li key={folder}>
-									<a onClick={() => handlePlayFolder(folder)}>{folder}</a>
-								</li>
-							))}
-						</ul>
+						</button>
 					</div>
-				</div>
+
+					{/* Portal the dropdown menu outside */}
+					{isDropdownOpen &&
+						createPortal(
+							<div
+								className="fixed z-50"
+								style={{
+									top: `${dropdownPosition.top}px`,
+									right: `${dropdownPosition.right}px`,
+								}}
+							>
+								<ul className="menu p-2 shadow-lg bg-base-100 rounded-box w-52 max-h-64 overflow-y-auto border-2 border-base-300">
+									<li className="menu-title">
+										<span>Play Playlist</span>
+									</li>
+									{allFolders.map((folder) => (
+										<li key={folder}>
+											<a onClick={() => handlePlayFolder(folder)}>{folder}</a>
+										</li>
+									))}
+								</ul>
+							</div>,
+							document.body
+						)}
+				</>
 			)}
 
 			{currentAudio ? (

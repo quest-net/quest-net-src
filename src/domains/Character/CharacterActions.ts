@@ -270,35 +270,20 @@ export const CharacterActions = {
 		TerrainActions.validateActors(context);
 	},
 
+	/**
+	 * Bulk edit tags for multiple characters
+	 */
 	bulkEditTags(
 		params: { updates: Array<{ characterId: string; tags: string[] }> },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
-
-		let successCount = 0;
-
-		params.updates.forEach((update) => {
-			const character = campaign.CharacterRoster.find(
-				(c) => c.Id === update.characterId
-			);
-			if (character) {
-				character.Tags = update.tags;
-				successCount++;
-			} else {
-				console.warn(
-					`Character not found for bulk update: ${update.characterId}`
-				);
-			}
-		});
-
-		LogActions.create(
+		ActorActions.bulkEditTags(
+			"character",
 			{
-				action: "Characters organized",
-				details: `Updated tags for ${successCount} character(s)`,
-				category: "character",
-				level: "info",
-				visibility: ["dm"],
+				updates: params.updates.map((update) => ({
+					actorId: update.characterId,
+					tags: update.tags,
+				})),
 			},
 			context
 		);

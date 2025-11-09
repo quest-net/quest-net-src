@@ -165,35 +165,37 @@ export function AudioPlayer() {
 
 	const loadAndPlayVideo = (videoIds: string[]) => {
 		if (!playerRef.current || videoIds.length === 0) return;
-	
+	  
 		try {
-			// Reset track index when loading new playlist
-			setCurrentTrackIndex(0);
-			
-			if (videoIds.length === 1) {
-				// Single track mode
-				playerRef.current.loadVideoById({
-					videoId: videoIds[0],
-					startSeconds: 0,
-				});
-				stopTrackPolling();
-			} else {
-				// Playlist mode with loop
-				playerRef.current.loadPlaylist({
-					playlist: videoIds,
-					index: 0,
-					startSeconds: 0,
-				});
-				// Explicitly enable looping for playlists
-				playerRef.current.setLoop(true);
-				startTrackPolling();
-			}
-			playerRef.current.setVolume(finalVolume);
-			currentVideoIdsRef.current = videoIds.join(',');
+		  setCurrentTrackIndex(0);
+	  
+		  if (videoIds.length === 1) {
+			// Single video must be loaded as a one-item playlist to loop
+			playerRef.current.loadPlaylist({
+			  playlist: videoIds,
+			  index: 0,
+			  startSeconds: 0,
+			});
+			playerRef.current.setLoop(true);
+			// no need to poll for track changes in 1-item playlist
+			stopTrackPolling();
+		  } else {
+			// Regular playlist path
+			playerRef.current.loadPlaylist({
+			  playlist: videoIds,
+			  index: 0,
+			  startSeconds: 0,
+			});
+			playerRef.current.setLoop(true);
+			startTrackPolling();
+		  }
+	  
+		  playerRef.current.setVolume(finalVolume);
+		  currentVideoIdsRef.current = videoIds.join(",");
 		} catch (e) {
-			console.error("Error loading video:", e);
+		  console.error("Error loading video:", e);
 		}
-	};
+	  };
 
 	// Handle video changes
 	useEffect(() => {

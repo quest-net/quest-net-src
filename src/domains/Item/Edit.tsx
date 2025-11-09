@@ -124,7 +124,6 @@ function ItemForm({ data, onChange }: ItemFormProps) {
 						<ImagePicker
 							value={data.Image}
 							onChange={(imageId) => handleFieldChange("Image", imageId)}
-							label=""
 						/>
 					</FormField>
 

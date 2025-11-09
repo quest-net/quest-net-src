@@ -125,6 +125,7 @@ export default function TwoDMap({
 			y: actorObj.Position?.y ?? 0,
 			h: actorObj.Position?.h ?? 0,
 			canFly: actorObj.CanFly ?? false,
+			moveSpeed: actorObj.MoveSpeed ?? 5
 		};
 	}, [selectedActor, terrain, characters, entities]);
 
@@ -143,7 +144,7 @@ export default function TwoDMap({
 			selectedActorInfo.x,
 			selectedActorInfo.y,
 			selectedActorInfo.h,
-			selectedActor.moveSpeed,
+			selectedActorInfo.moveSpeed,
 			selectedActorInfo.canFly,
 			W,
 			L,

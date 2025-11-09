@@ -66,8 +66,28 @@ export const EntityActions = {
 	},
 
 	/**
+	 * Helper function to extract base name from entity name
+	 * "Goblin" -> "Goblin"
+	 * "Goblin [A]" -> "Goblin"
+	 * "Goblin [Z]" -> "Goblin"
+	 */
+	getBaseName(name: string): string {
+		const match = name.match(/^(.+?)\s*\[[A-Z]\]$/);
+		return match ? match[1] : name;
+	},
+
+	/**
+	 * Helper function to get letter suffix from alphabet position
+	 * 0 -> 'A', 1 -> 'B', ..., 25 -> 'Z'
+	 */
+	getLetterSuffix(index: number): string {
+		return String.fromCharCode(65 + index); // 65 is 'A' in ASCII
+	},
+
+	/**
 	 * Spawns an entity from template onto the field (CLONE operation)
 	 * Creates a new instance with a new ID, leaving template intact
+	 * Automatically handles naming for multiple instances
 	 * Position defaults to origin if not provided
 	 * DM only - handled by ACTION_REGISTRY
 	 */
@@ -86,11 +106,55 @@ export const EntityActions = {
 			return;
 		}
 
+		// Get the base name from template
+		const baseName = EntityActions.getBaseName(template.Name);
+
+		// Find all existing entities that match this base name
+		const matchingEntities = campaign.GameState.Entities.filter((e) => {
+			return EntityActions.getBaseName(e.Name) === baseName;
+		});
+
+		const existingCount = matchingEntities.length;
+
+		// Safety check: Don't spawn if we've hit the alphabet limit
+		if (existingCount >= 26) {
+			console.warn(
+				`Cannot spawn more than 26 instances of ${baseName}. Alphabet limit reached.`
+			);
+			LogActions.create(
+				{
+					action: "Spawn failed",
+					details: `Cannot spawn ${baseName} - too many instances (26 max)`,
+					category: "system",
+					level: "important",
+					visibility: ["dm"],
+				},
+				context
+			);
+			return;
+		}
+
+		// If we have existing entities, rename them all with letter suffixes
+		if (existingCount > 0) {
+			matchingEntities.forEach((entity, index) => {
+				entity.Name = `${baseName} [${EntityActions.getLetterSuffix(index)}]`;
+			});
+		}
+
 		// CLONE: Create new instance with new ID
 		const instance: Entity = {
 			...structuredClone(template),
 			Id: crypto.randomUUID(), // New ID for the instance
 		};
+
+		// Set the name with appropriate letter suffix
+		if (existingCount === 0) {
+			// First instance keeps the original name
+			instance.Name = baseName;
+		} else {
+			// Add letter suffix for new instance
+			instance.Name = `${baseName} [${EntityActions.getLetterSuffix(existingCount)}]`;
+		}
 
 		// Set position to origin if not provided
 		if (params.position) {
@@ -205,5 +269,24 @@ export const EntityActions = {
 
 		// Validate actors after moving
 		TerrainActions.validateActors(context);
+	},
+
+	/**
+	 * Bulk edit tags for multiple entity templates
+	 */
+	bulkEditTags(
+		params: { updates: Array<{ entityId: string; tags: string[] }> },
+		context: Context
+	): void {
+		ActorActions.bulkEditTags(
+			"entity",
+			{
+				updates: params.updates.map((update) => ({
+					actorId: update.entityId,
+					tags: update.tags,
+				})),
+			},
+			context
+		);
 	},
 };

@@ -17,10 +17,12 @@ import { AudioIndex } from "../Audio/Index";
 import { AudioPlayer } from "../Audio/AudioPlayer";
 import { SkillIndex } from "../Skill/Index";
 import { AudioStateProvider } from "../Audio/AudioContext";
+import { EntityIndex } from "../Entity/Index";
 
 type TabView =
 	| "main"
 	| "characters"
+	| "entities"
 	| "items"
 	| "skills"
 	| "images"
@@ -94,6 +96,14 @@ export function DMView() {
 							</li>
 							<li>
 								<button
+									className={activeTab === "entities" ? "menu-active" : ""}
+									onClick={() => setActiveTab("entities")}
+								>
+									Entities
+								</button>
+							</li>
+							<li>
+								<button
 									className={activeTab === "items" ? "menu-active" : ""}
 									onClick={() => setActiveTab("items")}
 								>
@@ -147,6 +157,7 @@ export function DMView() {
 					<main className="flex-1 overflow-auto">
 						{activeTab === "main" && <Main />}
 						{activeTab === "characters" && <CharacterIndex />}
+						{activeTab === "entities" && <EntityIndex />}
 						{activeTab === "items" && <ItemIndex />}
 						{activeTab === "skills" && <SkillIndex />}
 						{activeTab === "images" && <ImageIndex />}

@@ -36,7 +36,7 @@ export function FallbackToken({
 	const scale = SIZE_SCALE[size];
 	const R = TILE_W * 0.35 * scale;
 	const centerX = cx;
-	const centerY = cy - TILE_H;
+	const centerY = cy - TILE_H - (scale*6); //HACK ALERT: FIND A BETTER WAY TO DO THIS
 
 	const drawCircle = useMemo(
 		() => (g: PixiGraphics) => {

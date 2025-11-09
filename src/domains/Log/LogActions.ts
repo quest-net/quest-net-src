@@ -93,27 +93,15 @@ export const LogActions = {
 		userRole: "dm" | "player" | undefined,
 		selectedCharacterId: string | undefined
 	): boolean {
+		if (userRole === "dm" && (entry.Visibility.includes("dm") || entry.Visibility.includes("all"))) return true;
 		// Everyone can see "all" visibility
-		if (entry.Visibility.includes("all")) return true;
+		let visibilityCheck = entry.Visibility.includes("all") || (entry.Visibility.includes("player"));
 
-		// DMs can see DM-only entries
-		if (userRole === "dm" && entry.Visibility.includes("dm")) return true;
-
-		// Players have special rules
-		if (userRole === "player") {
-			// Players can see player-visible entries
-			if (entry.Visibility.includes("player")) return true;
-
-			// Players can see entries where they own the actor
-			if (
-				entry.Visibility.includes("owner") &&
-				selectedCharacterId &&
-				entry.ActorId === selectedCharacterId
-			) {
-				return true;
-			}
+		let categoryCheck = entry.Category.includes("chat") || entry.Category.includes("dice");
+		// Players can see player-visible entries
+		if (visibilityCheck && categoryCheck) {
+			return true;
 		}
-
 		return false;
 	},
 };

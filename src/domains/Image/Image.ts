@@ -6,4 +6,5 @@ export interface Image {
 	Width: number; // For aspect ratio calculations
 	Height: number; // For aspect ratio calculations
 	Tags?: string[];
+	UploadedBy?: string;
 }

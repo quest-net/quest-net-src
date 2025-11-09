@@ -37,6 +37,7 @@ export class ImageService {
 			mimeType: string;
 			fileSize: number;
 			uploadId: string;
+			userId?: string;
 		}
 	) => void;
 	private sendImageCreated!: (
@@ -119,7 +120,7 @@ export class ImageService {
 	/**
 	 * Player uploads an image to the DM
 	 */
-	async uploadImage(file: File, name?: string): Promise<Image> {
+	async uploadImage(file: File, name?: string, userId?: string): Promise<Image> {
 		if (this.isDM) {
 			throw new Error("DM should use ImageActions.create directly");
 		}
@@ -130,7 +131,8 @@ export class ImageService {
 		const promise = this.processAndUpload(
 			file,
 			name || file.name.replace(/\.[^/.]+$/, ""),
-			uploadId
+			uploadId,
+			userId
 		);
 		this.pendingUploads.set(uploadId, promise);
 
@@ -147,7 +149,8 @@ export class ImageService {
 	private async processAndUpload(
 		file: File,
 		name: string,
-		uploadId: string
+		uploadId: string,
+		userId?: string
 	): Promise<Image> {
 		return new Promise(async (resolve, reject) => {
 			try {
@@ -190,6 +193,7 @@ export class ImageService {
 					mimeType,
 					fileSize: blob.size,
 					uploadId,
+					userId,
 				});
 
 			} catch (error) {
@@ -209,6 +213,7 @@ export class ImageService {
 			height: number;
 			mimeType: string;
 			fileSize: number;
+			userId?: string;
 		},
 		uploadId: string,
 		peerId: string
@@ -225,6 +230,7 @@ export class ImageService {
 				MimeType: metadata.mimeType,
 				Width: metadata.width,
 				Height: metadata.height,
+				UploadedBy: metadata.userId,
 			};
 
 			// Store in IndexedDB

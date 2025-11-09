@@ -31,6 +31,14 @@ export interface IndexViewItem {
 	};
 }
 
+export interface SelectionAction {
+	label: string;
+	icon?: string;
+	onClick: (selectedIds: string[]) => void;
+	variant?: "primary" | "secondary" | "error" | "ghost";
+	requiresSelection?: boolean; // If true, disabled when nothing selected
+}
+
 interface IndexViewProps {
 	// Data
 	items: IndexViewItem[];
@@ -60,6 +68,9 @@ interface IndexViewProps {
 		updates: Array<{ itemId: string; newTags: string[] }>
 	) => void;
 
+	// Selection actions - custom actions to perform on selected items
+	selectionActions?: SelectionAction[];
+
 	// Optional
 	emptyMessage?: string;
 }
@@ -80,6 +91,7 @@ export function IndexView({
 	itemsPerPage = 25,
 	renderEditForm,
 	onBulkUpdateItemTags,
+	selectionActions = [],
 	emptyMessage = "No items yet. Create one to get started!",
 }: IndexViewProps) {
 	const [searchQuery, setSearchQuery] = useState("");
@@ -118,8 +130,7 @@ export function IndexView({
 		)
 	).sort();
 
-	// NEW: Combine folders and items for unified pagination
-	// Folders come first, then items (just like a file browser)
+	// Combine folders and items for unified pagination
 	type DisplayEntry = 
 		| { type: 'folder'; data: FolderInfo }
 		| { type: 'item'; data: IndexViewItem };
@@ -129,12 +140,12 @@ export function IndexView({
 		...filteredItems.map(i => ({ type: 'item' as const, data: i }))
 	];
 
-	// NEW: Calculate pagination on combined entries
+	// Calculate pagination on combined entries
 	const totalPages = Math.ceil(combinedEntries.length / itemsPerPage);
 	const startIdx = (currentPage - 1) * itemsPerPage;
 	const paginatedEntries = combinedEntries.slice(startIdx, startIdx + itemsPerPage);
 
-	// NEW: Reset to page 1 when navigating or searching
+	// Reset to page 1 when navigating or searching
 	useEffect(() => {
 		setCurrentPage(1);
 		setSelectedItemIds(new Set());
@@ -190,8 +201,7 @@ export function IndexView({
 		setSelectedItemIds(newSelected);
 	};
 
-	// NEW: Select all filtered items (across all pages)
-	// Note: Only selects items, not folders
+	// Select all filtered items (across all pages)
 	const handleSelectAll = () => {
 		const allItemIds = filteredItems.map((item) => item.id);
 		setSelectedItemIds(new Set(allItemIds));
@@ -252,7 +262,13 @@ export function IndexView({
 		handleExitSelectionMode();
 	};
 
-	// NEW: Pagination handlers
+	const handleSelectionAction = (action: SelectionAction) => {
+		const selectedIds = Array.from(selectedItemIds);
+		action.onClick(selectedIds);
+		// Note: Don't automatically exit selection mode - let the action handler decide
+	};
+
+	// Pagination handlers
 	const handlePrevPage = () => {
 		setCurrentPage((prev) => Math.max(1, prev - 1));
 	};
@@ -260,6 +276,12 @@ export function IndexView({
 	const handleNextPage = () => {
 		setCurrentPage((prev) => Math.min(totalPages, prev + 1));
 	};
+
+	// Check if we have folder management available
+	const hasFolderManagement = !!onBulkUpdateItemTags;
+	
+	// Check if we have any selection features (folder management OR custom actions)
+	const hasSelectionFeatures = hasFolderManagement || selectionActions.length > 0;
 
 	return (
 		<div className="drawer">
@@ -296,7 +318,7 @@ export function IndexView({
 								{/* Extra buttons slot */}
 								{extraButtons}
 								
-								{onBulkUpdateItemTags && (
+								{hasSelectionFeatures && (
 									<button
 										onClick={handleEnterSelectionMode}
 										className="btn btn-outline"
@@ -320,8 +342,7 @@ export function IndexView({
 
 						{/* Selection Mode Controls */}
 						{isSelectionMode && (
-							<div className="flex gap-2 items-center">
-								{/* NEW: Show if selection spans multiple pages */}
+							<div className="flex gap-2 items-center flex-wrap">
 								<span className="text-sm font-medium">
 									{selectedItemIds.size} selected
 									{selectedItemIds.size > 0 && totalPages > 1 && (
@@ -331,8 +352,41 @@ export function IndexView({
 									)}
 								</span>
 
-								{/* Move controls - only show if items are selected */}
-								{selectedItemIds.size > 0 && (
+								{/* Custom Selection Actions */}
+								{selectionActions.length > 0 && (
+									<>
+										<div className="divider divider-horizontal mx-2"></div>
+										{selectionActions.map((action, index) => {
+											const isDisabled = 
+												action.requiresSelection && selectedItemIds.size === 0;
+											
+											return (
+												<button
+													key={index}
+													onClick={() => handleSelectionAction(action)}
+													disabled={isDisabled}
+													className={`btn btn-sm ${
+														action.variant === "primary"
+															? "btn-primary"
+															: action.variant === "secondary"
+															? "btn-secondary"
+															: action.variant === "error"
+															? "btn-error"
+															: "btn-ghost"
+													}`}
+												>
+													{action.icon && (
+														<span className={`${action.icon} w-4 h-4`} />
+													)}
+													{action.label}
+												</button>
+											);
+										})}
+									</>
+								)}
+
+								{/* Folder Move controls - only show if folder management is enabled and items are selected */}
+								{hasFolderManagement && selectedItemIds.size > 0 && (
 									<>
 										<div className="divider divider-horizontal mx-2"></div>
 										<span className="text-sm">Move to:</span>
@@ -495,7 +549,7 @@ export function IndexView({
 								))}
 							</div>
 
-							{/* NEW: Pagination Controls */}
+							{/* Pagination Controls */}
 							{totalPages > 1 && (
 								<div className="flex justify-center items-center gap-4 pt-4 pb-2">
 									<button

@@ -46,7 +46,6 @@ export function SceneEdit() {
 					<ImagePicker
 						value={scene.EnvironmentImageId}
 						onChange={handleEnvironmentChange}
-						label="Environment"
 					/>
 				</div>
 			</div>
@@ -61,7 +60,6 @@ export function SceneEdit() {
 					<ImagePicker
 						value={scene.FocusImageId}
 						onChange={handleFocusChange}
-						label="Focus"
 					/>
 				</div>
 			</div>

@@ -8,4 +8,6 @@ export interface Context {
 	Campaigns: Campaign[];
 	// App Preferences
 	AppSettings: Record<string, string>;
+	// version
+	version: string;
 }

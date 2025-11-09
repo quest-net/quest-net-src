@@ -143,4 +143,44 @@ export const ActorActions = {
 			context
 		);
 	},
+	/**
+	 * Bulk edit tags for multiple actors in roster/templates
+	 * Works for both Characters and Entities
+	 */
+	bulkEditTags(
+		type: "character" | "entity",
+		params: { updates: Array<{ actorId: string; tags: string[] }> },
+		context: Context
+	): void {
+		const campaign = CampaignActions.getActiveCampaign(context);
+		const roster =
+			type === "character"
+				? campaign.CharacterRoster
+				: campaign.EntityTemplates;
+
+		let successCount = 0;
+
+		params.updates.forEach((update) => {
+			const actor = roster.find((a) => a.Id === update.actorId);
+			if (actor) {
+				actor.Tags = update.tags;
+				successCount++;
+			} else {
+				console.warn(
+					`${type} not found for bulk update: ${update.actorId}`
+				);
+			}
+		});
+
+		LogActions.create(
+			{
+				action: "Actors organized",
+				details: `Updated tags for ${successCount} actor(s)`,
+				category: type === "character" ? "character" : "combat",
+				level: "info",
+				visibility: ["dm"],
+			},
+			context
+		);
+	},
 };

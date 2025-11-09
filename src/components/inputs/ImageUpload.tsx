@@ -108,6 +108,7 @@ export function ImageUpload({
 					MimeType: mimeType,
 					Width: width,
 					Height: height,
+					UploadedBy: undefined,
 				};
 
 				// Save to IndexedDB
@@ -137,7 +138,8 @@ export function ImageUpload({
 				// Upload to DM and wait for response
 				const image = await imageService.uploadImage(
 					file,
-					file.name.replace(/\.[^/.]+$/, "")
+					file.name.replace(/\.[^/.]+$/, ""),
+					context.User.Id
 				);
 
 				// Return the image ID to the form
@@ -198,6 +200,7 @@ export function ImageUpload({
 						MimeType: mimeType,
 						Width: width,
 						Height: height,
+						UploadedBy: undefined,
 					};
 
 					if (isDM) {
@@ -229,7 +232,8 @@ export function ImageUpload({
 
 						await imageService.uploadImage(
 							file,
-							file.name.replace(/\.[^/.]+$/, "")
+							file.name.replace(/\.[^/.]+$/, ""),
+							context.User.Id
 						);
 
 						updatedStatuses[i] = {

@@ -8,7 +8,7 @@ export interface Skill {
 	Tags?: string[];
 
 	// Skill properties
-	SPCost: number;
+	StatCost?: { statId: string; amount: number }
 	MaxUses?: number;
 
 	// Dice roll functionality

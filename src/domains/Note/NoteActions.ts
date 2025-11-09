@@ -32,7 +32,7 @@ export const NoteActions = {
 			Id: crypto.randomUUID(),
 			title: params.note.title || "Untitled Note",
 			content: params.note.content || "",
-			lastUpdated: new Date(),
+			lastUpdated: Date.now(),
 		};
 
 		character.Notes.push(newNote);
@@ -72,7 +72,7 @@ export const NoteActions = {
 		}
 
 		// Always update timestamp
-		note.lastUpdated = new Date();
+		note.lastUpdated = Date.now();
 	},
 
 	/**

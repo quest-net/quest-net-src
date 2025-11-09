@@ -1,44 +1,611 @@
-// domains/Inspector/Inspector.tsx
-import { useMapState } from '../../components/Map/MapStateProvider';
-import { useQuestContext } from '../Context/ContextProvider';
-import { CampaignActions } from '../Campaign/CampaignActions';
+// domains/Main/Inspector.tsx
+
+import { useState, useEffect, useRef } from "react";
+import { useMapState } from "../../components/Map/MapStateProvider";
+import { useQuestContext } from "../Context/ContextProvider";
+import { useActionService } from "../../services/Actions/ActionServiceProvider";
+import { CampaignActions } from "../Campaign/CampaignActions";
+import { ImageDisplay } from "../Image/ImageDisplay";
+import { ImagePicker } from "../../components/inputs/ImagePicker";
+import { StatBar } from "../../components/StatBar/StatBar";
+import { Actor } from "../Actor/Actor";
+import { ObjectPicker, ObjectTypeConfig } from "../../components/inputs/ObjectPicker";
+import { ItemCollection } from "../Item/Collection";
+import { SkillCollection } from "../Skill/Collection";
+
+type InspectorTab = "info" | "inventory" | "equipment" | "skills" | "statuses";
 
 export function Inspector() {
-  const { selectedActor } = useMapState();
-  const context = useQuestContext();
-  
-  if (!selectedActor) {
-    return (
-      <div className="text-center text-sm opacity-60">
-        Select an actor on the map to inspect
-      </div>
-    );
-  }
+	const { selectedActor } = useMapState();
+	const context = useQuestContext();
+	const { actionService } = useActionService();
+	const campaign = CampaignActions.getActiveCampaign(context);
 
-  const campaign = CampaignActions.getActiveCampaign(context);
-  
-  // Find the full actor data
-  const actor = selectedActor.kind === "character"
-    ? campaign.GameState.Characters.find(c => c.Id === selectedActor.id)
-    : campaign.GameState.Entities.find(e => e.Id === selectedActor.id);
+	const isDM = context.User.Role === "dm";
 
-  if (!actor) {
-    return <div>Actor not found</div>;
-  }
+	if (!selectedActor) {
+		return (
+			<div className="text-center text-sm opacity-60">
+				Select an actor on the map to inspect
+			</div>
+		);
+	}
 
-  return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold">{actor.Name}</h2>
-      <p className="text-sm opacity-70">{selectedActor.kind}</p>
-      
-      {/* Display actor properties */}
-      <div className="space-y-2">
-        <div><strong>Position:</strong> ({actor.Position.x}, {actor.Position.y}, {actor.Position.h})</div>
-        <div><strong>Move Speed:</strong> {actor.MoveSpeed}</div>
-        <div><strong>Can Fly:</strong> {actor.CanFly ? 'Yes' : 'No'}</div>
-        
-        {/* Add more fields as needed */}
-      </div>
-    </div>
-  );
+	// Find the full actor data
+	const actor =
+		selectedActor.kind === "character"
+			? campaign.GameState.Characters.find((c) => c.Id === selectedActor.id)
+			: campaign.GameState.Entities.find((e) => e.Id === selectedActor.id);
+
+	if (!actor) {
+		return <div>Actor not found</div>;
+	}
+
+	return (
+		<UnifiedInspector
+			actor={actor}
+			kind={selectedActor.kind}
+			isDM={isDM}
+			actionService={actionService}
+			playersSeeEntityHealth={
+				campaign.Settings.VisibilitySettings.playersSeeEntityHealth
+			}
+		/>
+	);
+}
+
+// ============================================================================
+// UNIFIED INSPECTOR
+// ============================================================================
+
+interface UnifiedInspectorProps {
+	actor: Actor;
+	kind: "character" | "entity";
+	isDM: boolean;
+	actionService: any;
+	playersSeeEntityHealth: boolean;
+}
+
+function UnifiedInspector({
+	actor,
+	kind,
+	isDM,
+	actionService,
+	playersSeeEntityHealth,
+}: UnifiedInspectorProps) {
+	const context = useQuestContext();
+	const campaign = CampaignActions.getActiveCampaign(context);
+
+	// Tab state
+	const [activeTab, setActiveTab] = useState<InspectorTab>("info");
+
+	// Local state for debounced fields
+	const [localName, setLocalName] = useState(actor.Name);
+	const [localDescription, setLocalDescription] = useState(
+		actor.Description || ""
+	);
+	const [localMoveSpeed, setLocalMoveSpeed] = useState(actor.MoveSpeed);
+	const [localAttributes, setLocalAttributes] = useState(actor.Attributes);
+
+	// Object picker state
+	const [showObjectPicker, setShowObjectPicker] = useState(false);
+
+	// Debounce timers
+	const nameTimer = useRef<NodeJS.Timeout | null>(null);
+	const descTimer = useRef<NodeJS.Timeout | null>(null);
+	const moveSpeedTimer = useRef<NodeJS.Timeout | null>(null);
+	const attrTimer = useRef<NodeJS.Timeout | null>(null);
+
+	// Sync local state when actor changes
+	useEffect(() => {
+		setLocalName(actor.Name);
+		setLocalDescription(actor.Description || "");
+		setLocalMoveSpeed(actor.MoveSpeed);
+		setLocalAttributes(actor.Attributes);
+		setActiveTab("info"); // Reset to info tab when actor changes
+	}, [actor.Id]);
+
+	const handleFieldChange = (field: keyof Actor, value: any) => {
+		if (!actionService || !isDM) return;
+
+		const actionKey = kind === "character" ? "character:edit" : "entity:edit";
+		const idKey = kind === "character" ? "characterId" : "entityId";
+
+		actionService.execute(actionKey, {
+			[idKey]: actor.Id,
+			updates: { [field]: value },
+		});
+	};
+
+	const handleNameChange = (value: string) => {
+		setLocalName(value);
+
+		if (nameTimer.current) clearTimeout(nameTimer.current);
+		nameTimer.current = setTimeout(() => {
+			handleFieldChange("Name", value);
+		}, 500);
+	};
+
+	const handleDescriptionChange = (value: string) => {
+		setLocalDescription(value);
+
+		if (descTimer.current) clearTimeout(descTimer.current);
+		descTimer.current = setTimeout(() => {
+			handleFieldChange("Description", value);
+		}, 500);
+	};
+
+	const handleMoveSpeedChange = (value: number) => {
+		const clamped = Math.max(0, Math.min(99, value));
+		setLocalMoveSpeed(clamped);
+
+		if (moveSpeedTimer.current) clearTimeout(moveSpeedTimer.current);
+		moveSpeedTimer.current = setTimeout(() => {
+			handleFieldChange("MoveSpeed", clamped);
+		}, 500);
+	};
+
+	const handleAttributeChange = (key: string, value: string) => {
+		setLocalAttributes((prev) => ({ ...prev, [key]: value }));
+
+		if (attrTimer.current) clearTimeout(attrTimer.current);
+		attrTimer.current = setTimeout(() => {
+			const updatedAttributes = { ...actor.Attributes, [key]: value };
+			handleFieldChange("Attributes", updatedAttributes);
+		}, 500);
+	};
+
+	const handleStatChange = (
+		statId: string,
+		field: "Current" | "Max",
+		value: number
+	) => {
+		if (!actionService || !isDM) return;
+
+		const updatedStats = actor.Stats.map((stat) =>
+			stat.Id === statId ? { ...stat, [field]: value } : stat
+		);
+
+		const actionKey = kind === "character" ? "character:edit" : "entity:edit";
+		const idKey = kind === "character" ? "characterId" : "entityId";
+
+		actionService.execute(actionKey, {
+			[idKey]: actor.Id,
+			updates: { Stats: updatedStats },
+		});
+	};
+
+	const handleDespawn = () => {
+		if (!actionService || !isDM) return;
+
+		if (kind === "character") {
+			actionService.execute("character:remove", { characterId: actor.Id });
+		} else {
+			actionService.execute("entity:remove", { entityId: actor.Id });
+		}
+	};
+
+	const handleGiveObjects = (
+		objectIds: string[],
+		objectType: string,
+		count: number
+	) => {
+		if (!actionService) return;
+
+		// Call the appropriate give action based on object type
+		actionService.execute(`${objectType}:give`, {
+			[`${objectType}Ids`]: objectIds,
+			actorIds: [actor.Id],
+			count: count,
+		});
+
+		// Close picker
+		setShowObjectPicker(false);
+	};
+
+	// Prepare object types for ObjectPicker
+	const objectTypes: ObjectTypeConfig<any>[] = [
+		{
+			label: "Items",
+			items: campaign.ItemTemplates,
+			icon: "icon-[mdi--bag-personal]",
+			typeKey: "item",
+		},
+		{
+			label: "Skills",
+			items: campaign.SkillTemplates,
+			icon: "icon-[mdi--star]",
+			typeKey: "skill",
+		},
+	];
+
+	// Only show tabs for DM
+	const showTabs = isDM;
+
+	return (
+		<>
+			<div className="flex flex-col h-full">
+				{/* Tabs - DM Only */}
+				{showTabs && (
+					<div className="tabs tabs-lift mb-2">
+						<button
+							className={`flex-auto tab ${
+								activeTab === "info" ? "tab-active" : ""
+							}`}
+							onClick={() => setActiveTab("info")}
+							title="Info"
+						>
+							<span className="icon-[mdi--information] w-5 h-5" />
+						</button>
+						<button
+							className={`flex-auto tab ${
+								activeTab === "inventory" ? "tab-active" : ""
+							}`}
+							onClick={() => setActiveTab("inventory")}
+							title="Inventory"
+						>
+							<span className="icon-[mdi--bag-personal] w-5 h-5" />
+						</button>
+						<button
+							className={`flex-auto tab ${
+								activeTab === "equipment" ? "tab-active" : ""
+							}`}
+							onClick={() => setActiveTab("equipment")}
+							title="Equipment"
+						>
+							<span className="icon-[mdi--sword] w-5 h-5" />
+						</button>
+						<button
+							className={`flex-auto tab ${
+								activeTab === "skills" ? "tab-active" : ""
+							}`}
+							onClick={() => setActiveTab("skills")}
+							title="Skills"
+						>
+							<span className="icon-[mdi--star] w-5 h-5" />
+						</button>
+						<button
+							className={`flex-auto tab ${
+								activeTab === "statuses" ? "tab-active" : ""
+							}`}
+							onClick={() => setActiveTab("statuses")}
+							title="Statuses"
+						>
+							<span className="icon-[mdi--heart-pulse] w-5 h-5" />
+						</button>
+					</div>
+				)}
+
+				{/* Tab Content */}
+				<div className="flex-1 overflow-y-auto">
+					{activeTab === "info" && (
+						<ActorInfoTab
+							actor={actor}
+							kind={kind}
+							isDM={isDM}
+							localName={localName}
+							localDescription={localDescription}
+							localMoveSpeed={localMoveSpeed}
+							localAttributes={localAttributes}
+							playersSeeEntityHealth={playersSeeEntityHealth}
+							handleNameChange={handleNameChange}
+							handleDescriptionChange={handleDescriptionChange}
+							handleMoveSpeedChange={handleMoveSpeedChange}
+							handleAttributeChange={handleAttributeChange}
+							handleFieldChange={handleFieldChange}
+							handleStatChange={handleStatChange}
+							handleDespawn={handleDespawn}
+							setShowObjectPicker={setShowObjectPicker}
+							actionService={actionService}
+						/>
+					)}
+
+					{activeTab === "inventory" && (
+						<ItemCollection
+							actor={actor}
+							mode="inventory"
+						/>
+					)}
+
+					{activeTab === "equipment" && (
+						<ItemCollection
+							actor={actor}
+							mode="equipment"
+						/>
+					)}
+
+					{activeTab === "skills" && (
+						<SkillCollection
+						actor={actor}
+						/>
+					)}
+
+					{activeTab === "statuses" && (
+						<div className="text-center py-12 text-sm opacity-60">
+							Statuses view - Coming soon
+						</div>
+					)}
+				</div>
+			</div>
+
+			{/* Object Picker Modal */}
+			{isDM && (
+				<ObjectPicker
+					isOpen={showObjectPicker}
+					types={objectTypes}
+					multiSelect={true}
+					showCount={true}
+					onConfirm={handleGiveObjects}
+					onCancel={() => setShowObjectPicker(false)}
+					title={`Give Objects to ${actor.Name}`}
+				/>
+			)}
+		</>
+	);
+}
+
+// ============================================================================
+// ACTOR INFO TAB
+// ============================================================================
+
+interface ActorInfoTabProps {
+	actor: Actor;
+	kind: "character" | "entity";
+	isDM: boolean;
+	localName: string;
+	localDescription: string;
+	localMoveSpeed: number;
+	localAttributes: Record<string, string>;
+	playersSeeEntityHealth: boolean;
+	handleNameChange: (value: string) => void;
+	handleDescriptionChange: (value: string) => void;
+	handleMoveSpeedChange: (value: number) => void;
+	handleAttributeChange: (key: string, value: string) => void;
+	handleFieldChange: (field: keyof Actor, value: any) => void;
+	handleStatChange: (statId: string, field: "Current" | "Max", value: number) => void;
+	handleDespawn: () => void;
+	setShowObjectPicker: (show: boolean) => void;
+	actionService: any;
+}
+
+function ActorInfoTab({
+	actor,
+	kind,
+	isDM,
+	localName,
+	localDescription,
+	localMoveSpeed,
+	localAttributes,
+	playersSeeEntityHealth,
+	handleNameChange,
+	handleDescriptionChange,
+	handleMoveSpeedChange,
+	handleAttributeChange,
+	handleFieldChange,
+	handleStatChange,
+	handleDespawn,
+	setShowObjectPicker,
+	actionService,
+}: ActorInfoTabProps) {
+	return (
+		<div className="space-y-3">
+			{/* Name with optional Despawn/Give buttons for DM */}
+			<div className="flex justify-between items-start gap-2">
+				{isDM ? (
+					<input
+						type="text"
+						value={localName}
+						onChange={(e) => handleNameChange(e.target.value)}
+						className="input input-bordered input-sm flex-1 text-xl font-bold"
+						placeholder="Actor name"
+					/>
+				) : (
+					<h2 className="text-2xl font-bold">{actor.Name}</h2>
+				)}
+				{isDM && (
+					<div className="flex gap-2 shrink-0">
+						<button
+							onClick={() => setShowObjectPicker(true)}
+							className="btn btn-sm btn-primary gap-1"
+							disabled={!actionService}
+							title="Give objects"
+						>
+							<span className="icon-[mdi--gift] w-4 h-4" />
+							Give
+						</button>
+						<button
+							onClick={handleDespawn}
+							className="btn btn-sm btn-error gap-1"
+							disabled={!actionService}
+							title="Despawn actor"
+						>
+							<span className="icon-[mdi--close-circle] w-4 h-4" />
+							Despawn
+						</button>
+					</div>
+				)}
+			</div>
+
+			{/* Image*/}
+			{isDM ? (
+				<div className="flex items-center justify-center">
+					<ImagePicker
+						value={actor.Image}
+						onChange={(imageId) => {
+							handleFieldChange("Image", imageId);
+						}}
+					></ImagePicker>
+				</div>
+			) : (
+				<div className="h-64 mx-auto aspect-square bg-base-200 rounded-lg overflow-hidden flex items-center justify-center">
+					<ImageDisplay
+						imageId={actor.Image}
+						className="w-full h-full object-cover"
+						alt={actor.Name}
+					/>
+				</div>
+			)}
+
+			{/* Stats */}
+			{isDM ? (
+				// DM: Interactive StatBars for all actors (characters and entities)
+				<div className="space-y-3">
+					{actor.Stats.map((stat) => (
+						<StatBar
+							key={stat.Id}
+							stat={stat}
+							editingMax={false}
+							onCurrentChange={(value) =>
+								handleStatChange(stat.Id, "Current", value)
+							}
+							onMaxChange={(value) =>
+								handleStatChange(stat.Id, "Max", value)
+							}
+						/>
+					))}
+				</div>
+			) : kind === "character" || playersSeeEntityHealth ? (
+				// Player: Readonly progress bars for characters or entities (if visibility enabled)
+				<div className="space-y-3">
+					{actor.Stats.map((stat) => {
+						const current = stat.Current ?? stat.Max;
+						const percentage = (current / stat.Max) * 100;
+
+						return (
+							<div key={stat.Id} className="space-y-1">
+								<div className="flex items-center justify-between">
+									<span className="text-sm font-medium">{stat.Name}</span>
+									<span className="text-sm opacity-70">
+										{current} / {stat.Max}
+									</span>
+								</div>
+								<div className="relative w-full h-6 bg-base-300 rounded overflow-hidden">
+									<div
+										className="h-full transition-all duration-150"
+										style={{
+											width: `${percentage}%`,
+											backgroundColor: stat.Color,
+										}}
+									/>
+								</div>
+							</div>
+						);
+					})}
+				</div>
+			) : (
+				// Player viewing entity with visibility disabled: Show only stat loss for damaged stats
+				<div className="space-y-2">
+					{actor.Stats.map((stat) => {
+						const current = stat.Current ?? stat.Max;
+						const lost = stat.Max - current;
+						
+						// Don't show anything if stat is at max
+						if (lost <= 0) return null;
+
+						return (
+							<div key={stat.Id} className="text-md text-error font-semibold text-center opacity-70">
+								{lost} {stat.Name} lost
+							</div>
+						);
+					})}
+				</div>
+			)}
+
+			{/* Description */}
+			{isDM ? (
+				<textarea
+					value={localDescription}
+					onChange={(e) => handleDescriptionChange(e.target.value)}
+					className="textarea textarea-sm textarea-bordered w-full"
+					rows={3}
+					placeholder="Description..."
+				/>
+			) : (
+				actor.Description && (
+					<p className="text-sm opacity-80">{actor.Description}</p>
+				)
+			)}
+
+			{/* Compact info line */}
+			{isDM ? (
+				// DM: Editable inline fields
+				<div className="grid grid-cols-4 gap-x-8 text-sm justify-items-center">
+					{/* Labels row */}
+					<div className="font-medium">Pos:</div>
+					<div className="font-medium">Size:</div>
+					<div className="font-medium">Speed:</div>
+					<div className="font-medium">Flying:</div>
+
+					{/* Inputs row */}
+					<div className="opacity-70 text-sm mt-1">
+						({actor.Position.x}, {actor.Position.y}, {actor.Position.h})
+					</div>
+					<select
+						value={actor.Size || "small"}
+						onChange={(e) =>
+							handleFieldChange("Size", e.target.value as Actor["Size"])
+						}
+						className="select select-sm select-bordered"
+						disabled={!actionService}
+					>
+						<option value="small">Small</option>
+						<option value="medium">Medium</option>
+						<option value="large">Large</option>
+					</select>
+					<input
+						type="number"
+						value={localMoveSpeed}
+						onChange={(e) => handleMoveSpeedChange(Number(e.target.value))}
+						className="input input-sm input-bordered"
+						min={0}
+						max={99}
+					/>
+					<input
+						type="checkbox"
+						checked={actor.CanFly}
+						onChange={(e) => handleFieldChange("CanFly", e.target.checked)}
+						className="toggle toggle-sm toggle-primary mt-1"
+						disabled={!actionService}
+					/>
+				</div>
+			) : (
+				// Player: Compact readonly display
+				<div className="text-md opacity-60 text-center">
+					<div>
+						Position: ({actor.Position.x}, {actor.Position.y},{" "}
+						{actor.Position.h}) •{" Size: "}
+						{actor.Size || "small"}
+					</div>
+				</div>
+			)}
+
+			{/* Attributes */}
+			{Object.keys(actor.Attributes).length > 0 && (
+				<div className="space-y-2">
+					<span className="text-sm font-semibold">Attributes</span>
+					{isDM
+						? // DM: Editable attributes
+						  Object.entries(actor.Attributes).map(([key, _value]) => (
+								<div key={key} className="flex gap-2 items-center text-sm">
+									<div className="font-medium w-20 shrink-0">{key}</div>
+									<input
+										type="text"
+										value={localAttributes[key] ?? ""}
+										onChange={(e) => handleAttributeChange(key, e.target.value)}
+										className="input input-sm input-bordered flex-1"
+										placeholder="Value"
+									/>
+								</div>
+						  ))
+						: // Player: Readonly attributes
+						  Object.entries(actor.Attributes).map(([key, value]) => (
+								<div key={key} className="flex gap-2 items-center text-sm">
+									<div className="font-medium flex-1">{key}</div>
+									<div className="opacity-70 flex-1 text-right">{value}</div>
+								</div>
+						  ))}
+				</div>
+			)}
+		</div>
+	);
 }
