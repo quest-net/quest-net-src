@@ -125,6 +125,12 @@ export function Party() {
 			icon: "icon-[mdi--star]",
 			typeKey: "skill",
 		},
+		{
+			label: "Statuses",
+			items: campaign.StatusTemplates,
+			icon: "icon-[mdi--heart-pulse]",
+			typeKey: "status",
+		},
 	];
 
 	// Empty state

@@ -199,7 +199,7 @@ export function ObjectPicker({
 				</div>
 
 				{/* Object Grid */}
-				<div className="flex-1 overflow-y-auto mb-4">
+				<div className="flex-1 overflow-y-auto p-2">
 					{paginatedItems.length === 0 ? (
 						<div className="text-center py-12 border-2 border-dashed border-base-300 rounded-lg">
 							<span className="icon-[mdi--package-variant] w-12 h-12 opacity-30 inline-block mb-2" />
@@ -292,7 +292,7 @@ export function ObjectPicker({
 				<div className="flex justify-between items-center">
 					<button
 						onClick={handleClear}
-						className="btn btn-ghost btn-sm"
+						className="btn btn-neutral btn-sm"
 						disabled={localSelectedIds.length === 0}
 					>
 						Clear Selection

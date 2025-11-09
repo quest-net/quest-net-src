@@ -79,12 +79,20 @@ export function CollectionView({
 		  )
 		: items;
 
+	// Format count text
+	const countText = searchQuery.trim() && filteredItems.length !== items.length
+		? `${filteredItems.length} of ${items.length} items`
+		: `${items.length} ${items.length === 1 ? 'item' : 'items'}`;
+
 	return (
 		<div className="space-y-4">
 			{/* Header */}
 			<div className="flex justify-between items-center">
 				<div>
-					<h2 className="text-2xl font-bold">{title}</h2>
+					<div className="flex items-center gap-2">
+						<h2 className="text-2xl font-bold">{title}</h2>
+						<span className="text-base-content/60">• {countText}</span>
+					</div>
 					{description && (
 						<p className="text-base-content/60">{description}</p>
 					)}
@@ -112,7 +120,6 @@ export function CollectionView({
 					</button>
 				</div>
 			</div>
-
 			{/* Search */}
 			{searchEnabled && (
 				<div className="flex gap-2">

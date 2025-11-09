@@ -37,9 +37,9 @@ export function SkillCollection({ actor }: SkillCollectionProps) {
 
 	// Map slots to CollectionViewItem format
 	const items: CollectionViewItem[] = slots
-		.map((slot) => {
-			const skill = campaign.SkillTemplates.find((t) => t.Id === slot.Id);
-			if (!skill) return null;
+    .map((slot, index) => {
+        const skill = campaign.SkillTemplates.find((t) => t.Id === slot.Id);
+        if (!skill) return null;
 
 			// Format uses text
 			const usesText =
@@ -65,7 +65,7 @@ export function SkillCollection({ actor }: SkillCollectionProps) {
 			].filter(Boolean).join(" • ");
 
 			return {
-				id: slot.Id,
+				id: `${slot.Id}-${index}`, 
 				label: skill.Name,
 				details: details,
 				description: skill.Description,

@@ -1,8 +1,10 @@
 export interface Status {
 	Id: string;
 	Name: string;
-	Description: string;
+	Description?: string;
 	Image?: string;
-	IsBuff: boolean; // True = positive, False = negative
-	Duration: number;
+	Tags?: string[];
+	
+	// Duration in turns (undefined = permanent status)
+	Duration?: number;
 }

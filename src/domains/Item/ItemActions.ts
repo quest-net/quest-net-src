@@ -6,6 +6,7 @@ import { LogActions } from "../Log/LogActions";
 import { Item } from "./Item";
 import { Actor } from "../Actor/Actor";
 import { rollDiceFormula } from "../../utils/DiceUtils";
+import { syncItemSlotsAfterEdit, getAllActors } from "../../utils/SlotSyncUtils";
 
 /**
  * Item action handlers
@@ -49,6 +50,7 @@ export const ItemActions = {
 
 	/**
 	 * Edits an existing item
+	 * Syncs all actor slots if MaxUses changes
 	 */
 	edit(
 		params: { itemId: string; updates: Partial<Item> },
@@ -60,11 +62,22 @@ export const ItemActions = {
 			console.warn(`Item not found: ${params.itemId}`);
 			return;
 		}
+
+		const oldMaxUses = campaign.ItemTemplates[idx].MaxUses;
+		const newMaxUses = params.updates.MaxUses;
+
+		// Apply updates
 		campaign.ItemTemplates[idx] = {
 			...campaign.ItemTemplates[idx],
 			...params.updates,
 			Id: campaign.ItemTemplates[idx].Id, // guard against accidental Id overwrite
 		};
+
+		// If MaxUses changed, sync all actor slots
+		if (newMaxUses !== oldMaxUses) {
+			const allActors = getAllActors(campaign);
+			syncItemSlotsAfterEdit(params.itemId, newMaxUses, allActors);
+		}
 
 		LogActions.create(
 			{
@@ -101,6 +114,7 @@ export const ItemActions = {
 			context
 		);
 	},
+
 	/**
 	 * Gives items to actors (characters or entities)
 	 * Each actor receives `count` copies of each item
@@ -122,12 +136,7 @@ export const ItemActions = {
 		const count = Math.max(1, Math.floor(params.count));
 
 		// Combine all actors (IDs are unique)
-		const actors: Actor[] = [
-			...campaign.GameState.Characters,
-			...campaign.GameState.Entities,
-			...campaign.CharacterRoster,
-			...campaign.EntityTemplates
-		];
+		const actors: Actor[] = getAllActors(campaign);
 
 		let totalGiven = 0;
 		const actorNames: string[] = [];
@@ -222,118 +231,113 @@ export const ItemActions = {
 	use(
 		params: { actorId: string; itemId: string },
 		context: Context
-	  ): void {
+	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
-	  
+	
 		// Find actor in all possible locations
-		const actors: Actor[] = [
-		  ...campaign.GameState.Characters,
-		  ...campaign.GameState.Entities,
-		  ...campaign.CharacterRoster,
-		  ...campaign.EntityTemplates,
-		];
-	  
+		const actors: Actor[] = getAllActors(campaign);
+	
 		const actor = actors.find((a) => a.Id === params.actorId);
 		if (!actor) {
-		  console.warn(`Actor not found: ${params.actorId}`);
-		  return;
+			console.warn(`Actor not found: ${params.actorId}`);
+			return;
 		}
-	  
+	
 		// Find the item template
 		const itemTemplate = campaign.ItemTemplates.find((i) => i.Id === params.itemId);
 		if (!itemTemplate) {
-		  console.warn(`Item template not found: ${params.itemId}`);
-		  return;
+			console.warn(`Item template not found: ${params.itemId}`);
+			return;
 		}
-	  
+	
 		// Find the item slot in inventory or equipment
 		let slot = actor.Inventory.find((s) => s.Id === params.itemId);
 		
 		if (!slot) {
-		  slot = actor.Equipment.find((s) => s.Id === params.itemId);
+			slot = actor.Equipment.find((s) => s.Id === params.itemId);
 		}
-	  
+	
 		if (!slot) {
-		  console.warn(`Item not found in actor's inventory or equipment: ${params.itemId}`);
-		  return;
+			console.warn(`Item not found in actor's inventory or equipment: ${params.itemId}`);
+			return;
 		}
-	  
+	
 		// Check if item has uses left
 		if (slot.UsesLeft !== undefined && slot.UsesLeft <= 0) {
-		  console.warn(`Item has no uses left: ${itemTemplate.Name}`);
-		  return;
+			console.warn(`Item has no uses left: ${itemTemplate.Name}`);
+			return;
 		}
-	  
+	
 		// Decrement uses if applicable
 		if (slot.UsesLeft !== undefined) {
-		  slot.UsesLeft--;
+			slot.UsesLeft--;
 		}
-	  
+	
 		// Determine visibility based on the ACTOR TYPE, not who pressed the button
 		const visibilitySettings = campaign.Settings.VisibilitySettings;
 		let visibility: ("dm" | "player" | "owner" | "all")[];
-	  
+	
 		// Check if this actor is a character (player-controlled) or entity (DM-controlled)
 		const isCharacter = campaign.GameState.Characters.some((c) => c.Id === params.actorId) ||
 							campaign.CharacterRoster.some((c) => c.Id === params.actorId);
-	  
+	
 		if (isCharacter) {
-		  // Character action - use player visibility rules
-		  visibility = visibilitySettings.playersSeePeerRolls
-			? ["all"]
-			: ["dm", "owner"];
+			// Character action - use player visibility rules
+			visibility = visibilitySettings.playersSeePeerRolls
+				? ["all"]
+				: ["dm", "owner"];
 		} else {
-		  // Entity action - use DM visibility rules
-		  visibility = visibilitySettings.playersSeeDMRolls ? ["all"] : ["dm"];
+			// Entity action - use DM visibility rules
+			visibility = visibilitySettings.playersSeeDMRolls ? ["all"] : ["dm"];
 		}
-	  
+	
 		// Roll dice if the item has a DiceRoll formula
 		if (itemTemplate.DiceRoll && itemTemplate.DiceRoll.trim() !== "") {
-		  try {
-			const rollResult = rollDiceFormula(itemTemplate.DiceRoll.trim());
-	  
-			LogActions.create(
-			  {
-				action: `${actor.Name} used ${itemTemplate.Name} : ${rollResult.total}`,
-				details: `${rollResult.formula} : ${rollResult.breakdown}`,
-				category: "dice",
-				level: "important",
-				visibility,
-				actorId: params.actorId,
-			  },
-			  context
-			);
-		  } catch (error) {
-			console.error(`Failed to roll dice for item ${itemTemplate.Name}:`, error);
-			
-			// Log without dice roll if it fails
-			LogActions.create(
-			  {
-				action: `${actor.Name} used ${itemTemplate.Name}`,
-				details: `${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""}`,
-				category: "item",
-				level: "info",
-				visibility,
-				actorId: params.actorId,
-			  },
-			  context
-			);
-		  }
+			try {
+				const rollResult = rollDiceFormula(itemTemplate.DiceRoll.trim());
+	
+				LogActions.create(
+					{
+						action: `${actor.Name} used ${itemTemplate.Name} : ${rollResult.total}`,
+						details: `${rollResult.formula} : ${rollResult.breakdown}`,
+						category: "dice",
+						level: "important",
+						visibility,
+						actorId: params.actorId,
+					},
+					context
+				);
+			} catch (error) {
+				console.error(`Failed to roll dice for item ${itemTemplate.Name}:`, error);
+				
+				// Log without dice roll if it fails
+				LogActions.create(
+					{
+						action: `${actor.Name} used ${itemTemplate.Name}`,
+						details: `${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""}`,
+						category: "item",
+						level: "info",
+						visibility,
+						actorId: params.actorId,
+					},
+					context
+				);
+			}
 		} else {
-		  // No dice roll - just log the use
-		  LogActions.create(
-			{
-			  action: `${actor.Name} used ${itemTemplate.Name}`,
-			  details: `${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""}`,
-			  category: "item",
-			  level: "info",
-			  visibility,
-			  actorId: params.actorId,
-			},
-			context
-		  );
+			// No dice roll - just log the use
+			LogActions.create(
+				{
+					action: `${actor.Name} used ${itemTemplate.Name}`,
+					details: `${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""}`,
+					category: "item",
+					level: "info",
+					visibility,
+					actorId: params.actorId,
+				},
+				context
+			);
 		}
-	  },
+	},
 
 	/**
 	 * Equips an item from an actor's inventory
@@ -347,12 +351,7 @@ export const ItemActions = {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
 		// Find actor in all possible locations
-		const actors: Actor[] = [
-			...campaign.GameState.Characters,
-			...campaign.GameState.Entities,
-			...campaign.CharacterRoster,
-			...campaign.EntityTemplates,
-		];
+		const actors: Actor[] = getAllActors(campaign);
 
 		const actor = actors.find((a) => a.Id === params.actorId);
 		if (!actor) {
@@ -409,12 +408,7 @@ export const ItemActions = {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
 		// Find actor in all possible locations
-		const actors: Actor[] = [
-			...campaign.GameState.Characters,
-			...campaign.GameState.Entities,
-			...campaign.CharacterRoster,
-			...campaign.EntityTemplates,
-		];
+		const actors: Actor[] = getAllActors(campaign);
 
 		const actor = actors.find((a) => a.Id === params.actorId);
 		if (!actor) {
@@ -465,12 +459,7 @@ export const ItemActions = {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
 		// Find actor in all possible locations
-		const actors: Actor[] = [
-			...campaign.GameState.Characters,
-			...campaign.GameState.Entities,
-			...campaign.CharacterRoster,
-			...campaign.EntityTemplates,
-		];
+		const actors: Actor[] = getAllActors(campaign);
 
 		const actor = actors.find((a) => a.Id === params.actorId);
 		if (!actor) {

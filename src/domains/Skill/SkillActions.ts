@@ -6,6 +6,7 @@ import { LogActions } from "../Log/LogActions";
 import { Skill } from "./Skill";
 import { Actor } from "../Actor/Actor";
 import { rollDiceFormula } from "../../utils/DiceUtils";
+import { syncSkillSlotsAfterEdit, getAllActors } from "../../utils/SlotSyncUtils";
 
 /**
  * Skill action handlers
@@ -48,6 +49,7 @@ export const SkillActions = {
 
 	/**
 	 * Edits an existing skill
+	 * Syncs all actor slots if MaxUses changes
 	 */
 	edit(
 		params: { skillId: string; updates: Partial<Skill> },
@@ -59,11 +61,22 @@ export const SkillActions = {
 			console.warn(`Skill not found: ${params.skillId}`);
 			return;
 		}
+
+		const oldMaxUses = campaign.SkillTemplates[idx].MaxUses;
+		const newMaxUses = params.updates.MaxUses;
+
+		// Apply updates
 		campaign.SkillTemplates[idx] = {
 			...campaign.SkillTemplates[idx],
 			...params.updates,
 			Id: campaign.SkillTemplates[idx].Id, // guard against accidental Id overwrite
 		};
+
+		// If MaxUses changed, sync all actor slots
+		if (newMaxUses !== oldMaxUses) {
+			const allActors = getAllActors(campaign);
+			syncSkillSlotsAfterEdit(params.skillId, newMaxUses, allActors);
+		}
 
 		LogActions.create(
 			{
@@ -100,6 +113,7 @@ export const SkillActions = {
 			context
 		);
 	},
+
 	/**
 	 * Gives skills to actors (characters or entities)
 	 * Each actor receives `count` copies of each skill
@@ -121,12 +135,7 @@ export const SkillActions = {
 		const count = Math.max(1, Math.floor(params.count));
 
 		// Combine all actors (IDs are unique)
-		const actors: Actor[] = [
-			...campaign.GameState.Characters,
-			...campaign.GameState.Entities,
-			...campaign.CharacterRoster,
-			...campaign.EntityTemplates
-		];
+		const actors: Actor[] = getAllActors(campaign);
 
 		let totalGiven = 0;
 		const actorNames: string[] = [];
@@ -226,12 +235,7 @@ export const SkillActions = {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
 		// Find actor in all possible locations
-		const actors: Actor[] = [
-			...campaign.GameState.Characters,
-			...campaign.GameState.Entities,
-			...campaign.CharacterRoster,
-			...campaign.EntityTemplates,
-		];
+		const actors: Actor[] = getAllActors(campaign);
 
 		const actor = actors.find((a) => a.Id === params.actorId);
 		if (!actor) {
@@ -356,12 +360,7 @@ export const SkillActions = {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
 		// Find actor in all possible locations
-		const actors: Actor[] = [
-			...campaign.GameState.Characters,
-			...campaign.GameState.Entities,
-			...campaign.CharacterRoster,
-			...campaign.EntityTemplates,
-		];
+		const actors: Actor[] = getAllActors(campaign);
 
 		const actor = actors.find((a) => a.Id === params.actorId);
 		if (!actor) {

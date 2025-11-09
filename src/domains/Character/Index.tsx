@@ -93,6 +93,12 @@ export function CharacterIndex() {
 			icon: "icon-[mdi--star]",
 			typeKey: "skill",
 		},
+		{
+			label: "Statuses",
+			items: campaign.StatusTemplates,
+			icon: "icon-[mdi--heart-pulse]",
+			typeKey: "status",
+		},
 	];
 
 	const items: IndexViewItem[] = campaign.CharacterRoster.map((character) => ({

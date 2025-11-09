@@ -38,27 +38,27 @@ export function ItemCollection({ actor, mode }: ItemCollectionProps) {
 
 	// Map slots to CollectionViewItem format
 	const items: CollectionViewItem[] = slots
-		.map((slot) => {
-			const item = campaign.ItemTemplates.find((t) => t.Id === slot.Id);
-			if (!item) return null;
+    .map((slot, index) => { 
+        const item = campaign.ItemTemplates.find((t) => t.Id === slot.Id);
+        if (!item) return null;
 
-			// Format uses text
-			const usesText =
-				slot.UsesLeft !== undefined
-					? `${slot.UsesLeft}/${item.MaxUses || "∞"}`
-					: "∞";
+        // Format uses text
+        const usesText =
+            slot.UsesLeft !== undefined
+                ? `${slot.UsesLeft}/${item.MaxUses || "∞"}`
+                : "∞";
 
-			return {
-				id: slot.Id,
-				label: item.Name,
-				details: `${usesText} uses`,
-				description: item.Description,
-				imageId: item.Image,
-				badge: item.DiceRoll,
-				onClick: () => handleItemClick(slot),
-			};
-		})
-		.filter(Boolean) as CollectionViewItem[];
+        return {
+            id: `${slot.Id}-${index}`,
+            label: item.Name,
+            details: `${usesText} uses`,
+            description: item.Description,
+            imageId: item.Image,
+            badge: item.DiceRoll,
+            onClick: () => handleItemClick(slot),
+        };
+    })
+    .filter(Boolean) as CollectionViewItem[];
 
 	return (
 		<>

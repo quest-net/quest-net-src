@@ -91,7 +91,6 @@ export const LogActions = {
 	canUserSeeEntry(
 		entry: LogEntry,
 		userRole: "dm" | "player" | undefined,
-		selectedCharacterId: string | undefined
 	): boolean {
 		if (userRole === "dm" && (entry.Visibility.includes("dm") || entry.Visibility.includes("all"))) return true;
 		// Everyone can see "all" visibility

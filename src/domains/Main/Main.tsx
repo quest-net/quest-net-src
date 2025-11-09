@@ -21,12 +21,15 @@ import { ItemCollection } from "../Item/Collection";
 import { Party } from "./Party";
 import { SkillCollection } from "../Skill/Collection";
 import { CombatDisplay } from "../Combat/CombatDisplay";
+import { StatusCollection } from "../Status/Collection";
 
 type TopTab = "music" | "calendar" | "terrain" | "combat";
 type PlayerBottomTab =
 	| "character"
+	| "equipment"
 	| "inventory"
 	| "skills"
+	| "statuses"
 	| "party"
 	| "inspector"
 	| "log"
@@ -68,11 +71,15 @@ export function Main() {
 		: null;
 	// Track indicators for new items (players only)
 	const [showInventoryIndicator, setShowInventoryIndicator] = useState(false);
+	const [showEquipmentIndicator, setShowEquipmentIndicator] = useState(false);
 	const [showSkillsIndicator, setShowSkillsIndicator] = useState(false);
+	const [showStatusIndicator, setShowStatusIndicator] = useState(false);
 	// Track previous counts to detect increases
 	const prevCountsRef = useRef<{
+		equipment: number;
 		inventory: number;
 		skills: number;
+		statuses: number;
 	} | null>(null);
 
 	// Detect when item counts increase (only for players)
@@ -80,8 +87,10 @@ export function Main() {
 		if (isDM || !selectedCharacter) return;
 
 		const currentCounts = {
+			equipment: selectedCharacter.Equipment.length,
 			inventory: selectedCharacter.Inventory.length,
 			skills: selectedCharacter.Skills.length,
+			statuses: selectedCharacter.Statuses.length,
 		};
 
 		// Initialize on first render
@@ -99,17 +108,33 @@ export function Main() {
 		}
 
 		if (
+			currentCounts.equipment > prevCountsRef.current.equipment &&
+			activeBottomTab !== "equipment"
+		) {
+			setShowEquipmentIndicator(true);
+		}
+
+		if (
 			currentCounts.skills > prevCountsRef.current.skills &&
 			activeBottomTab !== "skills"
 		) {
 			setShowSkillsIndicator(true);
 		}
 
+		if (
+			currentCounts.statuses > prevCountsRef.current.statuses &&
+			activeBottomTab !== "statuses"
+		) {
+			setShowStatusIndicator(true);
+		}
+
 		// Update ref
 		prevCountsRef.current = currentCounts;
 	}, [
+		selectedCharacter?.Equipment.length,
 		selectedCharacter?.Inventory.length,
 		selectedCharacter?.Skills.length,
+		selectedCharacter?.Statuses.length,
 		activeBottomTab,
 		isDM,
 		selectedCharacter,
@@ -255,6 +280,20 @@ export function Main() {
 									>
 										<span className="icon-[mdi--account] w-6 h-6" />
 									</button>
+									<div className={showEquipmentIndicator ? "indicator" : ""}>
+										{showEquipmentIndicator && (
+											<span className="indicator-item status status-info"></span>
+										)}
+										<button
+											className={`btn btn-square ${
+												activeBottomTab === "equipment" ? "btn-neutral" : ""
+											}`}
+											onClick={() => handleBottomTabChange("equipment")}
+											title="Equipment"
+										>
+											<span className="icon-[mdi--sword] w-6 h-6" />
+										</button>
+									</div>
 									<div className={showInventoryIndicator ? "indicator" : ""}>
 										{showInventoryIndicator && (
 											<span className="indicator-item status status-info"></span>
@@ -282,6 +321,20 @@ export function Main() {
 											title="Skills"
 										>
 											<span className="icon-[mdi--star] w-6 h-6" />
+										</button>
+									</div>
+									<div className={showStatusIndicator ? "indicator" : ""}>
+										{showStatusIndicator && (
+											<span className="indicator-item status status-info"></span>
+										)}
+										<button
+											className={`btn btn-square ${
+												activeBottomTab === "statuses" ? "btn-neutral" : ""
+											}`}
+											onClick={() => handleBottomTabChange("statuses")}
+											title="Statuses"
+										>
+											<span className="icon-[mdi--heart-pulse] w-6 h-6" />
 										</button>
 									</div>
 									<button
@@ -381,11 +434,17 @@ export function Main() {
 						{/* Bottom 80%: Bottom Tab Content */}
 						<div className="flex-1 overflow-auto p-4 border-t-2 bg-base-100">
 							{activeBottomTab === "character" && <CharacterSheet />}
+							{activeBottomTab === "equipment" && selectedCharacter && (
+								<ItemCollection actor={selectedCharacter} mode="equipment" />
+							)}
 							{activeBottomTab === "inventory" && selectedCharacter && (
 								<ItemCollection actor={selectedCharacter} mode="inventory" />
 							)}
 							{activeBottomTab === "skills" && selectedCharacter && (
 								<SkillCollection actor={selectedCharacter} />
+							)}
+							{activeBottomTab === "statuses" && selectedCharacter && (
+								<StatusCollection actor={selectedCharacter} />
 							)}
 							{activeBottomTab === "party" && <Party />}
 							{activeBottomTab === "notes" && <NoteDisplay />}

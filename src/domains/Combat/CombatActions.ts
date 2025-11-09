@@ -33,7 +33,7 @@ export const CombatActions = {
 	},
 
 	/**
-	 * Ends combat and restores characters based on combatEnd restore rules
+	 * Ends combat, restores characters, and clears non-permanent statuses
 	 * DM-only
 	 */
 	end(_params: {}, context: Context): void {
@@ -42,6 +42,19 @@ export const CombatActions = {
 		// Restore all characters based on combatEnd rules
 		campaign.GameState.Characters.forEach((character) => {
 			restoreCharacter(character, "combatEnd", campaign);
+		});
+
+		// Clear non-permanent statuses from all actors
+		const allActors: Actor[] = [
+			...campaign.GameState.Characters,
+			...campaign.GameState.Entities,
+		];
+
+		allActors.forEach((actor) => {
+			// Keep only permanent statuses (turnsLeft === undefined)
+			actor.Statuses = actor.Statuses.filter(
+				(status) => status.turnsLeft === undefined
+			);
 		});
 
 		campaign.GameState.CombatState = {
@@ -53,7 +66,7 @@ export const CombatActions = {
 		LogActions.create(
 			{
 				action: "Combat ended",
-				details: "Combat has ended.",
+				details: "Combat has ended. Non-permanent status effects cleared.",
 				category: "combat",
 				level: "important",
 				visibility: ["all"],
@@ -63,7 +76,7 @@ export const CombatActions = {
 	},
 
 	/**
-	 * Increments the turn counter, switches initiative, and applies regen
+	 * Increments the turn counter, switches initiative, applies regen, and decrements status durations
 	 * DM-only
 	 */
 	incrementTurn(_params: {}, context: Context): void {
@@ -85,6 +98,9 @@ export const CombatActions = {
 		// Apply regen to all actors with regen rates
 		applyRegenToAllActors(campaign, 1);
 
+		// Decrement status durations and remove expired statuses
+		decrementAndRemoveStatuses(campaign);
+
 		LogActions.create(
 			{
 				action: "Turn incremented",
@@ -98,7 +114,7 @@ export const CombatActions = {
 	},
 
 	/**
-	 * Decrements the turn counter, switches initiative back, and reverses regen
+	 * Decrements the turn counter, switches initiative back, reverses regen, and reverses status decrements
 	 * DM-only
 	 */
 	decrementTurn(_params: {}, context: Context): void {
@@ -124,6 +140,9 @@ export const CombatActions = {
 
 		// Reverse regen from all actors
 		applyRegenToAllActors(campaign, -1);
+
+		// Note: We don't reverse status decrements as that would be complex
+		// and could lead to inconsistent state. DM can manually adjust durations if needed.
 
 		LogActions.create(
 			{
@@ -195,5 +214,40 @@ function applyRegenToAllActors(campaign: any, multiplier: 1 | -1): void {
 			// Clamp between 0 and Max
 			stat.Current = Math.max(0, Math.min(newValue, stat.Max));
 		});
+	});
+}
+
+/**
+ * Decrements all status durations by 1 and removes statuses that reach 0
+ * Permanent statuses (turnsLeft === undefined) are not affected
+ */
+function decrementAndRemoveStatuses(campaign: any): void {
+	const allActors: Actor[] = [
+		...campaign.GameState.Characters,
+		...campaign.GameState.Entities,
+	];
+
+	allActors.forEach((actor) => {
+		// Decrement durations and filter out expired statuses
+		actor.Statuses = actor.Statuses
+			.map((status) => {
+				// Don't touch permanent statuses
+				if (status.turnsLeft === undefined) {
+					return status;
+				}
+
+				// Decrement duration
+				return {
+					...status,
+					turnsLeft: status.turnsLeft - 1,
+				};
+			})
+			.filter((status) => {
+				// Keep permanent statuses (undefined turnsLeft)
+				if (status.turnsLeft === undefined) return true;
+				
+				// Keep non-expired statuses (turnsLeft > 0)
+				return status.turnsLeft > 0;
+			});
 	});
 }

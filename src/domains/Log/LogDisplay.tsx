@@ -93,7 +93,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	// Filter by visibility using centralized helper
 	const visibleLog = useMemo(() => {
 		return campaign.Log.filter((entry) =>
-			LogActions.canUserSeeEntry(entry, userRole, selectedCharacterId)
+			LogActions.canUserSeeEntry(entry, userRole)
 		);
 	}, [campaign.Log, userRole, selectedCharacterId, logLength, lastLogId]);
 

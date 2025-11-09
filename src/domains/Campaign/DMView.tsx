@@ -18,6 +18,7 @@ import { AudioPlayer } from "../Audio/AudioPlayer";
 import { SkillIndex } from "../Skill/Index";
 import { AudioStateProvider } from "../Audio/AudioContext";
 import { EntityIndex } from "../Entity/Index";
+import { StatusIndex } from "../Status/Index";
 
 type TabView =
 	| "main"
@@ -25,6 +26,7 @@ type TabView =
 	| "entities"
 	| "items"
 	| "skills"
+	| "statuses"
 	| "images"
 	| "audios"
 	| "terrains"
@@ -120,6 +122,14 @@ export function DMView() {
 							</li>
 							<li>
 								<button
+									className={activeTab === "statuses" ? "menu-active" : ""}
+									onClick={() => setActiveTab("statuses")}
+								>
+									Statuses
+								</button>
+							</li>
+							<li>
+								<button
 									className={activeTab === "images" ? "menu-active" : ""}
 									onClick={() => setActiveTab("images")}
 								>
@@ -160,6 +170,7 @@ export function DMView() {
 						{activeTab === "entities" && <EntityIndex />}
 						{activeTab === "items" && <ItemIndex />}
 						{activeTab === "skills" && <SkillIndex />}
+						{activeTab === "statuses" && <StatusIndex />}
 						{activeTab === "images" && <ImageIndex />}
 						{activeTab === "audios" && <AudioIndex />}
 						{activeTab === "terrains" && <TerrainIndex />}

@@ -12,6 +12,7 @@ import { Actor } from "../Actor/Actor";
 import { ObjectPicker, ObjectTypeConfig } from "../../components/inputs/ObjectPicker";
 import { ItemCollection } from "../Item/Collection";
 import { SkillCollection } from "../Skill/Collection";
+import { StatusCollection } from "../Status/Collection";
 
 type InspectorTab = "info" | "inventory" | "equipment" | "skills" | "statuses";
 
@@ -217,6 +218,12 @@ function UnifiedInspector({
 			icon: "icon-[mdi--star]",
 			typeKey: "skill",
 		},
+		{
+			label: "Statuses",
+			items: campaign.StatusTemplates,
+			icon: "icon-[mdi--heart-pulse]",
+			typeKey: "status",
+		},
 	];
 
 	// Only show tabs for DM
@@ -321,9 +328,9 @@ function UnifiedInspector({
 					)}
 
 					{activeTab === "statuses" && (
-						<div className="text-center py-12 text-sm opacity-60">
-							Statuses view - Coming soon
-						</div>
+						<StatusCollection
+						actor={actor}
+						/>
 					)}
 				</div>
 			</div>

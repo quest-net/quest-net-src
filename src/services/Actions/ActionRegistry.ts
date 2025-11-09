@@ -15,6 +15,7 @@ import { SkillActions } from "../../domains/Skill/SkillActions";
 import { SceneActions } from "../../domains/Scene/SceneActions";
 import { NoteActions } from "../../domains/Note/NoteActions";
 import { CombatActions } from "../../domains/Combat/CombatActions";
+import { StatusActions } from "../../domains/Status/StatusActions";
 // Import other action modules as they're created
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
@@ -73,25 +74,25 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	// ============================================================================
 	// ITEM ACTIONS
 	// ============================================================================
-	'item:use': {
-	  roles: ['dm', 'player'],
-	  handler: ItemActions.use
+	"item:use": {
+		roles: ["dm", "player"],
+		handler: ItemActions.use,
 	},
-	'item:equip': {
-	  roles: ['dm', 'player'],
-	  handler: ItemActions.equip
+	"item:equip": {
+		roles: ["dm", "player"],
+		handler: ItemActions.equip,
 	},
-	'item:unequip': {
-	  roles: ['dm', 'player'],
-	  handler: ItemActions.unequip
+	"item:unequip": {
+		roles: ["dm", "player"],
+		handler: ItemActions.unequip,
 	},
-	'item:discard': {
-	  roles: ['dm', 'player'],
-	  handler: ItemActions.discard
+	"item:discard": {
+		roles: ["dm", "player"],
+		handler: ItemActions.discard,
 	},
-	'item:give': {
-	  roles: ['dm'],
-	  handler: ItemActions.give
+	"item:give": {
+		roles: ["dm"],
+		handler: ItemActions.give,
 	},
 	// 'item:transfer': {
 	//   roles: ['dm', 'player'],
@@ -127,16 +128,16 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	},
 	"skill:use": {
 		roles: ["dm", "player"],
-		handler: SkillActions.delete,
+		handler: SkillActions.use,
 	},
 	"skill:discard": {
 		roles: ["dm", "player"],
-		handler: SkillActions.delete,
+		handler: SkillActions.discard,
 	},
-	'skill:give': {
-		roles: ['dm'],
-		handler: ItemActions.give
-	  },
+	"skill:give": {
+		roles: ["dm"],
+		handler: ItemActions.give,
+	},
 	"skill:bulkEditTags": {
 		roles: ["dm"],
 		handler: SkillActions.bulkEditTags,
@@ -173,21 +174,25 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	// ============================================================================
 	// COMBAT ACTIONS (uncomment when CombatActions is implemented)
 	// ============================================================================
-	'combat:start': {
-	  roles: ['dm'],
-	  handler: CombatActions.start
+	"combat:start": {
+		roles: ["dm"],
+		handler: CombatActions.start,
 	},
-	'combat:end': {
-	  roles: ['dm'],
-	  handler: CombatActions.end
+	"combat:end": {
+		roles: ["dm"],
+		handler: CombatActions.end,
 	},
-	'combat:nextTurn': {
-	  roles: ['dm'],
-	  handler: CombatActions.incrementTurn
+	"combat:incrementTurn": {
+		roles: ["dm"],
+		handler: CombatActions.incrementTurn,
 	},
-	'combat:previousTurn': {
-	  roles: ['dm'],
-	  handler: CombatActions.decrementTurn
+	"combat:decrementTurn": {
+		roles: ["dm"],
+		handler: CombatActions.decrementTurn,
+	},
+	"combat:setinitiative": {
+		roles: ["dm"],
+		handler: CombatActions.setInitiativeSide,
 	},
 
 	// ============================================================================
@@ -197,13 +202,13 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	// ============================================================================
 	// IMAGE/SCENE ACTIONS
 	// ============================================================================
-	'scene:setEnvironmentImage': {
-	  roles: ['dm'],
-	  handler: SceneActions.setEnvironmentImage
+	"scene:setEnvironmentImage": {
+		roles: ["dm"],
+		handler: SceneActions.setEnvironmentImage,
 	},
-	'scene:setFocusImage': {
-	  roles: ['dm'],
-	  handler: SceneActions.setFocusImage
+	"scene:setFocusImage": {
+		roles: ["dm"],
+		handler: SceneActions.setFocusImage,
 	},
 	"image:create": {
 		roles: ["dm", "player"],
@@ -225,26 +230,34 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	// ============================================================================
 	// STATUS EFFECT ACTIONS (uncomment when StatusActions is implemented)
 	// ============================================================================
-	// 'status:apply': {
-	//   roles: ['dm'],
-	//   handler: StatusActions.apply
-	// },
-	// 'status:remove': {
-	//   roles: ['dm'],
-	//   handler: StatusActions.remove
-	// },
-	// 'status:create': {
-	//   roles: ['dm'],
-	//   handler: StatusActions.create
-	// },
-	// 'status:edit': {
-	//   roles: ['dm'],
-	//   handler: StatusActions.edit
-	// },
-	// 'status:delete': {
-	//   roles: ['dm'],
-	//   handler: StatusActions.delete
-	// },
+	"status:give": {
+		roles: ["dm"],
+		handler: StatusActions.give,
+	},
+	"status:remove": {
+		roles: ["dm"],
+		handler: StatusActions.remove,
+	},
+	"status:create": {
+		roles: ["dm"],
+		handler: StatusActions.create,
+	},
+	"status:edit": {
+		roles: ["dm", "player"],
+		handler: StatusActions.edit,
+	},
+	"status:delete": {
+		roles: ["dm"],
+		handler: StatusActions.delete,
+	},
+	"status:adjustDuration": {
+		roles: ["dm"],
+		handler: StatusActions.adjustDuration,
+	},
+	"status:bulkEditTags": {
+		roles: ["dm"],
+		handler: StatusActions.bulkEditTags,
+	},
 	// ============================================================================
 	// LOG ACTIONS
 	// ============================================================================

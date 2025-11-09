@@ -70,8 +70,7 @@ export function LogAlerts() {
 			const fresh = now - entry.Timestamp < MAX_ALERT_AGE;
 			const canSee = LogActions.canUserSeeEntry(
 				entry,
-				userRole,
-				selectedCharacterId
+				userRole
 			);
 			return levelOk && fresh && !processedIds.has(entry.Id) && canSee;
 		});

@@ -18,7 +18,7 @@ export interface Campaign {
 	CharacterRoster: Character[];
 	ItemTemplates: Item[];
 	SkillTemplates: Skill[];
-	StatuseTemplates: Status[];
+	StatusTemplates: Status[];
 	EntityTemplates: Entity[];
 	Terrains: Terrain[];
 	Audios: Audio[];
