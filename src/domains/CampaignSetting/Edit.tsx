@@ -231,6 +231,38 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 				/>
 			</FormSection>
 			<FormSection
+				title="Rest Settings"
+			>
+				<FormField label="Number of short rests per day">
+					<input
+						type="number"
+						value={data.RestSettings.shortRestsPerDay}
+						onChange={(e) =>
+							handleSettingChange(
+								"RestSettings",
+								"shortRestsPerDay",
+								e.target.value
+							)
+						}
+						className="input"
+					/>
+				</FormField>
+				<FormField label="Long rest increments calendar">
+					<input
+						type="checkbox"
+						checked={data.RestSettings.autoAdvanceDayOnLongRest}
+						onChange={(e) =>
+							handleSettingChange(
+								"RestSettings",
+								"autoAdvanceDayOnLongRest",
+								e.target.checked
+							)
+						}
+						className="toggle toggle-primary"
+					/>
+				</FormField>
+			</FormSection>
+			<FormSection
 			title="Movement & Height"
 			description="Configure how terrain height affects movement cost"
 			>

@@ -1,6 +1,6 @@
 {
 	"name": "quest-net",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"homepage": "https://quest-net.github.io",
 	"private": true,
 	"dependencies": {

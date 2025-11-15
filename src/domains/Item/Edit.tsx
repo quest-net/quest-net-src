@@ -124,6 +124,11 @@ function ItemForm({ data, onChange }: ItemFormProps) {
 						<ImagePicker
 							value={data.Image}
 							onChange={(imageId) => handleFieldChange("Image", imageId)}
+							generationContext={{
+								objectType: "item",
+								name: data.Name,
+								description: data.Description ?? "",
+							}}
 						/>
 					</FormField>
 

@@ -14,6 +14,7 @@ export interface Campaign {
 	Id: string;
 	Name: string;
 	RoomCode: string;
+	CreatedAt: number;
 	//Global Collections
 	CharacterRoster: Character[];
 	ItemTemplates: Item[];

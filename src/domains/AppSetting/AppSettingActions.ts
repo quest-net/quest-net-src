@@ -3,14 +3,14 @@
 import { isDmAccess } from "../../utils/UrlParser";
 import { Context } from "../Context/Context";
 import { ContextActions } from "../Context/ContextActions";
-import { AppSettings } from "./AppSetting";
+import { AppSettings, DEFAULT_IMAGE_PROMPT } from "./AppSetting";
 
 export const AppSettingActions = {
 	createDefault(): AppSettings {
-		return ({
+		return {
 			theme: "light",
 			volume: 100,
-		})
+		};
 	},
 	/**
 	 * Sets the player's personal volume (0.0 to 1.0)
@@ -52,5 +52,39 @@ export const AppSettingActions = {
 			return theme;
 		}
 		return "light";
+	},
+
+	getImageApiKey(context: Context): string | undefined {
+		return context.AppSettings.imageApiKey || undefined;
+	},
+
+	setImageApiKey(
+		params: { apiKey: string | undefined },
+		context: Context
+	): void {
+		if (params.apiKey) {
+			context.AppSettings.imageApiKey = params.apiKey.trim();
+		} else {
+			delete context.AppSettings.imageApiKey;
+		}
+		ContextActions.save(context);
+	},
+
+	getImagePromptTemplate(context: Context): string {
+		return context.AppSettings.imagePromptTemplate || DEFAULT_IMAGE_PROMPT;
+	},
+
+	setImagePromptTemplate(params: { template: string }, context: Context): void {
+		const trimmed = params.template.trim();
+		context.AppSettings.imagePromptTemplate = trimmed || DEFAULT_IMAGE_PROMPT;
+		ContextActions.save(context);
+	},
+	getSettings(context: Context): AppSettings {
+		return {
+			theme: this.getTheme(context),
+			volume: this.getPlayerVolume(context),
+			imageApiKey: this.getImageApiKey(context),
+			imagePromptTemplate: this.getImagePromptTemplate(context),
+		};
 	},
 };
