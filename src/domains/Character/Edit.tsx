@@ -39,22 +39,31 @@ export function CharacterEdit({
 
 	const handleSave = (data: Character) => {
 		if (!actionService) return;
-
+	
+		// Clamp stat Current values to their Max before saving
+		const validatedData = {
+			...data,
+			Stats: data.Stats.map(stat => ({
+				...stat,
+				Current: Math.min(stat.Current ?? stat.Max, stat.Max)
+			}))
+		};
+	
 		if (!character) {
 			// Create mode
 			if (isDmAccess())
-			actionService.execute("character:create", {
-				character: data,
-			});
+				actionService.execute("character:create", {
+					character: validatedData,
+				});
 			else
-			actionService.execute("character:createAndSpawn", {
-				character: data,
-			});
+				actionService.execute("character:createAndSpawn", {
+					character: validatedData,
+				});
 		} else {
 			// Edit mode
 			actionService.execute("character:edit", {
 				characterId: data.Id,
-				updates: data,
+				updates: validatedData,
 			});
 		}
 	};

@@ -38,17 +38,26 @@ export function EntityEdit({
 
 	const handleSave = (data: Entity) => {
 		if (!actionService) return;
-
+	
+		// Clamp stat Current values to their Max before saving
+		const validatedData = {
+			...data,
+			Stats: data.Stats.map(stat => ({
+				...stat,
+				Current: Math.min(stat.Current ?? stat.Max, stat.Max)
+			}))
+		};
+	
 		if (!entity) {
 			// Create mode
 			actionService.execute("entity:create", {
-				entity: data,
+				entity: validatedData,
 			});
 		} else {
 			// Edit mode
 			actionService.execute("entity:edit", {
 				entityId: data.Id,
-				updates: data,
+				updates: validatedData,
 			});
 		}
 	};
