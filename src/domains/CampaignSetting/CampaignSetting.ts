@@ -5,7 +5,7 @@ export interface CampaignSettings {
 	VisibilitySettings: VisibilitySettings;
 	CalendarSettings: CalendarSettings;
 	RestSettings: RestSettings;
-	MovementSettings: MovementSettings; // ← NEW
+	MovementSettings: MovementSettings;
 }
 
 export interface StatDefinition {

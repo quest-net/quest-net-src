@@ -140,7 +140,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	},
 	"skill:give": {
 		roles: ["dm"],
-		handler: ItemActions.give,
+		handler: SkillActions.give,
 	},
 	"skill:bulkEditTags": {
 		roles: ["dm"],

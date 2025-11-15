@@ -5,6 +5,8 @@ import { ContextActions } from "../Context/ContextActions";
 import { CampaignSettingActions } from "../CampaignSetting/CampaignSettingActions";
 import { TerrainActions } from "../Terrain/TerrainActions";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
+import { APP_VERSION, type VersionString } from "../../version";
+import { runMigrations } from "../../updates/migrator";
 
 /**
  * Generates a random room code (lowercase, alphanumeric, max 32 chars)
@@ -46,6 +48,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 		Id: crypto.randomUUID(),
 		Name: name,
 		RoomCode: roomCode || generateRoomCode(),
+		CreatedAt: Date.now(),
 		CharacterRoster: [],
 		ItemTemplates: [],
 		SkillTemplates: [],
@@ -108,7 +111,7 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
 }
 
 export interface CampaignExportData {
-	version: string;
+	version: VersionString;
 	campaign: Campaign;
 	imageData: Record<string, { base64: string; mimeType: string }>;
 }
@@ -261,7 +264,7 @@ export const CampaignActions = {
 
 			// Create export data structure
 			const exportData: CampaignExportData = {
-				version: "2.0",
+				version: APP_VERSION,
 				campaign,
 				imageData,
 			};
@@ -296,9 +299,6 @@ export const CampaignActions = {
 		}
 	},
 
-	/**
-	 * Imports a campaign from a JSON file with image data
-	 */
 	async importFromFile(
 		params: { file: File },
 		context: Context,
@@ -310,64 +310,90 @@ export const CampaignActions = {
 				total: 1,
 				status: "Reading file...",
 			});
-
+	
 			const text = await params.file.text();
 			const data = JSON.parse(text);
-
-			// Check if this is a v2.0 export with images or older format
+	
 			let campaign: Campaign;
 			let imageData: Record<string, { base64: string; mimeType: string }> = {};
-
-			if (data.version === "2.0" && data.campaign && data.imageData) {
-				campaign = data.campaign as Campaign;
-				imageData = data.imageData;
+			let dataVersion: VersionString = "1.0.0"; // baseline for really old exports
+	
+			// New-style exports: { version, campaign, imageData }
+			if (
+				data &&
+				typeof data === "object" &&
+				"campaign" in data &&
+				"imageData" in data
+			) {
+				campaign = (data.campaign as Campaign) ?? ({} as Campaign);
+				imageData =
+					(data.imageData as Record<string, { base64: string; mimeType: string }>) ||
+					{};
+	
+				if (typeof data.version === "string") {
+					dataVersion = data.version as VersionString;
+				}
 			} else {
-				// Assume old format - just the campaign object
+				// Old-style exports (pre-container) – assume it's just the Campaign object
 				campaign = data as Campaign;
+				// If you ever had a campaign-level "version" field, you could read it here.
 			}
-
+	
+			// --- Run schema migrations on this imported campaign ---
+	
+			// Use a scratch Context so we can reuse the same migration system
+			const tempContext: Context = {
+				User: structuredClone(context.User),
+				Campaigns: [structuredClone(campaign)],
+				AppSettings: structuredClone(context.AppSettings as any),
+				version: dataVersion,
+			};
+	
+			const migratedContext = runMigrations(tempContext, APP_VERSION);
+			campaign = migratedContext.Campaigns[0];
+	
 			// Generate new ID to avoid conflicts
 			campaign.Id = crypto.randomUUID();
-
+	
 			// Ensure room code is unique
 			const existingRoomCodes = context.Campaigns.map((c) => c.RoomCode);
 			if (existingRoomCodes.includes(campaign.RoomCode)) {
 				campaign.RoomCode = generateRoomCode();
 			}
-
+	
 			// Import images to IndexedDB
 			const imageIds = Object.keys(imageData);
 			const totalSteps = imageIds.length + 1; // +1 for final save
-
+	
 			for (let i = 0; i < imageIds.length; i++) {
 				const imageId = imageIds[i];
 				const { base64, mimeType } = imageData[imageId];
-
+	
 				onProgress?.({
 					current: i,
 					total: totalSteps,
 					status: `Importing image ${i + 1}/${imageIds.length}...`,
 				});
-
+	
 				const blob = base64ToBlob(base64, mimeType);
 				await IndexedDBUtilities.save(imageId, blob);
 			}
-
+	
 			onProgress?.({
 				current: imageIds.length,
 				total: totalSteps,
 				status: "Saving campaign...",
 			});
-
+	
 			context.Campaigns.push(campaign);
 			ContextActions.save(context);
-
+	
 			onProgress?.({
 				current: totalSteps,
 				total: totalSteps,
 				status: "Import complete!",
 			});
-
+	
 			return campaign;
 		} catch (error) {
 			throw new Error(
@@ -376,5 +402,5 @@ export const CampaignActions = {
 				}`
 			);
 		}
-	},
+	}
 };
