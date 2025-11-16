@@ -7,7 +7,7 @@ import Waves from "../../components/Waves/Waves";
 import { useThemeColors } from "../../utils/ThemeUtils";
 import TextType from "../../components/TextType/TextType";
 import { AppSettingActions } from "../AppSetting/AppSettingActions";
-const APP_VERSION = "v1.0.2";
+const APP_VERSION = "v1.0.3";
 export function Home() {
 	const context = useQuestContext();
 	const navigate = useNavigate();
