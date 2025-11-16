@@ -125,6 +125,11 @@ function SkillForm({ data, onChange }: SkillFormProps) {
 						<ImagePicker
 							value={data.Image}
 							onChange={(imageId) => handleFieldChange("Image", imageId)}
+							generationContext={{
+								objectType: "skill",
+								name: data.Name,
+								description: data.Description ?? "",
+							}}
 						/>
 					</FormField>
 

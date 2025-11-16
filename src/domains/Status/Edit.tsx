@@ -123,6 +123,11 @@ function StatusForm({ data, onChange }: StatusFormProps) {
 						<ImagePicker
 							value={data.Image}
 							onChange={(imageId) => handleFieldChange("Image", imageId)}
+							generationContext={{
+								objectType: "status",
+								name: data.Name,
+								description: data.Description ?? "",
+							}}
 						/>
 					</FormField>
 

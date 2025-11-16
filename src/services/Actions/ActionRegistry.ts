@@ -122,6 +122,10 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm", "player"],
 		handler: ItemActions.adjustUses,
 	},
+	"item:bulkEditTags": {
+		roles: ["dm"],
+		handler: ItemActions.bulkEditTags,
+	},
 
 	// ============================================================================
 	// SKILL ACTIONS (uncomment when SkillActions is implemented)
@@ -186,7 +190,10 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm"],
 		handler: EntityActions.move,
 	},
-
+	"entity:bulkEditTags": {
+		roles: ["dm"],
+		handler: EntityActions.bulkEditTags,
+	},
 	// ============================================================================
 	// COMBAT ACTIONS (uncomment when CombatActions is implemented)
 	// ============================================================================

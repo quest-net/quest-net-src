@@ -143,6 +143,11 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 						<ImagePicker
 							value={data.Image}
 							onChange={(imageId) => handleFieldChange("Image", imageId)}
+							generationContext={{
+								objectType: "entity",
+								name: data.Name,
+								description: data.Description ?? "",
+							}}
 						/>
 					</FormField>
 
