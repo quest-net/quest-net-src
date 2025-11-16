@@ -19,6 +19,8 @@ export function CampaignIndex() {
 	const [isImporting, setIsImporting] = useState(false);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const colors = useThemeColors("neutral", "primary");
+	const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
+	const [editRoomCode, setEditRoomCode] = useState("");
 
 	const handleCreateCampaign = () => {
 		if (!campaignName.trim()) {
@@ -80,6 +82,57 @@ export function CampaignIndex() {
 
 		// Manually trigger update
 		triggerContextUpdate();
+	};
+
+	const handleEditRoomCodeClick = (campaignId: string, currentRoomCode: string) => {
+		setEditingCampaignId(campaignId);
+		setEditRoomCode(currentRoomCode);
+	};
+
+	const handleSaveRoomCode = (campaignId: string) => {
+		const roomCode = editRoomCode.trim().toLowerCase();
+
+		// Validation
+		if (!roomCode) {
+			alert("Room code cannot be empty");
+			return;
+		}
+
+		if (roomCode.length > 32) {
+			alert("Room code must be 32 characters or less");
+			return;
+		}
+
+		if (!/^[a-z0-9-]+$/.test(roomCode)) {
+			alert("Room code can only contain lowercase letters, numbers, and hyphens");
+			return;
+		}
+
+		// Check for duplicates (excluding current campaign)
+		const existingRoomCodes = context.Campaigns
+			.filter(c => c.Id !== campaignId)
+			.map(c => c.RoomCode);
+		
+		if (existingRoomCodes.includes(roomCode)) {
+			alert("This room code is already in use by another campaign");
+			return;
+		}
+
+		// Save
+		CampaignActions.edit(
+			{ campaignId, updates: { RoomCode: roomCode } },
+			context
+		);
+		triggerContextUpdate();
+
+		// Close modal
+		setEditingCampaignId(null);
+		setEditRoomCode("");
+	};
+
+	const handleCancelEdit = () => {
+		setEditingCampaignId(null);
+		setEditRoomCode("");
 	};
 
 	const handleImportClick = () => {
@@ -342,10 +395,6 @@ export function CampaignIndex() {
 														<span className="icon-[mdi--account-group] w-3 h-3" />
 														{campaign.CharacterRoster.length + campaign.GameState.Characters.length} characters
 													</div>
-													<div className="badge badge-outline gap-1">
-														<span className="icon-[mdi--image] w-3 h-3" />
-														{campaign.Images.length} images
-													</div>
 												</div>
 
 												<div className="text-xs opacity-60 mt-2">
@@ -357,6 +406,16 @@ export function CampaignIndex() {
 												</div>
 
 												<div className="card-actions justify-end mt-2">
+												<button
+														onClick={(e) => {
+															e.stopPropagation();
+															handleEditRoomCodeClick(campaign.Id, campaign.RoomCode);
+														}}
+														className="btn btn-neutral btn-sm gap-1"
+													>
+														<span className="icon-[mdi--pencil] w-4 h-4" />
+														Edit Code
+													</button>
 													<button
 														onClick={(e) => {
 															e.stopPropagation();
@@ -377,6 +436,54 @@ export function CampaignIndex() {
 					</div>
 				</div>
 			</div>
+
+	{editingCampaignId && (
+				<div className="modal modal-open">
+					<div className="modal-box">
+						<h3 className="font-bold text-lg mb-4">Edit Room Code</h3>
+						
+						<div className="form-control">
+							<label className="label">
+								<span className="label-text font-semibold">Room Code</span>
+							</label>
+							<input
+								type="text"
+								value={editRoomCode}
+								onChange={(e) => setEditRoomCode(e.target.value.toLowerCase())}
+								className="input input-bordered w-full font-mono"
+								placeholder="brave-dragon-42"
+								maxLength={32}
+								autoFocus
+								onKeyDown={(e) => {
+									if (e.key === 'Enter') {
+										handleSaveRoomCode(editingCampaignId);
+									} else if (e.key === 'Escape') {
+										handleCancelEdit();
+									}
+								}}
+							/>
+							<label className="label">
+								<span className="label-text-alt">
+									Lowercase letters, numbers, and hyphens only (max 32 chars)
+								</span>
+							</label>
+						</div>
+
+						<div className="modal-action">
+							<button onClick={handleCancelEdit} className="btn btn-neutral">
+								Cancel
+							</button>
+							<button 
+								onClick={() => handleSaveRoomCode(editingCampaignId)} 
+								className="btn btn-primary"
+							>
+								Save Room Code
+							</button>
+						</div>
+					</div>
+					<div className="modal-backdrop" onClick={handleCancelEdit}></div>
+				</div>
+			)}
 		</div>
 	);
 }

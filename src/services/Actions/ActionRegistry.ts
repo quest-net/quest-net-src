@@ -16,6 +16,7 @@ import { SceneActions } from "../../domains/Scene/SceneActions";
 import { NoteActions } from "../../domains/Note/NoteActions";
 import { CombatActions } from "../../domains/Combat/CombatActions";
 import { StatusActions } from "../../domains/Status/StatusActions";
+import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 // Import other action modules as they're created
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
@@ -35,6 +36,13 @@ interface ActionDefinition {
  * Maps action keys to their allowed roles AND handler functions
  */
 export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
+	// ============================================================================
+	// CAMPAIGN ACTIONS
+	// ============================================================================
+	"campaign:edit": {
+		roles: ["dm"],
+		handler: CampaignActions.edit,
+	},
 	// ============================================================================
 	// CHARACTER ACTIONS
 	// ============================================================================

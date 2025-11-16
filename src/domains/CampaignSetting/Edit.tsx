@@ -14,6 +14,7 @@ import {
 import { StatDefinitionsEditor } from "../../components/inputs/StatDefinitionEditor";
 import CalendarConfigEditor from "../../components/inputs/CalendarConfigEditor";
 import { MovementSettingsEditor } from "../../components/inputs/MovementSettingsEditor";
+import { Campaign } from "../Campaign/Campaign";
 
 export function CampaignSettingEdit() {
 	const context = useQuestContext();
@@ -22,7 +23,18 @@ export function CampaignSettingEdit() {
 	const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
 	const [isExporting, setIsExporting] = useState(false);
 
-	const handleSave = (data: CampaignSettings) => {
+	const handleSaveCampaign = (data: Campaign) => {
+		if (!actionService) return;
+
+		actionService.execute("campaign:edit", {
+			campaignId: campaign.Id,
+			updates: {
+				Name: data.Name,
+			},
+		});
+	};
+
+	const handleSaveSettings = (data: CampaignSettings) => {
 		if (!actionService) return;
 
 		actionService.execute("setting:edit", {
@@ -64,18 +76,43 @@ export function CampaignSettingEdit() {
 
 	return (
 		<div className="p-6">
+			{/* Campaign Name Section */}
 			<FormWrapper
-				domain="setting"
+				domain="campaign"
 				entityId={campaign.Id}
-				initialData={campaign.Settings}
-				onSave={handleSave}
+				initialData={campaign}
+				onSave={handleSaveCampaign}
 				onClose={() => {}}
-				createTitle="Campaign Settings"
-				editTitle="Campaign Settings"
-				viewTitle="Campaign Settings"
+				createTitle="Campaign Information"
+				editTitle="Campaign Information"
+				viewTitle="Campaign Information"
+				buttonConfig={{
+					showTopCancel: false,
+					showBottomButtons: false,
+				}}
 			>
-				<CampaignSettingForm />
+				<CampaignNameForm />
 			</FormWrapper>
+
+			{/* Settings Section */}
+			<div className="mt-6">
+				<FormWrapper
+					domain="setting"
+					entityId={campaign.Id}
+					initialData={campaign.Settings}
+					onSave={handleSaveSettings}
+					onClose={() => {}}
+					createTitle="Campaign Settings"
+					editTitle="Campaign Settings"
+					viewTitle="Campaign Settings"
+					buttonConfig={{
+						showTopCancel: false,
+						showBottomButtons: false,
+					}}
+				>
+					<CampaignSettingForm />
+				</FormWrapper>
+			</div>
 
 			{/* Export Section */}
 			<div className="card bg-base-100 shadow-xl border-2 border-base-300 mt-6 ml-48 w-120">
@@ -124,7 +161,43 @@ export function CampaignSettingEdit() {
 		</div>
 	);
 }
+// ============================================================================
+// CAMPAIGN NAME FORM (Simple component for just the name)
+// ============================================================================
 
+interface CampaignNameFormProps {
+	data?: Campaign;
+	onChange?: (data: Campaign) => void;
+}
+
+function CampaignNameForm({ data, onChange }: CampaignNameFormProps) {
+	if (!data || !onChange) return null;
+
+	const handleFieldChange = (field: keyof Campaign, value: any) => {
+		onChange({
+			...data,
+			[field]: value,
+		});
+	};
+
+	return (
+		<FormSection
+			title="Campaign Name"
+			description="The display name for this campaign"
+		>
+			<FormField label="Name">
+				<input
+					type="text"
+					value={data.Name}
+					onChange={(e) => handleFieldChange("Name", e.target.value)}
+					className="input input-bordered w-full"
+					placeholder="Campaign Name"
+					maxLength={100}
+				/>
+			</FormField>
+		</FormSection>
+	);
+}
 // ============================================================================
 // CAMPAIGN SETTING FORM (Receives data and onChange from FormWrapper)
 // ============================================================================

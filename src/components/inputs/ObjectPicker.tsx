@@ -121,6 +121,14 @@ export function ObjectPicker({
 		setLocalSelectedIds([]);
 	};
 
+	const handlePrevPage = () => {
+		setCurrentPage((prev) => Math.max(0, prev - 1));
+	};
+
+	const handleNextPage = () => {
+		setCurrentPage((prev) => Math.min(totalPages - 1, prev + 1));
+	};
+
 	if (!isOpen) return null;
 
 	return (
@@ -174,30 +182,6 @@ export function ObjectPicker({
 					)}
 				</div>
 
-				{/* Selection Count and Count Input */}
-				<div className="flex justify-between items-center mb-2">
-					{multiSelect && localSelectedIds.length > 0 && (
-						<div className="text-sm opacity-70">
-							{localSelectedIds.length} selected
-						</div>
-					)}
-					{!multiSelect && <div></div>}
-					
-					{showCount && localSelectedIds.length > 0 && (
-						<div className="flex items-center gap-2">
-							<label className="text-sm font-medium">Count:</label>
-							<input
-								type="number"
-								min={1}
-								max={99}
-								value={count}
-								onChange={(e) => setCount(Math.max(1, Math.min(99, Number(e.target.value))))}
-								className="input input-bordered input-sm w-20"
-							/>
-						</div>
-					)}
-				</div>
-
 				{/* Object Grid */}
 				<div className="flex-1 overflow-y-auto p-2">
 					{paginatedItems.length === 0 ? (
@@ -227,7 +211,7 @@ export function ObjectPicker({
 											}
 										`}
 									>
-										<figure className="px-2 pt-2">
+										<figure className="border-b">
 											<div className="w-full h-32 bg-base-200 rounded-lg overflow-hidden flex items-center justify-center">
 												{item.Image ? (
 													<ImageDisplay
@@ -247,13 +231,8 @@ export function ObjectPicker({
 											>
 												{item.Name}
 											</h4>
-											{item.Description && (
-												<p className="text-xs opacity-70 line-clamp-2">
-													{item.Description}
-												</p>
-											)}
 											{isSelected && (
-												<div className="badge badge-primary badge-xs mt-1">
+												<div className="badge badge-primary badge-xs">
 													Selected
 												</div>
 											)}
@@ -265,31 +244,9 @@ export function ObjectPicker({
 					)}
 				</div>
 
-				{/* Pagination */}
-				{totalPages > 1 && (
-					<div className="flex justify-center items-center gap-2 mb-4">
-						<button
-							onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
-							disabled={currentPage === 0}
-							className="btn btn-sm"
-						>
-							<span className="icon-[mdi--chevron-left] w-4 h-4" />
-						</button>
-						<span className="text-sm">
-							Page {currentPage + 1} of {totalPages}
-						</span>
-						<button
-							onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
-							disabled={currentPage === totalPages - 1}
-							className="btn btn-sm"
-						>
-							<span className="icon-[mdi--chevron-right] w-4 h-4" />
-						</button>
-					</div>
-				)}
-
-				{/* Footer Actions */}
-				<div className="flex justify-between items-center">
+				{/* Footer Actions + Pagination */}
+				<div className="mt-2 flex items-center justify-between gap-2">
+					{/* Left: Clear */}
 					<button
 						onClick={handleClear}
 						className="btn btn-neutral btn-sm"
@@ -297,6 +254,52 @@ export function ObjectPicker({
 					>
 						Clear Selection
 					</button>
+
+					{/* Middle: Page controls and Count input */}
+					<div className="flex flex-col items-center gap-1">
+						{/* Pagination */}
+						{filteredItems.length > 0 && totalPages > 1 && (
+							<div className="join">
+								<button
+									type="button"
+									className="btn btn-sm join-item"
+									onClick={handlePrevPage}
+									disabled={currentPage === 0}
+								>
+									«
+								</button>
+								<button
+									type="button"
+									className="btn btn-sm join-item pointer-events-none"
+								>
+									Page {currentPage + 1} / {totalPages}
+								</button>
+								<button
+									type="button"
+									className="btn btn-sm join-item"
+									onClick={handleNextPage}
+									disabled={currentPage === totalPages - 1}
+								>
+									»
+								</button>
+							</div>
+						)}
+					</div>
+					{/* Count Input */}
+					{showCount && localSelectedIds.length > 0 && (
+						<div className="flex items-center gap-2 text-sm">
+							<label className="font-medium">Count:</label>
+							<input
+								type="number"
+								min={1}
+								max={99}
+								value={count}
+								onChange={(e) => setCount(Math.max(1, Math.min(99, Number(e.target.value))))}
+								className="input input-bordered input-sm w-16"
+							/>
+						</div>
+					)}
+					{/* Right: Cancel / Confirm */}
 					<div className="flex gap-2">
 						<button onClick={handleCancel} className="btn btn-sm">
 							Cancel

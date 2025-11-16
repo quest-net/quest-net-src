@@ -17,6 +17,12 @@ import { canPerformAction } from "../../services/Actions/ActionRegistry";
 
 type FormMode = "create" | "edit" | "view";
 
+interface ButtonConfig {
+	showTopCancel?: boolean;
+	showTopSave?: boolean;
+	showBottomButtons?: boolean;
+}
+
 interface FormContextValue {
 	mode: FormMode;
 	readOnly: boolean;
@@ -56,6 +62,7 @@ interface FormWrapperProps<T> {
 	editTitle: string;
 	viewTitle: string;
 	children: ReactNode;
+	buttonConfig?: ButtonConfig;
 }
 
 export function FormWrapper<T extends Record<string, any>>({
@@ -70,8 +77,16 @@ export function FormWrapper<T extends Record<string, any>>({
 	editTitle,
 	viewTitle,
 	children,
+	buttonConfig = {},
 }: FormWrapperProps<T>) {
 	const context = useQuestContext();
+	
+	// Destructure button config with defaults
+	const {
+		showTopCancel = true,
+		showTopSave = true,
+		showBottomButtons = true,
+	} = buttonConfig;
 
 	// Check permissions for this domain
 	const canCreate = canPerformAction(context.User, `${domain}:create`);
@@ -156,11 +171,13 @@ export function FormWrapper<T extends Record<string, any>>({
 					onClose={onClose}
 					onClone={handleClone}
 					showClone={mode === "edit" && !!onClone}
+					showCancel={showTopCancel}
+					showSave={showTopSave}
 				/>
 
 				{childrenWithProps}
 
-				{!readOnly && (
+				{!readOnly && showBottomButtons && (
 					<div className="flex justify-between gap-2">
 						<div>
 							{canDelete && (
@@ -200,6 +217,8 @@ interface FormHeaderProps {
 	onClose: () => void;
 	onClone: () => void;
 	showClone: boolean;
+	showCancel: boolean;
+	showSave: boolean;
 }
 
 function FormHeader({
@@ -210,6 +229,8 @@ function FormHeader({
 	onClose,
 	onClone,
 	showClone,
+	showCancel,
+	showSave,
 }: FormHeaderProps) {
 	const { mode, readOnly, isDirty } = useFormContext();
 
@@ -230,14 +251,16 @@ function FormHeader({
 						Clone
 					</button>
 				)}
-				{!readOnly && (
+				{!readOnly && showSave &&(
 					<button onClick={onSave} className="btn btn-primary">
 						{mode === "create" ? "Create" : "Save Changes"}
 					</button>
 				)}
-				<button onClick={onClose} className="btn btn-neutral">
-					{readOnly ? "Close" : "Cancel"}
-				</button>
+				{showCancel && (
+					<button onClick={onClose} className="btn btn-neutral">
+						{readOnly ? "Close" : "Cancel"}
+					</button>
+				)}
 			</div>
 		</div>
 	);
