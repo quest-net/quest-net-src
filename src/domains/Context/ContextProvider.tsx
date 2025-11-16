@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Context } from "./Context";
 import { ContextActions } from "./ContextActions";
+import { AppSettingActions } from "../AppSetting/AppSettingActions";
 
 const ContextContext = createContext<Context | null>(null);
 
@@ -59,6 +60,18 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 			globalTriggerUpdate = null;
 		};
 	}, [triggerUpdate]);
+
+	// Apply theme to document element whenever context changes
+	useEffect(() => {
+		if (!context) return;
+
+		const theme = AppSettingActions.getTheme(context);
+		
+		// Set the data-theme attribute on the html element
+		document.documentElement.setAttribute("data-theme", theme);
+		
+		console.log(`[Theme] Applied theme: ${theme}`);
+	}, [context]);
 
 	if (!context) {
 		return <div>Loading...</div>;

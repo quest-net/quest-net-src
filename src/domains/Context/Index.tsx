@@ -6,6 +6,7 @@ import ASCIIText from "../../components/ASCIIText/ASCIIText";
 import Waves from "../../components/Waves/Waves";
 import { useThemeColors } from "../../utils/ThemeUtils";
 import TextType from "../../components/TextType/TextType";
+import { AppSettingActions } from "../AppSetting/AppSettingActions";
 const APP_VERSION = "v1.0.2";
 export function Home() {
 	const context = useQuestContext();
@@ -18,6 +19,8 @@ export function Home() {
 	}, [context.User.Name]);
 
 	const colors = useThemeColors("neutral", "primary");
+	const theme = AppSettingActions.getTheme(context);
+	const asciiTextColor = theme == "dark" ? "#fdf9f3" : colors.primary.hex;
 
 	const commitName = (value: string) => {
 		const trimmed = value.trim();
@@ -83,7 +86,7 @@ export function Home() {
 						enableWaves={false}
 						asciiFontSize={12}
 						planeBaseHeight={4}
-						textColor={colors.primary.hex}
+						textColor={asciiTextColor}
 					/>
 				</div>
 
