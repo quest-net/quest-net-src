@@ -48,7 +48,6 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 
 			ContextActions.save(current);
 
-			console.log("[Context] State updated and saved");
 			return { ...current };
 		});
 	}, []);
@@ -70,7 +69,6 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 		// Set the data-theme attribute on the html element
 		document.documentElement.setAttribute("data-theme", theme);
 		
-		console.log(`[Theme] Applied theme: ${theme}`);
 	}, [context]);
 
 	if (!context) {
