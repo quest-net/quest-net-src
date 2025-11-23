@@ -29,7 +29,7 @@ export class StateSync {
 
 	constructor(
 		room: Room,
-		actionExecute: (actionKey: string, params: any) => void = () => {}
+		actionExecute: (actionKey: string, params: any) => void = () => { }
 	) {
 		this.room = room;
 		this.actionExecute = actionExecute;
@@ -42,9 +42,9 @@ export class StateSync {
 	 */
 	private setupChannel() {
 		const [send, receive] = this.room.makeAction("stateSync");
-	
+
 		this.sendState = send;
-	
+
 		// Listen for incoming state updates
 		// Trystero's receive expects (data, peerId, metadata) but we only need data
 		receive((data: any) => {
@@ -77,8 +77,9 @@ export class StateSync {
 
 	/**
 	 * Broadcasts the campaign state to all peers (DM only)
+	 * @param force - If true, ensures a broadcast is sent even if no changes occurred (sends Full Sync)
 	 */
-	broadcast(campaign: Campaign): void {
+	broadcast(campaign: Campaign, force = false): void {
 		this.updateCount++;
 
 		// Sanitize campaign before broadcasting to hide DM's secret ID
@@ -92,7 +93,7 @@ export class StateSync {
 		if (shouldSendFull) {
 			this.broadcastFull(sanitizedCampaign);
 		} else {
-			this.broadcastDelta(sanitizedCampaign);
+			this.broadcastDelta(sanitizedCampaign, force);
 		}
 
 		// Store sanitized version for next comparison
@@ -125,7 +126,10 @@ export class StateSync {
 	/**
 	 * Broadcasts a differential update
 	 */
-	private broadcastDelta(campaign: Campaign): void {
+	/**
+	 * Broadcasts a differential update
+	 */
+	private broadcastDelta(campaign: Campaign, force = false): void {
 		if (!this.lastBroadcastState) {
 			// Fallback to full state if we don't have a previous state
 			this.broadcastFull(campaign);
@@ -136,6 +140,10 @@ export class StateSync {
 		const patches = compare(this.lastBroadcastState, campaign);
 
 		if (patches.length === 0) {
+			if (force) {
+				// If forced and no changes, send full state to ensure sync
+				this.broadcastFull(campaign);
+			}
 			return;
 		}
 

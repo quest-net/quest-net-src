@@ -79,10 +79,14 @@ export class ActionService {
 					(c) => c.Id === campaign.Id
 				);
 
+				// ISOLATION: We clone the campaign so that the UI can mutate it optimistically
+				// without polluting the StateSync's internal baseline.
+				const isolatedCampaign = structuredClone(campaign);
+
 				if (index !== -1) {
-					this.context.Campaigns[index] = campaign;
+					this.context.Campaigns[index] = isolatedCampaign;
 				} else {
-					this.context.Campaigns.push(campaign);
+					this.context.Campaigns.push(isolatedCampaign);
 				}
 				// If a one-time callback is registered, execute and clear it.
 				if (this.onFirstUpdateCallback) {
@@ -157,6 +161,24 @@ export class ActionService {
 	 */
 	private executePlayer(actionKey: string, params: any): void {
 
+		// Check for connection before allowing any action
+		if (!RoomActions.hasConnectedPeers(this.room)) {
+			console.warn("[ActionService] No peers connected. Action blocked.");
+			return;
+		}
+
+		// OPTIMISTIC UPDATE: Run locally first
+		try {
+			this.runDomainAction(actionKey, params);
+			// This seems to cause flickering on the player side (so comment it out)
+			// const campaign = CampaignActions.getActiveCampaign(this.context);
+			// this.bumpMapRefs(campaign);
+			triggerContextUpdate();
+		} catch (error) {
+			console.warn("[ActionService] Optimistic update failed (ignoring):", error);
+			// Ignore error, let the server handle it
+		}
+
 		// Send request to DM (fire and forget)
 		this.sendActionRequest({
 			actionKey,
@@ -170,8 +192,13 @@ export class ActionService {
 	 */
 	private handlePlayerRequest(data: any) {
 
-		// Execute the domain action
-		this.runDomainAction(data.actionKey, data.params);
+		try {
+			// Execute the domain action
+			this.runDomainAction(data.actionKey, data.params);
+		} catch (error) {
+			console.error("[ActionService] Error executing player request:", error);
+			// We continue to broadcast below to force a reset if needed
+		}
 
 		// Broadcast updated campaign to all players
 		const campaign = CampaignActions.getActiveCampaign(this.context);
@@ -181,7 +208,8 @@ export class ActionService {
 		if (LogActions.isCommand(data.params, "/REQUEST_FULL_SYNC")) {
 			this.stateSync.broadcastFull(campaign);
 		} else {
-			this.stateSync.broadcast(campaign);
+			// FORCE SYNC: Always broadcast, even if no changes (reverts optimistic state)
+			this.stateSync.broadcast(campaign, true);
 		}
 		triggerContextUpdate();
 	}
@@ -218,13 +246,11 @@ export class ActionService {
    * Make new references for collections the Map memoizes against.
    * This avoids stale useMemo caches when domain code mutates in place.
    */
-  private bumpMapRefs(campaign: Campaign): void {
-    campaign.GameState = {
-      ...campaign.GameState,
-      Characters: [...campaign.GameState.Characters],
-      Entities:   [...campaign.GameState.Entities],
-    };
-    // If you ever memoize by terrain arrays too, uncomment:
-    // campaign.Terrains = [...campaign.Terrains];
-  }
+	private bumpMapRefs(campaign: Campaign): void {
+		campaign.GameState = {
+			...campaign.GameState,
+			Characters: [...campaign.GameState.Characters],
+			Entities: [...campaign.GameState.Entities],
+		};
+	}
 }
