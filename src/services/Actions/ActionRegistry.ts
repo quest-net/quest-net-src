@@ -102,10 +102,10 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm"],
 		handler: ItemActions.give,
 	},
-	// 'item:transfer': {
-	//   roles: ['dm', 'player'],
-	//   handler: ItemActions.transfer
-	// },
+	"item:transfer": {
+		roles: ["dm", "player"],
+		handler: ItemActions.transfer,
+	},
 	"item:create": {
 		roles: ["dm"],
 		handler: ItemActions.create,

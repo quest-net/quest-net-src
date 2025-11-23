@@ -58,19 +58,5 @@ This document provides a review of the core architecture of Quest-Net, focusing 
 - **Concerns:**
   - **State Churn:** Since logs are part of the `Campaign` object, every log entry triggers a full state comparison and broadcast. For high-frequency events (e.g., rapid combat rolls), this could cause network congestion.
 
-## Recommendations
-
-1.  **State Segmentation (Long Term):**
-    If performance becomes an issue, consider splitting `Campaign` into sub-stores (e.g., `CampaignData`, `CampaignLog`, `CampaignChat`) and syncing them independently. This would prevent a new chat message from requiring a diff check of the entire character roster.
-
-2.  **Optimistic UI (Optional):**
-    Currently, players wait for the DM to broadcast the state back. For simple actions (like moving a token), you could implement optimistic updates on the player side to make the UI feel snappier, rolling back if the DM rejects the action.
-
-3.  **Log Optimization:**
-    Consider keeping `Log` separate from the main `Campaign` state for syncing purposes, or batch log updates if they happen frequently.
-
-4.  **Validation:**
-    Ensure all actions in `ACTION_REGISTRY` have robust validation inside their handlers. The `canPerformAction` check only validates roles, not the validity of the data (e.g., checking if a target exists or if a user owns the character they are moving).
-
 ## Conclusion
 The architecture is solid and well-suited for a TTRPG manager. The centralized DM authority combined with delta updates provides a good balance of consistency and performance. The code is clean, modular, and easy to navigate.

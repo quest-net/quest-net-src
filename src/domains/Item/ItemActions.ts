@@ -6,7 +6,10 @@ import { LogActions } from "../Log/LogActions";
 import { Item } from "./Item";
 import { Actor } from "../Actor/Actor";
 import { rollDiceFormula } from "../../utils/DiceUtils";
-import { syncItemSlotsAfterEdit, getAllActors } from "../../utils/SlotSyncUtils";
+import {
+	syncItemSlotsAfterEdit,
+	getAllActors,
+} from "../../utils/SlotSyncUtils";
 
 /**
  * Item action handlers
@@ -118,7 +121,7 @@ export const ItemActions = {
 	/**
 	 * Gives items to actors (characters or entities)
 	 * Each actor receives `count` copies of each item
-	 * 
+	 *
 	 * Example: give(["potion", "sword"], ["hero1", "hero2"], 2)
 	 * Result: hero1 and hero2 each receive 2 potions and 2 swords
 	 */
@@ -131,7 +134,7 @@ export const ItemActions = {
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
-		
+
 		// Validate count
 		const count = Math.max(1, Math.floor(params.count));
 
@@ -153,7 +156,9 @@ export const ItemActions = {
 
 			// For each item
 			params.itemIds.forEach((itemId) => {
-				const itemTemplate = campaign.ItemTemplates.find((i) => i.Id === itemId);
+				const itemTemplate = campaign.ItemTemplates.find(
+					(i) => i.Id === itemId
+				);
 				if (!itemTemplate) {
 					console.warn(`Item template not found: ${itemId}`);
 					return;
@@ -180,7 +185,9 @@ export const ItemActions = {
 			LogActions.create(
 				{
 					action: "Items given",
-					details: `${itemNames} (${totalGiven} total) given to ${actorNames.join(", ")}`,
+					details: `${itemNames} (${totalGiven} total) given to ${actorNames.join(
+						", "
+					)}`,
 					category: "item",
 					level: "info",
 					visibility: ["dm", "owner"],
@@ -189,7 +196,105 @@ export const ItemActions = {
 			);
 		}
 	},
+	
+	/**
+	 * Transfers an item from one actor to another
+	 * Moves the item slot from source actor to target actor's inventory
+	 * Works with any actors (characters or entities, in any location)
+	 */
+	transfer(
+		params: {
+			sourceActorId: string;
+			targetActorId: string;
+			itemId: string;
+		},
+		context: Context
+	): void {
+		const campaign = CampaignActions.getActiveCampaign(context);
 
+		// Find all actors in all possible locations
+		const allActors: Actor[] = getAllActors(campaign);
+
+		// Find source actor
+		const sourceActor = allActors.find((a) => a.Id === params.sourceActorId);
+		if (!sourceActor) {
+			console.warn(`Source actor not found: ${params.sourceActorId}`);
+			return;
+		}
+
+		// Find target actor
+		const targetActor = allActors.find((a) => a.Id === params.targetActorId);
+		if (!targetActor) {
+			console.warn(`Target actor not found: ${params.targetActorId}`);
+			return;
+		}
+
+		// Prevent transferring to self
+		if (params.sourceActorId === params.targetActorId) {
+			console.warn(`Cannot transfer item to self`);
+			return;
+		}
+
+		// Find the item template for logging
+		const itemTemplate = campaign.ItemTemplates.find(
+			(i) => i.Id === params.itemId
+		);
+		const itemName = itemTemplate?.Name || "Unknown Item";
+
+		// Try to find and remove from source's inventory first
+		const inventoryIndex = sourceActor.Inventory.findIndex(
+			(s) => s.Id === params.itemId
+		);
+		if (inventoryIndex !== -1) {
+			// Remove from source inventory
+			const [slot] = sourceActor.Inventory.splice(inventoryIndex, 1);
+
+			// Add to target inventory
+			targetActor.Inventory.push(slot);
+
+			LogActions.create(
+				{
+					action: "Item transferred",
+					details: `${sourceActor.Name} gave ${itemName} to ${targetActor.Name}`,
+					category: "item",
+					level: "info",
+					visibility: ["all"],
+					actorId: params.sourceActorId,
+				},
+				context
+			);
+			return;
+		}
+
+		// If not in inventory, try equipment
+		const equipmentIndex = sourceActor.Equipment.findIndex(
+			(s) => s.Id === params.itemId
+		);
+		if (equipmentIndex !== -1) {
+			// Remove from source equipment
+			const [slot] = sourceActor.Equipment.splice(equipmentIndex, 1);
+
+			// Add to target inventory (not equipment)
+			targetActor.Inventory.push(slot);
+
+			LogActions.create(
+				{
+					action: "Item transferred",
+					details: `${sourceActor.Name} gave ${itemName} to ${targetActor.Name}`,
+					category: "item",
+					level: "info",
+					visibility: ["all"],
+					actorId: params.sourceActorId,
+				},
+				context
+			);
+			return;
+		}
+
+		console.warn(
+			`Item not found in source actor's inventory or equipment: ${params.itemId}`
+		);
+	},
 	/**
 	 * Bulk edit tags for multiple items
 	 */
@@ -228,59 +333,61 @@ export const ItemActions = {
 	 * Rolls dice if the item has a DiceRoll property
 	 * Works with any actor (characters or entities, in any location)
 	 */
-	use(
-		params: { actorId: string; itemId: string },
-		context: Context
-	): void {
+	use(params: { actorId: string; itemId: string }, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
-	
+
 		// Find actor in all possible locations
 		const actors: Actor[] = getAllActors(campaign);
-	
+
 		const actor = actors.find((a) => a.Id === params.actorId);
 		if (!actor) {
 			console.warn(`Actor not found: ${params.actorId}`);
 			return;
 		}
-	
+
 		// Find the item template
-		const itemTemplate = campaign.ItemTemplates.find((i) => i.Id === params.itemId);
+		const itemTemplate = campaign.ItemTemplates.find(
+			(i) => i.Id === params.itemId
+		);
 		if (!itemTemplate) {
 			console.warn(`Item template not found: ${params.itemId}`);
 			return;
 		}
-	
+
 		// Find the item slot in inventory or equipment
 		let slot = actor.Inventory.find((s) => s.Id === params.itemId);
-		
+
 		if (!slot) {
 			slot = actor.Equipment.find((s) => s.Id === params.itemId);
 		}
-	
+
 		if (!slot) {
-			console.warn(`Item not found in actor's inventory or equipment: ${params.itemId}`);
+			console.warn(
+				`Item not found in actor's inventory or equipment: ${params.itemId}`
+			);
 			return;
 		}
-	
+
 		// Check if item has uses left
 		if (slot.UsesLeft !== undefined && slot.UsesLeft <= 0) {
 			console.warn(`Item has no uses left: ${itemTemplate.Name}`);
 			return;
 		}
-	
+
 		// Decrement uses if applicable
 		if (slot.UsesLeft !== undefined) {
 			slot.UsesLeft--;
 		}
-	
+
 		// Determine visibility based on the ACTOR TYPE, not who pressed the button
 		const visibilitySettings = campaign.Settings.VisibilitySettings;
 		let visibility: ("dm" | "player" | "owner" | "all")[];
-	
+
 		// Check if this actor is a character (player-controlled) or entity (DM-controlled)
-		const isCharacter = campaign.GameState.Characters.some((c) => c.Id === params.actorId) ||
-							campaign.CharacterRoster.some((c) => c.Id === params.actorId);
-	
+		const isCharacter =
+			campaign.GameState.Characters.some((c) => c.Id === params.actorId) ||
+			campaign.CharacterRoster.some((c) => c.Id === params.actorId);
+
 		if (isCharacter) {
 			// Character action - use player visibility rules
 			visibility = visibilitySettings.playersSeePeerRolls
@@ -290,12 +397,12 @@ export const ItemActions = {
 			// Entity action - use DM visibility rules
 			visibility = visibilitySettings.playersSeeDMRolls ? ["all"] : ["dm"];
 		}
-	
+
 		// Roll dice if the item has a DiceRoll formula
 		if (itemTemplate.DiceRoll && itemTemplate.DiceRoll.trim() !== "") {
 			try {
 				const rollResult = rollDiceFormula(itemTemplate.DiceRoll.trim());
-	
+
 				LogActions.create(
 					{
 						action: `${actor.Name} used ${itemTemplate.Name} : ${rollResult.total}`,
@@ -308,13 +415,18 @@ export const ItemActions = {
 					context
 				);
 			} catch (error) {
-				console.error(`Failed to roll dice for item ${itemTemplate.Name}:`, error);
-				
+				console.error(
+					`Failed to roll dice for item ${itemTemplate.Name}:`,
+					error
+				);
+
 				// Log without dice roll if it fails
 				LogActions.create(
 					{
 						action: `${actor.Name} used ${itemTemplate.Name}`,
-						details: `${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""}`,
+						details: `${
+							slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""
+						}`,
 						category: "item",
 						level: "info",
 						visibility,
@@ -328,7 +440,9 @@ export const ItemActions = {
 			LogActions.create(
 				{
 					action: `${actor.Name} used ${itemTemplate.Name}`,
-					details: `${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""}`,
+					details: `${
+						slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""
+					}`,
 					category: "item",
 					level: "info",
 					visibility,
@@ -344,10 +458,7 @@ export const ItemActions = {
 	 * Moves the item from Inventory to Equipment
 	 * Works with any actor (characters or entities, in any location)
 	 */
-	equip(
-		params: { actorId: string; itemId: string },
-		context: Context
-	): void {
+	equip(params: { actorId: string; itemId: string }, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
 		// Find actor in all possible locations
@@ -360,7 +471,9 @@ export const ItemActions = {
 		}
 
 		// Find the item template
-		const itemTemplate = campaign.ItemTemplates.find((i) => i.Id === params.itemId);
+		const itemTemplate = campaign.ItemTemplates.find(
+			(i) => i.Id === params.itemId
+		);
 		if (!itemTemplate) {
 			console.warn(`Item template not found: ${params.itemId}`);
 			return;
@@ -373,7 +486,9 @@ export const ItemActions = {
 		}
 
 		// Find the item in inventory
-		const inventoryIndex = actor.Inventory.findIndex((s) => s.Id === params.itemId);
+		const inventoryIndex = actor.Inventory.findIndex(
+			(s) => s.Id === params.itemId
+		);
 		if (inventoryIndex === -1) {
 			console.warn(`Item not found in actor's inventory: ${params.itemId}`);
 			return;
@@ -401,10 +516,7 @@ export const ItemActions = {
 	 * Moves the item from Equipment to Inventory
 	 * Works with any actor (characters or entities, in any location)
 	 */
-	unequip(
-		params: { actorId: string; itemId: string },
-		context: Context
-	): void {
+	unequip(params: { actorId: string; itemId: string }, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
 		// Find actor in all possible locations
@@ -417,14 +529,18 @@ export const ItemActions = {
 		}
 
 		// Find the item template
-		const itemTemplate = campaign.ItemTemplates.find((i) => i.Id === params.itemId);
+		const itemTemplate = campaign.ItemTemplates.find(
+			(i) => i.Id === params.itemId
+		);
 		if (!itemTemplate) {
 			console.warn(`Item template not found: ${params.itemId}`);
 			return;
 		}
 
 		// Find the item in equipment
-		const equipmentIndex = actor.Equipment.findIndex((s) => s.Id === params.itemId);
+		const equipmentIndex = actor.Equipment.findIndex(
+			(s) => s.Id === params.itemId
+		);
 		if (equipmentIndex === -1) {
 			console.warn(`Item not found in actor's equipment: ${params.itemId}`);
 			return;
@@ -452,10 +568,7 @@ export const ItemActions = {
 	 * Removes the item entirely (does not return it to templates)
 	 * Works with any actor (characters or entities, in any location)
 	 */
-	discard(
-		params: { actorId: string; itemId: string },
-		context: Context
-	): void {
+	discard(params: { actorId: string; itemId: string }, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
 		// Find actor in all possible locations
@@ -468,11 +581,15 @@ export const ItemActions = {
 		}
 
 		// Find the item template for logging
-		const itemTemplate = campaign.ItemTemplates.find((i) => i.Id === params.itemId);
+		const itemTemplate = campaign.ItemTemplates.find(
+			(i) => i.Id === params.itemId
+		);
 		const itemName = itemTemplate?.Name || "Unknown Item";
 
 		// Try to find and remove from inventory first
-		const inventoryIndex = actor.Inventory.findIndex((s) => s.Id === params.itemId);
+		const inventoryIndex = actor.Inventory.findIndex(
+			(s) => s.Id === params.itemId
+		);
 		if (inventoryIndex !== -1) {
 			actor.Inventory.splice(inventoryIndex, 1);
 
@@ -491,7 +608,9 @@ export const ItemActions = {
 		}
 
 		// If not in inventory, try equipment
-		const equipmentIndex = actor.Equipment.findIndex((s) => s.Id === params.itemId);
+		const equipmentIndex = actor.Equipment.findIndex(
+			(s) => s.Id === params.itemId
+		);
 		if (equipmentIndex !== -1) {
 			actor.Equipment.splice(equipmentIndex, 1);
 
@@ -509,7 +628,9 @@ export const ItemActions = {
 			return;
 		}
 
-		console.warn(`Item not found in actor's inventory or equipment: ${params.itemId}`);
+		console.warn(
+			`Item not found in actor's inventory or equipment: ${params.itemId}`
+		);
 	},
 	/**
 	 * Adjusts the uses of an item on an actor
@@ -538,7 +659,9 @@ export const ItemActions = {
 		}
 
 		if (!slot) {
-			console.warn(`Item not found in actor's inventory or equipment: ${params.itemId}`);
+			console.warn(
+				`Item not found in actor's inventory or equipment: ${params.itemId}`
+			);
 			return;
 		}
 
@@ -546,12 +669,13 @@ export const ItemActions = {
 		slot.UsesLeft = params.usesLeft;
 
 		// Find the item template for logging
-		const itemTemplate = campaign.ItemTemplates.find((i) => i.Id === params.itemId);
+		const itemTemplate = campaign.ItemTemplates.find(
+			(i) => i.Id === params.itemId
+		);
 		const itemName = itemTemplate?.Name || "Unknown Item";
 
-		const usesText = params.usesLeft === undefined 
-			? "unlimited" 
-			: `${params.usesLeft} use(s)`;
+		const usesText =
+			params.usesLeft === undefined ? "unlimited" : `${params.usesLeft} use(s)`;
 
 		LogActions.create(
 			{

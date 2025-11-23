@@ -1,6 +1,6 @@
 // domains/Skill/SkillSlotDisplay.tsx
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
@@ -27,8 +27,8 @@ export function SkillSlotDisplay({
 	const campaign = CampaignActions.getActiveCampaign(context);
 
 	const [discardClickCount, setDiscardClickCount] = useState(0);
-	const [isUnlimited, setIsUnlimited] = useState(slot.UsesLeft === undefined);
 	const [localUsesLeft, setLocalUsesLeft] = useState(slot.UsesLeft ?? 1);
+	const hasUnsavedChanges = useRef(false);
 
 	// Find the skill template
 	const skill = campaign.SkillTemplates.find((s) => s.Id === slot.Id);
@@ -36,9 +36,22 @@ export function SkillSlotDisplay({
 	// Reset state when drawer closes or slot changes
 	useEffect(() => {
 		setDiscardClickCount(0);
-		setIsUnlimited(slot.UsesLeft === undefined);
 		setLocalUsesLeft(slot.UsesLeft ?? skill?.MaxUses ?? 1);
+		hasUnsavedChanges.current = false;
 	}, [isOpen, slot.Id, slot.UsesLeft, skill?.MaxUses]);
+
+	// Save on drawer close if there are unsaved changes
+	useEffect(() => {
+		return () => {
+			if (hasUnsavedChanges.current && actionService && slot.UsesLeft !== undefined) {
+				actionService.execute("skill:adjustUses", {
+					actorId: actor.Id,
+					skillId: slot.Id,
+					usesLeft: localUsesLeft,
+				});
+			}
+		};
+	}, [localUsesLeft, actionService, actor.Id, slot.Id, slot.UsesLeft]);
 
 	// Auto-reset discard after 2 seconds
 	useEffect(() => {
@@ -78,16 +91,22 @@ export function SkillSlotDisplay({
 		}
 	};
 
-	const handleAdjustUses = () => {
-		if (!actionService) return;
+	const handleUsesBlur = () => {
+		if (!actionService || slot.UsesLeft === undefined) return;
 
-		const newUses = isUnlimited ? undefined : localUsesLeft;
-		
 		actionService.execute("skill:adjustUses", {
 			actorId: actor.Id,
 			skillId: slot.Id,
-			usesLeft: newUses,
+			usesLeft: localUsesLeft,
 		});
+		hasUnsavedChanges.current = false;
+	};
+
+	const handleUsesChange = (value: number) => {
+		const maxUses = skill.MaxUses ?? 999;
+		const clamped = Math.min(maxUses, Math.max(0, value));
+		setLocalUsesLeft(clamped);
+		hasUnsavedChanges.current = true;
 	};
 
 	const handleImageChange = (imageId: string | undefined) => {
@@ -216,31 +235,17 @@ export function SkillSlotDisplay({
 								</div>
 							)}
 
-							{/* Uses Adjuster */}
-							<div className="card bg-base-100 border-2 border-base-300 p-4">
-								<h4 className="font-semibold text-sm mb-3">Adjust Uses</h4>
-								
-								<div className="form-control mb-3">
-									<label className="label cursor-pointer justify-start gap-2">
-										<input
-											type="checkbox"
-											className="toggle toggle-primary"
-											checked={isUnlimited}
-											onChange={(e) => setIsUnlimited(e.target.checked)}
-										/>
-										<span className="label-text">Unlimited uses</span>
-									</label>
-								</div>
-
-								{!isUnlimited && (
-									<div className="flex gap-2 items-center mb-3">
+							{/* Uses Adjuster - Only show if uses are limited */}
+							{slot.UsesLeft !== undefined && (
+								<div className="card bg-base-100 border-2 border-base-300 p-4">
+									<h4 className="font-semibold text-sm mb-3">Adjust Uses</h4>
+									
+									<div className="flex gap-2 items-center">
 										<input
 											type="number"
 											value={localUsesLeft}
-											onChange={(e) => {
-												const maxUses = skill.MaxUses ?? 999;
-												setLocalUsesLeft(Math.min(maxUses, Math.max(0, Number(e.target.value) || 0)));
-											}}
+											onChange={(e) => handleUsesChange(Number(e.target.value) || 0)}
+											onBlur={handleUsesBlur}
 											className="input input-bordered input-sm flex-1"
 											min={0}
 											max={skill.MaxUses ?? 999}
@@ -248,17 +253,8 @@ export function SkillSlotDisplay({
 										/>
 										<span className="text-sm opacity-70">uses</span>
 									</div>
-								)}
-
-								<button
-									onClick={handleAdjustUses}
-									disabled={!actionService}
-									className="btn btn-sm btn-primary w-full"
-								>
-									<span className="icon-[mdi--clock-edit] w-4 h-4" />
-									Apply Uses
-								</button>
-							</div>
+								</div>
+							)}
 
 							{/* Divider */}
 							<div className="divider my-2"></div>

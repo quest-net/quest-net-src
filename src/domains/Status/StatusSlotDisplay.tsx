@@ -1,6 +1,6 @@
 // domains/Status/StatusSlotDisplay.tsx
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
@@ -27,8 +27,8 @@ export function StatusSlotDisplay({
 	const isDM = context.User.Role === "dm";
 
 	const [removeClickCount, setRemoveClickCount] = useState(0);
-	const [isPermanent, setIsPermanent] = useState(slot.turnsLeft === undefined);
 	const [localTurnsLeft, setLocalTurnsLeft] = useState(slot.turnsLeft ?? 3);
+	const hasUnsavedChanges = useRef(false);
 
 	// Find the status template
 	const status = campaign.StatusTemplates.find((s) => s.Id === slot.Id);
@@ -36,9 +36,22 @@ export function StatusSlotDisplay({
 	// Reset state when drawer closes or slot changes
 	useEffect(() => {
 		setRemoveClickCount(0);
-		setIsPermanent(slot.turnsLeft === undefined);
 		setLocalTurnsLeft(slot.turnsLeft ?? 3);
+		hasUnsavedChanges.current = false;
 	}, [isOpen, slot.Id, slot.turnsLeft]);
+
+	// Save on drawer close if there are unsaved changes
+	useEffect(() => {
+		return () => {
+			if (hasUnsavedChanges.current && actionService && slot.turnsLeft !== undefined) {
+				actionService.execute("status:adjustDuration", {
+					actorId: actor.Id,
+					statusId: slot.Id,
+					turnsLeft: localTurnsLeft,
+				});
+			}
+		};
+	}, [localTurnsLeft, actionService, actor.Id, slot.Id, slot.turnsLeft]);
 
 	// Auto-reset remove after 2 seconds
 	useEffect(() => {
@@ -69,16 +82,21 @@ export function StatusSlotDisplay({
 		}
 	};
 
-	const handleAdjustDuration = () => {
-		if (!actionService) return;
+	const handleTurnsBlur = () => {
+		if (!actionService || slot.turnsLeft === undefined) return;
 
-		const newDuration = isPermanent ? undefined : localTurnsLeft;
-		
 		actionService.execute("status:adjustDuration", {
 			actorId: actor.Id,
 			statusId: slot.Id,
-			turnsLeft: newDuration,
+			turnsLeft: localTurnsLeft,
 		});
+		hasUnsavedChanges.current = false;
+	};
+
+	const handleTurnsChange = (value: number) => {
+		const clamped = Math.min(999, Math.max(0, value));
+		setLocalTurnsLeft(clamped);
+		hasUnsavedChanges.current = true;
 	};
 
 	const handleImageChange = (imageId: string | undefined) => {
@@ -152,28 +170,17 @@ export function StatusSlotDisplay({
 						<div className="flex-1 space-y-3">
 							<h3 className="font-semibold text-sm opacity-70 mb-4">Actions</h3>
 
-							{/* Duration Adjuster */}
-							<div className="card bg-base-100 border-2 border-base-300 p-4">
-								<h4 className="font-semibold text-sm mb-3">Adjust Duration</h4>
-								
-								<div className="form-control mb-3">
-									<label className="label cursor-pointer justify-start gap-2">
-										<input
-											type="checkbox"
-											className="toggle toggle-primary"
-											checked={isPermanent}
-											onChange={(e) => setIsPermanent(e.target.checked)}
-										/>
-										<span className="label-text">Permanent (never expires)</span>
-									</label>
-								</div>
-
-								{!isPermanent && (
-									<div className="flex gap-2 items-center mb-3">
+							{/* Duration Adjuster - Only show if duration is limited */}
+							{slot.turnsLeft !== undefined && (
+								<div className="card bg-base-100 border-2 border-base-300 p-4">
+									<h4 className="font-semibold text-sm mb-3">Adjust Duration</h4>
+									
+									<div className="flex gap-2 items-center">
 										<input
 											type="number"
 											value={localTurnsLeft}
-											onChange={(e) => setLocalTurnsLeft(Math.min(999, Math.max(0, Number(e.target.value) || 0)))}
+											onChange={(e) => handleTurnsChange(Number(e.target.value) || 0)}
+											onBlur={handleTurnsBlur}
 											className="input input-bordered input-sm flex-1"
 											min={0}
 											max={999}
@@ -181,17 +188,8 @@ export function StatusSlotDisplay({
 										/>
 										<span className="text-sm opacity-70">turns</span>
 									</div>
-								)}
-
-								<button
-									onClick={handleAdjustDuration}
-									disabled={!actionService}
-									className="btn btn-sm btn-primary w-full"
-								>
-									<span className="icon-[mdi--clock-edit] w-4 h-4" />
-									Apply Duration
-								</button>
-							</div>
+								</div>
+							)}
 
 							{/* Divider */}
 							<div className="divider my-2"></div>
