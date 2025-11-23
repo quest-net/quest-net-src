@@ -3,7 +3,7 @@
 // gating so corners never flash on remount.
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Texture, ImageSource } from "pixi.js";
+import { Texture, CanvasSource } from "pixi.js";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
@@ -140,23 +140,34 @@ export function SpriteDisplay({
         if (loadId !== currentLoadId.current || cancelled) return;
 
         // STEP 4: Create texture from blob using PixiJS v8 API
-        objectUrl = URL.createObjectURL(blob);
-        imageElement = new Image();
+		objectUrl = URL.createObjectURL(blob);
+		imageElement = new Image();
 
-        await new Promise<void>((resolve, reject) => {
-          imageElement!.onload = () => resolve();
-          imageElement!.onerror = () => reject(new Error("Failed to load image"));
-          imageElement!.src = objectUrl!;
-        });
+		await new Promise<void>((resolve, reject) => {
+		imageElement!.onload = () => resolve();
+		imageElement!.onerror = () => reject(new Error("Failed to load image"));
+		imageElement!.src = objectUrl!;
+		});
 
-        if (loadId !== currentLoadId.current || cancelled) return;
+		if (loadId !== currentLoadId.current || cancelled) return;
 
-        const source = new ImageSource({ resource: imageElement, autoGenerateMipmaps: true, });
-        createdTexture = new Texture({ source });
+		// Draw image to canvas
+		const canvas = document.createElement('canvas');
+		canvas.width = imageElement.width;
+		canvas.height = imageElement.height;
+		const ctx = canvas.getContext('2d');
+		ctx?.drawImage(imageElement, 0, 0);
 
-        textureCache.set(imageId, createdTexture);
-        setTexture(createdTexture);
-        setIsLoading(false);
+		// Use CanvasSource instead of ImageSource
+		const source = new CanvasSource({
+		resource: canvas,
+		autoGenerateMipmaps: true,
+		});
+		createdTexture = new Texture({ source });
+
+		textureCache.set(imageId, createdTexture);
+		setTexture(createdTexture);
+		setIsLoading(false);
 
         if (objectUrl) {
           URL.revokeObjectURL(objectUrl);
