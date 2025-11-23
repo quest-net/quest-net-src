@@ -25,7 +25,7 @@ export class StateSync {
 	private updateCount = 0;
 
 	// Configuration
-	private fullStateInterval = 30; // Send full state every N updates as fallback
+	private fullStateInterval = 10000; // Send full state every N updates as fallback
 
 	constructor(
 		room: Room,

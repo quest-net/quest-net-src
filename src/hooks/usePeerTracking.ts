@@ -31,6 +31,16 @@ export function usePeerTracking(): PeerTrackingData {
 
 	const sendUserRef = useRef<((data: any, peerId?: string) => void) | null>(null);
 	const pingIntervalsRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+	const peerUsersRef = useRef<Record<string, User>>({});
+	const currentUserRef = useRef(context.User);
+
+	useEffect(() => {
+		peerUsersRef.current = peerUsers;
+	}, [peerUsers]);
+
+	useEffect(() => {
+		currentUserRef.current = context.User;
+	}, [context.User]);
 
 	// Convenience function: Get actor ID from user ID
 	const getActorIdFromUserId = (userId: string): string | null => {
@@ -120,6 +130,11 @@ export function usePeerTracking(): PeerTrackingData {
 				});
 
 			pingIntervalsRef.current[peerId] = setInterval(async () => {
+				// Retry handshake if we don't know who this is yet
+				if (!peerUsersRef.current[peerId] && sendUserRef.current) {
+					sendUserRef.current(currentUserRef.current as any, peerId);
+				}
+
 				try {
 					const ms = await room.ping(peerId);
 					setPeerPings((current) => ({
@@ -172,13 +187,17 @@ export function usePeerTracking(): PeerTrackingData {
 
 		// Start pinging current peers
 		const currentPeers = RoomActions.getConnectedPeerIds(room);
-		currentPeers.forEach((peerId) => startPingingPeer(peerId));
+		currentPeers.forEach((peerId) => {
+			// Explicitly send our user data to existing peers to ensure they know us
+			sendUser(context.User as any, peerId);
+			startPingingPeer(peerId);
+		});
 
 		return () => {
 			Object.values(pingIntervalsRef.current).forEach(clearInterval);
 			pingIntervalsRef.current = {};
 			// neutralize the userState receiver so unmounted closures never fire
-			getUser(() => {});
+			getUser(() => { });
 			sendUserRef.current = null;
 			// Clear state on cleanup - this only happens when actionService changes
 			setPeerUsers({});
