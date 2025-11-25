@@ -90,12 +90,13 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	const logLength = campaign.Log.length;
 	const lastLogId = logLength > 0 ? campaign.Log[logLength - 1].Id : "∅";
 
-	// Filter by visibility using centralized helper
 	const visibleLog = useMemo(() => {
-		return campaign.Log.filter((entry) =>
+		// Get chronologically sorted log from ring buffer
+		const chronologicalLog = LogActions.getChronologicalLog(campaign);
+		return chronologicalLog.filter((entry) =>
 			LogActions.canUserSeeEntry(entry, userRole)
 		);
-	}, [campaign.Log, userRole, selectedCharacterId, logLength, lastLogId]);
+	}, [campaign.Log, campaign.LogHead, userRole, selectedCharacterId, logLength, lastLogId]);
 
 	// Filter by category preferences
 	const categoryFilteredLog = useMemo(

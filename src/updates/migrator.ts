@@ -4,13 +4,14 @@ import { APP_VERSION, type VersionString } from "../version";
 import type { VersionedMigration } from "./types";
 
 // Import migrations here as you add them:
-// import { migration_1_0_3 } from "./update-1.0.3";
+import { migration_1_0_3 } from "./update-1.0.3";
+import { migration_1_0_5 } from "./update-1.0.5";
 // import { migration_1_0_4 } from "./update-1.0.4";
 // etc.
 
 const MIGRATIONS: VersionedMigration[] = [
-  // migration_1_0_3,
-  // migration_1_0_4,
+  migration_1_0_3,
+  migration_1_0_5,
   // ...
 ];
 

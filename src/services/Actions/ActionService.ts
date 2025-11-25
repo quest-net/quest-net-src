@@ -171,9 +171,8 @@ export class ActionService {
 		// OPTIMISTIC UPDATE: Run locally first
 		try {
 			this.runDomainAction(actionKey, params);
-			// This seems to cause flickering on the player side (so comment it out)
-			// const campaign = CampaignActions.getActiveCampaign(this.context);
-			// this.bumpMapRefs(campaign);
+			const campaign = CampaignActions.getActiveCampaign(this.context);
+			this.bumpMapRefs(campaign);
 			triggerContextUpdate();
 		} catch (error) {
 			console.warn("[ActionService] Optimistic update failed (ignoring):", error);

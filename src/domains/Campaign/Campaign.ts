@@ -28,6 +28,7 @@ export interface Campaign {
 	GameState: GameState;
 	//Campaign Log
 	Log: LogEntry[];
+	LogHead: number;
 	//Campaign-specific settings
 	Settings: CampaignSettings;
 }

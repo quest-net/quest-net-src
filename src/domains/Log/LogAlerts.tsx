@@ -63,15 +63,15 @@ export function LogAlerts() {
 
 	useEffect(() => {
 		const now = Date.now();
-
+		
+		// Get chronologically sorted log
+		const chronologicalLog = LogActions.getChronologicalLog(campaign);
+	
 		// Find new important/critical logs that are recent enough and visible
-		const newAlerts = campaign.Log.filter((entry) => {
+		const newAlerts = chronologicalLog.filter((entry) => {
 			const levelOk = entry.Level === "important" || entry.Level === "critical";
 			const fresh = now - entry.Timestamp < MAX_ALERT_AGE;
-			const canSee = LogActions.canUserSeeEntry(
-				entry,
-				userRole
-			);
+			const canSee = LogActions.canUserSeeEntry(entry, userRole);
 			return levelOk && fresh && !processedIds.has(entry.Id) && canSee;
 		});
 
@@ -94,6 +94,7 @@ export function LogAlerts() {
 		});
 	}, [
 		campaign.Log,
+		campaign.LogHead,
 		campaign.Log.length,
 		processedIds,
 		userRole,

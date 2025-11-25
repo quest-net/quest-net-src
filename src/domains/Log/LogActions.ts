@@ -1,4 +1,3 @@
-// LogActions.ts - Updated
 import { Context } from "../Context/Context";
 import {
 	LogEntry,
@@ -8,12 +7,12 @@ import {
 } from "../Log/LogEntry";
 import { CampaignActions } from "../Campaign/CampaignActions";
 
-const MAX_LOG_SIZE = 1000; // Configurable
+const MAX_LOG_SIZE = 1000;
 
 export const LogActions = {
 	/**
-	 * Creates and adds a log entry to the campaign
-	 * Automatically manages log size by removing oldest entries
+	 * Creates and adds a log entry using ring buffer pattern.
+	 * Overwrites the oldest entry in-place instead of shifting.
 	 */
 	create(
 		params: {
@@ -41,14 +40,51 @@ export const LogActions = {
 			TargetId: params.targetId,
 		};
 
-		// Add new entry
-		campaign.Log.push(entry);
-
-		// Enforce max size - remove oldest entries
-		if (campaign.Log.length > MAX_LOG_SIZE) {
-			const excess = campaign.Log.length - MAX_LOG_SIZE;
-			campaign.Log.splice(0, excess);
+		// Initialize LogHead if missing (migration safety)
+		if (campaign.LogHead === undefined) {
+			campaign.LogHead = campaign.Log.length % MAX_LOG_SIZE;
 		}
+
+		// Ring buffer write
+		if (campaign.Log.length < MAX_LOG_SIZE) {
+			// Buffer not full yet - just push
+			campaign.Log.push(entry);
+			campaign.LogHead = campaign.Log.length % MAX_LOG_SIZE;
+		} else {
+			// Buffer full - overwrite at head position
+			campaign.Log[campaign.LogHead] = entry;
+			campaign.LogHead = (campaign.LogHead + 1) % MAX_LOG_SIZE;
+		}
+	},
+
+	/**
+	 * Returns log entries in chronological order (oldest to newest).
+	 * This handles the ring buffer's non-sequential storage.
+	 */
+	getChronologicalLog(campaign: { Log: LogEntry[]; LogHead?: number }): LogEntry[] {
+		if (!campaign.Log || campaign.Log.length === 0) {
+			return [];
+		}
+
+		// If buffer isn't full or LogHead is undefined, just sort by timestamp
+		if (campaign.LogHead === undefined || campaign.Log.length < MAX_LOG_SIZE) {
+			return [...campaign.Log].sort((a, b) => a.Timestamp - b.Timestamp);
+		}
+
+		// Ring buffer is full - reconstruct chronological order
+		// LogHead points to the NEXT slot to write (i.e., the oldest entry)
+		const head = campaign.LogHead;
+		const result: LogEntry[] = [];
+		
+		// Read from head (oldest) to end, then from 0 to head-1 (newest)
+		for (let i = 0; i < MAX_LOG_SIZE; i++) {
+			const index = (head + i) % MAX_LOG_SIZE;
+			if (campaign.Log[index]) {
+				result.push(campaign.Log[index]);
+			}
+		}
+		
+		return result;
 	},
 
 	/**
@@ -75,32 +111,25 @@ export const LogActions = {
 	},
 
 	isCommand(params: any, command: string): boolean {
-		// Must be a log:create action with an Action field
 		if (!params || typeof params.action !== "string") {
 			return false;
 		}
-
-		// Check for the specific command, trimming whitespace
 		return params.action.trim() === command;
 	},
 
-	/**
-	 * Determines if a user can see a specific log entry
-	 * Centralized visibility logic used by both LogDisplay and LogAlerts
-	 */
 	canUserSeeEntry(
 		entry: LogEntry,
 		userRole: "dm" | "player" | undefined,
 	): boolean {
 		if (userRole === "dm" && (entry.Visibility.includes("dm") || entry.Visibility.includes("all"))) return true;
-		// Everyone can see "all" visibility
 		let visibilityCheck = entry.Visibility.includes("all") || (entry.Visibility.includes("player"));
-
 		let categoryCheck = entry.Category.includes("chat") || entry.Category.includes("dice");
-		// Players can see player-visible entries
 		if (visibilityCheck && categoryCheck) {
 			return true;
 		}
 		return false;
 	},
+
+	// Export for migration and other uses
+	MAX_LOG_SIZE,
 };
