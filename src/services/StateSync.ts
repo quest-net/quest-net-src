@@ -91,6 +91,7 @@ export class StateSync {
 			this.updateCount % this.fullStateInterval === 0;
 
 		if (shouldSendFull) {
+			console.log("[StateSync] Sending periodic/initial Full Sync");
 			this.broadcastFull(sanitizedCampaign);
 		} else {
 			this.broadcastDelta(sanitizedCampaign, force);
@@ -126,9 +127,6 @@ export class StateSync {
 	/**
 	 * Broadcasts a differential update
 	 */
-	/**
-	 * Broadcasts a differential update
-	 */
 	private broadcastDelta(campaign: Campaign, force = false): void {
 		if (!this.lastBroadcastState) {
 			// Fallback to full state if we don't have a previous state
@@ -141,11 +139,14 @@ export class StateSync {
 
 		if (patches.length === 0) {
 			if (force) {
+				console.log("[StateSync] Force broadcast with no changes -> Sending Full Sync");
 				// If forced and no changes, send full state to ensure sync
 				this.broadcastFull(campaign);
 			}
 			return;
 		}
+
+		console.log(`[StateSync] Broadcasting Delta. Version: ${this.version} -> ${this.version + 1}. Patches: ${patches.length}`);
 
 		const update: StateUpdate = {
 			type: "delta",
@@ -173,6 +174,7 @@ export class StateSync {
 		try {
 			switch (update.type) {
 				case "full":
+					console.log("[StateSync] Received Full Update");
 					this.handleFullUpdate(update);
 					break;
 
@@ -236,6 +238,7 @@ export class StateSync {
 		if (result.newDocument) {
 			this.currentState = result.newDocument;
 			this.version = (update.baseVersion ?? 0) + 1;
+			console.log(`[StateSync] Applied Delta. New Version: ${this.version}`);
 
 			if (this.onUpdateCallback) {
 				this.onUpdateCallback(result.newDocument);
