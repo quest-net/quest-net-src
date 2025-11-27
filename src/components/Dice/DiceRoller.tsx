@@ -218,33 +218,33 @@ function DieShape({
 		startColor = config?.color.includes("slate")
 			? "#64748b"
 			: config?.color.includes("rose")
-			? "#f43f5e"
-			: config?.color.includes("pink")
-			? "#ec4899"
-			: config?.color.includes("fuchsia")
-			? "#d946ef"
-			: config?.color.includes("purple")
-			? "#a855f7"
-			: config?.color.includes("violet")
-			? "#8b5cf6"
-			: config?.color.includes("indigo")
-			? "#6366f1"
-			: "#6b7280";
+				? "#f43f5e"
+				: config?.color.includes("pink")
+					? "#ec4899"
+					: config?.color.includes("fuchsia")
+						? "#d946ef"
+						: config?.color.includes("purple")
+							? "#a855f7"
+							: config?.color.includes("violet")
+								? "#8b5cf6"
+								: config?.color.includes("indigo")
+									? "#6366f1"
+									: "#6b7280";
 		endColor = config?.color.includes("slate")
 			? "#475569"
 			: config?.color.includes("rose")
-			? "#e11d48"
-			: config?.color.includes("pink")
-			? "#db2777"
-			: config?.color.includes("fuchsia")
-			? "#c026d3"
-			: config?.color.includes("purple")
-			? "#9333ea"
-			: config?.color.includes("violet")
-			? "#7c3aed"
-			: config?.color.includes("indigo")
-			? "#4f46e5"
-			: "#4b5563";
+				? "#e11d48"
+				: config?.color.includes("pink")
+					? "#db2777"
+					: config?.color.includes("fuchsia")
+						? "#c026d3"
+						: config?.color.includes("purple")
+							? "#9333ea"
+							: config?.color.includes("violet")
+								? "#7c3aed"
+								: config?.color.includes("indigo")
+									? "#4f46e5"
+									: "#4b5563";
 	}
 
 	const renderShape = () => {
@@ -395,7 +395,6 @@ export function DiceRoller() {
 	const [particles, setParticles] = useState<Particle[]>([]);
 	const [rainbowPhase, setRainbowPhase] = useState(0);
 	const [hasCrit, setHasCrit] = useState(false);
-	const [error, setError] = useState<string | null>(null);
 
 	const [, setHasFumble] = useState(false);
 
@@ -405,18 +404,21 @@ export function DiceRoller() {
 	const confettiSpawnRef = useRef<number | null>(null);
 	const rainbowTickRef = useRef<number | null>(null);
 
-	const canRoll = useMemo(() => {
+	const { canRoll, error } = useMemo(() => {
 		if (!formula.trim()) {
-			setError(null);
-			return false;
+			return { canRoll: false, error: null };
 		}
 		try {
 			const isValid = isValidDiceFormula(formula);
-			if (isValid) setError(null);
-			return isValid;
+			return {
+				canRoll: isValid,
+				error: isValid ? null : "Invalid formula"
+			};
 		} catch (e) {
-			setError(e instanceof Error ? e.message : "Invalid formula");
-			return false;
+			return {
+				canRoll: false,
+				error: e instanceof Error ? e.message : "Invalid formula"
+			};
 		}
 	}, [formula]);
 
@@ -434,14 +436,14 @@ export function DiceRoller() {
 		setAutoRoll(value);
 		try {
 			localStorage.setItem("questnet.dice.autoroll", value ? "1" : "0");
-		} catch {}
+		} catch { }
 	};
 
 	const persistOpen = (value: boolean) => {
 		setIsOpen(value);
 		try {
 			localStorage.setItem("questnet.dice.open", value ? "1" : "0");
-		} catch {}
+		} catch { }
 	};
 
 	// Continuous confetti spawner
@@ -503,13 +505,13 @@ export function DiceRoller() {
 				color:
 					type === "confetti"
 						? [
-								"#fbbf24",
-								"#f59e0b",
-								"#ef4444",
-								"#ec4899",
-								"#8b5cf6",
-								"#3b82f6",
-						  ][Math.floor(Math.random() * 6)]
+							"#fbbf24",
+							"#f59e0b",
+							"#ef4444",
+							"#ec4899",
+							"#8b5cf6",
+							"#3b82f6",
+						][Math.floor(Math.random() * 6)]
 						: ["#1f2937", "#374151", "#4b5563"][Math.floor(Math.random() * 3)],
 				size: 4 + Math.random() * 4,
 				type,
@@ -845,9 +847,8 @@ export function DiceRoller() {
 							<div className="flex gap-2 items-center">
 								<input
 									type="text"
-									className={`input input-sm  flex-1 font-mono bg-base-200  ${
-										canRoll || !formula.trim() ? "" : "input-error"
-									}`}
+									className={`input input-sm  flex-1 font-mono bg-base-200  ${canRoll || !formula.trim() ? "" : "input-error"
+										}`}
 									placeholder="e.g., 2d20kh1 + 5"
 									value={formula}
 									onChange={(e) => onFormulaChange(e.target.value)}
@@ -862,16 +863,14 @@ export function DiceRoller() {
 
 								<div className="tooltip" data-tip="Auto-roll after 1s">
 									<button
-										className={`btn btn-sm btn-square transition-all ${
-											autoRoll ? "btn-accent shadow-lg" : "btn-ghost"
-										}`}
+										className={`btn btn-sm btn-square transition-all ${autoRoll ? "btn-accent shadow-lg" : "btn-ghost"
+											}`}
 										onClick={() => persistAutoRoll(!autoRoll)}
 										aria-label="Toggle autoroll"
 									>
 										<span
-											className={`icon-[mdi--autorenew] w-5 h-5 ${
-												autoRoll ? "" : "opacity-40"
-											}`}
+											className={`icon-[mdi--autorenew] w-5 h-5 ${autoRoll ? "" : "opacity-40"
+												}`}
 										/>
 									</button>
 								</div>
@@ -914,9 +913,8 @@ export function DiceRoller() {
 											height: `${p.size}px`,
 											backgroundColor: p.color,
 											opacity: p.life,
-											transform: `translate(-50%, -50%) rotate(${
-												p.life * 360
-											}deg)`,
+											transform: `translate(-50%, -50%) rotate(${p.life * 360
+												}deg)`,
 										}}
 									/>
 								))}
@@ -940,21 +938,18 @@ export function DiceRoller() {
 										return (
 											<div
 												key={d.id}
-												className={`relative transition-all duration-300 ${
-													d.spinning ? "animate-pulse" : ""
-												} ${!d.kept ? "opacity-40 grayscale" : ""}`}
-												title={`${d.kept ? "Kept" : "Dropped"} - d${d.sides}: ${
-													d.finalValue
-												}`}
+												className={`relative transition-all duration-300 ${d.spinning ? "animate-pulse" : ""
+													} ${!d.kept ? "opacity-40 grayscale" : ""}`}
+												title={`${d.kept ? "Kept" : "Dropped"} - d${d.sides}: ${d.finalValue
+													}`}
 											>
 												<div
-													className={`relative ${
-														!d.spinning && isFumble && isSpecialDie
+													className={`relative ${!d.spinning && isFumble && isSpecialDie
 															? "animate-[shake_0.5s_ease-in-out]"
 															: !d.spinning && isCrit
-															? "animate-bounce"
-															: ""
-													}`}
+																? "animate-bounce"
+																: ""
+														}`}
 												>
 													<DieShape
 														sides={d.sides}
@@ -964,19 +959,17 @@ export function DiceRoller() {
 														rainbowPhase={
 															hasCrit && isSpecialDie ? rainbowPhase : undefined
 														}
-														className={`w-20 h-20 ${
-															!d.spinning && isCrit && isSpecialDie
+														className={`w-20 h-20 ${!d.spinning && isCrit && isSpecialDie
 																? "drop-shadow-[0_0_20px_rgba(139,92,246,0.8)]"
 																: !d.spinning && isCrit
-																? "drop-shadow-[0_0_16px_rgba(34,197,94,1)]"
-																: !d.spinning && isFumble
-																? "drop-shadow-[0_0_16px_rgba(239,68,68,1)]"
-																: "drop-shadow-lg"
-														} ${
-															d.spinning
+																	? "drop-shadow-[0_0_16px_rgba(34,197,94,1)]"
+																	: !d.spinning && isFumble
+																		? "drop-shadow-[0_0_16px_rgba(239,68,68,1)]"
+																		: "drop-shadow-lg"
+															} ${d.spinning
 																? "animate-spin [animation-duration:400ms]"
 																: ""
-														}`}
+															}`}
 													/>
 													{!d.spinning && isCrit && (
 														<div className="absolute -top-2 -right-2 bg-success text-success-content text-[10px] px-2 py-0.5 rounded-full font-bold shadow-lg animate-bounce">
@@ -999,9 +992,8 @@ export function DiceRoller() {
 						{/* Stats Display - Neutral backgrounds for highest/lowest */}
 						<div className="grid grid-cols-3 gap-3">
 							<div
-								className={`bg-linear-to-br from-primary to-primary/80 rounded-xl p-3 shadow-lg ${
-									result ? "scale-105" : ""
-								} transition-transform`}
+								className={`bg-linear-to-br from-primary to-primary/80 rounded-xl p-3 shadow-lg ${result ? "scale-105" : ""
+									} transition-transform`}
 							>
 								<div className="text-xs text-primary-content opacity-80 font-medium">
 									TOTAL

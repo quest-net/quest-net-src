@@ -418,6 +418,7 @@ function migrateV1SaveToCampaign(
       RemainingShortRests: 2,
     },
     Log: [],
+	LogHead: 0,
     Settings: settings,
   };
 
