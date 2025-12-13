@@ -23,6 +23,7 @@ interface TokenProps {
 	selected?: boolean;
 	name?: string;
 	size?: ActorSize;
+	sticker?: string;
 }
 
 export function Token({
@@ -34,6 +35,7 @@ export function Token({
 	selected = false,
 	name,
 	size = "small",
+	sticker,
 }: TokenProps) {
 	const {
 		width: TOKEN_W,
@@ -44,6 +46,8 @@ export function Token({
 	const rx = -TOKEN_W * 0.5;
 	const ry = -TOKEN_H * 1.25;
 	const MASK_CENTER_Y = -TOKEN_H * 0.75;
+	// Position sticker above the token
+	const STICKER_Y = -TOKEN_H * 2.0;
 
 	const drawOutlinePath = useMemo(
 		() => (g: PixiGraphics) => {
@@ -67,17 +71,32 @@ export function Token({
 		[rx, ry, TOKEN_W, TOKEN_H, cornerRadius, selected, alpha]
 	);
 
-	// If no image, use fallback token
+	// If no image, use fallback token, but still render sticker if present (wrapper needed)
 	if (!imageId) {
 		return (
-			<FallbackToken
-				cx={cx}
-				cy={cy}
-				alpha={alpha}
-				selected={selected}
-				name={name}
-				size={size}
-			/>
+			<pixiContainer x={cx} y={cy}>
+				<FallbackToken
+					cx={0} // local coords
+					cy={0}
+					alpha={alpha}
+					selected={selected}
+					name={name}
+					size={size}
+				/>
+				{sticker && (
+					<pixiText
+						text={sticker}
+						x={0}
+						y={STICKER_Y}
+						anchor={0.5}
+						style={{
+							fontSize: 36,
+							fill: "white",
+							stroke: { color: "black", width: 4, join: "round" },
+						}}
+					/>
+				)}
+			</pixiContainer>
 		);
 	}
 
@@ -95,6 +114,19 @@ export function Token({
 				cornerRadius={cornerRadius}
 			/>
 			{drawOutline && <pixiGraphics draw={drawOutlinePath} />}
+			{sticker && (
+				<pixiText
+					text={sticker}
+					x={0}
+					y={STICKER_Y}
+					anchor={0.5}
+					style={{
+						fontSize: 36,
+						fill: "white",
+						stroke: { color: "black", width: 4, join: "round" },
+					}}
+				/>
+			)}
 		</pixiContainer>
 	);
 }

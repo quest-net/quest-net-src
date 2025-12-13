@@ -22,6 +22,7 @@ export type LogCategory =
 	| "movement" // Position changes
 	| "scene" // Environment/audio changes
 	| "chat" // Messaging
+	| "sticker" // Ephemeral emojis
 	| "system"; // Meta events
 
 export type LogLevel =

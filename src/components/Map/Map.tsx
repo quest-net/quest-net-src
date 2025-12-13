@@ -52,6 +52,7 @@ import {
 } from "./Ladder";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
+import { useActiveStickers } from "./hooks/useActiveStickers";
 
 interface MapProps {
 	characters: Character[];
@@ -102,6 +103,7 @@ export default function Map({
 	const [hoveredLadderHeight, setHoveredLadderHeight] = useState<number | null>(
 		null
 	);
+	const activeStickers = useActiveStickers();
 
 	// Custom hooks for state management
 	const { orientation, animationState, rotateCW, rotateCCW } = useMapRotation();
@@ -175,12 +177,12 @@ export default function Map({
 		() =>
 			terrain
 				? buildActorHitCandidates(
-						characters,
-						entities,
-						terrain,
-						orientation,
-						animationState
-				  )
+					characters,
+					entities,
+					terrain,
+					orientation,
+					animationState
+				)
 				: [],
 		[terrain, orientation, animationState, characters, entities]
 	);
@@ -227,7 +229,7 @@ export default function Map({
 	const ladderInfo = useMemo(() => {
 		if (!terrain) return null;
 		// Hide ladder if the user doesn't control the selected actor
-  		if (!canControlSelected) return null;
+		if (!canControlSelected) return null;
 
 		return calculateLadderInfo({
 			selectedActorId: selectedActor?.id ?? null,
@@ -644,8 +646,8 @@ export default function Map({
 	const cursorClass = isPanning
 		? "cursor-grabbing"
 		: hoveredLadderHeight !== null
-		? "cursor-ns-resize"
-		: "cursor-default";
+			? "cursor-ns-resize"
+			: "cursor-default";
 
 	// Build fast lookup sets for highlighting inside terrain paint
 	const movementRangeIndices = useMemo(() => {
@@ -700,6 +702,7 @@ export default function Map({
 							hoveredIndex={hoveredIndex}
 							ladderInfo={ladderInfo}
 							hoveredLadderHeight={hoveredLadderHeight}
+							activeStickers={activeStickers}
 						/>
 					</pixiContainer>
 				</Application>

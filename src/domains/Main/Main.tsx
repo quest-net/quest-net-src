@@ -22,6 +22,7 @@ import { Party } from "./Party";
 import { SkillCollection } from "../Skill/Collection";
 import { CombatDisplay } from "../Combat/CombatDisplay";
 import { StatusCollection } from "../Status/Collection";
+import { StickerPicker } from "../../components/Sticker/StickerPicker";
 
 type TopTab = "music" | "calendar" | "terrain" | "combat";
 type PlayerBottomTab =
@@ -52,7 +53,7 @@ export function Main() {
 	useEffect(() => {
 		try {
 			localStorage.setItem("questnet.mapMode", is2D ? "2d" : "3d");
-		} catch {}
+		} catch { }
 	}, [is2D]);
 
 	// Top tabs state (same for everyone)
@@ -206,6 +207,13 @@ export function Main() {
 					)}
 					{/* Dice Roller */}
 					<DiceRoller />
+
+					{/* Sticker Picker - Players only */}
+					{!isDM && (
+						<div className="absolute right-2 bottom-18 z-20">
+							<StickerPicker />
+						</div>
+					)}
 				</div>
 
 				{/* Right 30%: Side Panel */}
@@ -228,36 +236,32 @@ export function Main() {
 								// DM Tabs
 								<>
 									<button
-										className={`btn btn-square ${
-											activeBottomTab === "inspector" ? "btn-neutral" : ""
-										}`}
+										className={`btn btn-square ${activeBottomTab === "inspector" ? "btn-neutral" : ""
+											}`}
 										onClick={() => setActiveBottomTab("inspector")}
 										title="Inspector"
 									>
 										<span className="icon-[mdi--magnify] w-6 h-6" />
 									</button>
 									<button
-										className={`btn btn-square ${
-											activeBottomTab === "scene" ? "btn-neutral" : ""
-										}`}
+										className={`btn btn-square ${activeBottomTab === "scene" ? "btn-neutral" : ""
+											}`}
 										onClick={() => setActiveBottomTab("scene")}
 										title="Scene"
 									>
 										<span className="icon-[mdi--image] w-6 h-6" />
 									</button>
 									<button
-										className={`btn btn-square ${
-											activeBottomTab === "log" ? "btn-neutral" : ""
-										}`}
+										className={`btn btn-square ${activeBottomTab === "log" ? "btn-neutral" : ""
+											}`}
 										onClick={() => setActiveBottomTab("log")}
 										title="Log"
 									>
 										<span className="icon-[mdi--message-text] w-6 h-6" />
 									</button>
 									<button
-										className={`btn btn-square ${
-											activeBottomTab === "party" ? "btn-neutral" : ""
-										}`}
+										className={`btn btn-square ${activeBottomTab === "party" ? "btn-neutral" : ""
+											}`}
 										onClick={() => setActiveBottomTab("party")}
 										title="Party"
 									>
@@ -268,9 +272,8 @@ export function Main() {
 								// Player Tabs
 								<>
 									<button
-										className={`btn btn-square ${
-											activeBottomTab === "character" ? "btn-neutral" : ""
-										}`}
+										className={`btn btn-square ${activeBottomTab === "character" ? "btn-neutral" : ""
+											}`}
 										onClick={() => setActiveBottomTab("character")}
 										title={
 											selectedCharacter
@@ -285,9 +288,8 @@ export function Main() {
 											<span className="indicator-item status status-info"></span>
 										)}
 										<button
-											className={`btn btn-square ${
-												activeBottomTab === "equipment" ? "btn-neutral" : ""
-											}`}
+											className={`btn btn-square ${activeBottomTab === "equipment" ? "btn-neutral" : ""
+												}`}
 											onClick={() => handleBottomTabChange("equipment")}
 											title="Equipment"
 										>
@@ -299,9 +301,8 @@ export function Main() {
 											<span className="indicator-item status status-info"></span>
 										)}
 										<button
-											className={`btn btn-square ${
-												activeBottomTab === "inventory" ? "btn-neutral" : ""
-											}`}
+											className={`btn btn-square ${activeBottomTab === "inventory" ? "btn-neutral" : ""
+												}`}
 											onClick={() => handleBottomTabChange("inventory")}
 											title="Inventory"
 										>
@@ -314,9 +315,8 @@ export function Main() {
 											<span className="indicator-item status status-info"></span>
 										)}
 										<button
-											className={`btn btn-square ${
-												activeBottomTab === "skills" ? "btn-neutral" : ""
-											}`}
+											className={`btn btn-square ${activeBottomTab === "skills" ? "btn-neutral" : ""
+												}`}
 											onClick={() => handleBottomTabChange("skills")}
 											title="Skills"
 										>
@@ -328,9 +328,8 @@ export function Main() {
 											<span className="indicator-item status status-info"></span>
 										)}
 										<button
-											className={`btn btn-square ${
-												activeBottomTab === "statuses" ? "btn-neutral" : ""
-											}`}
+											className={`btn btn-square ${activeBottomTab === "statuses" ? "btn-neutral" : ""
+												}`}
 											onClick={() => handleBottomTabChange("statuses")}
 											title="Statuses"
 										>
@@ -338,36 +337,32 @@ export function Main() {
 										</button>
 									</div>
 									<button
-										className={`btn btn-square ${
-											activeBottomTab === "party" ? "btn-neutral" : ""
-										}`}
+										className={`btn btn-square ${activeBottomTab === "party" ? "btn-neutral" : ""
+											}`}
 										onClick={() => setActiveBottomTab("party")}
 										title="Party"
 									>
 										<span className="icon-[mdi--account-group] w-6 h-6" />
 									</button>
 									<button
-										className={`btn btn-square ${
-											activeBottomTab === "inspector" ? "btn-neutral" : ""
-										}`}
+										className={`btn btn-square ${activeBottomTab === "inspector" ? "btn-neutral" : ""
+											}`}
 										onClick={() => setActiveBottomTab("inspector")}
 										title="Inspector"
 									>
 										<span className="icon-[mdi--magnify] w-6 h-6" />
 									</button>
 									<button
-										className={`btn btn-square ${
-											activeBottomTab === "log" ? "btn-neutral" : ""
-										}`}
+										className={`btn btn-square ${activeBottomTab === "log" ? "btn-neutral" : ""
+											}`}
 										onClick={() => setActiveBottomTab("log")}
 										title="Log"
 									>
 										<span className="icon-[mdi--message-text] w-6 h-6" />
 									</button>
 									<button
-										className={`btn btn-square ${
-											activeBottomTab === "notes" ? "btn-neutral" : ""
-										}`}
+										className={`btn btn-square ${activeBottomTab === "notes" ? "btn-neutral" : ""
+											}`}
 										onClick={() => setActiveBottomTab("notes")}
 										title="Notes"
 									>
@@ -385,36 +380,32 @@ export function Main() {
 							{/* Icon Tabs */}
 							<div className="tabs tabs-lift">
 								<button
-									className={`flex-auto tab border-l-0 border-t-0 ${
-										activeTopTab === "music" ? "tab-active" : ""
-									}`}
+									className={`flex-auto tab border-l-0 border-t-0 ${activeTopTab === "music" ? "tab-active" : ""
+										}`}
 									onClick={() => setActiveTopTab("music")}
 									title="Music"
 								>
 									<span className="icon-[mdi--music] w-5 h-5" />
 								</button>
 								<button
-									className={`flex-auto tab border-t-0 ${
-										activeTopTab === "calendar" ? "tab-active" : ""
-									}`}
+									className={`flex-auto tab border-t-0 ${activeTopTab === "calendar" ? "tab-active" : ""
+										}`}
 									onClick={() => setActiveTopTab("calendar")}
 									title="Calendar"
 								>
 									<span className="icon-[mdi--calendar] w-5 h-5" />
 								</button>
 								<button
-									className={`flex-auto tab border-t-0 ${
-										activeTopTab === "terrain" ? "tab-active" : ""
-									}`}
+									className={`flex-auto tab border-t-0 ${activeTopTab === "terrain" ? "tab-active" : ""
+										}`}
 									onClick={() => setActiveTopTab("terrain")}
 									title="Terrain"
 								>
 									<span className="icon-[mdi--terrain] w-5 h-5" />
 								</button>
 								<button
-									className={`flex-auto tab border-r-0 border-t-0 ${
-										activeTopTab === "combat" ? "tab-active" : ""
-									}`}
+									className={`flex-auto tab border-r-0 border-t-0 ${activeTopTab === "combat" ? "tab-active" : ""
+										}`}
 									onClick={() => setActiveTopTab("combat")}
 									title="Combat"
 								>

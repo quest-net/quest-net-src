@@ -101,6 +101,7 @@ export interface MapWorldLayerProps {
 	hoveredIndex?: number | null;
 	ladderInfo?: LadderInfo | null;
 	hoveredLadderHeight?: number | null;
+	activeStickers?: Map<string, string>;
 }
 
 export function MapWorldLayer({
@@ -117,6 +118,7 @@ export function MapWorldLayer({
 	hoveredIndex,
 	ladderInfo,
 	hoveredLadderHeight,
+	activeStickers,
 }: MapWorldLayerProps) {
 	if (!terrain || baseTiles.length === 0 || currentProjections.length === 0)
 		return null;
@@ -418,6 +420,7 @@ export function MapWorldLayer({
 							selected={a.selected}
 							name={a.name}
 							size={a.size}
+							sticker={activeStickers?.get(a.id)}
 						/>
 					))}
 				</pixiContainer>
@@ -436,6 +439,7 @@ export function MapWorldLayer({
 						selected={a.selected}
 						name={a.name}
 						size={a.size}
+						sticker={activeStickers?.get(a.id)}
 					/>
 				))}
 			</pixiContainer>
