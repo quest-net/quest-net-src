@@ -55,6 +55,11 @@ export const CharacterActions = {
 		const character: Character = {
 			...params.character,
 			Notes: params.character.Notes || [],
+			// Ensure stats are fully healed upon creation
+			Stats: params.character.Stats.map((stat) => ({
+				...stat,
+				Current: stat.Max,
+			})),
 		};
 
 		campaign.CharacterRoster.push(character);
@@ -85,6 +90,11 @@ export const CharacterActions = {
 			...params.character,
 			Notes: params.character.Notes || [],
 			Position: { x: 0, y: 0, h: 0 }, // Set to origin
+			// Ensure stats are fully healed upon creation
+			Stats: params.character.Stats.map((stat) => ({
+				...stat,
+				Current: stat.Max,
+			})),
 		};
 
 		// Add directly to GameState (skip roster entirely)

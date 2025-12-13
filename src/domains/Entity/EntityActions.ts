@@ -50,7 +50,18 @@ export const EntityActions = {
 	create(params: { entity: Entity }, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
-		campaign.EntityTemplates.push(params.entity);
+
+		// Ensure stats are fully healed upon creation
+		// This fixes a bug where editing Max HP during creation didn't update Current HP
+		const entity: Entity = {
+			...params.entity,
+			Stats: params.entity.Stats.map((stat) => ({
+				...stat,
+				Current: stat.Max,
+			})),
+		};
+
+		campaign.EntityTemplates.push(entity);
 
 		LogActions.create(
 			{
