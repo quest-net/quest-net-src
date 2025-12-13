@@ -40,7 +40,7 @@ export function ImagePicker({
 	const [page, setPage] = useState(1);
 	const PAGE_SIZE = 12;
 
-	const filteredImages = campaign.Images.filter((image) => {
+	const filteredImages = [...campaign.Images].reverse().filter((image) => {
 		const matchesSearch = image.Name.toLowerCase().includes(
 			searchQuery.toLowerCase()
 		);
@@ -197,10 +197,9 @@ export function ImagePicker({
 									onClick={() => setSelectedImageId(image.Id)}
 									className={`
 										card bg-base-100 border-2 cursor-pointer transition-all
-										${
-											selectedImageId === image.Id
-												? "border-primary ring-2 ring-primary"
-												: "border-base-300 hover:border-primary"
+										${selectedImageId === image.Id
+											? "border-primary ring-2 ring-primary"
+											: "border-base-300 hover:border-primary"
 										}
 									`}
 								>
@@ -318,9 +317,8 @@ export function ImagePicker({
 				) : (
 					<>
 						<span
-							className={`icon-[mdi--image-off] w-24 h-24 opacity-30 transition-opacity ${
-								isHovered && !readOnly ? "opacity-0" : "opacity-30"
-							}`}
+							className={`icon-[mdi--image-off] w-24 h-24 opacity-30 transition-opacity ${isHovered && !readOnly ? "opacity-0" : "opacity-30"
+								}`}
 						/>
 						{isHovered && !readOnly && (
 							<div className="absolute inset-0 flex items-center justify-center">

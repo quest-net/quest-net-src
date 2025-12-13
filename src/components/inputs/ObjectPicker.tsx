@@ -60,10 +60,13 @@ export function ObjectPicker({
 
 	// Filter items based on search
 	const filteredItems = useMemo(() => {
-		if (!searchQuery.trim()) return currentType.items;
+		// Always reverse to show newest first
+		const reversedItems = [...currentType.items].reverse();
+
+		if (!searchQuery.trim()) return reversedItems;
 
 		const query = searchQuery.toLowerCase();
-		return currentType.items.filter(
+		return reversedItems.filter(
 			(item: PickableObject) =>
 				item.Name.toLowerCase().includes(query) ||
 				item.Description?.toLowerCase().includes(query) ||
@@ -151,9 +154,8 @@ export function ObjectPicker({
 						{types.map((type, index) => (
 							<button
 								key={index}
-								className={`tab gap-2 ${
-									index === activeTypeIndex ? "tab-active" : ""
-								}`}
+								className={`tab gap-2 ${index === activeTypeIndex ? "tab-active" : ""
+									}`}
 								onClick={() => handleTypeChange(index)}
 							>
 								{type.icon && <span className={`${type.icon} w-4 h-4`} />}
@@ -204,10 +206,9 @@ export function ObjectPicker({
 										onClick={() => handleToggleSelect(item.Id)}
 										className={`
 											card bg-base-100 border-2 cursor-pointer transition-all
-											${
-												isSelected
-													? "border-primary ring-2 ring-primary"
-													: "border-base-300 hover:border-primary"
+											${isSelected
+												? "border-primary ring-2 ring-primary"
+												: "border-base-300 hover:border-primary"
 											}
 										`}
 									>
