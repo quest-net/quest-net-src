@@ -10,4 +10,6 @@ export interface Context {
 	AppSettings: Record<string, string>;
 	// version
 	version: string;
+	// Runtime flag to indicate if we are in an optimistic update
+	IsOptimistic?: boolean;
 }

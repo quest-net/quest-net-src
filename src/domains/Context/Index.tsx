@@ -43,11 +43,11 @@ export function Home() {
 			</div>
 			<div className="fixed top-3 right-3 z-50">
 				<button
-				onClick={() => navigate("/settings")}
-				className="btn btn-md btn- gap-2 shadow-md"
+					onClick={() => navigate("/settings")}
+					className="btn btn-md btn- gap-2 shadow-md"
 				>
-				<span className="icon-[mdi--cog] w-4 h-4" />
-				Settings
+					<span className="icon-[mdi--cog] w-4 h-4" />
+					Settings
 				</button>
 			</div>
 			{/* Vertically Centered Content */}
@@ -73,7 +73,7 @@ export function Home() {
 						editClassName="text-3xl font-bold px-1"
 						cursorClassName="text-primary"
 						onEditCommit={commitName}
-						onEditCancel={() => {}}
+						onEditCancel={() => { }}
 						ariaLabelEditable="Edit your username"
 						maxLength={24}
 					/>

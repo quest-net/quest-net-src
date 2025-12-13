@@ -1,12 +1,10 @@
-// domains/Terrain/Index.tsx
-
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { TerrainEdit } from "./Edit";
 import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
 import { useState } from "react";
-import { Terrain, TerrainType, TERRAIN_COLORS } from "./Terrain";
+import { Terrain, TERRAIN_TYPES, getTerrainColorByIndex } from "./Terrain";
 import { replacePathTag } from "../../utils/FolderUtils";
 
 /**
@@ -14,37 +12,32 @@ import { replacePathTag } from "../../utils/FolderUtils";
  * and returns its corresponding hex color
  */
 function getMostCommonTerrainColor(terrain: Terrain): string {
-	const colorCounts: Record<TerrainType, number> = {
-		green: 0,
-		white: 0,
-		blue: 0,
-		yellow: 0,
-		brown: 0,
-		red: 0,
-		grey: 0,
-		black: 0,
-	};
+	// Count occurrences of each color index
+	const colorCounts: number[] = new Array(TERRAIN_TYPES.length).fill(0);
 
-	// Count occurrences of each color
 	for (let y = 0; y < terrain.Length; y++) {
 		for (let x = 0; x < terrain.Width; x++) {
-			const terrainType = terrain.ColorMap[y][x];
-			colorCounts[terrainType]++;
+			const colorIndex = terrain.ColorMap[y][x] ?? 0;
+			if (colorIndex >= 0 && colorIndex < colorCounts.length) {
+				colorCounts[colorIndex]++;
+			}
 		}
 	}
 
-	// Find the most common color
-	let mostCommonType: TerrainType = "green";
+	// Find the most common color index
+	let mostCommonIndex = 0;
 	let maxCount = 0;
 
-	for (const [type, count] of Object.entries(colorCounts)) {
-		if (count > maxCount) {
-			maxCount = count;
-			mostCommonType = type as TerrainType;
+	for (let i = 0; i < colorCounts.length; i++) {
+		if (colorCounts[i] > maxCount) {
+			maxCount = colorCounts[i];
+			mostCommonIndex = i;
 		}
 	}
-	if (mostCommonType == "white") return "black";
-	return TERRAIN_COLORS[mostCommonType];
+
+	// Return black for white terrain (index 1) for visibility
+	if (mostCommonIndex === 1) return "black";
+	return getTerrainColorByIndex(mostCommonIndex);
 }
 
 export function TerrainIndex() {
@@ -82,9 +75,8 @@ export function TerrainIndex() {
 		return {
 			id: terrain.Id,
 			label: terrain.Name,
-			details: `${terrain.Width}×${terrain.Length}${
-				isActive ? " • Active" : ""
-			}${isDefault ? " • Default" : ""}`,
+			details: `${terrain.Width}×${terrain.Length}${isActive ? " • Active" : ""
+				}${isDefault ? " • Default" : ""}`,
 			// Use terrain icon with the most common color from the terrain
 			icon: "icon-[mdi--terrain]",
 			iconColor: getMostCommonTerrainColor(terrain),
@@ -92,10 +84,10 @@ export function TerrainIndex() {
 			action: isActive
 				? undefined
 				: {
-						label: "Activate",
-						icon: "icon-[mdi--play]",
-						onClick: () => handleSetActive(terrain.Id),
-				  },
+					label: "Activate",
+					icon: "icon-[mdi--play]",
+					onClick: () => handleSetActive(terrain.Id),
+				},
 		};
 	});
 

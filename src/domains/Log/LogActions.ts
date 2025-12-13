@@ -26,6 +26,8 @@ export const LogActions = {
 		},
 		context: Context
 	): void {
+		if (context.IsOptimistic) return;
+
 		const campaign = CampaignActions.getActiveCampaign(context);
 
 		const entry: LogEntry = {
@@ -75,7 +77,7 @@ export const LogActions = {
 		// LogHead points to the NEXT slot to write (i.e., the oldest entry)
 		const head = campaign.LogHead;
 		const result: LogEntry[] = [];
-		
+
 		// Read from head (oldest) to end, then from 0 to head-1 (newest)
 		for (let i = 0; i < MAX_LOG_SIZE; i++) {
 			const index = (head + i) % MAX_LOG_SIZE;
@@ -83,7 +85,7 @@ export const LogActions = {
 				result.push(campaign.Log[index]);
 			}
 		}
-		
+
 		return result;
 	},
 

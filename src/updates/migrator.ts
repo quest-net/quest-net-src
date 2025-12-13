@@ -6,12 +6,14 @@ import type { VersionedMigration } from "./types";
 // Import migrations here as you add them:
 import { migration_1_0_3 } from "./update-1.0.3";
 import { migration_1_0_5 } from "./update-1.0.5";
+import { migration_1_0_6 } from "./update-1.0.6";
 // import { migration_1_0_4 } from "./update-1.0.4";
 // etc.
 
 const MIGRATIONS: VersionedMigration[] = [
   migration_1_0_3,
   migration_1_0_5,
+  migration_1_0_6,
   // ...
 ];
 
@@ -86,7 +88,7 @@ function migrateUp(
     if (context.version !== migration.version) {
       console.warn(
         `[Updates] Migration to ${migration.version} did not set context.version. ` +
-          `Forcing it (was "${context.version}" from "${before}")`
+        `Forcing it (was "${context.version}" from "${before}")`
       );
       context.version = migration.version;
     }
@@ -128,7 +130,7 @@ function migrateDown(
     if (context.version === before) {
       console.warn(
         `[Updates] Reset for ${migration.version} did not change context.version. ` +
-          `Make sure reset() sets it to the previous version explicitly.`
+        `Make sure reset() sets it to the previous version explicitly.`
       );
     }
 

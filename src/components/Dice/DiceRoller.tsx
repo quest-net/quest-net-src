@@ -945,10 +945,10 @@ export function DiceRoller() {
 											>
 												<div
 													className={`relative ${!d.spinning && isFumble && isSpecialDie
-															? "animate-[shake_0.5s_ease-in-out]"
-															: !d.spinning && isCrit
-																? "animate-bounce"
-																: ""
+														? "animate-[shake_0.5s_ease-in-out]"
+														: !d.spinning && isCrit
+															? "animate-bounce"
+															: ""
 														}`}
 												>
 													<DieShape
@@ -960,12 +960,12 @@ export function DiceRoller() {
 															hasCrit && isSpecialDie ? rainbowPhase : undefined
 														}
 														className={`w-20 h-20 ${!d.spinning && isCrit && isSpecialDie
-																? "drop-shadow-[0_0_20px_rgba(139,92,246,0.8)]"
-																: !d.spinning && isCrit
-																	? "drop-shadow-[0_0_16px_rgba(34,197,94,1)]"
-																	: !d.spinning && isFumble
-																		? "drop-shadow-[0_0_16px_rgba(239,68,68,1)]"
-																		: "drop-shadow-lg"
+															? "drop-shadow-[0_0_20px_rgba(139,92,246,0.8)]"
+															: !d.spinning && isCrit
+																? "drop-shadow-[0_0_16px_rgba(34,197,94,1)]"
+																: !d.spinning && isFumble
+																	? "drop-shadow-[0_0_16px_rgba(239,68,68,1)]"
+																	: "drop-shadow-lg"
 															} ${d.spinning
 																? "animate-spin [animation-duration:400ms]"
 																: ""

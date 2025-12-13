@@ -6,7 +6,7 @@ import React, {
 	useRef,
 	useState,
 } from "react";
-import { TerrainType, TERRAIN_COLORS } from "../../domains/Terrain/Terrain";
+import { TerrainType, TERRAIN_TYPES, getTerrainColorByIndex } from "../../domains/Terrain/Terrain";
 import { useFormReadOnly } from "../Form/Form";
 
 type Tool = "paint" | "raise" | "lower" | "set";
@@ -15,13 +15,13 @@ export interface TerrainEditorProps {
 	width: number;
 	length: number;
 	heightMap: number[][];
-	colorMap: TerrainType[][];
+	colorMap: number[][]; // Color indices into TERRAIN_TYPES
 	readOnly?: boolean;
 	onChange(next: {
 		width: number;
 		length: number;
 		heightMap: number[][];
-		colorMap: TerrainType[][];
+		colorMap: number[][];
 	}): void;
 }
 
@@ -35,10 +35,6 @@ const clamp = (v: number, min: number, max: number) =>
 	Math.max(min, Math.min(max, v));
 
 function clone2DNumber(arr: number[][]): number[][] {
-	return arr.map((row) => row.slice());
-}
-
-function clone2DColor(arr: TerrainType[][]): TerrainType[][] {
 	return arr.map((row) => row.slice());
 }
 
@@ -80,7 +76,7 @@ export function TerrainEditor({
 	// Tool state
 	const [tool, setTool] = useState<Tool>("paint");
 	const [brushSize, setBrushSize] = useState<number>(1);
-	const [selectedColor, setSelectedColor] = useState<TerrainType>("green");
+	const [selectedColorIndex, setSelectedColorIndex] = useState<number>(0); // Index into TERRAIN_TYPES
 	const [targetHeight, setTargetHeight] = useState<number>(8);
 
 	// Layout: calculate tile size to fill container
@@ -138,13 +134,13 @@ export function TerrainEditor({
 	const isPointerDownRef = useRef(false);
 	const touchedRef = useRef<Set<string>>(new Set());
 	const workHeightsRef = useRef<number[][] | null>(null);
-	const workColorsRef = useRef<TerrainType[][] | null>(null);
+	const workColorsRef = useRef<number[][] | null>(null);
 	const rafRef = useRef<number | null>(null);
 
 	const beginStroke = useCallback(() => {
 		touchedRef.current = new Set();
 		workHeightsRef.current = clone2DNumber(heightMap);
-		workColorsRef.current = clone2DColor(colorMap);
+		workColorsRef.current = clone2DNumber(colorMap);
 	}, [heightMap, colorMap]);
 
 	const scheduleCommit = useCallback(() => {
@@ -183,7 +179,7 @@ export function TerrainEditor({
 				touchedRef.current.add(key);
 
 				if (tool === "paint") {
-					workColorsRef.current![y][x] = selectedColor;
+					workColorsRef.current![y][x] = selectedColorIndex;
 				} else if (tool === "raise") {
 					workHeightsRef.current![y][x] = clamp(
 						workHeightsRef.current![y][x] + 1,
@@ -207,7 +203,7 @@ export function TerrainEditor({
 			brushSize,
 			width,
 			length,
-			selectedColor,
+			selectedColorIndex,
 			tool,
 			targetHeight,
 			scheduleCommit,
@@ -271,8 +267,8 @@ export function TerrainEditor({
 			);
 			onChange({ width, length, heightMap: nextHeights, colorMap });
 		} else {
-			// Paint mode behavior (unchanged)
-			const nextColors = colorMap.map((row) => row.map(() => selectedColor));
+			// Paint mode behavior - fill with selected color index
+			const nextColors = colorMap.map((row) => row.map(() => selectedColorIndex));
 			onChange({ width, length, heightMap, colorMap: nextColors });
 		}
 	}, [
@@ -281,14 +277,14 @@ export function TerrainEditor({
 		heightMap,
 		colorMap,
 		targetHeight,
-		selectedColor,
+		selectedColorIndex,
 		onChange,
 		width,
 		length,
 	]);
 
 	const palette: TerrainType[] = useMemo(
-		() => ["green", "white", "blue", "yellow", "brown", "red", "grey", "black"],
+		() => [...TERRAIN_TYPES],
 		[]
 	);
 
@@ -320,9 +316,8 @@ export function TerrainEditor({
 					<div className="join">
 						<button
 							type="button"
-							className={`btn btn-sm join-item ${
-								tool === "paint" ? "btn-primary" : ""
-							}`}
+							className={`btn btn-sm join-item ${tool === "paint" ? "btn-primary" : ""
+								}`}
 							onClick={() => setTool("paint")}
 							disabled={isReadOnly}
 							title="Paint color"
@@ -331,9 +326,8 @@ export function TerrainEditor({
 						</button>
 						<button
 							type="button"
-							className={`btn btn-sm join-item ${
-								tool === "raise" ? "btn-primary" : ""
-							}`}
+							className={`btn btn-sm join-item ${tool === "raise" ? "btn-primary" : ""
+								}`}
 							onClick={() => setTool("raise")}
 							disabled={isReadOnly}
 							title="Raise terrain"
@@ -342,9 +336,8 @@ export function TerrainEditor({
 						</button>
 						<button
 							type="button"
-							className={`btn btn-sm join-item ${
-								tool === "lower" ? "btn-primary" : ""
-							}`}
+							className={`btn btn-sm join-item ${tool === "lower" ? "btn-primary" : ""
+								}`}
 							onClick={() => setTool("lower")}
 							disabled={isReadOnly}
 							title="Lower terrain"
@@ -353,9 +346,8 @@ export function TerrainEditor({
 						</button>
 						<button
 							type="button"
-							className={`btn btn-sm join-item ${
-								tool === "set" ? "btn-primary" : ""
-							}`}
+							className={`btn btn-sm join-item ${tool === "set" ? "btn-primary" : ""
+								}`}
 							onClick={() => setTool("set")}
 							disabled={isReadOnly}
 							title="Set fixed height"
@@ -399,17 +391,16 @@ export function TerrainEditor({
 				<div className="flex items-center gap-2">
 					<span className="text-sm opacity-70">Color</span>
 					<div className="flex items-center gap-1">
-						{palette.map((c) => (
+						{palette.map((c, idx) => (
 							<button
 								key={c}
 								type="button"
-								className={`w-6 h-6 rounded ${
-									selectedColor === c
-										? "ring-2 ring-offset-2 ring-primary"
-										: "ring-1 ring-base-300"
-								}`}
-								style={{ backgroundColor: TERRAIN_COLORS[c] }}
-								onClick={() => setSelectedColor(c)}
+								className={`w-6 h-6 rounded ${selectedColorIndex === idx
+									? "ring-2 ring-offset-2 ring-primary"
+									: "ring-1 ring-base-300"
+									}`}
+								style={{ backgroundColor: getTerrainColorByIndex(idx) }}
+								onClick={() => setSelectedColorIndex(idx)}
 								disabled={isReadOnly}
 								title={c}
 							/>
@@ -469,7 +460,8 @@ export function TerrainEditor({
 				>
 					{Array.from({ length }, (_, y) =>
 						Array.from({ length: width }, (_, x) => {
-							const color = TERRAIN_COLORS[colorMap[y][x]];
+							const colorIndex = colorMap[y][x] ?? 0;
+							const color = getTerrainColorByIndex(colorIndex);
 							const h = clamp(heightMap[y][x] ?? 0, 0, 16);
 							const overlay = Math.round((h / 16 - 0.5) * 30);
 							const filter = `brightness(${100 + overlay * 2}%)`;

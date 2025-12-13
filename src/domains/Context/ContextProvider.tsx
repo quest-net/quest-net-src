@@ -65,10 +65,10 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 		if (!context) return;
 
 		const theme = AppSettingActions.getTheme(context);
-		
+
 		// Set the data-theme attribute on the html element
 		document.documentElement.setAttribute("data-theme", theme);
-		
+
 	}, [context]);
 
 	if (!context) {

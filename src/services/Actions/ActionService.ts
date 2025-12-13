@@ -170,6 +170,7 @@ export class ActionService {
 
 		// OPTIMISTIC UPDATE: Run locally first
 		try {
+			this.context.IsOptimistic = true;
 			this.runDomainAction(actionKey, params);
 			const campaign = CampaignActions.getActiveCampaign(this.context);
 			this.bumpMapRefs(campaign);
@@ -177,6 +178,8 @@ export class ActionService {
 		} catch (error) {
 			console.warn("[ActionService] Optimistic update failed (ignoring):", error);
 			// Ignore error, let the server handle it
+		} finally {
+			this.context.IsOptimistic = false;
 		}
 
 		// Send request to DM (fire and forget)

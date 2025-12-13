@@ -4,13 +4,13 @@ export interface Terrain {
 	Width: number; // number of tiles wide
 	Length: number; // number of tiles long
 	HeightMap: number[][]; // elevation values [y][x]
-	ColorMap: TerrainType[][]; // terrain type keys [y][x]
+	ColorMap: number[][]; // terrain type indices [y][x] - index into TERRAIN_TYPES
 	Tags?: string[];
 }
 
 export const MAX_HEIGHT = 16;
 
-// Predefined colors
+// Predefined terrain types (order matters - indices are stored in ColorMap)
 export type TerrainType =
 	| "green"
 	| "white"
@@ -20,6 +20,21 @@ export type TerrainType =
 	| "red"
 	| "grey"
 	| "black";
+
+/**
+ * Ordered array of terrain types - indices used in ColorMap
+ * DO NOT reorder this array as it would break existing terrains
+ */
+export const TERRAIN_TYPES: readonly TerrainType[] = [
+	"green",  // 0
+	"white",  // 1
+	"blue",   // 2
+	"yellow", // 3
+	"brown",  // 4
+	"red",    // 5
+	"grey",   // 6
+	"black",  // 7
+] as const;
 
 /**
  * Color constants for terrain types
@@ -35,3 +50,19 @@ export const TERRAIN_COLORS: Record<TerrainType, string> = {
 	grey: "#6b7280", // Gray-500 - stone, rock
 	black: "#1f2937", // Gray-800 - void, shadow
 };
+
+/** Get TerrainType from index (defaults to "grey" for invalid indices) */
+export function getTerrainType(index: number): TerrainType {
+	return TERRAIN_TYPES[index] ?? "grey";
+}
+
+/** Get index from TerrainType (defaults to 6 for "grey" if not found) */
+export function getTerrainIndex(type: TerrainType): number {
+	const idx = TERRAIN_TYPES.indexOf(type);
+	return idx >= 0 ? idx : 6; // Default to grey (index 6)
+}
+
+/** Get hex color from index */
+export function getTerrainColorByIndex(index: number): string {
+	return TERRAIN_COLORS[getTerrainType(index)];
+}

@@ -1,10 +1,10 @@
 // MapUtilities.ts - Pure functions and utilities for isometric map rendering
 
-import type { Terrain, TerrainType } from "../../domains/Terrain/Terrain";
+import type { Terrain } from "../../domains/Terrain/Terrain";
 import type { Character } from "../../domains/Character/Character";
 import type { Entity } from "../../domains/Entity/Entity";
 import type { ActorSize } from "../../domains/Actor/Actor";
-import { MAX_HEIGHT, TERRAIN_COLORS } from "../../domains/Terrain/Terrain";
+import { MAX_HEIGHT, getTerrainColorByIndex } from "../../domains/Terrain/Terrain";
 import { getTokenDimensions } from "./Token";
 import { TILE_H, TILE_W, V_SCALE } from "./Terrain";
 
@@ -135,8 +135,8 @@ export function buildBaseTiles(terrain: Terrain): BaseTile[] {
 	for (let y = 0; y < L; y++) {
 		for (let x = 0; x < W; x++) {
 			const hgt = (hmap[y]?.[x] ?? 0) | 0;
-			const ttype = (cmap[y]?.[x] ?? "grey") as TerrainType;
-			const color = hexToNum(TERRAIN_COLORS[ttype] ?? "#6b7280");
+			const colorIndex = cmap[y]?.[x] ?? 6; // Default to grey (index 6)
+			const color = hexToNum(getTerrainColorByIndex(colorIndex));
 			out.push({ x, y, h: hgt, color });
 		}
 	}
@@ -572,18 +572,18 @@ export function buildActorHitCandidates(
 
 // NEW: helpers
 export function maxManhattanDistance(terrainWidth: number, terrainLength: number): number {
-  return Math.max(0, (terrainWidth - 1) + (terrainLength - 1));
+	return Math.max(0, (terrainWidth - 1) + (terrainLength - 1));
 }
 
 export function clampMoveTiles(
-  moveSpeed: number | undefined | null,
-  terrainWidth: number,
-  terrainLength: number
+	moveSpeed: number | undefined | null,
+	terrainWidth: number,
+	terrainLength: number
 ): number {
-  const raw = Math.floor(Number(moveSpeed) || 0);
-  const safe = Math.max(0, raw);
-  const cap = maxManhattanDistance(terrainWidth, terrainLength);
-  return Math.min(safe, cap);
+	const raw = Math.floor(Number(moveSpeed) || 0);
+	const safe = Math.max(0, raw);
+	const cap = maxManhattanDistance(terrainWidth, terrainLength);
+	return Math.min(safe, cap);
 }
 
 // ============================================================================
@@ -591,66 +591,66 @@ export function clampMoveTiles(
 // ============================================================================
 
 class PriorityQueue<T> {
-  private items: Array<{ value: T; priority: number }> = [];
+	private items: Array<{ value: T; priority: number }> = [];
 
-  enqueue(value: T, priority: number): void {
-    this.items.push({ value, priority });
-    this.bubbleUp(this.items.length - 1);
-  }
+	enqueue(value: T, priority: number): void {
+		this.items.push({ value, priority });
+		this.bubbleUp(this.items.length - 1);
+	}
 
-  dequeue(): T | undefined {
-    if (this.items.length === 0) return undefined;
-    if (this.items.length === 1) return this.items.pop()!.value;
+	dequeue(): T | undefined {
+		if (this.items.length === 0) return undefined;
+		if (this.items.length === 1) return this.items.pop()!.value;
 
-    const result = this.items[0].value;
-    this.items[0] = this.items.pop()!;
-    this.bubbleDown(0);
-    return result;
-  }
+		const result = this.items[0].value;
+		this.items[0] = this.items.pop()!;
+		this.bubbleDown(0);
+		return result;
+	}
 
-  isEmpty(): boolean {
-    return this.items.length === 0;
-  }
+	isEmpty(): boolean {
+		return this.items.length === 0;
+	}
 
-  private bubbleUp(index: number): void {
-    while (index > 0) {
-      const parentIndex = Math.floor((index - 1) / 2);
-      if (this.items[index].priority >= this.items[parentIndex].priority) break;
-      [this.items[index], this.items[parentIndex]] = [
-        this.items[parentIndex],
-        this.items[index],
-      ];
-      index = parentIndex;
-    }
-  }
+	private bubbleUp(index: number): void {
+		while (index > 0) {
+			const parentIndex = Math.floor((index - 1) / 2);
+			if (this.items[index].priority >= this.items[parentIndex].priority) break;
+			[this.items[index], this.items[parentIndex]] = [
+				this.items[parentIndex],
+				this.items[index],
+			];
+			index = parentIndex;
+		}
+	}
 
-  private bubbleDown(index: number): void {
-    while (true) {
-      const leftChild = 2 * index + 1;
-      const rightChild = 2 * index + 2;
-      let smallest = index;
+	private bubbleDown(index: number): void {
+		while (true) {
+			const leftChild = 2 * index + 1;
+			const rightChild = 2 * index + 2;
+			let smallest = index;
 
-      if (
-        leftChild < this.items.length &&
-        this.items[leftChild].priority < this.items[smallest].priority
-      ) {
-        smallest = leftChild;
-      }
-      if (
-        rightChild < this.items.length &&
-        this.items[rightChild].priority < this.items[smallest].priority
-      ) {
-        smallest = rightChild;
-      }
-      if (smallest === index) break;
+			if (
+				leftChild < this.items.length &&
+				this.items[leftChild].priority < this.items[smallest].priority
+			) {
+				smallest = leftChild;
+			}
+			if (
+				rightChild < this.items.length &&
+				this.items[rightChild].priority < this.items[smallest].priority
+			) {
+				smallest = rightChild;
+			}
+			if (smallest === index) break;
 
-      [this.items[index], this.items[smallest]] = [
-        this.items[smallest],
-        this.items[index],
-      ];
-      index = smallest;
-    }
-  }
+			[this.items[index], this.items[smallest]] = [
+				this.items[smallest],
+				this.items[index],
+			];
+			index = smallest;
+		}
+	}
 }
 
 // ============================================================================
@@ -658,148 +658,148 @@ class PriorityQueue<T> {
 // ============================================================================
 
 interface PathNode {
-  x: number;
-  y: number;
-  h: number;
-  climbUsed: number; // Cumulative free climb budget used
+	x: number;
+	y: number;
+	h: number;
+	climbUsed: number; // Cumulative free climb budget used
 }
 
 /**
  * Calculate all reachable tiles using Dijkstra's algorithm with movement costs
  */
 export function calculateMovementRange(
-  fromX: number,
-  fromY: number,
-  fromH: number,
-  moveSpeed: number,
-  canFly: boolean,
-  terrainWidth: number,
-  terrainLength: number,
-  terrainHeightMap: number[][],
-  heightCostLookup: number[],
-  flyingIgnoresHeight: boolean
+	fromX: number,
+	fromY: number,
+	fromH: number,
+	moveSpeed: number,
+	canFly: boolean,
+	terrainWidth: number,
+	terrainLength: number,
+	terrainHeightMap: number[][],
+	heightCostLookup: number[],
+	flyingIgnoresHeight: boolean
 ): Array<{ x: number; y: number }> {
-  // Hard clamp to what's actually reachable
-  const maxDistance = clampMoveTiles(moveSpeed, terrainWidth, terrainLength);
-  
-  if (maxDistance <= 0) {
-    return [{ x: fromX, y: fromY }];
-  }
+	// Hard clamp to what's actually reachable
+	const maxDistance = clampMoveTiles(moveSpeed, terrainWidth, terrainLength);
 
-  // Track cost to reach each (x,y,h,climbUsed) node
-  const costMap = new Map<string, number>();
-  const nodeKey = (x: number, y: number, h: number, climbUsed: number) => 
-    `${x},${y},${h},${climbUsed}`;
-  
-  // Track which 2D tiles (x,y) we've reached at any height
-  const reachableTiles = new Set<string>();
-  const tileKey = (x: number, y: number) => `${x},${y}`;
+	if (maxDistance <= 0) {
+		return [{ x: fromX, y: fromY }];
+	}
 
-  // Priority queue: nodes sorted by cost
-  const queue = new PriorityQueue<PathNode>();
-  
-  // Start node
-  const startKey = nodeKey(fromX, fromY, fromH, 0);
-  costMap.set(startKey, 0);
-  queue.enqueue({ x: fromX, y: fromY, h: fromH, climbUsed: 0 }, 0);
-  reachableTiles.add(tileKey(fromX, fromY));
+	// Track cost to reach each (x,y,h,climbUsed) node
+	const costMap = new Map<string, number>();
+	const nodeKey = (x: number, y: number, h: number, climbUsed: number) =>
+		`${x},${y},${h},${climbUsed}`;
 
-  // Four cardinal directions
-  const directions = [
-    { dx: 1, dy: 0 },  // East
-    { dx: -1, dy: 0 }, // West
-    { dx: 0, dy: 1 },  // South
-    { dx: 0, dy: -1 }, // North
-  ];
+	// Track which 2D tiles (x,y) we've reached at any height
+	const reachableTiles = new Set<string>();
+	const tileKey = (x: number, y: number) => `${x},${y}`;
 
-  while (!queue.isEmpty()) {
-    const current = queue.dequeue()!;
-    const currentKey = nodeKey(current.x, current.y, current.h, current.climbUsed);
-    const currentCost = costMap.get(currentKey)!;
+	// Priority queue: nodes sorted by cost
+	const queue = new PriorityQueue<PathNode>();
 
-    // Try each neighboring tile
-    for (const dir of directions) {
-      const nx = current.x + dir.dx;
-      const ny = current.y + dir.dy;
+	// Start node
+	const startKey = nodeKey(fromX, fromY, fromH, 0);
+	costMap.set(startKey, 0);
+	queue.enqueue({ x: fromX, y: fromY, h: fromH, climbUsed: 0 }, 0);
+	reachableTiles.add(tileKey(fromX, fromY));
 
-      // Bounds check
-      if (nx < 0 || nx >= terrainWidth || ny < 0 || ny >= terrainLength) {
-        continue;
-      }
+	// Four cardinal directions
+	const directions = [
+		{ dx: 1, dy: 0 },  // East
+		{ dx: -1, dy: 0 }, // West
+		{ dx: 0, dy: 1 },  // South
+		{ dx: 0, dy: -1 }, // North
+	];
 
-      const terrainHeight = terrainHeightMap[ny]?.[nx] ?? 0;
+	while (!queue.isEmpty()) {
+		const current = queue.dequeue()!;
+		const currentKey = nodeKey(current.x, current.y, current.h, current.climbUsed);
+		const currentCost = costMap.get(currentKey)!;
 
-      // Determine target height based on actor type
-      let targetH: number;
-      if (canFly) {
-        // Flyers maintain altitude or rise to terrain
-        targetH = Math.max(current.h, terrainHeight);
-      } else {
-        // Ground actors snap to terrain
-        targetH = terrainHeight;
-      }
+		// Try each neighboring tile
+		for (const dir of directions) {
+			const nx = current.x + dir.dx;
+			const ny = current.y + dir.dy;
 
-      // Calculate movement cost and new climb usage
-      let moveCost = 1; // Base horizontal cost
-      let newClimbUsed = current.climbUsed;
+			// Bounds check
+			if (nx < 0 || nx >= terrainWidth || ny < 0 || ny >= terrainLength) {
+				continue;
+			}
 
-      // Add vertical cost if going UP
-      const heightDiff = targetH - current.h;
-      if (heightDiff > 0) {
-        if (canFly && flyingIgnoresHeight) {
-          // Flying with flyingIgnoresHeight: cumulative free climb budget
-          const freeClimbBudget = moveSpeed;
-          const remainingFreeClimb = freeClimbBudget - current.climbUsed;
-          
-          if (heightDiff <= remainingFreeClimb) {
-            // Can use free climb for entire height difference
-            newClimbUsed = current.climbUsed + heightDiff;
-            // No additional cost (just the horizontal 1)
-          } else {
-            // Need to use remaining free climb + paid climb
-            const freeUsed = remainingFreeClimb;
-            const paidClimb = heightDiff - freeUsed;
-            newClimbUsed = current.climbUsed + freeUsed; // Maxed out free budget
-            
-            // Look up cost for the paid portion
-            const lookupIndex = Math.min(paidClimb - 1, heightCostLookup.length - 1);
-            moveCost += heightCostLookup[lookupIndex] ?? 0;
-          }
-        } else {
-          // Normal vertical cost from lookup table (no free climb)
-          const lookupIndex = Math.min(heightDiff - 1, heightCostLookup.length - 1);
-          moveCost += heightCostLookup[lookupIndex] ?? 0;
-        }
-      }
-      // Going down is free (heightDiff <= 0), no extra cost
+			const terrainHeight = terrainHeightMap[ny]?.[nx] ?? 0;
 
-      const newCost = currentCost + moveCost;
+			// Determine target height based on actor type
+			let targetH: number;
+			if (canFly) {
+				// Flyers maintain altitude or rise to terrain
+				targetH = Math.max(current.h, terrainHeight);
+			} else {
+				// Ground actors snap to terrain
+				targetH = terrainHeight;
+			}
 
-      // Check if this path is within movement budget
-      if (newCost > moveSpeed) {
-        continue;
-      }
+			// Calculate movement cost and new climb usage
+			let moveCost = 1; // Base horizontal cost
+			let newClimbUsed = current.climbUsed;
 
-      // Check if this is a better path to this node
-      const neighborKey = nodeKey(nx, ny, targetH, newClimbUsed);
-      const existingCost = costMap.get(neighborKey);
-      
-      if (existingCost === undefined || newCost < existingCost) {
-        costMap.set(neighborKey, newCost);
-        queue.enqueue({ x: nx, y: ny, h: targetH, climbUsed: newClimbUsed }, newCost);
-        reachableTiles.add(tileKey(nx, ny));
-      }
-    }
-  }
+			// Add vertical cost if going UP
+			const heightDiff = targetH - current.h;
+			if (heightDiff > 0) {
+				if (canFly && flyingIgnoresHeight) {
+					// Flying with flyingIgnoresHeight: cumulative free climb budget
+					const freeClimbBudget = moveSpeed;
+					const remainingFreeClimb = freeClimbBudget - current.climbUsed;
 
-  // Convert set of reachable tiles back to array
-  const result: Array<{ x: number; y: number }> = [];
-  reachableTiles.forEach((key) => {
-    const [x, y] = key.split(',').map(Number);
-    result.push({ x, y });
-  });
+					if (heightDiff <= remainingFreeClimb) {
+						// Can use free climb for entire height difference
+						newClimbUsed = current.climbUsed + heightDiff;
+						// No additional cost (just the horizontal 1)
+					} else {
+						// Need to use remaining free climb + paid climb
+						const freeUsed = remainingFreeClimb;
+						const paidClimb = heightDiff - freeUsed;
+						newClimbUsed = current.climbUsed + freeUsed; // Maxed out free budget
 
-  return result;
+						// Look up cost for the paid portion
+						const lookupIndex = Math.min(paidClimb - 1, heightCostLookup.length - 1);
+						moveCost += heightCostLookup[lookupIndex] ?? 0;
+					}
+				} else {
+					// Normal vertical cost from lookup table (no free climb)
+					const lookupIndex = Math.min(heightDiff - 1, heightCostLookup.length - 1);
+					moveCost += heightCostLookup[lookupIndex] ?? 0;
+				}
+			}
+			// Going down is free (heightDiff <= 0), no extra cost
+
+			const newCost = currentCost + moveCost;
+
+			// Check if this path is within movement budget
+			if (newCost > moveSpeed) {
+				continue;
+			}
+
+			// Check if this is a better path to this node
+			const neighborKey = nodeKey(nx, ny, targetH, newClimbUsed);
+			const existingCost = costMap.get(neighborKey);
+
+			if (existingCost === undefined || newCost < existingCost) {
+				costMap.set(neighborKey, newCost);
+				queue.enqueue({ x: nx, y: ny, h: targetH, climbUsed: newClimbUsed }, newCost);
+				reachableTiles.add(tileKey(nx, ny));
+			}
+		}
+	}
+
+	// Convert set of reachable tiles back to array
+	const result: Array<{ x: number; y: number }> = [];
+	reachableTiles.forEach((key) => {
+		const [x, y] = key.split(',').map(Number);
+		result.push({ x, y });
+	});
+
+	return result;
 }
 export function findActor(
 	actorId: string,

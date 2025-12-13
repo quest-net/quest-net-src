@@ -5,7 +5,7 @@ import { useMemo, useRef, useState, useLayoutEffect, useCallback } from "react";
 import type { Character } from "../../domains/Character/Character";
 import type { Entity } from "../../domains/Entity/Entity";
 import type { Terrain } from "../../domains/Terrain/Terrain";
-import { TERRAIN_COLORS } from "../../domains/Terrain/Terrain";
+import { getTerrainColorByIndex } from "../../domains/Terrain/Terrain";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { usePeerTracking } from "../../hooks/usePeerTracking";
 import { useMapState } from "./MapStateProvider";
@@ -287,9 +287,8 @@ export default function TwoDMap({
 	const renderTile = (x: number, y: number) => {
 		if (!terrain) return null;
 
-		const baseType = (terrain.ColorMap?.[y]?.[x] ??
-			"grey") as keyof typeof TERRAIN_COLORS;
-		const baseColorNum = hexToNum(TERRAIN_COLORS[baseType]);
+		const colorIndex = terrain.ColorMap?.[y]?.[x] ?? 6; // Default to grey (index 6)
+		const baseColorNum = hexToNum(getTerrainColorByIndex(colorIndex));
 		const hVal = terrain.HeightMap?.[y]?.[x] ?? 0;
 		const hNorm = normalizeHeight(hVal);
 		const tinted = applyElevationTint(baseColorNum, hNorm, ELEV_TOP_STRENGTH);
@@ -311,19 +310,19 @@ export default function TwoDMap({
 			img?: string;
 			h: number;
 		}> = [
-			...hereChars.map((c) => ({
-				id: c.Id,
-				name: c.Name,
-				img: c.Image,
-				h: c.Position?.h ?? 0,
-			})),
-			...hereEnts.map((e: any) => ({
-				id: e.Id,
-				name: e.Name,
-				img: e.Image,
-				h: e.Position?.h ?? 0,
-			})),
-		];
+				...hereChars.map((c) => ({
+					id: c.Id,
+					name: c.Name,
+					img: c.Image,
+					h: c.Position?.h ?? 0,
+				})),
+				...hereEnts.map((e: any) => ({
+					id: e.Id,
+					name: e.Name,
+					img: e.Image,
+					h: e.Position?.h ?? 0,
+				})),
+			];
 
 		const maxH = actorsHere.reduce((m, a) => Math.max(m, a.h), 0);
 		const showAltBadge = maxH > hVal;

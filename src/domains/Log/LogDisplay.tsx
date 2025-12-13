@@ -107,7 +107,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	// Filter by search query
 	const searchFilteredLog = useMemo(() => {
 		if (!searchQuery.trim()) return categoryFilteredLog;
-		
+
 		const query = searchQuery.toLowerCase();
 		return categoryFilteredLog.filter(
 			(entry) =>
@@ -134,7 +134,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 		const distanceFromBottom =
 			container.scrollHeight - container.scrollTop - container.clientHeight;
 		const nearBottom = distanceFromBottom < SCROLL_THRESHOLD;
-		
+
 		setIsNearBottom(nearBottom);
 		userScrolledUp.current = !nearBottom;
 	};
@@ -150,7 +150,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 		if (container.scrollTop < 100 && hasMoreMessages) {
 			const oldScrollHeight = container.scrollHeight;
 			setMessagesToShow((prev) => prev + MESSAGES_PER_LOAD);
-			
+
 			// Maintain scroll position after loading
 			requestAnimationFrame(() => {
 				if (container) {
@@ -235,20 +235,20 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	};
 
 	// Categories available to current user
-	const availableCategories: LogCategory[] = 
-		userRole === "player" 
-			? ["chat", "dice"] 
+	const availableCategories: LogCategory[] =
+		userRole === "player"
+			? ["chat", "dice"]
 			: [
-					"chat",
-					"dice",
-					"combat",
-					"character",
-					"item",
-					"skill",
-					"movement",
-					"scene",
-					"system",
-			  ];
+				"chat",
+				"dice",
+				"combat",
+				"character",
+				"item",
+				"skill",
+				"movement",
+				"scene",
+				"system",
+			];
 
 	return (
 		<div className={`flex flex-col h-full ${isFloating ? "p-4" : ""}`}>
@@ -312,11 +312,10 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 						<button
 							key={cat}
 							onClick={() => toggleCategory(cat)}
-							className={`badge badge-sm cursor-pointer transition-all ${
-								hiddenCategories.has(cat)
+							className={`badge badge-sm cursor-pointer transition-all ${hiddenCategories.has(cat)
 									? "badge-ghost opacity-40"
 									: "badge-neutral"
-							}`}
+								}`}
 							title={`${hiddenCategories.has(cat) ? "Show" : "Hide"} ${cat}`}
 						>
 							<span className={`${CATEGORY_COLORS[cat]} font-semibold`}>

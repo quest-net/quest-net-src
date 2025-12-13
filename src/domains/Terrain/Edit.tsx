@@ -1,7 +1,7 @@
 // domains/Terrain/Edit.tsx
 
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { Terrain, TerrainType } from "./Terrain";
+import { Terrain } from "./Terrain";
 import { TerrainActions } from "./TerrainActions";
 import {
 	FormWrapper,
@@ -110,8 +110,8 @@ function TerrainForm({ data, onChange }: TerrainFormProps) {
 		const newHeightMap: number[][] = Array.from({ length }, () =>
 			Array.from({ length: width }, () => 0)
 		);
-		const newColorMap: TerrainType[][] = Array.from({ length }, () =>
-			Array.from({ length: width }, () => "green" as TerrainType)
+		const newColorMap: number[][] = Array.from({ length }, () =>
+			Array.from({ length: width }, () => 0) // Default to green (index 0)
 		);
 
 		// Copy existing data where possible (non-destructive resize)
@@ -138,7 +138,7 @@ function TerrainForm({ data, onChange }: TerrainFormProps) {
 		width: number;
 		length: number;
 		heightMap: number[][];
-		colorMap: TerrainType[][];
+		colorMap: number[][];
 	}) => {
 		onChange({
 			...data,
@@ -221,7 +221,7 @@ function TerrainForm({ data, onChange }: TerrainFormProps) {
 							entities={[]}
 							terrain={data}
 						/>
-				</MapStateProvider>
+					</MapStateProvider>
 				</div>
 			</FormSection>
 			{/* Tags */}

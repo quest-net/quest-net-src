@@ -237,10 +237,10 @@ export const CampaignActions = {
 
 			// Collect all image data from IndexedDB
 			const imageData: Record<string, { base64: string; mimeType: string }> = {};
-			
+
 			for (let i = 0; i < campaign.Images.length; i++) {
 				const image = campaign.Images[i];
-				
+
 				onProgress?.({
 					current: i,
 					total: campaign.Images.length,
@@ -294,8 +294,7 @@ export const CampaignActions = {
 			});
 		} catch (error) {
 			throw new Error(
-				`Failed to export campaign: ${
-					error instanceof Error ? error.message : "Unknown error"
+				`Failed to export campaign: ${error instanceof Error ? error.message : "Unknown error"
 				}`
 			);
 		}
@@ -312,20 +311,20 @@ export const CampaignActions = {
 				total: 1,
 				status: "Reading file...",
 			});
-	
+
 			const text = await params.file.text();
 			const data = JSON.parse(text);
 
 			// === LEGACY QUEST-NET 1.0 MIGRATION (remove when no longer needed) ===
 			if (isQuestNetV1Save(data)) {
-			return await importQuestNetV1Save(data, context, onProgress);
+				return await importQuestNetV1Save(data, context, onProgress);
 			}
 			// === END LEGACY QUEST-NET 1.0 MIGRATION ===
-	
+
 			let campaign: Campaign;
 			let imageData: Record<string, { base64: string; mimeType: string }> = {};
 			let dataVersion: VersionString = "1.0.0"; // baseline for really old exports
-	
+
 			// New-style exports: { version, campaign, imageData }
 			if (
 				data &&
@@ -337,7 +336,7 @@ export const CampaignActions = {
 				imageData =
 					(data.imageData as Record<string, { base64: string; mimeType: string }>) ||
 					{};
-	
+
 				if (typeof data.version === "string") {
 					dataVersion = data.version as VersionString;
 				}
@@ -346,9 +345,9 @@ export const CampaignActions = {
 				campaign = data as Campaign;
 				// If you ever had a campaign-level "version" field, you could read it here.
 			}
-	
+
 			// --- Run schema migrations on this imported campaign ---
-	
+
 			// Use a scratch Context so we can reuse the same migration system
 			const tempContext: Context = {
 				User: structuredClone(context.User),
@@ -356,57 +355,56 @@ export const CampaignActions = {
 				AppSettings: structuredClone(context.AppSettings as any),
 				version: dataVersion,
 			};
-	
+
 			const migratedContext = runMigrations(tempContext, APP_VERSION);
 			campaign = migratedContext.Campaigns[0];
-	
+
 			// Generate new ID to avoid conflicts
 			campaign.Id = crypto.randomUUID();
-	
+
 			// Ensure room code is unique
 			const existingRoomCodes = context.Campaigns.map((c) => c.RoomCode);
 			if (existingRoomCodes.includes(campaign.RoomCode)) {
 				campaign.RoomCode = generateRoomCode();
 			}
-	
+
 			// Import images to IndexedDB
 			const imageIds = Object.keys(imageData);
 			const totalSteps = imageIds.length + 1; // +1 for final save
-	
+
 			for (let i = 0; i < imageIds.length; i++) {
 				const imageId = imageIds[i];
 				const { base64, mimeType } = imageData[imageId];
-	
+
 				onProgress?.({
 					current: i,
 					total: totalSteps,
 					status: `Importing image ${i + 1}/${imageIds.length}...`,
 				});
-	
+
 				const blob = base64ToBlob(base64, mimeType);
 				await IndexedDBUtilities.save(imageId, blob);
 			}
-	
+
 			onProgress?.({
 				current: imageIds.length,
 				total: totalSteps,
 				status: "Saving campaign...",
 			});
-	
+
 			context.Campaigns.push(campaign);
 			ContextActions.save(context);
-	
+
 			onProgress?.({
 				current: totalSteps,
 				total: totalSteps,
 				status: "Import complete!",
 			});
-	
+
 			return campaign;
 		} catch (error) {
 			throw new Error(
-				`Failed to import campaign: ${
-					error instanceof Error ? error.message : "Invalid JSON"
+				`Failed to import campaign: ${error instanceof Error ? error.message : "Invalid JSON"
 				}`
 			);
 		}

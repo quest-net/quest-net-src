@@ -19,34 +19,34 @@ const isDiceRoll = (entry: LogEntry): boolean => entry.Category === "dice";
 
 const isCritRoll = (entry: LogEntry): boolean => {
 	if (!isDiceRoll(entry)) return false;
-	
+
 	const action = entry.Action || "";
 	const details = entry.Details || "";
-	
+
 	// Check if it's a d20 or d100 roll
 	const isD20 = /d20(?!\d)/i.test(action) || /d20(?!\d)/i.test(details);
 	const isD100 = /d100/i.test(action) || /d100/i.test(details);
-	
+
 	if (!isD20 && !isD100) return false;
-	
+
 	// Check breakdown for max values (kept dice)
 	// Matches patterns like [20], =20 for d20 or [100], =100 for d100
 	if (isD20 && /(?:\[20\]|=20)(?!\d)/.test(details)) return true;
 	if (isD100 && /(?:\[100\]|=100)/.test(details)) return true;
-	
+
 	return false;
 };
 
 const isFumbleRoll = (entry: LogEntry): boolean => {
 	if (!isDiceRoll(entry)) return false;
-	
+
 	const action = entry.Action || "";
 	const details = entry.Details || "";
-	
+
 	// Only d20 or d100 can fumble
 	const isD20OrD100 = /d(?:20|100)(?!\d)/i.test(action);
 	if (!isD20OrD100) return false;
-	
+
 	// Check breakdown for minimum value (kept dice)
 	// Matches patterns like [1], =1
 	return /(?:\[1\]|=1)(?!\d)/.test(details);
@@ -63,10 +63,10 @@ export function LogAlerts() {
 
 	useEffect(() => {
 		const now = Date.now();
-		
+
 		// Get chronologically sorted log
 		const chronologicalLog = LogActions.getChronologicalLog(campaign);
-	
+
 		// Find new important/critical logs that are recent enough and visible
 		const newAlerts = chronologicalLog.filter((entry) => {
 			const levelOk = entry.Level === "important" || entry.Level === "critical";
@@ -109,17 +109,17 @@ export function LogAlerts() {
 	// Helper to get custom crit message for a character
 	const getCritMessage = (entry: LogEntry): string => {
 		if (!entry.ActorId) return "CRITICAL!";
-		
+
 		// Look for character in GameState first (they might be spawned)
 		const character = campaign.GameState.Characters.find(
 			(c) => c.Id === entry.ActorId
 		);
-		
+
 		// If not found in GameState, check CharacterRoster
 		const rosterChar = character || campaign.CharacterRoster.find(
 			(c) => c.Id === entry.ActorId
 		);
-		
+
 		return rosterChar?.CritMessage || "CRITICAL!";
 	};
 
@@ -149,7 +149,7 @@ export function LogAlerts() {
 				// Choose alert style based on roll type
 				let alertClass = "alert-info";
 				let animationClass = "animate-slide-in";
-				
+
 				if (isCrit) {
 					alertClass = "alert-success";
 					animationClass = "animate-bounce";
@@ -161,33 +161,25 @@ export function LogAlerts() {
 				return (
 					<div
 						key={alert.id}
-						className={`alert ${alertClass} shadow-lg max-w-md pointer-events-auto ${animationClass} py-2 min-h-0 ${
-							isCrit ? "border-2 border-success" : ""
-						} ${
-							isFumble ? "border-2 border-error" : ""
-						}`}
+						className={`alert ${alertClass} shadow-lg max-w-md pointer-events-auto ${animationClass} py-2 min-h-0 ${isCrit ? "border-2 border-success" : ""
+							} ${isFumble ? "border-2 border-error" : ""
+							}`}
 					>
-						<span className={`${icon} w-5 h-5 shrink-0 ${
-							isCrit ? "text-success-content" : ""
-						} ${
-							isFumble ? "text-error-content" : ""
-						}`}></span>
+						<span className={`${icon} w-5 h-5 shrink-0 ${isCrit ? "text-success-content" : ""
+							} ${isFumble ? "text-error-content" : ""
+							}`}></span>
 						<div className="flex-1 min-w-0">
-							<h3 className={`font-semibold text-sm leading-tight ${
-								isCrit ? "text-success-content" : ""
-							} ${
-								isFumble ? "text-error-content" : ""
-							}`}>
+							<h3 className={`font-semibold text-sm leading-tight ${isCrit ? "text-success-content" : ""
+								} ${isFumble ? "text-error-content" : ""
+								}`}>
 								{isCrit && `🎉 ${critMessage} `}
 								{isFumble && "💀 "}
 								{alert.entry.Action}
 							</h3>
 							{alert.entry.Details && (
-								<div className={`text-xs opacity-80 leading-tight mt-0.5 ${
-									isCrit ? "text-success-content" : ""
-								} ${
-									isFumble ? "text-error-content" : ""
-								}`}>
+								<div className={`text-xs opacity-80 leading-tight mt-0.5 ${isCrit ? "text-success-content" : ""
+									} ${isFumble ? "text-error-content" : ""
+									}`}>
 									{alert.entry.Details}
 								</div>
 							)}
