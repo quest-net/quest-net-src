@@ -17,6 +17,7 @@ const CATEGORY_COLORS: Record<LogCategory, string> = {
 	movement: "text-gray-400",
 	scene: "text-cyan-400",
 	chat: "text-orange-400",
+	sticker: "text-slate-400",
 	system: "text-slate-400",
 };
 
@@ -29,6 +30,7 @@ const CATEGORY_BG: Record<LogCategory, string> = {
 	movement: "bg-gray-950/30",
 	scene: "bg-cyan-950/30",
 	chat: "bg-orange-950/30",
+	sticker: "text-slate-400",
 	system: "bg-slate-950/30",
 };
 
