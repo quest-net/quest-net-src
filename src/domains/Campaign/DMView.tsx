@@ -1,4 +1,4 @@
-// domains/Campaign/DMView.tsx - Updated
+// domains/Campaign/DMView.tsx
 
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -19,6 +19,7 @@ import { SkillIndex } from "../Skill/Index";
 import { AudioStateProvider } from "../Audio/AudioContext";
 import { EntityIndex } from "../Entity/Index";
 import { StatusIndex } from "../Status/Index";
+import { ScenarioIndex } from "../Scenario/Index";
 
 type TabView =
 	| "main"
@@ -30,7 +31,22 @@ type TabView =
 	| "images"
 	| "audios"
 	| "terrains"
+	| "scenarios"
 	| "settings";
+
+const menuItems: { id: TabView; label: string; icon: string }[] = [
+	{ id: "main", label: "Main", icon: "icon-[mdi--view-dashboard]" },
+	{ id: "characters", label: "Characters", icon: "icon-[mdi--account-group]" },
+	{ id: "entities", label: "Entities", icon: "icon-[mdi--robot]" },
+	{ id: "items", label: "Items", icon: "icon-[mdi--treasure-chest]" },
+	{ id: "skills", label: "Skills", icon: "icon-[mdi--lightning-bolt]" },
+	{ id: "statuses", label: "Statuses", icon: "icon-[mdi--heart-pulse]" },
+	{ id: "images", label: "Images", icon: "icon-[mdi--image-multiple]" },
+	{ id: "audios", label: "Audios", icon: "icon-[mdi--music]" },
+	{ id: "terrains", label: "Terrains", icon: "icon-[mdi--terrain]" },
+	{ id: "scenarios", label: "Scenarios", icon: "icon-[mdi--map-marker-multiple]" },
+	{ id: "settings", label: "Settings", icon: "icon-[mdi--cog]" },
+];
 
 export function DMView() {
 	const { identifier } = useParams<{ identifier: string }>();
@@ -47,7 +63,7 @@ export function DMView() {
 	);
 
 	if (!campaign) {
-		return;
+		return null;
 	}
 
 	return (
@@ -77,89 +93,22 @@ export function DMView() {
 
 				{/* Main Layout */}
 				<div className="flex flex-1 overflow-hidden">
-					{/* Sidebar */}
-					<aside className="border-r-2">
-						<ul className="menu menu-lg gap-1">
-							<li>
-								<button
-									className={activeTab === "main" ? "menu-active" : ""}
-									onClick={() => setActiveTab("main")}
-								>
-									Main
-								</button>
-							</li>
-							<li>
-								<button
-									className={activeTab === "characters" ? "menu-active" : ""}
-									onClick={() => setActiveTab("characters")}
-								>
-									Characters
-								</button>
-							</li>
-							<li>
-								<button
-									className={activeTab === "entities" ? "menu-active" : ""}
-									onClick={() => setActiveTab("entities")}
-								>
-									Entities
-								</button>
-							</li>
-							<li>
-								<button
-									className={activeTab === "items" ? "menu-active" : ""}
-									onClick={() => setActiveTab("items")}
-								>
-									Items
-								</button>
-							</li>
-							<li>
-								<button
-									className={activeTab === "skills" ? "menu-active" : ""}
-									onClick={() => setActiveTab("skills")}
-								>
-									Skills
-								</button>
-							</li>
-							<li>
-								<button
-									className={activeTab === "statuses" ? "menu-active" : ""}
-									onClick={() => setActiveTab("statuses")}
-								>
-									Statuses
-								</button>
-							</li>
-							<li>
-								<button
-									className={activeTab === "images" ? "menu-active" : ""}
-									onClick={() => setActiveTab("images")}
-								>
-									Images
-								</button>
-							</li>
-							<li>
-								<button
-									className={activeTab === "audios" ? "menu-active" : ""}
-									onClick={() => setActiveTab("audios")}
-								>
-									Audios
-								</button>
-							</li>
-							<li>
-								<button
-									className={activeTab === "terrains" ? "menu-active" : ""}
-									onClick={() => setActiveTab("terrains")}
-								>
-									Terrains
-								</button>
-							</li>
-							<li>
-								<button
-									className={activeTab === "settings" ? "menu-active" : ""}
-									onClick={() => setActiveTab("settings")}
-								>
-									Settings
-								</button>
-							</li>
+					{/* Sidebar - Icon only with tooltips */}
+					<aside className="border-r-2 bg-base-200">
+						<ul className="menu gap-1 p-1">
+							{menuItems.map((item) => (
+								<li key={item.id}>
+									<button
+										className={`tooltip tooltip-right z-50 ${
+											activeTab === item.id ? "menu-active" : ""
+										}`}
+										data-tip={item.label}
+										onClick={() => setActiveTab(item.id)}
+									>
+										<span className={`${item.icon} w-6 h-8`} />
+									</button>
+								</li>
+							))}
 						</ul>
 					</aside>
 
@@ -174,6 +123,7 @@ export function DMView() {
 						{activeTab === "images" && <ImageIndex />}
 						{activeTab === "audios" && <AudioIndex />}
 						{activeTab === "terrains" && <TerrainIndex />}
+						{activeTab === "scenarios" && <ScenarioIndex />}
 						{activeTab === "settings" && <CampaignSettingEdit />}
 					</main>
 				</div>

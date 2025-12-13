@@ -58,6 +58,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 		Terrains: [TerrainActions.createDefault(), TerrainActions.createHills()],
 		Audios: [],
 		Images: [],
+		Scenarios: [],
 		GameState: {
 			Characters: [],
 			Entities: [],

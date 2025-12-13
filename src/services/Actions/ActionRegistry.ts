@@ -17,6 +17,7 @@ import { NoteActions } from "../../domains/Note/NoteActions";
 import { CombatActions } from "../../domains/Combat/CombatActions";
 import { StatusActions } from "../../domains/Status/StatusActions";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { ScenarioActions } from "../../domains/Scenario/ScenarioActions";
 // Import other action modules as they're created
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
@@ -337,6 +338,30 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"terrain:bulkEditTags": {
 		roles: ["dm"],
 		handler: TerrainActions.bulkEditTags,
+	},
+
+	// ============================================================================
+	// SCENARIO ACTIONS
+	// ============================================================================
+	"scenario:capture": {
+		roles: ["dm"],
+		handler: ScenarioActions.capture,
+	},
+	"scenario:load": {
+		roles: ["dm"],
+		handler: ScenarioActions.load,
+	},
+	"scenario:delete": {
+		roles: ["dm"],
+		handler: ScenarioActions.delete,
+	},
+	"scenario:edit": {
+		roles: ["dm"],
+		handler: ScenarioActions.edit,
+	},
+	"scenario:bulkEditTags": {
+		roles: ["dm"],
+		handler: ScenarioActions.bulkEditTags,
 	},
 };
 

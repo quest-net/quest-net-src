@@ -9,6 +9,7 @@ import { GameState } from "../GameState/GameState";
 import { Entity } from "../Entity/Entity";
 import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
 import { Terrain } from "../Terrain/Terrain";
+import { Scenario } from "../Scenario/Scenario";
 
 export interface Campaign {
 	Id: string;
@@ -24,6 +25,7 @@ export interface Campaign {
 	Terrains: Terrain[];
 	Audios: Audio[];
 	Images: Image[];
+	Scenarios: Scenario[];
 	//GameState
 	GameState: GameState;
 	//Campaign Log
@@ -32,3 +34,4 @@ export interface Campaign {
 	//Campaign-specific settings
 	Settings: CampaignSettings;
 }
+

@@ -265,9 +265,8 @@ function migrateV1SaveToCampaign(
     Id: s.id,
     Name: s.name,
     Description: s.description
-      ? `${s.description}\n\n(Legacy: damage=${s.damage ?? "?"}, SP cost=${
-          s.spCost ?? 0
-        })`
+      ? `${s.description}\n\n(Legacy: damage=${s.damage ?? "?"}, SP cost=${s.spCost ?? 0
+      })`
       : `Legacy skill (damage=${s.damage ?? "?"}, SP cost=${s.spCost ?? 0})`,
     Tags: s.tags,
     MaxUses: s.uses,
@@ -399,6 +398,7 @@ function migrateV1SaveToCampaign(
     Terrains: [], // you can also seed TerrainActions.createDefault() if you want
     Audios: audios,
     Images: [], // v1 images are out-of-scope per your note
+    Scenarios: [],
     GameState: {
       Characters: [...characters],
       Entities: [], // we don’t place entities on the field automatically
@@ -418,7 +418,7 @@ function migrateV1SaveToCampaign(
       RemainingShortRests: 2,
     },
     Log: [],
-	LogHead: 0,
+    LogHead: 0,
     Settings: settings,
   };
 

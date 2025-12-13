@@ -7,13 +7,14 @@ import type { VersionedMigration } from "./types";
 import { migration_1_0_3 } from "./update-1.0.3";
 import { migration_1_0_5 } from "./update-1.0.5";
 import { migration_1_0_6 } from "./update-1.0.6";
-// import { migration_1_0_4 } from "./update-1.0.4";
+import { migration_1_0_7 } from "./update-1.0.7";
 // etc.
 
 const MIGRATIONS: VersionedMigration[] = [
   migration_1_0_3,
   migration_1_0_5,
   migration_1_0_6,
+  migration_1_0_7,
   // ...
 ];
 
