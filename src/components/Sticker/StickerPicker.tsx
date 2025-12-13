@@ -8,8 +8,8 @@ const RATE_LIMIT_MS = 10000; // 10 seconds
 const COMMON_EMOJIS = [
     "😂", "😢", "😱", "😬", "🤔", "😈",
     "❤️", "💀", "🔥", "✨", "🎉",
-    "👍", "👎", "🙏", "👋", "😫",
-    "❓", "❗", "😡", "😮",
+    "👍", "👎", "🍆", "👋", "😫",
+    "❓", "❗", "😡", "😮", 
 ];
 
 export function StickerPicker() {
