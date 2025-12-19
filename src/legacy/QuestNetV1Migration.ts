@@ -300,6 +300,7 @@ function migrateV1SaveToCampaign(
         maxSp: e.maxSp,
         spRegenRate: e.spRegenRate,
       }),
+	  Actions: [],
       Attributes: {
         legacySource: "quest-net-1.0",
         legacyId: e.id,
@@ -358,6 +359,7 @@ function migrateV1SaveToCampaign(
       Description: c.description,
       Image: undefined,
       Stats: stats,
+	  Actions: [],
       Attributes: {
         legacySource: "quest-net-1.0",
         legacyId: c.id,
