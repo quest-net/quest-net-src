@@ -325,7 +325,7 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 							handleSettingChange(
 								"RestSettings",
 								"shortRestsPerDay",
-								e.target.value
+								Number(e.target.value)
 							)
 						}
 						className="input"
