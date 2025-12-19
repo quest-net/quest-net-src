@@ -11,6 +11,7 @@ import {
 	FormGrid,
 } from "../../components/Form/Form";
 import { StatDefinitionsEditor } from "../../components/inputs/StatDefinitionEditor";
+import { ActionDefinitionEditor } from "../../components/inputs/ActionDefinitionEditor";
 import { AttributeEditor } from "../../components/inputs/AttributeEditor";
 import { TagEditor } from "../../components/inputs/TagEditor";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
@@ -38,7 +39,7 @@ export function EntityEdit({
 
 	const handleSave = (data: Entity) => {
 		if (!actionService) return;
-	
+
 		// Clamp stat Current values to their Max before saving
 		const validatedData = {
 			...data,
@@ -47,7 +48,7 @@ export function EntityEdit({
 				Current: Math.min(stat.Current ?? stat.Max, stat.Max)
 			}))
 		};
-	
+
 		if (!entity) {
 			// Create mode
 			actionService.execute("entity:create", {
@@ -205,6 +206,17 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 				<StatDefinitionsEditor
 					stats={data.Stats}
 					onChange={(stats) => handleFieldChange("Stats", stats)}
+				/>
+			</FormSection>
+
+			{/* Actions */}
+			<FormSection
+				title="Actions"
+				description="Action economy (Combat Actions, etc.)"
+			>
+				<ActionDefinitionEditor
+					actions={data.Actions || []}
+					onChange={(actions) => handleFieldChange("Actions", actions)}
 				/>
 			</FormSection>
 

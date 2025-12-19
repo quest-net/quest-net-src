@@ -1,4 +1,4 @@
-import { StatDefinition } from "../CampaignSetting/CampaignSetting";
+import { StatDefinition, ActionDefinition } from "../CampaignSetting/CampaignSetting";
 
 export type ActorSize = "small" | "medium" | "large";
 
@@ -10,6 +10,7 @@ export interface Actor {
 
 	// Stats
 	Stats: StatDefinition[];
+	Actions: ActionDefinition[];
 
 	//Attributes
 	Attributes: Record<string, string>;

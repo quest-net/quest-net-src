@@ -44,6 +44,9 @@ export const CombatActions = {
 			restoreCharacter(character, "combatEnd", campaign);
 		});
 
+		// Reset actions for all actors
+		resetActions(campaign);
+
 		// Clear non-permanent statuses from all actors
 		const allActors: Actor[] = [
 			...campaign.GameState.Characters,
@@ -98,6 +101,9 @@ export const CombatActions = {
 		// Apply regen to all actors with regen rates
 		applyRegenToAllActors(campaign, 1);
 
+		// Reset actions for all actors
+		resetActions(campaign);
+
 		// Decrement status durations and remove expired statuses
 		decrementAndRemoveStatuses(campaign);
 
@@ -140,6 +146,9 @@ export const CombatActions = {
 
 		// Reverse regen from all actors
 		applyRegenToAllActors(campaign, -1);
+
+		// Reset actions for all actors
+		resetActions(campaign);
 
 		// Note: We don't reverse status decrements as that would be complex
 		// and could lead to inconsistent state. DM can manually adjust durations if needed.
@@ -245,9 +254,27 @@ function decrementAndRemoveStatuses(campaign: any): void {
 			.filter((status) => {
 				// Keep permanent statuses (undefined turnsLeft)
 				if (status.turnsLeft === undefined) return true;
-				
+
 				// Keep non-expired statuses (turnsLeft > 0)
 				return status.turnsLeft > 0;
 			});
+	});
+}
+
+/**
+ * Resets action counts to Default for all actors
+ */
+function resetActions(campaign: any): void {
+	const allActors: Actor[] = [
+		...campaign.GameState.Characters,
+		...campaign.GameState.Entities,
+	];
+
+	allActors.forEach((actor) => {
+		if (actor.Actions) {
+			actor.Actions.forEach((action) => {
+				action.Current = action.Default;
+			});
+		}
 	});
 }

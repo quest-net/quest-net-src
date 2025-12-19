@@ -2,6 +2,7 @@
 
 export interface CampaignSettings {
 	StatDefinitions: StatDefinition[];
+	ActionDefinitions: ActionDefinition[];
 	VisibilitySettings: VisibilitySettings;
 	CalendarSettings: CalendarSettings;
 	RestSettings: RestSettings;
@@ -16,6 +17,14 @@ export interface StatDefinition {
 	Current?: number;
 	Max: number;
 	RestoreRule?: RestoreRule;
+}
+
+export interface ActionDefinition {
+	Id: string;
+	Name: string;
+	Color: string;
+	Default: number;
+	Current?: number;
 }
 
 export interface VisibilitySettings {
@@ -60,7 +69,7 @@ export interface MovementSettings {
 	 * Examples: "floor(h/2)", "h", "2*h", "ceil(h/2)"
 	 */
 	heightCostFormula: string;
-	
+
 	/**
 	 * Pre-computed lookup table for movement costs
 	 * Index = height difference (0 to MAX_HEIGHT)
@@ -68,7 +77,7 @@ export interface MovementSettings {
 	 * This is built when the formula is saved to avoid runtime evaluation
 	 */
 	heightCostLookup: number[];
-	
+
 	/**
 	 * Whether flying actors ignore vertical movement costs
 	 * If true, CanFly actors only pay horizontal movement costs

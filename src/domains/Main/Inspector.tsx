@@ -13,6 +13,8 @@ import { ObjectPicker, ObjectTypeConfig } from "../../components/inputs/ObjectPi
 import { ItemCollection } from "../Item/Collection";
 import { SkillCollection } from "../Skill/Collection";
 import { StatusCollection } from "../Status/Collection";
+import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
+import { ActionDefinition } from "../CampaignSetting/CampaignSetting";
 
 type InspectorTab = "info" | "inventory" | "equipment" | "skills" | "statuses";
 
@@ -176,6 +178,18 @@ function UnifiedInspector({
 		});
 	};
 
+	const handleActionsChange = (updatedActions: ActionDefinition[]) => {
+		if (!actionService) return;
+	
+		const actionKey = kind === "character" ? "character:edit" : "entity:edit";
+		const idKey = kind === "character" ? "characterId" : "entityId";
+	
+		actionService.execute(actionKey, {
+			[idKey]: actor.Id,
+			updates: { Actions: updatedActions },
+		});
+	};
+
 	const handleDespawn = () => {
 		if (!actionService || !isDM) return;
 
@@ -236,45 +250,40 @@ function UnifiedInspector({
 				{showTabs && (
 					<div className="tabs tabs-lift mb-2">
 						<button
-							className={`flex-auto tab ${
-								activeTab === "info" ? "tab-active" : ""
-							}`}
+							className={`flex-auto tab ${activeTab === "info" ? "tab-active" : ""
+								}`}
 							onClick={() => setActiveTab("info")}
 							title="Info"
 						>
 							<span className="icon-[mdi--information] w-5 h-5" />
 						</button>
 						<button
-							className={`flex-auto tab ${
-								activeTab === "inventory" ? "tab-active" : ""
-							}`}
+							className={`flex-auto tab ${activeTab === "inventory" ? "tab-active" : ""
+								}`}
 							onClick={() => setActiveTab("inventory")}
 							title="Inventory"
 						>
 							<span className="icon-[mdi--bag-personal] w-5 h-5" />
 						</button>
 						<button
-							className={`flex-auto tab ${
-								activeTab === "equipment" ? "tab-active" : ""
-							}`}
+							className={`flex-auto tab ${activeTab === "equipment" ? "tab-active" : ""
+								}`}
 							onClick={() => setActiveTab("equipment")}
 							title="Equipment"
 						>
 							<span className="icon-[mdi--sword] w-5 h-5" />
 						</button>
 						<button
-							className={`flex-auto tab ${
-								activeTab === "skills" ? "tab-active" : ""
-							}`}
+							className={`flex-auto tab ${activeTab === "skills" ? "tab-active" : ""
+								}`}
 							onClick={() => setActiveTab("skills")}
 							title="Skills"
 						>
 							<span className="icon-[mdi--star] w-5 h-5" />
 						</button>
 						<button
-							className={`flex-auto tab ${
-								activeTab === "statuses" ? "tab-active" : ""
-							}`}
+							className={`flex-auto tab ${activeTab === "statuses" ? "tab-active" : ""
+								}`}
 							onClick={() => setActiveTab("statuses")}
 							title="Statuses"
 						>
@@ -301,6 +310,7 @@ function UnifiedInspector({
 							handleAttributeChange={handleAttributeChange}
 							handleFieldChange={handleFieldChange}
 							handleStatChange={handleStatChange}
+							handleActionsChange={handleActionsChange}
 							handleDespawn={handleDespawn}
 							setShowObjectPicker={setShowObjectPicker}
 							actionService={actionService}
@@ -323,13 +333,13 @@ function UnifiedInspector({
 
 					{activeTab === "skills" && (
 						<SkillCollection
-						actor={actor}
+							actor={actor}
 						/>
 					)}
 
 					{activeTab === "statuses" && (
 						<StatusCollection
-						actor={actor}
+							actor={actor}
 						/>
 					)}
 				</div>
@@ -370,6 +380,7 @@ interface ActorInfoTabProps {
 	handleAttributeChange: (key: string, value: string) => void;
 	handleFieldChange: (field: keyof Actor, value: any) => void;
 	handleStatChange: (statId: string, field: "Current" | "Max", value: number) => void;
+	handleActionsChange: (updatedActions: ActionDefinition[]) => void;
 	handleDespawn: () => void;
 	setShowObjectPicker: (show: boolean) => void;
 	actionService: any;
@@ -390,6 +401,7 @@ function ActorInfoTab({
 	handleAttributeChange,
 	handleFieldChange,
 	handleStatChange,
+	handleActionsChange,
 	handleDespawn,
 	setShowObjectPicker,
 	actionService,
@@ -505,7 +517,7 @@ function ActorInfoTab({
 					{actor.Stats.map((stat) => {
 						const current = stat.Current ?? stat.Max;
 						const lost = stat.Max - current;
-						
+
 						// Don't show anything if stat is at max
 						if (lost <= 0) return null;
 
@@ -517,7 +529,15 @@ function ActorInfoTab({
 					})}
 				</div>
 			)}
-
+			{/* Actions */}
+			{actor.Actions && actor.Actions.length > 0 && (
+				<div className="pt-2">
+					<ActionBubbles
+						actions={actor.Actions}
+						onChange={handleActionsChange}
+					/>
+				</div>
+			)}
 			{/* Description */}
 			{isDM ? (
 				<textarea
@@ -592,25 +612,25 @@ function ActorInfoTab({
 					<span className="text-sm font-semibold">Attributes</span>
 					{isDM
 						? // DM: Editable attributes
-						  Object.entries(actor.Attributes).map(([key, _value]) => (
-								<div key={key} className="flex gap-2 items-center text-sm">
-									<div className="font-medium w-20 shrink-0">{key}</div>
-									<input
-										type="text"
-										value={localAttributes[key] ?? ""}
-										onChange={(e) => handleAttributeChange(key, e.target.value)}
-										className="input input-sm input-bordered flex-1"
-										placeholder="Value"
-									/>
-								</div>
-						  ))
+						Object.entries(actor.Attributes).map(([key, _value]) => (
+							<div key={key} className="flex gap-2 items-center text-sm">
+								<div className="font-medium w-20 shrink-0">{key}</div>
+								<input
+									type="text"
+									value={localAttributes[key] ?? ""}
+									onChange={(e) => handleAttributeChange(key, e.target.value)}
+									className="input input-sm input-bordered flex-1"
+									placeholder="Value"
+								/>
+							</div>
+						))
 						: // Player: Readonly attributes
-						  Object.entries(actor.Attributes).map(([key, value]) => (
-								<div key={key} className="flex gap-2 items-center text-sm">
-									<div className="font-medium flex-1">{key}</div>
-									<div className="opacity-70 flex-1 text-right">{value}</div>
-								</div>
-						  ))}
+						Object.entries(actor.Attributes).map(([key, value]) => (
+							<div key={key} className="flex gap-2 items-center text-sm">
+								<div className="font-medium flex-1">{key}</div>
+								<div className="opacity-70 flex-1 text-right">{value}</div>
+							</div>
+						))}
 				</div>
 			)}
 		</div>

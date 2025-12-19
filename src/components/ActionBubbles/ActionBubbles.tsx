@@ -1,0 +1,186 @@
+// components/ActionBubbles.tsx
+
+import { useRef, useState, useEffect } from "react";
+import { ActionDefinition } from "../../domains/CampaignSetting/CampaignSetting";
+
+interface ActionBubblesProps {
+	actions: ActionDefinition[];
+	onChange: (actions: ActionDefinition[]) => void;
+}
+
+export function ActionBubbles({ actions, onChange }: ActionBubblesProps) {
+	// Local state for optimistic updates
+	const [localActions, setLocalActions] = useState(actions);
+	const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+
+	// Sync local state when props change (from external updates)
+	useEffect(() => {
+		setLocalActions(actions);
+	}, [actions]);
+
+	const handleChange = (updatedActions: ActionDefinition[]) => {
+		setLocalActions(updatedActions);
+
+		if (debounceTimer.current) clearTimeout(debounceTimer.current);
+		debounceTimer.current = setTimeout(() => {
+			onChange(updatedActions);
+		}, 300);
+	};
+
+	const handleSpend = (actionId: string) => {
+		const updated = localActions.map((a) => {
+			if (a.Id !== actionId) return a;
+			const current = a.Current ?? a.Default;
+			if (current <= 0) return a;
+			return { ...a, Current: current - 1 };
+		});
+		handleChange(updated);
+	};
+
+	const handleIncrement = (actionId: string) => {
+		const updated = localActions.map((a) => {
+			if (a.Id !== actionId) return a;
+			const current = a.Current ?? a.Default;
+			return { ...a, Current: current + 1 };
+		});
+		handleChange(updated);
+	};
+
+	// Calculate total bubbles to determine layout
+	const totalBubbles = localActions.reduce((sum, a) => {
+		const current = a.Current ?? a.Default;
+		return sum + Math.max(current, a.Default);
+	}, 0);
+
+	const useVerticalLayout = totalBubbles > 8;
+
+	if (localActions.length === 0) {
+		return null;
+	}
+
+	if (useVerticalLayout) {
+		return (
+			<div className="space-y-2">
+				{localActions.map((action) => (
+					<ActionRow
+						key={action.Id}
+						action={action}
+						onSpend={() => handleSpend(action.Id)}
+						onIncrement={() => handleIncrement(action.Id)}
+						showLabel
+					/>
+				))}
+			</div>
+		);
+	}
+
+	return (
+		<div className="flex items-center gap-2 flex-wrap">
+			{localActions.map((action, index) => (
+				<div key={action.Id} className="flex items-center gap-2">
+					{index > 0 && <span className="text-base-content/30">|</span>}
+					<ActionRow
+						action={action}
+						onSpend={() => handleSpend(action.Id)}
+						onIncrement={() => handleIncrement(action.Id)}
+						showLabel={false}
+					/>
+				</div>
+			))}
+		</div>
+	);
+}
+
+interface ActionRowProps {
+	action: ActionDefinition;
+	onSpend: () => void;
+	onIncrement: () => void;
+	showLabel: boolean;
+}
+
+function ActionRow({ action, onSpend, onIncrement, showLabel }: ActionRowProps) {
+	const current = action.Current ?? action.Default;
+	const maxDisplay = Math.max(current, action.Default);
+
+	// Track which bubble is animating
+	const [spendingIndex, setSpendingIndex] = useState<number | null>(null);
+
+	const handleBubbleClick = () => {
+		if (spendingIndex !== null) return; // Prevent double-clicks during animation
+		
+		// Start animation on the last filled bubble (rightmost)
+		const lastFilledIndex = current - 1;
+		setSpendingIndex(lastFilledIndex);
+
+		// Delay the actual state change until animation completes
+		setTimeout(() => {
+			setSpendingIndex(null);
+			onSpend();
+		}, 200);
+	};
+
+	return (
+		<div 
+			className="tooltip tooltip-right flex items-center gap-1" 
+			data-tip={action.Name}
+		>
+			{showLabel && (
+				<span className="text-xs font-medium w-32 truncate" title={action.Name}>
+					{action.Name}
+				</span>
+			)}
+			<div className="flex items-center gap-0.5">
+				{Array.from({ length: maxDisplay }).map((_, i) => {
+					const isFilled = i < current;
+					const isSpending = i === spendingIndex;
+
+					return (
+						<button
+							key={i}
+							onClick={isFilled ? () => handleBubbleClick() : undefined}
+							disabled={!isFilled || spendingIndex !== null}
+							className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
+								isFilled && !isSpending
+									? "cursor-pointer hover:scale-110"
+									: "cursor-default"
+							} ${isSpending ? "animate-spend" : ""}`}
+							style={{
+								borderColor: action.Color,
+								backgroundColor: isFilled && !isSpending ? action.Color : "transparent",
+								opacity: isFilled ? 1 : 0.4,
+							}}
+						/>
+					);
+				})}
+			</div>
+			<button
+				onClick={onIncrement}
+				className="btn btn-xs btn-circle hover:scale-110 transition-transform"
+				title={`Add ${action.Name}`}
+			>
+				+
+			</button>
+
+			{/* Scoped keyframe animation */}
+			<style>{`
+				@keyframes spend {
+					0% {
+						transform: scale(1);
+						opacity: 1;
+					}
+					50% {
+						transform: scale(1.3);
+						opacity: 0.7;
+					}
+					100% {
+						transform: scale(0);
+						opacity: 0;
+					}
+				}
+				.animate-spend {
+					animation: spend 200ms ease-out forwards;
+				}
+			`}</style>
+		</div>
+	);
+}

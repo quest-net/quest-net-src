@@ -139,6 +139,10 @@ export const CampaignSettingActions = {
 						},
 					},
 				],
+				ActionDefinitions: [
+					{ Id: "combat", Name: "Combat Action", Color: "#ef4444", Default: 1 },
+					{ Id: "noncombat", Name: "Non-Combat Action", Color: "#3b82f6", Default: 1 },
+				  ],
 				VisibilitySettings: {
 					playersSeeDMRolls: false,
 					playersSeePeerRolls: true,
@@ -208,6 +212,10 @@ export const CampaignSettingActions = {
 					},
 				},
 			],
+			ActionDefinitions: [
+				{ Id: "combat", Name: "Combat Action", Color: "#ef4444", Default: 1 },
+				{ Id: "noncombat", Name: "Non-Combat Action", Color: "#3b82f6", Default: 1 },
+			  ],
 			VisibilitySettings: {
 				playersSeeDMRolls: false,
 				playersSeePeerRolls: true,

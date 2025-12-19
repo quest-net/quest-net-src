@@ -11,6 +11,7 @@ import {
 	FormGrid,
 } from "../../components/Form/Form";
 import { StatDefinitionsEditor } from "../../components/inputs/StatDefinitionEditor";
+import { ActionDefinitionEditor } from "../../components/inputs/ActionDefinitionEditor";
 import { AttributeEditor } from "../../components/inputs/AttributeEditor";
 import { TagEditor } from "../../components/inputs/TagEditor";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
@@ -39,7 +40,7 @@ export function CharacterEdit({
 
 	const handleSave = (data: Character) => {
 		if (!actionService) return;
-	
+
 		// Clamp stat Current values to their Max before saving
 		const validatedData = {
 			...data,
@@ -48,7 +49,7 @@ export function CharacterEdit({
 				Current: Math.min(stat.Current ?? stat.Max, stat.Max)
 			}))
 		};
-	
+
 		if (!character) {
 			// Create mode
 			if (isDmAccess())
@@ -164,8 +165,8 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 						/>
 					</FormField>
 
-					<FormField 
-						label="Critical Success Message" 
+					<FormField
+						label="Critical Success Message"
 						span={2}
 					>
 						<input
@@ -221,6 +222,17 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 				<StatDefinitionsEditor
 					stats={data.Stats}
 					onChange={(stats) => handleFieldChange("Stats", stats)}
+				/>
+			</FormSection>
+
+			{/* Actions */}
+			<FormSection
+				title="Actions"
+				description="Action economy (Combat Actions, etc.)"
+			>
+				<ActionDefinitionEditor
+					actions={data.Actions || []}
+					onChange={(actions) => handleFieldChange("Actions", actions)}
 				/>
 			</FormSection>
 

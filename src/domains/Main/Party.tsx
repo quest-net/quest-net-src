@@ -7,6 +7,8 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { StatBar } from "../../components/StatBar/StatBar";
 import { ObjectPicker, ObjectTypeConfig } from "../../components/inputs/ObjectPicker";
+import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
+import { ActionDefinition } from "../CampaignSetting/CampaignSetting";
 
 export function Party() {
 	const context = useQuestContext();
@@ -38,6 +40,15 @@ export function Party() {
 		actionService.execute("character:edit", {
 			characterId: characterId,
 			updates: { Stats: updatedStats },
+		});
+	};
+
+	const handleActionsChange = (characterId: string, updatedActions: ActionDefinition[]) => {
+		if (!actionService) return;
+	
+		actionService.execute("character:edit", {
+			characterId: characterId,
+			updates: { Actions: updatedActions },
 		});
 	};
 
@@ -220,11 +231,10 @@ export function Party() {
 				{characters.map((character) => (
 					<div
 						key={character.Id}
-						className={`card bg-base-100 border-2 transition-all ${
-							isDM && selectedActorIds.includes(character.Id)
-								? "border-primary ring-2 ring-primary"
-								: "border-base-300"
-						}`}
+						className={`card bg-base-100 border-2 transition-all ${isDM && selectedActorIds.includes(character.Id)
+							? "border-primary ring-2 ring-primary"
+							: "border-base-300"
+							}`}
 					>
 						<div className="card-body p-4">
 							<div className="flex gap-2 items-center">
@@ -300,6 +310,17 @@ export function Party() {
 									)}
 								</div>
 							</div>
+							{/* Actions */}
+								{character.Actions && character.Actions.length > 0 && (
+									<div className="pt-2 border-t border-base-300">
+										<ActionBubbles
+											actions={character.Actions}
+											onChange={(updatedActions) =>
+												handleActionsChange(character.Id, updatedActions)
+											}
+										/>
+									</div>
+								)}
 						</div>
 					</div>
 				))}

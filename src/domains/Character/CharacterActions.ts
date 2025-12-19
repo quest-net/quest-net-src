@@ -25,12 +25,18 @@ export const CharacterActions = {
 			Current: statDef.Max,
 		}));
 
+		const actions = campaign.Settings.ActionDefinitions.map((actionDef) => ({
+			...actionDef,
+			Current: actionDef.Default,
+		}));
+
 		return {
 			Id: crypto.randomUUID(),
 			Name: "New Character",
 			Description: "",
 			Image: undefined,
 			Stats: stats,
+			Actions: actions,
 			Attributes: {},
 			Position: { x: 0, y: 0, h: 0 },
 			MoveSpeed: 5,
