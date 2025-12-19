@@ -483,10 +483,10 @@ export function TerrainEditor({
 	// Determine font size for height labels based on grid size and tile size
 	const heightFontSize = useMemo(() => {
 		const maxDim = Math.max(width, length);
-		if (maxDim > 40 || tilePx < 12) return 0; // Too small, hide numbers
-		if (maxDim > 32 || tilePx < 16) return 8;
-		if (maxDim > 24 || tilePx < 20) return 10;
-		return 12;
+		if (maxDim > 40 || tilePx < 12) return 8; // Too small, hide numbers
+		if (maxDim > 32 || tilePx < 16) return 12;
+		if (maxDim > 24 || tilePx < 20) return 16;
+		return 20;
 	}, [width, length, tilePx]);
 
 	const gridStyle: React.CSSProperties = useMemo(
@@ -698,7 +698,7 @@ export function TerrainEditor({
 						disabled={isReadOnly}
 						title="Carve a meandering valley (subtractive)"
 					>
-						<span className="icon-[mdi--valley]" /> Valley
+						<span className="icon-[game-icons--edge-crack]" /> Valley
 					</button>
 					<button
 						type="button"
@@ -755,7 +755,7 @@ export function TerrainEditor({
 										borderRadius: 1,
 										position: "relative",
 										boxShadow: isHovered
-											? "inset 0 0 0 2px rgba(255,255,255,0.8)"
+											? "inset 0 0 0 1px rgba(255,255,255,0.8)"
 											: undefined,
 									}}
 								>
@@ -769,11 +769,8 @@ export function TerrainEditor({
 												justifyContent: "center",
 												fontSize: heightFontSize,
 												fontWeight: 600,
-												color: h > 8 ? "rgba(0,0,0,0.7)" : "rgba(255,255,255,0.9)",
-												textShadow:
-													h > 8
-														? "0 0 2px rgba(255,255,255,0.5)"
-														: "0 0 2px rgba(0,0,0,0.5)",
+												color: "rgba(0,0,0,0.9)",
+												textShadow: "0 0 2px rgba(0,0,0,0.2)",
 												pointerEvents: "none",
 											}}
 										>
