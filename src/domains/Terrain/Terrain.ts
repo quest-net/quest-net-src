@@ -19,7 +19,11 @@ export type TerrainType =
 	| "brown"
 	| "red"
 	| "grey"
-	| "black";
+	| "black"
+	| "orange"
+	| "purple"
+	| "cyan"
+	| "pink";
 
 /**
  * Ordered array of terrain types - indices used in ColorMap
@@ -34,6 +38,10 @@ export const TERRAIN_TYPES: readonly TerrainType[] = [
 	"red",    // 5
 	"grey",   // 6
 	"black",  // 7
+	"orange", // 8
+	"purple", // 9
+	"cyan",   // 10
+	"pink",   // 11
 ] as const;
 
 /**
@@ -49,6 +57,12 @@ export const TERRAIN_COLORS: Record<TerrainType, string> = {
 	red: "#ef4444", // Red-500 - lava, danger
 	grey: "#6b7280", // Gray-500 - stone, rock
 	black: "#1f2937", // Gray-800 - void, shadow
+
+	// Extended palette
+	orange: "#f97316", // Orange-500
+	purple: "#a855f7", // Purple-500
+	cyan: "#06b6d4", // Cyan-500
+	pink: "#ec4899", // Pink-500
 };
 
 /** Get TerrainType from index (defaults to "grey" for invalid indices) */
