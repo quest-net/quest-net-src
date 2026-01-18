@@ -6,9 +6,10 @@ import { ActionDefinition } from "../../domains/CampaignSetting/CampaignSetting"
 interface ActionBubblesProps {
 	actions: ActionDefinition[];
 	onChange: (actions: ActionDefinition[]) => void;
+	readonly?: boolean;
 }
 
-export function ActionBubbles({ actions, onChange }: ActionBubblesProps) {
+export function ActionBubbles({ actions, onChange, readonly }: ActionBubblesProps) {
 	// Local state for optimistic updates
 	const [localActions, setLocalActions] = useState(actions);
 	const debounceTimer = useRef<NodeJS.Timeout | null>(null);
@@ -68,6 +69,7 @@ export function ActionBubbles({ actions, onChange }: ActionBubblesProps) {
 						onSpend={() => handleSpend(action.Id)}
 						onIncrement={() => handleIncrement(action.Id)}
 						showLabel
+						readonly={readonly}
 					/>
 				))}
 			</div>
@@ -84,6 +86,7 @@ export function ActionBubbles({ actions, onChange }: ActionBubblesProps) {
 						onSpend={() => handleSpend(action.Id)}
 						onIncrement={() => handleIncrement(action.Id)}
 						showLabel={false}
+						readonly={readonly}
 					/>
 				</div>
 			))}
@@ -96,9 +99,10 @@ interface ActionRowProps {
 	onSpend: () => void;
 	onIncrement: () => void;
 	showLabel: boolean;
+	readonly?: boolean;
 }
 
-function ActionRow({ action, onSpend, onIncrement, showLabel }: ActionRowProps) {
+function ActionRow({ action, onSpend, onIncrement, showLabel, readonly }: ActionRowProps) {
 	const current = action.Current ?? action.Default;
 	const maxDisplay = Math.max(current, action.Default);
 
@@ -106,8 +110,9 @@ function ActionRow({ action, onSpend, onIncrement, showLabel }: ActionRowProps) 
 	const [spendingIndex, setSpendingIndex] = useState<number | null>(null);
 
 	const handleBubbleClick = () => {
+		if (readonly) return;
 		if (spendingIndex !== null) return; // Prevent double-clicks during animation
-		
+
 		// Start animation on the last filled bubble (rightmost)
 		const lastFilledIndex = current - 1;
 		setSpendingIndex(lastFilledIndex);
@@ -120,8 +125,8 @@ function ActionRow({ action, onSpend, onIncrement, showLabel }: ActionRowProps) 
 	};
 
 	return (
-		<div 
-			className="tooltip tooltip-right flex items-center gap-1" 
+		<div
+			className="tooltip tooltip-right flex items-center gap-1"
 			data-tip={action.Name}
 		>
 			{showLabel && (
@@ -133,17 +138,20 @@ function ActionRow({ action, onSpend, onIncrement, showLabel }: ActionRowProps) 
 				{Array.from({ length: maxDisplay }).map((_, i) => {
 					const isFilled = i < current;
 					const isSpending = i === spendingIndex;
+					const canInteract = isFilled && !isSpending && !readonly;
 
 					return (
 						<button
 							key={i}
-							onClick={isFilled ? () => handleBubbleClick() : undefined}
-							disabled={!isFilled || spendingIndex !== null}
-							className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
-								isFilled && !isSpending
-									? "cursor-pointer hover:scale-110"
-									: "cursor-default"
-							} ${isSpending ? "animate-spend" : ""}`}
+							onClick={canInteract ? () => handleBubbleClick() : undefined}
+							disabled={!canInteract && !readonly ? true : undefined}
+							// Logic cleanup:
+							// if readonly: disable clicks, remove pointer cursor.
+							// if not readonly: standard logic.
+							className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${canInteract
+								? "cursor-pointer hover:scale-110"
+								: "cursor-default"
+								} ${isSpending ? "animate-spend" : ""}`}
 							style={{
 								borderColor: action.Color,
 								backgroundColor: isFilled && !isSpending ? action.Color : "transparent",
@@ -153,13 +161,15 @@ function ActionRow({ action, onSpend, onIncrement, showLabel }: ActionRowProps) 
 					);
 				})}
 			</div>
-			<button
-				onClick={onIncrement}
-				className="btn btn-xs btn-circle hover:scale-110 transition-transform"
-				title={`Add ${action.Name}`}
-			>
-				+
-			</button>
+			{!readonly && (
+				<button
+					onClick={onIncrement}
+					className="btn btn-xs btn-circle hover:scale-110 transition-transform"
+					title={`Add ${action.Name}`}
+				>
+					+
+				</button>
+			)}
 
 			{/* Scoped keyframe animation */}
 			<style>{`

@@ -7,6 +7,8 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { Character } from "./Character";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { StatBar } from "../../components/StatBar/StatBar";
+import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
+import { ActionDefinition } from "../CampaignSetting/CampaignSetting";
 
 export function CharacterSheet() {
 	const context = useQuestContext();
@@ -63,7 +65,7 @@ export function CharacterSheet() {
 
 	const handleNameChange = (value: string) => {
 		setLocalName(value);
-		
+
 		if (nameTimer.current) clearTimeout(nameTimer.current);
 		nameTimer.current = setTimeout(() => {
 			handleFieldChange("Name", value);
@@ -72,7 +74,7 @@ export function CharacterSheet() {
 
 	const handleDescriptionChange = (value: string) => {
 		setLocalDescription(value);
-		
+
 		if (descTimer.current) clearTimeout(descTimer.current);
 		descTimer.current = setTimeout(() => {
 			handleFieldChange("Description", value);
@@ -82,7 +84,7 @@ export function CharacterSheet() {
 	const handleCritMessageChange = (value: string) => {
 		const truncated = value.slice(0, 50);
 		setLocalCritMessage(truncated);
-		
+
 		if (critTimer.current) clearTimeout(critTimer.current);
 		critTimer.current = setTimeout(() => {
 			handleFieldChange("CritMessage", truncated || undefined);
@@ -104,7 +106,7 @@ export function CharacterSheet() {
 
 	const handleAttributeChange = (key: string, value: string) => {
 		setLocalAttributes((prev) => ({ ...prev, [key]: value }));
-		
+
 		if (attrTimer.current) clearTimeout(attrTimer.current);
 		attrTimer.current = setTimeout(() => {
 			if (!actionService) return;
@@ -118,16 +120,25 @@ export function CharacterSheet() {
 		}, 500);
 	};
 
+	const handleActionsChange = (updatedActions: ActionDefinition[]) => {
+		if (!actionService) return;
+
+		actionService.execute("character:edit", {
+			characterId: character.Id,
+			updates: { Actions: updatedActions },
+		});
+	};
+
 	return (
 		<div className="space-y-1">
 			{/* Image & Name */}
 			<div className="flex gap-4 items-start">
 				<div className="max-w-60">
 					<ImagePicker
-					value={character.Image}
-					onChange={(imageId) => {
-						handleFieldChange("Image", imageId);
-					}}></ImagePicker>
+						value={character.Image}
+						onChange={(imageId) => {
+							handleFieldChange("Image", imageId);
+						}}></ImagePicker>
 				</div>
 				<div className="flex-1 space-y-2">
 					<input
@@ -153,9 +164,8 @@ export function CharacterSheet() {
 				<div className="flex items-center justify-between">
 					<div></div>
 					<button
-						className={`btn btn-sm btn-circle ${
-							editingMaxStats ? "btn-primary" : "btn-ghost"
-						}`}
+						className={`btn btn-sm btn-circle ${editingMaxStats ? "btn-primary" : "btn-ghost"
+							}`}
 						onClick={() => setEditingMaxStats(!editingMaxStats)}
 						title={editingMaxStats ? "Hide max stat controls" : "Edit max stats"}
 					>
@@ -177,6 +187,16 @@ export function CharacterSheet() {
 					))}
 				</div>
 			</div>
+
+			{/* Actions */}
+			{character.Actions && character.Actions.length > 0 && (
+				<div className="pt-2">
+					<ActionBubbles
+						actions={character.Actions}
+						onChange={handleActionsChange}
+					/>
+				</div>
+			)}
 
 			{/* Move Speed & Flying */}
 			<div className="grid grid-cols-2 gap-4">

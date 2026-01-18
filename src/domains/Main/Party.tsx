@@ -14,6 +14,7 @@ export function Party() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const campaign = CampaignActions.getActiveCampaign(context);
+	const myCharacterId = context.User.SelectedCharacters[campaign.RoomCode];
 
 	const isDM = context.User.Role === "dm";
 	const characters = campaign.GameState.Characters;
@@ -45,7 +46,7 @@ export function Party() {
 
 	const handleActionsChange = (characterId: string, updatedActions: ActionDefinition[]) => {
 		if (!actionService) return;
-	
+
 		actionService.execute("character:edit", {
 			characterId: characterId,
 			updates: { Actions: updatedActions },
@@ -311,16 +312,17 @@ export function Party() {
 								</div>
 							</div>
 							{/* Actions */}
-								{character.Actions && character.Actions.length > 0 && (
-									<div className="pt-2 border-t border-base-300">
-										<ActionBubbles
-											actions={character.Actions}
-											onChange={(updatedActions) =>
-												handleActionsChange(character.Id, updatedActions)
-											}
-										/>
-									</div>
-								)}
+							{character.Actions && character.Actions.length > 0 && (
+								<div className="pt-2 border-t border-base-300">
+									<ActionBubbles
+										actions={character.Actions}
+										onChange={(updatedActions) =>
+											handleActionsChange(character.Id, updatedActions)
+										}
+										readonly={!isDM && character.Id !== myCharacterId}
+									/>
+								</div>
+							)}
 						</div>
 					</div>
 				))}

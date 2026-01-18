@@ -96,10 +96,19 @@ export const ScenarioActions = {
             return;
         }
 
-        // 1. Clear existing entities
+        // 1. Set terrain (skip if deleted, validateActors handles positions)
+        // We do this FIRST so that validating entity spawns/character moves checks against the NEW terrain
+        const terrainExists = campaign.Terrains.some(
+            (t) => t.Id === scenario.TerrainId
+        );
+        if (terrainExists) {
+            TerrainActions.setActive({ terrainId: scenario.TerrainId }, context);
+        }
+
+        // 2. Clear existing entities
         campaign.GameState.Entities = [];
 
-        // 2. Spawn entities from placements (skip if template deleted)
+        // 3. Spawn entities from placements (skip if template deleted)
         for (const placement of scenario.EntityPlacements) {
             const templateExists = campaign.EntityTemplates.some(
                 (t) => t.Id === placement.EntityTemplateId
@@ -115,21 +124,13 @@ export const ScenarioActions = {
             }
         }
 
-        // 3. Relocate characters to spawn positions
+        // 4. Relocate characters to spawn positions
         const characters = campaign.GameState.Characters;
         for (let i = 0; i < characters.length; i++) {
             if (i < scenario.SpawnPositions.length) {
                 characters[i].Position = { ...scenario.SpawnPositions[i] };
             }
             // Overflow characters keep current position, will be validated by terrain change
-        }
-
-        // 4. Set terrain (skip if deleted, validateActors handles positions)
-        const terrainExists = campaign.Terrains.some(
-            (t) => t.Id === scenario.TerrainId
-        );
-        if (terrainExists) {
-            TerrainActions.setActive({ terrainId: scenario.TerrainId }, context);
         }
 
         // 5. Set scene images

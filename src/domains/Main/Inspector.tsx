@@ -23,6 +23,7 @@ export function Inspector() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const campaign = CampaignActions.getActiveCampaign(context);
+	const myCharacterId = context.User.SelectedCharacters[campaign.RoomCode];
 
 	const isDM = context.User.Role === "dm";
 
@@ -49,6 +50,7 @@ export function Inspector() {
 			actor={actor}
 			kind={selectedActor.kind}
 			isDM={isDM}
+			isMyCharacter={actor.Id === myCharacterId}
 			actionService={actionService}
 			playersSeeEntityHealth={
 				campaign.Settings.VisibilitySettings.playersSeeEntityHealth
@@ -65,6 +67,7 @@ interface UnifiedInspectorProps {
 	actor: Actor;
 	kind: "character" | "entity";
 	isDM: boolean;
+	isMyCharacter: boolean;
 	actionService: any;
 	playersSeeEntityHealth: boolean;
 }
@@ -73,6 +76,7 @@ function UnifiedInspector({
 	actor,
 	kind,
 	isDM,
+	isMyCharacter,
 	actionService,
 	playersSeeEntityHealth,
 }: UnifiedInspectorProps) {
@@ -180,10 +184,10 @@ function UnifiedInspector({
 
 	const handleActionsChange = (updatedActions: ActionDefinition[]) => {
 		if (!actionService) return;
-	
+
 		const actionKey = kind === "character" ? "character:edit" : "entity:edit";
 		const idKey = kind === "character" ? "characterId" : "entityId";
-	
+
 		actionService.execute(actionKey, {
 			[idKey]: actor.Id,
 			updates: { Actions: updatedActions },
@@ -314,6 +318,7 @@ function UnifiedInspector({
 							handleDespawn={handleDespawn}
 							setShowObjectPicker={setShowObjectPicker}
 							actionService={actionService}
+							isMyCharacter={isMyCharacter}
 						/>
 					)}
 
@@ -384,12 +389,14 @@ interface ActorInfoTabProps {
 	handleDespawn: () => void;
 	setShowObjectPicker: (show: boolean) => void;
 	actionService: any;
+	isMyCharacter: boolean;
 }
 
 function ActorInfoTab({
 	actor,
 	kind,
 	isDM,
+	isMyCharacter,
 	localName,
 	localDescription,
 	localMoveSpeed,
@@ -535,6 +542,7 @@ function ActorInfoTab({
 					<ActionBubbles
 						actions={actor.Actions}
 						onChange={handleActionsChange}
+						readonly={!isDM && !isMyCharacter}
 					/>
 				</div>
 			)}
