@@ -256,5 +256,9 @@ export class ActionService {
 			Characters: [...campaign.GameState.Characters],
 			Entities: [...campaign.GameState.Entities],
 		};
+		// Also bump SharedInventories to ensure UI and StateSync catch mutations
+		if (campaign.Settings.SharedInventories) {
+			campaign.Settings.SharedInventories = [...campaign.Settings.SharedInventories];
+		}
 	}
 }

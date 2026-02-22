@@ -3,7 +3,6 @@
 import { Context } from "../Context/Context";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
-import { Item } from "../Item/Item";
 
 export const SharedInventoryActions = {
     /**
