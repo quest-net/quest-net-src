@@ -1,4 +1,5 @@
 // domains/CampaignSetting/CampaignSetting.ts
+import { InventorySlot } from "../Actor/Actor";
 
 export interface CampaignSettings {
 	StatDefinitions: StatDefinition[];
@@ -7,6 +8,14 @@ export interface CampaignSettings {
 	CalendarSettings: CalendarSettings;
 	RestSettings: RestSettings;
 	MovementSettings: MovementSettings;
+	SharedInventories?: SharedInventory[];
+}
+
+export interface SharedInventory {
+	Id: string;
+	Name: string;
+	Stats: StatDefinition[];
+	Inventory: InventorySlot[];
 }
 
 export interface StatDefinition {
@@ -17,6 +26,10 @@ export interface StatDefinition {
 	Current?: number;
 	Max: number;
 	RestoreRule?: RestoreRule;
+	OverflowTarget?: {
+		InventoryId: string;
+		StatId: string;
+	};
 }
 
 export interface ActionDefinition {

@@ -8,7 +8,8 @@ import { Character } from "./Character";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { StatBar } from "../../components/StatBar/StatBar";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
-import { ActionDefinition } from "../CampaignSetting/CampaignSetting";
+import { ActionDefinition, StatDefinition } from "../CampaignSetting/CampaignSetting";
+import { StatTransferModal } from "../../components/modals/StatTransferModal";
 
 export function CharacterSheet() {
 	const context = useQuestContext();
@@ -16,6 +17,7 @@ export function CharacterSheet() {
 	const campaign = CampaignActions.getActiveCampaign(context);
 
 	const [editingMaxStats, setEditingMaxStats] = useState(false);
+	const [transferStat, setTransferStat] = useState<StatDefinition | null>(null);
 
 	// Get the selected character for this campaign
 	const selectedCharacterId =
@@ -183,6 +185,13 @@ export function CharacterSheet() {
 								handleStatChange(stat.Id, "Current", value)
 							}
 							onMaxChange={(value) => handleStatChange(stat.Id, "Max", value)}
+							onTransfer={() => setTransferStat({
+								Id: stat.Id,
+								Name: stat.Name,
+								Color: stat.Color,
+								Max: stat.Max,
+								Current: stat.Current,
+							})}
 						/>
 					))}
 				</div>
@@ -262,6 +271,26 @@ export function CharacterSheet() {
 					Displays when you roll a critical success
 				</p>
 			</div>
+
+			{/* Stat Transfer Modal */}
+			{transferStat && (
+				<StatTransferModal
+					isOpen={!!transferStat}
+					onClose={() => setTransferStat(null)}
+					sourceActorId={character.Id}
+					sourceStat={transferStat}
+					onTransfer={(targetId, amount) => {
+						if (!actionService) return;
+						actionService.execute("actor:transferStat", {
+							sourceActorId: character.Id,
+							sourceStatId: transferStat.Id,
+							targetId,
+							targetStatId: transferStat.Id, // Currently assuming same stat ID
+							amount,
+						});
+					}}
+				/>
+			)}
 		</div>
 	);
 }

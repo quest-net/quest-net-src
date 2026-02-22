@@ -1,17 +1,19 @@
 // components/inputs/StatDefinitionsEditor.tsx
 import { useState } from "react";
-import { StatDefinition } from "../../domains/CampaignSetting/CampaignSetting";
+import { SharedInventory, StatDefinition } from "../../domains/CampaignSetting/CampaignSetting";
 import { useFormReadOnly } from "../Form/Form";
 import { RestoreRuleEditor } from "./RestoreRuleEditor";
 
 interface StatDefinitionsEditorProps {
 	stats: StatDefinition[];
+	sharedInventories?: SharedInventory[];
 	onChange: (stats: StatDefinition[]) => void;
 	readOnly?: boolean;
 }
 
 export function StatDefinitionsEditor({
 	stats,
+	sharedInventories = [],
 	onChange,
 	readOnly: readOnlyProp,
 }: StatDefinitionsEditorProps) {
@@ -53,102 +55,139 @@ export function StatDefinitionsEditor({
 							<th>Max</th>
 							<th>Regen Rate</th>
 							<th>Restore Rules</th>
+							<th>Overflow Target</th>
 							{!readOnly && <th className="w-12"></th>}
 						</tr>
 					</thead>
 					<tbody>
-						{stats.map((stat) => (
-							<tr key={stat.Id}>
-								<td>
-									<input
-										type="text"
-										value={stat.Name}
-										onChange={(e) =>
-											handleChange(stat.Id, { Name: e.target.value })
-										}
-										disabled={readOnly}
-										className="input input-bordered input-sm w-full"
-										placeholder="Stat Name"
-									/>
-								</td>
-								<td>
-									<input
-										type="color"
-										value={stat.Color}
-										onChange={(e) =>
-											handleChange(stat.Id, { Color: e.target.value })
-										}
-										disabled={readOnly}
-										className="input input-bordered input-sm w-20"
-									/>
-								</td>
-								<td>
-									<input
-										type="number"
-										value={stat.Max}
-										onChange={(e) => {
-											const val = Math.max(0, Number(e.target.value));
-											handleChange(stat.Id, { Max: val });
-										}}
-										disabled={readOnly}
-										min={0}
-										className="input input-bordered input-sm w-20"
-									/>
-								</td>
-								<td>
-									<input
-										type="number"
-										value={stat.RegenRate ?? ""}
-										onChange={(e) => {
-											const raw = e.target.value;
-											const val =
-												raw === "" ? undefined : Math.max(0, Number(raw));
-											handleChange(stat.Id, {
-												RegenRate:
-													val !== undefined && Number.isFinite(val)
-														? val
-														: undefined,
-											});
-										}}
-										disabled={readOnly}
-										min={0}
-										className="input input-bordered input-sm w-20"
-										placeholder="None"
-									/>
-								</td>
-								<td>
-									{stat.RestoreRule ? (
-										<button className="btn btn-primary btn-sm w-16" 
-										title="Edit restore rules"
-										disabled={readOnly}
-										onClick={() => setEditingStatId(stat.Id)}
-										>Set</button>
-									) : (
-										<button className="btn btn-neutral btn-sm w-16" 
-										title="Edit restore rules"
-										disabled={readOnly}
-										onClick={() => setEditingStatId(stat.Id)}
-										>None</button>
-									)}
-								</td>
-								{!readOnly && (
+						{stats.map((stat) => {
+							// Determine current overflow selection
+							const overflowValue = stat.OverflowTarget
+								? `${stat.OverflowTarget.InventoryId}:${stat.OverflowTarget.StatId}`
+								: "";
+
+							return (
+								<tr key={stat.Id}>
 									<td>
-										<button
-											onClick={() => handleDelete(stat.Id)}
+										<input
+											type="text"
+											value={stat.Name}
+											onChange={(e) =>
+												handleChange(stat.Id, { Name: e.target.value })
+											}
 											disabled={readOnly}
-											className="btn btn-ghost btn-sm btn-square"
-											aria-label="Delete Stat"
-										>
-											<span className="icon-[mdi--close] h-5 w-5" />
-										</button>
+											className="input input-bordered input-sm w-full"
+											placeholder="Stat Name"
+										/>
 									</td>
-								)}
-							</tr>
-						))}
+									<td>
+										<input
+											type="color"
+											value={stat.Color}
+											onChange={(e) =>
+												handleChange(stat.Id, { Color: e.target.value })
+											}
+											disabled={readOnly}
+											className="input input-bordered input-sm w-20"
+										/>
+									</td>
+									<td>
+										<input
+											type="number"
+											value={stat.Max}
+											onChange={(e) => {
+												const val = Math.max(0, Number(e.target.value));
+												handleChange(stat.Id, { Max: val });
+											}}
+											disabled={readOnly}
+											min={0}
+											className="input input-bordered input-sm w-20"
+										/>
+									</td>
+									<td>
+										<input
+											type="number"
+											value={stat.RegenRate ?? ""}
+											onChange={(e) => {
+												const raw = e.target.value;
+												const val =
+													raw === "" ? undefined : Math.max(0, Number(raw));
+												handleChange(stat.Id, {
+													RegenRate:
+														val !== undefined && Number.isFinite(val)
+															? val
+															: undefined,
+												});
+											}}
+											disabled={readOnly}
+											min={0}
+											className="input input-bordered input-sm w-20"
+											placeholder="None"
+										/>
+									</td>
+									<td>
+										{stat.RestoreRule ? (
+											<button className="btn btn-primary btn-sm w-16"
+												title="Edit restore rules"
+												disabled={readOnly}
+												onClick={() => setEditingStatId(stat.Id)}
+											>Set</button>
+										) : (
+											<button className="btn btn-neutral btn-sm w-16"
+												title="Edit restore rules"
+												disabled={readOnly}
+												onClick={() => setEditingStatId(stat.Id)}
+											>None</button>
+										)}
+									</td>
+									<td>
+										<select
+											className="select select-bordered select-sm w-32"
+											value={overflowValue}
+											disabled={readOnly}
+											onChange={(e) => {
+												const val = e.target.value;
+												if (val === "") {
+													handleChange(stat.Id, { OverflowTarget: undefined });
+												} else {
+													const [invId, statId] = val.split(":");
+													handleChange(stat.Id, {
+														OverflowTarget: { InventoryId: invId, StatId: statId }
+													});
+												}
+											}}
+										>
+											<option value="">None</option>
+											{sharedInventories.map((inv) => (
+												<optgroup key={inv.Id} label={inv.Name}>
+													{inv.Stats.map((invStat) => (
+														<option key={invStat.Id} value={`${inv.Id}:${invStat.Id}`}>
+															{invStat.Name}
+														</option>
+													))}
+												</optgroup>
+											))}
+										</select>
+									</td>
+									{!readOnly && (
+										<td>
+											<button
+												onClick={() => handleDelete(stat.Id)}
+												disabled={readOnly}
+												className="btn btn-ghost btn-sm btn-square"
+												aria-label="Delete Stat"
+											>
+												<span className="icon-[mdi--close] h-5 w-5" />
+											</button>
+										</td>
+									)}
+								</tr>
+							);
+						})}
 						{stats.length === 0 && (
 							<tr>
 								<td
-									colSpan={readOnly ? 5 : 6}
+									colSpan={readOnly ? 6 : 7}
 									className="text-center italic text-base-content/60"
 								>
 									No stats defined.

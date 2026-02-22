@@ -8,6 +8,7 @@ interface StatBarProps {
 	editingMax: boolean;
 	onCurrentChange: (value: number) => void;
 	onMaxChange: (value: number) => void;
+	onTransfer?: () => void;
 }
 
 export function StatBar({
@@ -15,31 +16,32 @@ export function StatBar({
 	editingMax,
 	onCurrentChange,
 	onMaxChange,
+	onTransfer,
 }: StatBarProps) {
 	const actualCurrent = stat.Current ?? stat.Max;
 	const barRef = useRef<HTMLDivElement>(null);
-	
+
 	// Local state for dragging - only syncs on mouseup
 	const [isDragging, setIsDragging] = useState(false);
 	const [localValue, setLocalValue] = useState<number | null>(null);
-	
+
 	// Local state for debounced values
 	const [localCurrent, setLocalCurrent] = useState(actualCurrent);
 	const [localMax, setLocalMax] = useState(stat.Max);
-	
+
 	// Debounce timers
 	const currentTimer = useRef<NodeJS.Timeout | null>(null);
 	const maxTimer = useRef<NodeJS.Timeout | null>(null);
-	
+
 	// Sync local state when props change (from external updates)
 	useEffect(() => {
 		setLocalCurrent(actualCurrent);
 	}, [actualCurrent]);
-	
+
 	useEffect(() => {
 		setLocalMax(stat.Max);
 	}, [stat.Max]);
-	
+
 	// Use local value while dragging, local current otherwise
 	const displayValue = isDragging && localValue !== null ? localValue : localCurrent;
 	const percentage = (displayValue / localMax) * 100;
@@ -91,7 +93,7 @@ export function StatBar({
 	const handleCurrentChange = (value: number) => {
 		const clamped = Math.max(0, Math.min(localMax, value));
 		setLocalCurrent(clamped);
-		
+
 		if (currentTimer.current) clearTimeout(currentTimer.current);
 		currentTimer.current = setTimeout(() => {
 			onCurrentChange(clamped);
@@ -101,7 +103,7 @@ export function StatBar({
 	const handleMaxChange = (value: number) => {
 		const clamped = Math.max(1, value);
 		setLocalMax(clamped);
-		
+
 		// Also clamp current value if it exceeds new max
 		if (localCurrent > clamped) {
 			setLocalCurrent(clamped);
@@ -110,7 +112,7 @@ export function StatBar({
 				onCurrentChange(clamped);
 			}, 300);
 		}
-		
+
 		if (maxTimer.current) clearTimeout(maxTimer.current);
 		maxTimer.current = setTimeout(() => {
 			onMaxChange(clamped);
@@ -120,8 +122,19 @@ export function StatBar({
 	return (
 		<div className="space-y-1">
 			<div className="flex items-center justify-between">
-				<label className="text-sm font-medium">{stat.Name}</label>
-				
+				<div className="flex items-center gap-2">
+					<label className="text-sm font-medium">{stat.Name}</label>
+					{onTransfer && (
+						<button
+							className="btn btn-xs btn-ghost btn-circle"
+							onClick={onTransfer}
+							title={`Transfer ${stat.Name}`}
+						>
+							<span className="icon-[mdi--swap-horizontal] h-4 w-4" />
+						</button>
+					)}
+				</div>
+
 				{/* Current Value Controls - Right side of label */}
 				<div className="flex items-center gap-1">
 					<button

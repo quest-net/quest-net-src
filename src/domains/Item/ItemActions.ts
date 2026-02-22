@@ -196,16 +196,15 @@ export const ItemActions = {
 			);
 		}
 	},
-	
+
 	/**
-	 * Transfers an item from one actor to another
-	 * Moves the item slot from source actor to target actor's inventory
-	 * Works with any actors (characters or entities, in any location)
+	 * Transfers an item from one actor to another actor or shared inventory
+	 * Moves the item slot from source actor to target's inventory
 	 */
 	transfer(
 		params: {
 			sourceActorId: string;
-			targetActorId: string;
+			targetId: string; // Could be an ActorId or a SharedInventoryId
 			itemId: string;
 		},
 		context: Context
@@ -222,18 +221,26 @@ export const ItemActions = {
 			return;
 		}
 
-		// Find target actor
-		const targetActor = allActors.find((a) => a.Id === params.targetActorId);
-		if (!targetActor) {
-			console.warn(`Target actor not found: ${params.targetActorId}`);
+		// Try to resolve target as actor or shared inventory
+		const targetActor = allActors.find((a) => a.Id === params.targetId);
+		const targetSharedInv = campaign.Settings.SharedInventories?.find(
+			(i) => i.Id === params.targetId
+		);
+
+		if (!targetActor && !targetSharedInv) {
+			console.warn(`Target not found: ${params.targetId}`);
 			return;
 		}
 
 		// Prevent transferring to self
-		if (params.sourceActorId === params.targetActorId) {
+		if (params.sourceActorId === params.targetId) {
 			console.warn(`Cannot transfer item to self`);
 			return;
 		}
+
+		// Setup target details
+		let targetName = targetActor ? targetActor.Name : targetSharedInv?.Name || "Unknown";
+		const targetInventory = targetActor ? targetActor.Inventory : targetSharedInv?.Inventory;
 
 		// Find the item template for logging
 		const itemTemplate = campaign.ItemTemplates.find(
@@ -245,17 +252,17 @@ export const ItemActions = {
 		const inventoryIndex = sourceActor.Inventory.findIndex(
 			(s) => s.Id === params.itemId
 		);
-		if (inventoryIndex !== -1) {
+		if (inventoryIndex !== -1 && targetInventory) {
 			// Remove from source inventory
 			const [slot] = sourceActor.Inventory.splice(inventoryIndex, 1);
 
 			// Add to target inventory
-			targetActor.Inventory.push(slot);
+			targetInventory.push(slot);
 
 			LogActions.create(
 				{
 					action: "Item transferred",
-					details: `${sourceActor.Name} gave ${itemName} to ${targetActor.Name}`,
+					details: `${sourceActor.Name} gave ${itemName} to ${targetName}`,
 					category: "item",
 					level: "info",
 					visibility: ["all"],
@@ -270,17 +277,17 @@ export const ItemActions = {
 		const equipmentIndex = sourceActor.Equipment.findIndex(
 			(s) => s.Id === params.itemId
 		);
-		if (equipmentIndex !== -1) {
+		if (equipmentIndex !== -1 && targetInventory) {
 			// Remove from source equipment
 			const [slot] = sourceActor.Equipment.splice(equipmentIndex, 1);
 
 			// Add to target inventory (not equipment)
-			targetActor.Inventory.push(slot);
+			targetInventory.push(slot);
 
 			LogActions.create(
 				{
 					action: "Item transferred",
-					details: `${sourceActor.Name} gave ${itemName} to ${targetActor.Name}`,
+					details: `${sourceActor.Name} gave ${itemName} to ${targetName}`,
 					category: "item",
 					level: "info",
 					visibility: ["all"],
@@ -424,9 +431,8 @@ export const ItemActions = {
 				LogActions.create(
 					{
 						action: `${actor.Name} used ${itemTemplate.Name}`,
-						details: `${
-							slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""
-						}`,
+						details: `${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""
+							}`,
 						category: "item",
 						level: "info",
 						visibility,
@@ -440,9 +446,8 @@ export const ItemActions = {
 			LogActions.create(
 				{
 					action: `${actor.Name} used ${itemTemplate.Name}`,
-					details: `${
-						slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""
-					}`,
+					details: `${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""
+						}`,
 					category: "item",
 					level: "info",
 					visibility,

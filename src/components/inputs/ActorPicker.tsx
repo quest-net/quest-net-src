@@ -10,6 +10,7 @@ interface ActorPickerProps {
     onCancel: () => void;
     title?: string;
     excludeActorId?: string; // To prevent transferring to self
+    includeSharedInventories?: boolean;
 }
 
 export function ActorPicker({
@@ -18,6 +19,7 @@ export function ActorPicker({
     onCancel,
     title = "Select Actor",
     excludeActorId,
+    includeSharedInventories = false,
 }: ActorPickerProps) {
     const context = useQuestContext();
     const campaign = CampaignActions.getActiveCampaign(context);
@@ -31,7 +33,7 @@ export function ActorPicker({
             (e) => e.Id !== excludeActorId
         );
 
-        const types: ObjectTypeConfig<Actor>[] = [
+        const types: ObjectTypeConfig<Actor | { Id: string; Name: string }>[] = [
             {
                 label: "Party",
                 items: characters,
@@ -46,8 +48,17 @@ export function ActorPicker({
             },
         ];
 
+        if (includeSharedInventories && campaign.Settings.SharedInventories) {
+            types.push({
+                label: "Shared Inventories",
+                items: campaign.Settings.SharedInventories,
+                icon: "icon-[mdi--treasure-chest]",
+                typeKey: "shared-inventory",
+            });
+        }
+
         return types;
-    }, [campaign.GameState, excludeActorId]);
+    }, [campaign.GameState, campaign.Settings.SharedInventories, excludeActorId, includeSharedInventories]);
 
     const handleConfirm = (selectedIds: string[]) => {
         if (selectedIds.length > 0) {

@@ -59,9 +59,8 @@ export function validateAndBuildHeightCostLookup(
 		} catch (error) {
 			return {
 				valid: false,
-				error: `Invalid formula at h=${h}: ${
-					error instanceof Error ? error.message : "Unknown error"
-				}`,
+				error: `Invalid formula at h=${h}: ${error instanceof Error ? error.message : "Unknown error"
+					}`,
 			};
 		}
 	}
@@ -74,32 +73,32 @@ export function validateAndBuildHeightCostLookup(
  * Returns an array of strings, one per restore type
  */
 export function formatRestoreRule(rule?: RestoreRule): string[] {
-  if (!rule) return [];
-  
-  const lines: string[] = [];
-  
-  if (rule.shortRest !== undefined) {
-    const text = rule.shortRest === "max" 
-      ? "Restores fully on short rest"
-      : `Restores ${rule.shortRest} use${rule.shortRest === 1 ? '' : 's'} on short rest`;
-    lines.push(text);
-  }
-  
-  if (rule.longRest !== undefined) {
-    const text = rule.longRest === "max"
-      ? "Restores fully on long rest"
-      : `Restores ${rule.longRest} use${rule.longRest === 1 ? '' : 's'} on long rest`;
-    lines.push(text);
-  }
-  
-  if (rule.combatEnd !== undefined) {
-    const text = rule.combatEnd === "max"
-      ? "Restores fully at combat end"
-      : `Restores ${rule.combatEnd} use${rule.combatEnd === 1 ? '' : 's'} at combat end`;
-    lines.push(text);
-  }
-  
-  return lines;
+	if (!rule) return [];
+
+	const lines: string[] = [];
+
+	if (rule.shortRest !== undefined) {
+		const text = rule.shortRest === "max"
+			? "Restores fully on short rest"
+			: `Restores ${rule.shortRest} use${rule.shortRest === 1 ? '' : 's'} on short rest`;
+		lines.push(text);
+	}
+
+	if (rule.longRest !== undefined) {
+		const text = rule.longRest === "max"
+			? "Restores fully on long rest"
+			: `Restores ${rule.longRest} use${rule.longRest === 1 ? '' : 's'} on long rest`;
+		lines.push(text);
+	}
+
+	if (rule.combatEnd !== undefined) {
+		const text = rule.combatEnd === "max"
+			? "Restores fully at combat end"
+			: `Restores ${rule.combatEnd} use${rule.combatEnd === 1 ? '' : 's'} at combat end`;
+		lines.push(text);
+	}
+
+	return lines;
 }
 
 export function syncActorsWithSettings(campaign: Campaign): void {
@@ -112,11 +111,11 @@ export function syncActorsWithSettings(campaign: Campaign): void {
 		Stats?: StatDefinition[];
 		Actions?: ActionDefinition[];
 	}> = [
-		...campaign.CharacterRoster,
-		...campaign.GameState.Characters,
-		...campaign.EntityTemplates,
-		...campaign.GameState.Entities,
-	];
+			...campaign.CharacterRoster,
+			...campaign.GameState.Characters,
+			...campaign.EntityTemplates,
+			...campaign.GameState.Entities,
+		];
 
 	for (const actor of actors) {
 		// -------------------------
@@ -238,7 +237,8 @@ export const CampaignSettingActions = {
 				ActionDefinitions: [
 					{ Id: "combat", Name: "Combat Action", Color: "#ef4444", Default: 1 },
 					{ Id: "noncombat", Name: "Non-Combat Action", Color: "#3b82f6", Default: 1 },
-				  ],
+				],
+				SharedInventories: [],
 				VisibilitySettings: {
 					playersSeeDMRolls: false,
 					playersSeePeerRolls: true,
@@ -311,7 +311,8 @@ export const CampaignSettingActions = {
 			ActionDefinitions: [
 				{ Id: "combat", Name: "Combat Action", Color: "#ef4444", Default: 1 },
 				{ Id: "noncombat", Name: "Non-Combat Action", Color: "#3b82f6", Default: 1 },
-			  ],
+			],
+			SharedInventories: [],
 			VisibilitySettings: {
 				playersSeeDMRolls: false,
 				playersSeePeerRolls: true,

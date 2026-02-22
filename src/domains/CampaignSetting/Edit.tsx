@@ -13,6 +13,7 @@ import {
 } from "../../components/Form/Form";
 import { StatDefinitionsEditor } from "../../components/inputs/StatDefinitionEditor";
 import { ActionDefinitionEditor } from "../../components/inputs/ActionDefinitionEditor";
+import { SharedInventoriesEditor } from "../../components/inputs/SharedInventoriesEditor";
 import CalendarConfigEditor from "../../components/inputs/CalendarConfigEditor";
 import { MovementSettingsEditor } from "../../components/inputs/MovementSettingsEditor";
 import { Campaign } from "../Campaign/Campaign";
@@ -237,6 +238,7 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 			>
 				<StatDefinitionsEditor
 					stats={data.StatDefinitions}
+					sharedInventories={data.SharedInventories}
 					onChange={(stats) => updateSettings({ StatDefinitions: stats })}
 				/>
 			</FormSection>
@@ -249,6 +251,17 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 				<ActionDefinitionEditor
 					actions={data.ActionDefinitions}
 					onChange={(actions) => updateSettings({ ActionDefinitions: actions })}
+				/>
+			</FormSection>
+
+			{/* Shared Inventories */}
+			<FormSection
+				title="Shared Inventories"
+				description="Define shared inventories for the party to pool resources/stats (e.g., Medkit, Party SP)"
+			>
+				<SharedInventoriesEditor
+					inventories={data.SharedInventories ?? []}
+					onChange={(inventories) => updateSettings({ SharedInventories: inventories })}
 				/>
 			</FormSection>
 

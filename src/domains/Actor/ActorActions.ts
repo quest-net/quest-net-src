@@ -119,8 +119,7 @@ export const ActorActions = {
 		const index = roster.findIndex((a) => a.Id === params.actorId);
 		if (index === -1) {
 			console.warn(
-				`${type} not found in ${
-					type === "character" ? "roster" : "templates"
+				`${type} not found in ${type === "character" ? "roster" : "templates"
 				}: ${params.actorId}`
 			);
 			return;
@@ -132,9 +131,8 @@ export const ActorActions = {
 		LogActions.create(
 			{
 				action: `${type} deleted`,
-				details: `${actor.Name} removed from ${
-					type === "character" ? "roster" : "catalog"
-				}`,
+				details: `${actor.Name} removed from ${type === "character" ? "roster" : "catalog"
+					}`,
 				category: "character",
 				level: "important",
 				visibility: ["dm"],
@@ -182,5 +180,83 @@ export const ActorActions = {
 			},
 			context
 		);
+	},
+	/**
+	 * Transfers a stat amount from an actor to another actor or shared inventory
+	 */
+	transferStat(
+		params: {
+			sourceActorId: string;
+			sourceStatId: string;
+			targetId: string;
+			targetStatId: string;
+			amount: number;
+		},
+		context: Context
+	): void {
+		const campaign = CampaignActions.getActiveCampaign(context);
+
+		// Resolve source
+		const allActors = [
+			...campaign.GameState.Characters,
+			...campaign.GameState.Entities,
+		];
+		const sourceActor = allActors.find((a) => a.Id === params.sourceActorId);
+		if (!sourceActor) return;
+
+		const sourceStat = sourceActor.Stats.find((s) => s.Id === params.sourceStatId);
+		if (!sourceStat) return;
+
+		// Ensure source has enough points
+		const availableAmount = Math.min(
+			sourceStat.Current ?? sourceStat.Max,
+			params.amount
+		);
+		if (availableAmount <= 0) return;
+
+		// Resolve target
+		const targetActor = allActors.find((a) => a.Id === params.targetId);
+		const targetSharedInv = campaign.Settings.SharedInventories?.find(
+			(i) => i.Id === params.targetId
+		);
+
+		let targetName = "Unknown";
+		let transferSuccess = false;
+
+		if (targetActor) {
+			targetName = targetActor.Name;
+			const tStat = targetActor.Stats.find((s) => s.Id === params.targetStatId);
+			if (tStat) {
+				const current = tStat.Current ?? tStat.Max;
+				tStat.Current = Math.min(tStat.Max, current + availableAmount);
+				transferSuccess = true;
+			}
+		} else if (targetSharedInv) {
+			targetName = targetSharedInv.Name;
+			const tStat = targetSharedInv.Stats.find((s) => s.Id === params.targetStatId);
+			if (tStat) {
+				const current = tStat.Current ?? tStat.Max;
+				tStat.Current = Math.min(tStat.Max, current + availableAmount);
+				transferSuccess = true;
+			}
+		}
+
+		if (transferSuccess) {
+			// Deduct from source
+			const sCurrent = sourceStat.Current ?? sourceStat.Max;
+			sourceStat.Current = Math.max(0, sCurrent - availableAmount);
+
+			LogActions.create(
+				{
+					action: "Stat Transferred",
+					details: `${availableAmount} ${sourceStat.Name} was transferred from ${sourceActor.Name} to ${targetName}.`,
+					category: "character",
+					level: "info",
+					visibility: ["all"],
+					actorId: params.sourceActorId,
+				},
+				context
+			);
+		}
 	},
 };

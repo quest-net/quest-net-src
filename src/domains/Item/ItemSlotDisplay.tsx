@@ -15,7 +15,7 @@ interface ItemSlotDisplayProps {
 	onClose: () => void;
 	slot: InventorySlot | EquipmentSlot;
 	actor: Actor;
-	mode: "inventory" | "equipment";
+	mode: "inventory" | "equipment" | "shared-inventory";
 }
 
 export function ItemSlotDisplay({
@@ -375,6 +375,7 @@ export function ItemSlotDisplay({
 				onCancel={handleTransferCancel}
 				title="Transfer Item To"
 				excludeActorId={actor.Id}
+				includeSharedInventories={true}
 			/>
 		</>
 	);

@@ -206,6 +206,7 @@ export const CombatActions = {
  */
 function applyRegenToAllActors(campaign: any, multiplier: 1 | -1): void {
 	const statDefinitions = campaign.Settings.StatDefinitions;
+	const sharedInventories = campaign.Settings.SharedInventories || [];
 	const allActors: Actor[] = [
 		...campaign.GameState.Characters,
 		...campaign.GameState.Entities,
@@ -219,6 +220,27 @@ function applyRegenToAllActors(campaign: any, multiplier: 1 | -1): void {
 			const regenAmount = definition.RegenRate * multiplier;
 			const current = stat.Current ?? stat.Max;
 			const newValue = current + regenAmount;
+
+			// Handle overflow if applicable (only when regenerating positively)
+			if (multiplier === 1 && newValue > stat.Max && definition.OverflowTarget) {
+				const overflowAmount = newValue - stat.Max;
+				const targetInv = sharedInventories.find(
+					(inv: any) => inv.Id === definition.OverflowTarget.InventoryId
+				);
+
+				if (targetInv) {
+					const targetStat = targetInv.Stats.find(
+						(s: any) => s.Id === definition.OverflowTarget.StatId
+					);
+					if (targetStat) {
+						const tCurrent = targetStat.Current ?? targetStat.Max;
+						targetStat.Current = Math.min(
+							targetStat.Max,
+							tCurrent + overflowAmount
+						);
+					}
+				}
+			}
 
 			// Clamp between 0 and Max
 			stat.Current = Math.max(0, Math.min(newValue, stat.Max));

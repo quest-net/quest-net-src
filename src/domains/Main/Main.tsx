@@ -23,6 +23,7 @@ import { SkillCollection } from "../Skill/Collection";
 import { CombatDisplay } from "../Combat/CombatDisplay";
 import { StatusCollection } from "../Status/Collection";
 import { StickerPicker } from "../../components/Sticker/StickerPicker";
+import { SharedInventoryDisplay } from "../../components/display/SharedInventoryDisplay";
 
 type TopTab = "music" | "calendar" | "terrain" | "combat";
 type PlayerBottomTab =
@@ -32,10 +33,11 @@ type PlayerBottomTab =
 	| "skills"
 	| "statuses"
 	| "party"
+	| "shared-inventories"
 	| "inspector"
 	| "log"
 	| "notes";
-type DMBottomTab = "inspector" | "scene" | "log" | "party";
+type DMBottomTab = "inspector" | "scene" | "log" | "party" | "shared-inventories";
 
 export function Main() {
 	const context = useQuestContext();
@@ -267,6 +269,14 @@ export function Main() {
 									>
 										<span className="icon-[mdi--account-group] w-6 h-6" />
 									</button>
+									<button
+										className={`btn btn-square ${activeBottomTab === "shared-inventories" ? "btn-neutral" : ""
+											}`}
+										onClick={() => setActiveBottomTab("shared-inventories")}
+										title="Shared Inventories"
+									>
+										<span className="icon-[mdi--treasure-chest] w-6 h-6" />
+									</button>
 								</>
 							) : (
 								// Player Tabs
@@ -343,6 +353,14 @@ export function Main() {
 										title="Party"
 									>
 										<span className="icon-[mdi--account-group] w-6 h-6" />
+									</button>
+									<button
+										className={`btn btn-square ${activeBottomTab === "shared-inventories" ? "btn-neutral" : ""
+											}`}
+										onClick={() => setActiveBottomTab("shared-inventories")}
+										title="Shared Inventories"
+									>
+										<span className="icon-[mdi--treasure-chest] w-6 h-6" />
 									</button>
 									<button
 										className={`btn btn-square ${activeBottomTab === "inspector" ? "btn-neutral" : ""
@@ -442,6 +460,13 @@ export function Main() {
 							{activeBottomTab === "inspector" && <Inspector />}
 							{activeBottomTab === "scene" && <SceneEdit />}
 							{activeBottomTab === "log" && <LogDisplay />}
+							{activeBottomTab === "shared-inventories" && (
+								<div className="space-y-4">
+									{campaign.Settings.SharedInventories?.map(inv => (
+										<SharedInventoryDisplay key={inv.Id} inventory={inv} />
+									))}
+								</div>
+							)}
 						</div>
 					</div>
 				</div>

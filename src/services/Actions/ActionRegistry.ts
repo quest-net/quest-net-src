@@ -18,7 +18,8 @@ import { CombatActions } from "../../domains/Combat/CombatActions";
 import { StatusActions } from "../../domains/Status/StatusActions";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { ScenarioActions } from "../../domains/Scenario/ScenarioActions";
-// Import other action modules as they're created
+import { SharedInventoryActions } from "../../domains/SharedInventory/SharedInventoryActions";
+import { ActorActions } from "../../domains/Actor/ActorActions";
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
 // import { CombatActions } from '../domains/Combat/CombatActions';
@@ -79,6 +80,10 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm"], // Players can organize their own characters
 		handler: CharacterActions.bulkEditTags,
 	},
+	"actor:transferStat": {
+		roles: ["dm", "player"],
+		handler: ActorActions.transferStat,
+	},
 
 	// ============================================================================
 	// ITEM ACTIONS
@@ -129,8 +134,23 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	},
 
 	// ============================================================================
-	// SKILL ACTIONS (uncomment when SkillActions is implemented)
+	// SHARED INVENTORY ACTIONS
 	// ============================================================================
+	"sharedInventory:transferItem": {
+		roles: ["dm", "player"],
+		handler: SharedInventoryActions.transferItem,
+	},
+	"sharedInventory:transferStat": {
+		roles: ["dm", "player"],
+		handler: SharedInventoryActions.transferStat,
+	},
+	"sharedInventory:editStat": {
+		roles: ["dm", "player"],
+		handler: SharedInventoryActions.editStat,
+	},
+
+	// ============================================================================
+	// SKILL ACTIONS
 	"skill:create": {
 		roles: ["dm"],
 		handler: SkillActions.create,
