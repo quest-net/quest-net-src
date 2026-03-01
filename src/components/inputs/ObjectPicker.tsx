@@ -27,6 +27,8 @@ interface ObjectPickerProps {
 	multiSelect?: boolean; // Allow selecting multiple objects
 	selectedIds?: string[]; // Currently selected IDs
 	showCount?: boolean; // Show count input
+	countLabel?: string; // Label for count input (default: "Count")
+	countMax?: number; // Max value for count input (default: 99)
 	onConfirm: (selectedIds: string[], objectType: string, count: number) => void;
 	onCancel: () => void;
 	title?: string; // Optional custom title
@@ -41,6 +43,8 @@ export function ObjectPicker({
 	multiSelect = false,
 	selectedIds = [],
 	showCount = false,
+	countLabel = "Count",
+	countMax = 99,
 	onConfirm,
 	onCancel,
 	title = "Select Objects",
@@ -289,13 +293,13 @@ export function ObjectPicker({
 					{/* Count Input */}
 					{showCount && localSelectedIds.length > 0 && (
 						<div className="flex items-center gap-2 text-sm">
-							<label className="font-medium">Count:</label>
+							<label className="font-medium">{countLabel}:</label>
 							<input
 								type="number"
 								min={1}
-								max={99}
+								max={countMax}
 								value={count}
-								onChange={(e) => setCount(Math.max(1, Math.min(99, Number(e.target.value))))}
+								onChange={(e) => setCount(Math.max(1, Math.min(countMax, Number(e.target.value))))}
 								className="input input-bordered input-sm w-16"
 							/>
 						</div>

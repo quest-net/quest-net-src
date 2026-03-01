@@ -78,6 +78,47 @@ export const SharedInventoryActions = {
     },
 
     /**
+     * Discards an item from a shared inventory
+     */
+    discardItem(
+        params: {
+            inventoryId: string;
+            itemId: string;
+        },
+        context: Context
+    ): void {
+        const campaign = CampaignActions.getActiveCampaign(context);
+
+        const inv = campaign.Settings.SharedInventories?.find(
+            (i) => i.Id === params.inventoryId
+        );
+        if (!inv) {
+            console.error(`Inventory ${params.inventoryId} not found`);
+            return;
+        }
+
+        const slotIndex = inv.Inventory.findIndex((s) => s.Id === params.itemId);
+        if (slotIndex === -1) {
+            console.error(`Item ${params.itemId} not found in inventory`);
+            return;
+        }
+
+        const itemDef = campaign.ItemTemplates.find((i) => i.Id === params.itemId);
+        inv.Inventory.splice(slotIndex, 1);
+
+        LogActions.create(
+            {
+                action: "Item Discarded",
+                details: `${itemDef?.Name || "Item"} was discarded from ${inv.Name}.`,
+                category: "item",
+                level: "info",
+                visibility: ["all"],
+            },
+            context
+        );
+    },
+
+    /**
      * Transfers a stat amount from a shared inventory to an Actor or another Shared Inventory
      */
     transferStat(

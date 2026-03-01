@@ -23,7 +23,7 @@ import { SkillCollection } from "../Skill/Collection";
 import { CombatDisplay } from "../Combat/CombatDisplay";
 import { StatusCollection } from "../Status/Collection";
 import { StickerPicker } from "../../components/Sticker/StickerPicker";
-import { SharedInventoryDisplay } from "../../components/display/SharedInventoryDisplay";
+import { SharedInventoryDisplay } from "../SharedInventory/SharedInventoryDisplay";
 
 type TopTab = "music" | "calendar" | "terrain" | "combat";
 type PlayerBottomTab =

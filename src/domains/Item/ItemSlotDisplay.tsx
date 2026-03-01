@@ -106,10 +106,17 @@ export function ItemSlotDisplay({
 			setDiscardClickCount(1);
 		} else {
 			// Second click - execute discard
-			actionService.execute("item:discard", {
-				actorId: actor.Id,
-				itemId: slot.Id,
-			});
+			if (mode === "shared-inventory") {
+				actionService.execute("sharedInventory:discardItem", {
+					inventoryId: actor.Id,
+					itemId: slot.Id,
+				});
+			} else {
+				actionService.execute("item:discard", {
+					actorId: actor.Id,
+					itemId: slot.Id,
+				});
+			}
 			onClose();
 		}
 	};
@@ -121,11 +128,19 @@ export function ItemSlotDisplay({
 	const handleTransferConfirm = (targetActorId: string) => {
 		if (!actionService) return;
 
-		actionService.execute("item:transfer", {
-			sourceActorId: actor.Id,
-			targetActorId: targetActorId,
-			itemId: slot.Id,
-		});
+		if (mode === "shared-inventory") {
+			actionService.execute("sharedInventory:transferItem", {
+				sourceInventoryId: actor.Id,
+				targetId: targetActorId,
+				itemId: slot.Id,
+			});
+		} else {
+			actionService.execute("item:transfer", {
+				sourceActorId: actor.Id,
+				targetId: targetActorId,
+				itemId: slot.Id,
+			});
+		}
 
 		setIsTransferPickerOpen(false);
 		onClose();
@@ -232,15 +247,18 @@ export function ItemSlotDisplay({
 							<div className="flex-1 space-y-3">
 								<h3 className="font-semibold text-sm opacity-70 mb-4">Actions</h3>
 
-								{/* Use Button */}
-								<button
-									onClick={handleUse}
-									disabled={!canUse || !actionService}
-									className="btn btn-primary w-full justify-start"
-								>
-									<span className="icon-[mdi--play] w-5 h-5" />
-									Use
-								</button>
+								{/* Use Button - hidden for shared inventories */}
+								{mode !== "shared-inventory" && (
+									<button
+										onClick={handleUse}
+										disabled={!canUse || !actionService}
+										className="btn btn-primary w-full justify-start"
+									>
+										<span className="icon-[mdi--play] w-5 h-5" />
+										Use
+									</button>
+								)}
+
 
 								{/* Equip/Unequip Button */}
 								{mode === "inventory" && item.IsEquippable && (
@@ -276,7 +294,7 @@ export function ItemSlotDisplay({
 								</button>
 
 								{/* Uses Adjuster - Only show if uses are limited */}
-								{slot.UsesLeft !== undefined && (
+								{slot.UsesLeft !== undefined && mode !== "shared-inventory" && (
 									<div className="card bg-base-100 border-2 border-base-300 p-4">
 										<h4 className="font-semibold text-sm mb-3">Adjust Uses</h4>
 

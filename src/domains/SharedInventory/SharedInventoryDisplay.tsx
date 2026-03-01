@@ -1,13 +1,13 @@
 // components/display/SharedInventoryDisplay.tsx
 
 import { useState } from "react";
-import { useQuestContext } from "../../domains/Context/ContextProvider";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
-import { SharedInventory } from "../../domains/CampaignSetting/CampaignSetting";
+import { useQuestContext } from "../Context/ContextProvider";
+import { CampaignActions } from "../Campaign/CampaignActions";
+import { SharedInventory } from "../CampaignSetting/CampaignSetting";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { StatBar } from "../../components/StatBar/StatBar";
-import { ItemSlotDisplay } from "../../domains/Item/ItemSlotDisplay";
-import { StatTransferModal } from "../../components/modals/StatTransferModal";
+import { ItemSlotDisplay } from "../Item/ItemSlotDisplay";
+import { ActorPicker } from "../../components/inputs/ActorPicker";
 
 interface SharedInventoryDisplayProps {
     inventory: SharedInventory;
@@ -22,6 +22,8 @@ export function SharedInventoryDisplay({
 
     const [editingMaxStats, setEditingMaxStats] = useState(false);
     const [transferStat, setTransferStat] = useState<any>(null); // Uses any because StatDefinition uses Current instead of Value
+    const [isDrawerOpen, setDrawerOpen] = useState(false);
+    const [selectedSlot, setSelectedSlot] = useState<any>(null);
 
     // --- Handlers ---
     const handleStatChange = (statId: string, field: "Current" | "Max", value: number) => {
@@ -34,16 +36,17 @@ export function SharedInventoryDisplay({
         });
     };
 
-    const handleTransferStat = (targetId: string, amount: number) => {
-        if (!actionService || !transferStat) return;
+    const handleTransferStat = (targetId: string, amount?: number) => {
+        if (!actionService || !transferStat || !amount) return;
 
         actionService.execute("sharedInventory:transferStat", {
             sourceInventoryId: inventory.Id,
             sourceStatId: transferStat.Id,
             targetId,
-            targetStatId: transferStat.Id, // Assuming same stat ID for simplicity
+            targetStatId: transferStat.Id,
             amount,
         });
+        setTransferStat(null);
     };
 
     return (
@@ -116,15 +119,24 @@ export function SharedInventoryDisplay({
                                 );
                                 if (!template) return null;
 
+                                const usesText =
+                                    slot.UsesLeft !== undefined
+                                        ? `${slot.UsesLeft}/${template.MaxUses || "∞"} uses`
+                                        : "";
+
                                 return (
-                                    <ItemSlotDisplay
+                                    <button
                                         key={slot.Id + index}
-                                        isOpen={false}
-                                        onClose={() => { }}
-                                        slot={slot}
-                                        actor={{ Id: inventory.Id, Name: inventory.Name, Inventory: inventory.Inventory, Equipment: [], Stats: inventory.Stats } as any}
-                                        mode="shared-inventory"
-                                    />
+                                        className="btn btn-ghost w-full justify-start gap-2 h-auto py-2 px-3"
+                                        onClick={() => {
+                                            setSelectedSlot(slot);
+                                            setDrawerOpen(true);
+                                        }}
+                                    >
+                                        <span className="icon-[mdi--package-variant] w-4 h-4 opacity-60" />
+                                        <span className="flex-1 text-left text-sm">{template.Name}</span>
+                                        {usesText && <span className="text-xs opacity-50">{usesText}</span>}
+                                    </button>
                                 );
                             })}
                         </div>
@@ -132,14 +144,31 @@ export function SharedInventoryDisplay({
                 </div>
             </div>
 
-            {/* Transfer Modal */}
+            {/* Stat Transfer Picker */}
             {transferStat && (
-                <StatTransferModal
+                <ActorPicker
                     isOpen={!!transferStat}
-                    onClose={() => setTransferStat(null)}
-                    sourceActorId={inventory.Id}
-                    sourceStat={transferStat}
-                    onTransfer={handleTransferStat}
+                    onConfirm={handleTransferStat}
+                    onCancel={() => setTransferStat(null)}
+                    title={`Transfer ${transferStat.Name}`}
+                    excludeActorId={inventory.Id}
+                    includeSharedInventories={true}
+                    showAmount={true}
+                    amountMax={transferStat.Current ?? transferStat.Max}
+                />
+            )}
+
+            {/* Item Slot Display Drawer */}
+            {selectedSlot && (
+                <ItemSlotDisplay
+                    isOpen={isDrawerOpen}
+                    onClose={() => {
+                        setDrawerOpen(false);
+                        setTimeout(() => setSelectedSlot(null), 300);
+                    }}
+                    slot={selectedSlot}
+                    actor={{ Id: inventory.Id, Name: inventory.Name, Inventory: inventory.Inventory, Equipment: [], Stats: inventory.Stats } as any}
+                    mode="shared-inventory"
                 />
             )}
         </div>

@@ -6,11 +6,14 @@ import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 
 interface ActorPickerProps {
     isOpen: boolean;
-    onConfirm: (actorId: string) => void;
+    onConfirm: (actorId: string, amount?: number) => void;
     onCancel: () => void;
     title?: string;
     excludeActorId?: string; // To prevent transferring to self
     includeSharedInventories?: boolean;
+    showAmount?: boolean; // Show amount input (for stat transfers)
+    amountMax?: number; // Max transfer amount
+    amountLabel?: string; // Label for amount input (default: "Amount")
 }
 
 export function ActorPicker({
@@ -20,6 +23,9 @@ export function ActorPicker({
     title = "Select Actor",
     excludeActorId,
     includeSharedInventories = false,
+    showAmount = false,
+    amountMax = 99,
+    amountLabel = "Amount",
 }: ActorPickerProps) {
     const context = useQuestContext();
     const campaign = CampaignActions.getActiveCampaign(context);
@@ -60,9 +66,9 @@ export function ActorPicker({
         return types;
     }, [campaign.GameState, campaign.Settings.SharedInventories, excludeActorId, includeSharedInventories]);
 
-    const handleConfirm = (selectedIds: string[]) => {
+    const handleConfirm = (selectedIds: string[], _objectType: string, count: number) => {
         if (selectedIds.length > 0) {
-            onConfirm(selectedIds[0]);
+            onConfirm(selectedIds[0], showAmount ? count : undefined);
         }
     };
 
@@ -71,7 +77,9 @@ export function ActorPicker({
             isOpen={isOpen}
             types={actorTypes}
             multiSelect={false}
-            showCount={false}
+            showCount={showAmount}
+            countLabel={amountLabel}
+            countMax={amountMax}
             onConfirm={handleConfirm}
             onCancel={onCancel}
             title={title}

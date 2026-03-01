@@ -9,7 +9,7 @@ import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { StatBar } from "../../components/StatBar/StatBar";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
 import { ActionDefinition, StatDefinition } from "../CampaignSetting/CampaignSetting";
-import { StatTransferModal } from "../../components/modals/StatTransferModal";
+import { ActorPicker } from "../../components/inputs/ActorPicker";
 
 export function CharacterSheet() {
 	const context = useQuestContext();
@@ -272,23 +272,27 @@ export function CharacterSheet() {
 				</p>
 			</div>
 
-			{/* Stat Transfer Modal */}
+			{/* Stat Transfer Picker */}
 			{transferStat && (
-				<StatTransferModal
+				<ActorPicker
 					isOpen={!!transferStat}
-					onClose={() => setTransferStat(null)}
-					sourceActorId={character.Id}
-					sourceStat={transferStat}
-					onTransfer={(targetId, amount) => {
-						if (!actionService) return;
+					onConfirm={(targetId, amount) => {
+						if (!actionService || !amount) return;
 						actionService.execute("actor:transferStat", {
 							sourceActorId: character.Id,
 							sourceStatId: transferStat.Id,
 							targetId,
-							targetStatId: transferStat.Id, // Currently assuming same stat ID
+							targetStatId: transferStat.Id,
 							amount,
 						});
+						setTransferStat(null);
 					}}
+					onCancel={() => setTransferStat(null)}
+					title={`Transfer ${transferStat.Name}`}
+					excludeActorId={character.Id}
+					includeSharedInventories={true}
+					showAmount={true}
+					amountMax={transferStat.Current ?? transferStat.Max}
 				/>
 			)}
 		</div>

@@ -140,6 +140,10 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm", "player"],
 		handler: SharedInventoryActions.transferItem,
 	},
+	"sharedInventory:discardItem": {
+		roles: ["dm", "player"],
+		handler: SharedInventoryActions.discardItem,
+	},
 	"sharedInventory:transferStat": {
 		roles: ["dm", "player"],
 		handler: SharedInventoryActions.transferStat,
