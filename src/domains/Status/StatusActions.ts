@@ -3,9 +3,63 @@
 import { Context } from "../Context/Context";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
-import { Status } from "./Status";
-import { Actor } from "../Actor/Actor";
+import { Status, StatusExpiration } from "./Status";
+import { Actor, StatusSlotExpiration } from "../Actor/Actor";
 import { syncStatusSlotsAfterEdit, getAllActors } from "../../utils/SlotSyncUtils";
+
+/**
+ * Converts a template StatusExpiration to a runtime StatusSlotExpiration
+ */
+function templateToSlotExpiration(expiration: StatusExpiration): StatusSlotExpiration {
+	switch (expiration.type) {
+		case "permanent":
+			return { type: "permanent" };
+		case "turns":
+			return { type: "turns", turnsLeft: expiration.count };
+		case "shortRest":
+			return { type: "shortRest" };
+		case "longRest":
+			return { type: "longRest" };
+		case "days":
+			return { type: "days", daysLeft: expiration.count };
+	}
+}
+
+/**
+ * Formats a StatusSlotExpiration for display text
+ */
+export function formatSlotExpiration(exp: StatusSlotExpiration): string {
+	switch (exp.type) {
+		case "permanent":
+			return "Permanent (never expires)";
+		case "turns":
+			return `${exp.turnsLeft} turn${exp.turnsLeft === 1 ? '' : 's'} remaining`;
+		case "shortRest":
+			return "Until short rest";
+		case "longRest":
+			return "Until long rest";
+		case "days":
+			return `${exp.daysLeft} day${exp.daysLeft === 1 ? '' : 's'} remaining`;
+	}
+}
+
+/**
+ * Formats a template StatusExpiration for display text
+ */
+export function formatTemplateExpiration(exp: StatusExpiration): string {
+	switch (exp.type) {
+		case "permanent":
+			return "Permanent";
+		case "turns":
+			return `${exp.count} turn${exp.count === 1 ? '' : 's'}`;
+		case "shortRest":
+			return "Until short rest";
+		case "longRest":
+			return "Until long rest";
+		case "days":
+			return `${exp.count} day${exp.count === 1 ? '' : 's'}`;
+	}
+}
 
 /**
  * Status action handlers
@@ -22,7 +76,7 @@ export const StatusActions = {
 			Description: "",
 			Image: undefined,
 			Tags: [],
-			Duration: 3, // Default 3 turns
+			Expiration: { type: "turns", count: 3 }, // Default 3 turns
 		};
 	},
 
@@ -47,7 +101,7 @@ export const StatusActions = {
 
 	/**
 	 * Edits an existing status
-	 * Syncs all actor slots if Duration changes
+	 * Syncs all actor slots if Expiration changes
 	 */
 	edit(
 		params: { statusId: string; updates: Partial<Status> },
@@ -60,8 +114,8 @@ export const StatusActions = {
 			return;
 		}
 
-		const oldDuration = campaign.StatusTemplates[idx].Duration;
-		const newDuration = params.updates.Duration;
+		const oldExpiration = campaign.StatusTemplates[idx].Expiration;
+		const newExpiration = params.updates.Expiration;
 
 		// Apply updates
 		campaign.StatusTemplates[idx] = {
@@ -70,10 +124,10 @@ export const StatusActions = {
 			Id: campaign.StatusTemplates[idx].Id, // guard against accidental Id overwrite
 		};
 
-		// If Duration changed, sync all actor slots
-		if (newDuration !== oldDuration) {
+		// If Expiration changed, sync all actor slots
+		if (newExpiration && JSON.stringify(newExpiration) !== JSON.stringify(oldExpiration)) {
 			const allActors = getAllActors(campaign);
-			syncStatusSlotsAfterEdit(params.statusId, newDuration, allActors);
+			syncStatusSlotsAfterEdit(params.statusId, newExpiration, allActors);
 		}
 
 		LogActions.create(
@@ -125,7 +179,7 @@ export const StatusActions = {
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
-		
+
 		// Validate count
 		const count = Math.max(1, Math.floor(params.count));
 
@@ -157,7 +211,7 @@ export const StatusActions = {
 				for (let i = 0; i < count; i++) {
 					actor.Statuses.push({
 						Id: statusId,
-						turnsLeft: statusTemplate.Duration, // undefined if Duration is undefined (permanent)
+						expiration: templateToSlotExpiration(statusTemplate.Expiration),
 					});
 					totalApplied++;
 				}
@@ -262,11 +316,10 @@ export const StatusActions = {
 	},
 
 	/**
-	 * Adjusts the duration of a status on an actor
-	 * Can set turnsLeft to a specific value or undefined (permanent)
+	 * Adjusts the expiration of a status on an actor
 	 */
 	adjustDuration(
-		params: { actorId: string; statusId: string; turnsLeft: number | undefined },
+		params: { actorId: string; statusId: string; expiration: StatusSlotExpiration },
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
@@ -287,16 +340,14 @@ export const StatusActions = {
 			return;
 		}
 
-		// Update duration
-		slot.turnsLeft = params.turnsLeft;
+		// Update expiration
+		slot.expiration = params.expiration;
 
 		// Find the status template for logging
 		const statusTemplate = campaign.StatusTemplates.find((s) => s.Id === params.statusId);
 		const statusName = statusTemplate?.Name || "Unknown Status";
 
-		const durationText = params.turnsLeft === undefined 
-			? "permanent" 
-			: `${params.turnsLeft} turn(s)`;
+		const durationText = formatSlotExpiration(params.expiration);
 
 		LogActions.create(
 			{

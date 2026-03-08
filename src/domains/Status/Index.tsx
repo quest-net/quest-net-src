@@ -8,6 +8,7 @@ import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
 import { replacePathTag } from "../../utils/FolderUtils";
 import { Status } from "./Status";
 import { StatusEdit } from "./Edit";
+import { formatTemplateExpiration } from "./StatusActions";
 
 export function StatusIndex() {
 	const context = useQuestContext();
@@ -34,9 +35,7 @@ export function StatusIndex() {
 		(status) => ({
 			id: status.Id,
 			label: status.Name,
-			details: status.Duration === undefined 
-				? "Permanent" 
-				: `${status.Duration} turn${status.Duration === 1 ? '' : 's'}`,
+			details: formatTemplateExpiration(status.Expiration),
 			imageId: status.Image,
 			tags: status.Tags || [],
 		})

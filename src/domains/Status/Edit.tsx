@@ -3,7 +3,7 @@
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { StatusActions } from "./StatusActions";
-import { Status } from "./Status";
+import { Status, StatusExpiration } from "./Status";
 import {
 	FormWrapper,
 	FormSection,
@@ -91,6 +91,8 @@ interface StatusFormProps {
 	onChange?: (data: Status) => void;
 }
 
+type ExpirationType = StatusExpiration["type"];
+
 function StatusForm({ data, onChange }: StatusFormProps) {
 	if (!data || !onChange) return null;
 
@@ -100,6 +102,51 @@ function StatusForm({ data, onChange }: StatusFormProps) {
 			[field]: value,
 		});
 	};
+
+	const handleExpirationTypeChange = (type: ExpirationType) => {
+		let newExpiration: StatusExpiration;
+		switch (type) {
+			case "permanent":
+				newExpiration = { type: "permanent" };
+				break;
+			case "turns":
+				newExpiration = {
+					type: "turns",
+					count: data.Expiration.type === "turns" ? data.Expiration.count : 3,
+				};
+				break;
+			case "shortRest":
+				newExpiration = { type: "shortRest" };
+				break;
+			case "longRest":
+				newExpiration = { type: "longRest" };
+				break;
+			case "days":
+				newExpiration = {
+					type: "days",
+					count: data.Expiration.type === "days" ? data.Expiration.count : 3,
+				};
+				break;
+		}
+		handleFieldChange("Expiration", newExpiration);
+	};
+
+	const handleCountChange = (count: number) => {
+		const exp = data.Expiration;
+		if (exp.type === "turns") {
+			handleFieldChange("Expiration", { type: "turns", count });
+		} else if (exp.type === "days") {
+			handleFieldChange("Expiration", { type: "days", count });
+		}
+	};
+
+	const showCountInput = data.Expiration.type === "turns" || data.Expiration.type === "days";
+	const countValue = data.Expiration.type === "turns"
+		? data.Expiration.count
+		: data.Expiration.type === "days"
+			? data.Expiration.count
+			: 0;
+	const countLabel = data.Expiration.type === "turns" ? "turns" : "days";
 
 	return (
 		<>
@@ -149,42 +196,42 @@ function StatusForm({ data, onChange }: StatusFormProps) {
 				description="Duration and behavior"
 			>
 				<FormGrid cols={2}>
-					<FormField label="Duration (turns)" span={2}>
+					<FormField label="Expiration" span={2}>
 						<>
-						<div className="form-control">
-							<label className="label cursor-pointer justify-start gap-2">
-								<input
-									type="checkbox"
-									className="toggle toggle-primary"
-									checked={data.Duration === undefined}
-									onChange={(e) => {
-										if (e.target.checked) {
-											handleFieldChange("Duration", undefined);
-										} else {
-											handleFieldChange("Duration", 3);
-										}
-									}}
-								/>
-								<span className="label-text">Permanent (never expires)</span>
-							</label>
-						</div>
-						{data.Duration !== undefined && (
-							<input
-								type="number"
-								value={data.Duration ?? ""}
-								onChange={(e) => {
-									const raw = e.target.value;
-									const val = raw === "" ? undefined : Math.max(0, Number(raw));
-									handleFieldChange(
-										"Duration",
-										Number.isFinite(val as number) ? val : undefined
-									);
-								}}
-								className="input input-bordered w-full mt-2"
-								min={0}
-								placeholder="Duration in turns"
-							/>
-						)}
+							<select
+								value={data.Expiration.type}
+								onChange={(e) =>
+									handleExpirationTypeChange(e.target.value as ExpirationType)
+								}
+								className="select select-bordered w-full"
+							>
+								<option value="permanent">Permanent (never expires)</option>
+								<option value="turns">After X turns (combat)</option>
+								<option value="shortRest">Until short rest</option>
+								<option value="longRest">Until long rest</option>
+								<option value="days">After X days</option>
+							</select>
+
+							{showCountInput && (
+								<div className="flex items-center gap-2 mt-2">
+									<input
+										type="number"
+										value={countValue}
+										onChange={(e) => {
+											const val = Math.max(0, Number(e.target.value));
+											if (Number.isFinite(val)) {
+												handleCountChange(val);
+											}
+										}}
+										className="input input-bordered w-full"
+										min={0}
+										placeholder={`Duration in ${countLabel}`}
+									/>
+									<span className="text-sm opacity-70 whitespace-nowrap">
+										{countLabel}
+									</span>
+								</div>
+							)}
 						</>
 					</FormField>
 				</FormGrid>

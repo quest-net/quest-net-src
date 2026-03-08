@@ -46,9 +46,24 @@ export interface SkillSlot {
 	UsesLeft?: number;
 }
 
+/**
+ * StatusSlotExpiration tracks the runtime expiration state of an applied status.
+ * - permanent: Never expires
+ * - turns: Has a turnsLeft counter that decrements each combat turn
+ * - shortRest: Expires on next short rest (or long rest)
+ * - longRest: Expires on next long rest
+ * - days: Has a daysLeft counter that decrements on long rest and calendar advance
+ */
+export type StatusSlotExpiration =
+	| { type: "permanent" }
+	| { type: "turns"; turnsLeft: number }
+	| { type: "shortRest" }
+	| { type: "longRest" }
+	| { type: "days"; daysLeft: number };
+
 export interface StatusSlot {
 	Id: string;
-	turnsLeft?: number;
+	expiration: StatusSlotExpiration;
 }
 
 export interface Position {

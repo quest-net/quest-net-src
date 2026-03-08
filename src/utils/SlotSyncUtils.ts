@@ -1,6 +1,7 @@
 // utils/SlotSyncUtils.ts
 
-import { Actor, InventorySlot, EquipmentSlot, SkillSlot, StatusSlot } from "../domains/Actor/Actor";
+import { Actor, InventorySlot, EquipmentSlot, SkillSlot } from "../domains/Actor/Actor";
+import { StatusExpiration } from "../domains/Status/Status";
 
 /**
  * Syncs all inventory and equipment slots across all actors when an item template is edited
@@ -82,36 +83,65 @@ function syncSkillSlot(slot: SkillSlot, maxUses: number | undefined): void {
 }
 
 /**
- * Syncs all status slots across all actors when a status template is edited
- * Updates turnsLeft to match new Duration behavior
+ * Syncs all status slots across all actors when a status template's Expiration changes.
+ * Updates slot expiration to reflect the new template expiration type.
  */
 export function syncStatusSlotsAfterEdit(
 	statusId: string,
-	newDuration: number | undefined,
+	newExpiration: StatusExpiration,
 	actors: Actor[]
 ): void {
 	actors.forEach((actor) => {
 		actor.Statuses.forEach((slot) => {
 			if (slot.Id === statusId) {
-				syncStatusSlot(slot, newDuration);
+				syncStatusSlot(slot, newExpiration);
 			}
 		});
 	});
 }
 
 /**
- * Syncs a single status slot to match template's Duration
+ * Syncs a single status slot to match template's Expiration.
+ * For countable types (turns, days), clamps existing values down but doesn't increase them.
  */
-function syncStatusSlot(slot: StatusSlot, duration: number | undefined): void {
-	if (duration === undefined) {
-		// Template now is permanent - clear turnsLeft
-		slot.turnsLeft = undefined;
-	} else if (slot.turnsLeft === undefined) {
-		// Template now has duration, but slot was permanent - set to duration
-		slot.turnsLeft = duration;
-	} else {
-		// Both have values - clamp current to new duration (don't increase past new max)
-		slot.turnsLeft = Math.min(slot.turnsLeft, duration);
+function syncStatusSlot(
+	slot: { expiration: import("../domains/Actor/Actor").StatusSlotExpiration },
+	templateExp: StatusExpiration
+): void {
+	switch (templateExp.type) {
+		case "permanent":
+			slot.expiration = { type: "permanent" };
+			break;
+		case "turns":
+			if (slot.expiration.type === "turns") {
+				// Both are turns - clamp current to new max (don't increase)
+				slot.expiration = {
+					type: "turns",
+					turnsLeft: Math.min(slot.expiration.turnsLeft, templateExp.count),
+				};
+			} else {
+				// Type changed to turns - set to template count
+				slot.expiration = { type: "turns", turnsLeft: templateExp.count };
+			}
+			break;
+		case "shortRest":
+			slot.expiration = { type: "shortRest" };
+			break;
+		case "longRest":
+			slot.expiration = { type: "longRest" };
+			break;
+		case "days":
+			if (slot.expiration.type === "days") {
+				// Both are days - clamp current to new max (don't increase)
+				slot.expiration = {
+					type: "days",
+					daysLeft: Math.min(slot.expiration.daysLeft, templateExp.count),
+				};
+			} else {
+				// Type changed to days - set to template count
+				slot.expiration = { type: "days", daysLeft: templateExp.count };
+			}
+			break;
 	}
 }
 

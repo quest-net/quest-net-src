@@ -8,6 +8,7 @@ import { CalendarSettings } from "../CampaignSetting/CampaignSetting";
 import { Character } from "../Character/Character";
 import { Item } from "../Item/Item";
 import { Skill } from "../Skill/Skill";
+import { Actor } from "../Actor/Actor";
 
 export const CalendarActions = {
 	/**
@@ -83,6 +84,13 @@ export const CalendarActions = {
 		campaign.GameState.CalendarDay = Math.trunc(
 			campaign.GameState.CalendarDay + delta
 		);
+
+		// If advancing forward by at least 1 day, decrement day-based statuses
+		if (delta > 0) {
+			for (let i = 0; i < Math.floor(delta); i++) {
+				decrementDayStatuses(campaign);
+			}
+		}
 	},
 
 	/**
@@ -114,6 +122,9 @@ export const CalendarActions = {
 			restoreCharacter(character, "shortRest", campaign);
 		});
 
+		// Clear "until short rest" statuses from all characters and entities
+		clearStatusesByExpirationType(campaign, ["shortRest"]);
+
 		// Decrement remaining short rests
 		campaign.GameState.RemainingShortRests--;
 
@@ -144,6 +155,12 @@ export const CalendarActions = {
 			restoreCharacter(character, "longRest", campaign);
 		});
 
+		// Clear "until short rest" and "until long rest" statuses (long rest is a superset)
+		clearStatusesByExpirationType(campaign, ["shortRest", "longRest"]);
+
+		// Decrement day-based statuses (long rest counts as a day passing)
+		decrementDayStatuses(campaign);
+
 		// Reset short rests for the new day
 		campaign.GameState.RemainingShortRests = restSettings.shortRestsPerDay;
 
@@ -172,6 +189,55 @@ export const CalendarActions = {
 // ============================================================================
 
 /**
+ * Clears statuses with the specified expiration types from all actors in the game state.
+ */
+function clearStatusesByExpirationType(
+	campaign: any,
+	types: string[]
+): void {
+	const allActors: Actor[] = [
+		...campaign.GameState.Characters,
+		...campaign.GameState.Entities,
+	];
+
+	allActors.forEach((actor) => {
+		actor.Statuses = actor.Statuses.filter(
+			(status) => !types.includes(status.expiration.type)
+		);
+	});
+}
+
+/**
+ * Decrements daysLeft for all day-based statuses by 1 and removes expired ones.
+ */
+function decrementDayStatuses(campaign: any): void {
+	const allActors: Actor[] = [
+		...campaign.GameState.Characters,
+		...campaign.GameState.Entities,
+	];
+
+	allActors.forEach((actor) => {
+		actor.Statuses = actor.Statuses
+			.map((status) => {
+				if (status.expiration.type !== "days") return status;
+				return {
+					...status,
+					expiration: {
+						type: "days" as const,
+						daysLeft: status.expiration.daysLeft - 1,
+					},
+				};
+			})
+			.filter((status) => {
+				if (status.expiration.type === "days") {
+					return status.expiration.daysLeft > 0;
+				}
+				return true;
+			});
+	});
+}
+
+/**
  * Restores a character's stats, items, and skills based on the specified rest type
  * Exported for use by CombatActions
  */
@@ -187,14 +253,17 @@ export function restoreCharacter(
 		const definition = statDefinitions.find((d: any) => d.Id === stat.Id);
 		if (!definition?.RestoreRule) return;
 
-		const restoreAmount = definition.RestoreRule[restType];
-		if (restoreAmount === undefined) return;
+		const restoreValue = definition.RestoreRule[restType];
+		if (restoreValue === undefined) return;
 
-		if (restoreAmount === "max") {
+		if (restoreValue === "max") {
 			stat.Current = stat.Max;
+		} else if (typeof restoreValue === "object" && "setTo" in restoreValue) {
+			// Set to exact value, clamped to [0, Max]
+			stat.Current = Math.min(Math.max(0, restoreValue.setTo), stat.Max);
 		} else {
 			// Increment by amount, capped at Max
-			stat.Current = Math.min((stat.Current || 0) + restoreAmount, stat.Max);
+			stat.Current = Math.min((stat.Current || 0) + restoreValue, stat.Max);
 		}
 	});
 
@@ -205,15 +274,17 @@ export function restoreCharacter(
 		);
 		if (!itemTemplate?.RestoreRule || !itemTemplate.MaxUses) return;
 
-		const restoreAmount = itemTemplate.RestoreRule[restType];
-		if (restoreAmount === undefined) return;
+		const restoreValue = itemTemplate.RestoreRule[restType];
+		if (restoreValue === undefined) return;
 
-		if (restoreAmount === "max") {
+		if (restoreValue === "max") {
 			slot.UsesLeft = itemTemplate.MaxUses;
+		} else if (typeof restoreValue === "object" && "setTo" in restoreValue) {
+			slot.UsesLeft = Math.min(Math.max(0, restoreValue.setTo), itemTemplate.MaxUses);
 		} else {
 			// Increment by amount, capped at MaxUses
 			slot.UsesLeft = Math.min(
-				(slot.UsesLeft || 0) + restoreAmount,
+				(slot.UsesLeft || 0) + restoreValue,
 				itemTemplate.MaxUses
 			);
 		}
@@ -226,15 +297,17 @@ export function restoreCharacter(
 		);
 		if (!itemTemplate?.RestoreRule || !itemTemplate.MaxUses) return;
 
-		const restoreAmount = itemTemplate.RestoreRule[restType];
-		if (restoreAmount === undefined) return;
+		const restoreValue = itemTemplate.RestoreRule[restType];
+		if (restoreValue === undefined) return;
 
-		if (restoreAmount === "max") {
+		if (restoreValue === "max") {
 			slot.UsesLeft = itemTemplate.MaxUses;
+		} else if (typeof restoreValue === "object" && "setTo" in restoreValue) {
+			slot.UsesLeft = Math.min(Math.max(0, restoreValue.setTo), itemTemplate.MaxUses);
 		} else {
 			// Increment by amount, capped at MaxUses
 			slot.UsesLeft = Math.min(
-				(slot.UsesLeft || 0) + restoreAmount,
+				(slot.UsesLeft || 0) + restoreValue,
 				itemTemplate.MaxUses
 			);
 		}
@@ -247,15 +320,17 @@ export function restoreCharacter(
 		);
 		if (!skillTemplate?.RestoreRule || !skillTemplate.MaxUses) return;
 
-		const restoreAmount = skillTemplate.RestoreRule[restType];
-		if (restoreAmount === undefined) return;
+		const restoreValue = skillTemplate.RestoreRule[restType];
+		if (restoreValue === undefined) return;
 
-		if (restoreAmount === "max") {
+		if (restoreValue === "max") {
 			slot.UsesLeft = skillTemplate.MaxUses;
+		} else if (typeof restoreValue === "object" && "setTo" in restoreValue) {
+			slot.UsesLeft = Math.min(Math.max(0, restoreValue.setTo), skillTemplate.MaxUses);
 		} else {
 			// Increment by amount, capped at MaxUses
 			slot.UsesLeft = Math.min(
-				(slot.UsesLeft || 0) + restoreAmount,
+				(slot.UsesLeft || 0) + restoreValue,
 				skillTemplate.MaxUses
 			);
 		}

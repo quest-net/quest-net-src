@@ -1,5 +1,5 @@
 // components/inputs/RestoreRuleEditor.tsx
-import { RestoreRule } from "../../domains/CampaignSetting/CampaignSetting";
+import { RestoreRule, RestoreRuleValue } from "../../domains/CampaignSetting/CampaignSetting";
 import { useFormReadOnly } from "../Form/Form";
 
 interface RestoreRuleEditorProps {
@@ -9,12 +9,25 @@ interface RestoreRuleEditorProps {
 }
 
 type RestType = "shortRest" | "longRest" | "combatEnd";
+type Mode = "max" | "restoreBy" | "setTo";
 
 const REST_LABELS: Record<RestType, string> = {
 	shortRest: "Short Rest",
 	longRest: "Long Rest",
 	combatEnd: "Combat End",
 };
+
+function getMode(val: RestoreRuleValue | undefined): Mode {
+	if (val === "max") return "max";
+	if (typeof val === "object" && val !== null && "setTo" in val) return "setTo";
+	return "restoreBy";
+}
+
+function getNumberValue(val: RestoreRuleValue | undefined): number {
+	if (typeof val === "number") return val;
+	if (typeof val === "object" && val !== null && "setTo" in val) return val.setTo;
+	return 1;
+}
 
 export function RestoreRuleEditor({
 	value,
@@ -41,7 +54,7 @@ export function RestoreRuleEditor({
 
 	const handleChangeValue = (
 		restType: RestType,
-		newValue: number | "max"
+		newValue: RestoreRuleValue
 	) => {
 		onChange({
 			...value,
@@ -49,35 +62,31 @@ export function RestoreRuleEditor({
 		});
 	};
 
-	const handleChangeMode = (restType: RestType, mode: "number" | "max") => {
+	const handleChangeMode = (restType: RestType, mode: Mode) => {
 		const currentValue = value?.[restType];
 		if (currentValue === undefined) return;
 
 		if (mode === "max") {
 			handleChangeValue(restType, "max");
-		} else {
-			// Switch to number mode with default value of 1
+		} else if (mode === "restoreBy") {
+			// Switch to restoreBy mode with default value of 1
 			handleChangeValue(restType, 1);
+		} else {
+			// Switch to setTo mode with default value of 0
+			handleChangeValue(restType, { setTo: 0 });
 		}
 	};
 
 	const isEnabled = (restType: RestType) => value?.[restType] !== undefined;
-	const getMode = (restType: RestType): "number" | "max" => {
-		const val = value?.[restType];
-		return val === "max" ? "max" : "number";
-	};
-	const getNumberValue = (restType: RestType): number => {
-		const val = value?.[restType];
-		return typeof val === "number" ? val : 1;
-	};
 
 	return (
 		<div className="space-y-3">
 			{(["shortRest", "longRest", "combatEnd"] as RestType[]).map(
 				(restType) => {
 					const enabled = isEnabled(restType);
-					const mode = getMode(restType);
-					const numValue = getNumberValue(restType);
+					const val = value?.[restType];
+					const mode = getMode(val);
+					const numValue = getNumberValue(val);
 
 					return (
 						<div
@@ -110,31 +119,36 @@ export function RestoreRuleEditor({
 										onChange={(e) =>
 											handleChangeMode(
 												restType,
-												e.target.value as "number" | "max"
+												e.target.value as Mode
 											)
 										}
 										disabled={readOnly}
 										className="select select-bordered select-sm w-32"
 									>
 										<option value="max">Restore Max</option>
-										<option value="number">Restore By</option>
+										<option value="restoreBy">Restore By</option>
+										<option value="setTo">Set To</option>
 									</select>
 
-									{/* Number Input (only show in number mode) */}
-									{mode === "number" && (
+									{/* Number Input (show in restoreBy and setTo modes) */}
+									{(mode === "restoreBy" || mode === "setTo") && (
 										<input
 											type="number"
 											value={numValue}
 											onChange={(e) => {
 												const val = parseInt(e.target.value, 10);
 												if (!isNaN(val) && val >= 0) {
-													handleChangeValue(restType, val);
+													if (mode === "setTo") {
+														handleChangeValue(restType, { setTo: val });
+													} else {
+														handleChangeValue(restType, val);
+													}
 												}
 											}}
 											disabled={readOnly}
 											min={0}
 											className="input input-bordered input-sm w-20"
-											aria-label={`${REST_LABELS[restType]} restore amount`}
+											aria-label={`${REST_LABELS[restType]} ${mode === "setTo" ? "set to value" : "restore amount"}`}
 										/>
 									)}
 								</>

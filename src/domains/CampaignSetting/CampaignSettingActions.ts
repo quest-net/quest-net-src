@@ -77,26 +77,20 @@ export function formatRestoreRule(rule?: RestoreRule): string[] {
 
 	const lines: string[] = [];
 
-	if (rule.shortRest !== undefined) {
-		const text = rule.shortRest === "max"
-			? "Restores fully on short rest"
-			: `Restores ${rule.shortRest} use${rule.shortRest === 1 ? '' : 's'} on short rest`;
-		lines.push(text);
-	}
+	const formatValue = (val: RestoreRule["shortRest"], restLabel: string) => {
+		if (val === undefined) return;
+		if (val === "max") {
+			lines.push(`Restores fully ${restLabel}`);
+		} else if (typeof val === "object" && "setTo" in val) {
+			lines.push(`Sets to ${val.setTo} ${restLabel}`);
+		} else {
+			lines.push(`Restores ${val} use${val === 1 ? '' : 's'} ${restLabel}`);
+		}
+	};
 
-	if (rule.longRest !== undefined) {
-		const text = rule.longRest === "max"
-			? "Restores fully on long rest"
-			: `Restores ${rule.longRest} use${rule.longRest === 1 ? '' : 's'} on long rest`;
-		lines.push(text);
-	}
-
-	if (rule.combatEnd !== undefined) {
-		const text = rule.combatEnd === "max"
-			? "Restores fully at combat end"
-			: `Restores ${rule.combatEnd} use${rule.combatEnd === 1 ? '' : 's'} at combat end`;
-		lines.push(text);
-	}
+	formatValue(rule.shortRest, "on short rest");
+	formatValue(rule.longRest, "on long rest");
+	formatValue(rule.combatEnd, "at combat end");
 
 	return lines;
 }

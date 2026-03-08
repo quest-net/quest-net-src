@@ -99,13 +99,16 @@ export interface MovementSettings {
 }
 
 /**
- * RestoreRule determines how many uses/stats are restored during rests
- * - number: Restore this many uses/points
- * - "max": Restore to maximum uses/points
+ * RestoreRuleValue determines how a resource is restored during a rest
+ * - number: Restore BY this many uses/points (incremental)
+ * - "max": Restore TO maximum uses/points
+ * - { setTo: number }: Set TO an exact value
  * - undefined: No restoration for this rest type
  */
+export type RestoreRuleValue = number | "max" | { setTo: number };
+
 export type RestoreRule = {
-	shortRest?: number | "max";
-	longRest?: number | "max";
-	combatEnd?: number | "max";
+	shortRest?: RestoreRuleValue;
+	longRest?: RestoreRuleValue;
+	combatEnd?: RestoreRuleValue;
 }

@@ -7,6 +7,7 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { Actor, StatusSlot } from "../Actor/Actor";
+import { formatSlotExpiration, formatTemplateExpiration } from "./StatusActions";
 
 interface StatusSlotDisplayProps {
 	isOpen: boolean;
@@ -27,7 +28,11 @@ export function StatusSlotDisplay({
 	const isDM = context.User.Role === "dm";
 
 	const [removeClickCount, setRemoveClickCount] = useState(0);
-	const [localTurnsLeft, setLocalTurnsLeft] = useState(slot.turnsLeft ?? 3);
+	const [localCountValue, setLocalCountValue] = useState(() => {
+		if (slot.expiration.type === "turns") return slot.expiration.turnsLeft;
+		if (slot.expiration.type === "days") return slot.expiration.daysLeft;
+		return 0;
+	});
 	const hasUnsavedChanges = useRef(false);
 
 	// Find the status template
@@ -36,22 +41,35 @@ export function StatusSlotDisplay({
 	// Reset state when drawer closes or slot changes
 	useEffect(() => {
 		setRemoveClickCount(0);
-		setLocalTurnsLeft(slot.turnsLeft ?? 3);
+		if (slot.expiration.type === "turns") {
+			setLocalCountValue(slot.expiration.turnsLeft);
+		} else if (slot.expiration.type === "days") {
+			setLocalCountValue(slot.expiration.daysLeft);
+		}
 		hasUnsavedChanges.current = false;
-	}, [isOpen, slot.Id, slot.turnsLeft]);
+	}, [isOpen, slot.Id, slot.expiration]);
 
 	// Save on drawer close if there are unsaved changes
 	useEffect(() => {
 		return () => {
-			if (hasUnsavedChanges.current && actionService && slot.turnsLeft !== undefined) {
-				actionService.execute("status:adjustDuration", {
-					actorId: actor.Id,
-					statusId: slot.Id,
-					turnsLeft: localTurnsLeft,
-				});
+			if (hasUnsavedChanges.current && actionService) {
+				const exp = slot.expiration;
+				if (exp.type === "turns") {
+					actionService.execute("status:adjustDuration", {
+						actorId: actor.Id,
+						statusId: slot.Id,
+						expiration: { type: "turns", turnsLeft: localCountValue },
+					});
+				} else if (exp.type === "days") {
+					actionService.execute("status:adjustDuration", {
+						actorId: actor.Id,
+						statusId: slot.Id,
+						expiration: { type: "days", daysLeft: localCountValue },
+					});
+				}
 			}
 		};
-	}, [localTurnsLeft, actionService, actor.Id, slot.Id, slot.turnsLeft]);
+	}, [localCountValue, actionService, actor.Id, slot.Id, slot.expiration]);
 
 	// Auto-reset remove after 2 seconds
 	useEffect(() => {
@@ -82,20 +100,29 @@ export function StatusSlotDisplay({
 		}
 	};
 
-	const handleTurnsBlur = () => {
-		if (!actionService || slot.turnsLeft === undefined) return;
+	const handleCountBlur = () => {
+		if (!actionService) return;
 
-		actionService.execute("status:adjustDuration", {
-			actorId: actor.Id,
-			statusId: slot.Id,
-			turnsLeft: localTurnsLeft,
-		});
+		const exp = slot.expiration;
+		if (exp.type === "turns") {
+			actionService.execute("status:adjustDuration", {
+				actorId: actor.Id,
+				statusId: slot.Id,
+				expiration: { type: "turns", turnsLeft: localCountValue },
+			});
+		} else if (exp.type === "days") {
+			actionService.execute("status:adjustDuration", {
+				actorId: actor.Id,
+				statusId: slot.Id,
+				expiration: { type: "days", daysLeft: localCountValue },
+			});
+		}
 		hasUnsavedChanges.current = false;
 	};
 
-	const handleTurnsChange = (value: number) => {
+	const handleCountChange = (value: number) => {
 		const clamped = Math.min(999, Math.max(0, value));
-		setLocalTurnsLeft(clamped);
+		setLocalCountValue(clamped);
 		hasUnsavedChanges.current = true;
 	};
 
@@ -110,9 +137,11 @@ export function StatusSlotDisplay({
 	};
 
 	// Format duration text
-	const durationText = slot.turnsLeft !== undefined
-		? `${slot.turnsLeft} turn${slot.turnsLeft === 1 ? '' : 's'} remaining`
-		: "Permanent (never expires)";
+	const durationText = formatSlotExpiration(slot.expiration);
+
+	// Show count adjuster for turns and days types
+	const showCountAdjuster = slot.expiration.type === "turns" || slot.expiration.type === "days";
+	const countUnit = slot.expiration.type === "turns" ? "turns" : "days";
 
 	// Determine if image is editable (only if no image is set)
 	const imageEditable = !status.Image;
@@ -170,23 +199,23 @@ export function StatusSlotDisplay({
 						<div className="flex-1 space-y-3">
 							<h3 className="font-semibold text-sm opacity-70 mb-4">Actions</h3>
 
-							{/* Duration Adjuster - Only show if duration is limited */}
-							{slot.turnsLeft !== undefined && (
+							{/* Duration Adjuster - Only show for turns and days types */}
+							{showCountAdjuster && (
 								<div className="card bg-base-100 border-2 border-base-300 p-4">
 									<h4 className="font-semibold text-sm mb-3">Adjust Duration</h4>
-									
+
 									<div className="flex gap-2 items-center">
 										<input
 											type="number"
-											value={localTurnsLeft}
-											onChange={(e) => handleTurnsChange(Number(e.target.value) || 0)}
-											onBlur={handleTurnsBlur}
+											value={localCountValue}
+											onChange={(e) => handleCountChange(Number(e.target.value) || 0)}
+											onBlur={handleCountBlur}
 											className="input input-bordered input-sm flex-1"
 											min={0}
 											max={999}
-											placeholder="Turns"
+											placeholder={countUnit}
 										/>
-										<span className="text-sm opacity-70">turns</span>
+										<span className="text-sm opacity-70">{countUnit}</span>
 									</div>
 								</div>
 							)}
@@ -228,7 +257,7 @@ export function StatusSlotDisplay({
 							{/* Current Duration */}
 							<div className="flex justify-between items-center py-2 border-b border-base-300">
 								<span className="font-semibold">Current Duration</span>
-								<span className={slot.turnsLeft === undefined ? "badge badge-primary" : ""}>
+								<span className={slot.expiration.type === "permanent" ? "badge badge-primary" : ""}>
 									{durationText}
 								</span>
 							</div>
@@ -237,10 +266,7 @@ export function StatusSlotDisplay({
 							<div className="flex justify-between items-center py-2 border-b border-base-300">
 								<span className="font-semibold">Template Default</span>
 								<span className="opacity-70">
-									{status.Duration === undefined 
-										? "Permanent" 
-										: `${status.Duration} turn${status.Duration === 1 ? '' : 's'}`
-									}
+									{formatTemplateExpiration(status.Expiration)}
 								</span>
 							</div>
 

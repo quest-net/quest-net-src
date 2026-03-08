@@ -47,16 +47,15 @@ export const CombatActions = {
 		// Reset actions for all actors
 		resetActions(campaign);
 
-		// Clear non-permanent statuses from all actors
+		// Clear turn-based statuses from all actors (other types survive combat end)
 		const allActors: Actor[] = [
 			...campaign.GameState.Characters,
 			...campaign.GameState.Entities,
 		];
 
 		allActors.forEach((actor) => {
-			// Keep only permanent statuses (turnsLeft === undefined)
 			actor.Statuses = actor.Statuses.filter(
-				(status) => status.turnsLeft === undefined
+				(status) => status.expiration.type !== "turns"
 			);
 		});
 
@@ -249,8 +248,8 @@ function applyRegenToAllActors(campaign: any, multiplier: 1 | -1): void {
 }
 
 /**
- * Decrements all status durations by 1 and removes statuses that reach 0
- * Permanent statuses (turnsLeft === undefined) are not affected
+ * Decrements turn-based status durations by 1 and removes statuses that reach 0.
+ * Only affects statuses with expiration type "turns".
  */
 function decrementAndRemoveStatuses(campaign: any): void {
 	const allActors: Actor[] = [
@@ -259,26 +258,26 @@ function decrementAndRemoveStatuses(campaign: any): void {
 	];
 
 	allActors.forEach((actor) => {
-		// Decrement durations and filter out expired statuses
 		actor.Statuses = actor.Statuses
 			.map((status) => {
-				// Don't touch permanent statuses
-				if (status.turnsLeft === undefined) {
-					return status;
-				}
+				// Only decrement turn-based statuses
+				if (status.expiration.type !== "turns") return status;
 
-				// Decrement duration
 				return {
 					...status,
-					turnsLeft: status.turnsLeft - 1,
+					expiration: {
+						type: "turns" as const,
+						turnsLeft: status.expiration.turnsLeft - 1,
+					},
 				};
 			})
 			.filter((status) => {
-				// Keep permanent statuses (undefined turnsLeft)
-				if (status.turnsLeft === undefined) return true;
-
-				// Keep non-expired statuses (turnsLeft > 0)
-				return status.turnsLeft > 0;
+				// Remove turn-based statuses that have expired
+				if (status.expiration.type === "turns") {
+					return status.expiration.turnsLeft > 0;
+				}
+				// Keep all other types
+				return true;
 			});
 	});
 }

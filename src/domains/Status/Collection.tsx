@@ -42,10 +42,16 @@ export function StatusCollection({ actor }: StatusCollectionProps) {
         if (!status) return null;
 
         // Format duration text
-        const durationText =
-            slot.turnsLeft !== undefined
-                ? `${slot.turnsLeft} turn${slot.turnsLeft === 1 ? '' : 's'} left`
-                : "Permanent";
+        const durationText = (() => {
+            const exp = slot.expiration;
+            switch (exp.type) {
+                case "permanent": return "Permanent";
+                case "turns": return `${exp.turnsLeft} turn${exp.turnsLeft === 1 ? '' : 's'} left`;
+                case "shortRest": return "Until short rest";
+                case "longRest": return "Until long rest";
+                case "days": return `${exp.daysLeft} day${exp.daysLeft === 1 ? '' : 's'} left`;
+            }
+        })();
 
         return {
             id: `${slot.Id}-${index}`,

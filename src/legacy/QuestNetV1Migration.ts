@@ -278,13 +278,16 @@ function migrateV1SaveToCampaign(
     Name: st.name,
     Description: st.description,
     Tags: st.tags,
-    // Duration left undefined (permanent) – v1 didn’t encode it explicitly
+    Expiration: { type: "permanent" as const }, // v1 didn’t encode duration explicitly
   }));
 
   const entities: Entity[] = gs.globalCollections.entities.map<Entity>((e) => {
     const inventory = normalizeSlots(e.inventory);
     const skillsSlots = normalizeSlots(e.skills);
-    const statusSlots = normalizeSlots(e.statusEffects);
+    const statusSlots = normalizeSlots(e.statusEffects).map((s) => ({
+      Id: s.Id,
+      expiration: { type: "permanent" as const },
+    }));
 
     return {
       Id: e.id,
@@ -332,7 +335,10 @@ function migrateV1SaveToCampaign(
     const inventory = normalizeSlots(c.inventory);
     const equipment = normalizeSlots(c.equipment);
     const skillSlots = normalizeSlots(c.skills);
-    const statusSlots = normalizeSlots(c.statusEffects);
+    const statusSlots = normalizeSlots(c.statusEffects).map((s) => ({
+      Id: s.Id,
+      expiration: { type: "permanent" as const },
+    }));
 
     const notes: Note[] = [
       {
