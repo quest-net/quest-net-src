@@ -4,6 +4,7 @@ import { isDmAccess } from "../../utils/UrlParser";
 import { Context } from "../Context/Context";
 import { ContextActions } from "../Context/ContextActions";
 import { AppSettings, DEFAULT_IMAGE_PROMPT } from "./AppSetting";
+import { SoundEffectService } from "../../services/SoundEffectService";
 
 export const AppSettingActions = {
 	createDefault(): AppSettings {
@@ -79,10 +80,25 @@ export const AppSettingActions = {
 		context.AppSettings.imagePromptTemplate = trimmed || DEFAULT_IMAGE_PROMPT;
 		ContextActions.save(context);
 	},
+	/**
+	 * Sets the SFX volume (0.0 to 1.0) — persisted via SoundEffectService to localStorage
+	 */
+	setSfxVolume(params: { volume: number }): void {
+		SoundEffectService.setVolume(Math.max(0, Math.min(1, params.volume)));
+	},
+
+	/**
+	 * Gets the current SFX volume (0.0 to 1.0)
+	 */
+	getSfxVolume(): number {
+		return SoundEffectService.getVolume();
+	},
+
 	getSettings(context: Context): AppSettings {
 		return {
 			theme: this.getTheme(context),
 			volume: this.getPlayerVolume(context),
+			sfxVolume: this.getSfxVolume(),
 			imageApiKey: this.getImageApiKey(context),
 			imagePromptTemplate: this.getImagePromptTemplate(context),
 		};

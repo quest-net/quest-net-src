@@ -64,26 +64,8 @@ export function StickerPicker() {
         if (isPlayer) {
             actorId = selectedCharacterId;
         } else {
-            // DM doesn't have a single actor automatically, maybe we just don't send actorId
-            // Or we could try to send "DM" as actorId if the backend/log allows it
-            // For now, let's leave it undefined for DM, which means it shows as DM in log
-            // But for map display, we need an actor ID to attach to.
-            // If DM has a selected actor, maybe use that?
-            // The current hook filters by entry.ActorId. If DM sends no ActorId, it won't show on map.
-            // Let's rely on DM selecting an actor.
-            // Getting selected actor from MapState is hard here without context.
-            // But wait, the requirement is "Stickers... will appear above **their character token**".
-            // So for DM, maybe it only works if they are acting as an NPC? 
-            // Or maybe we skip DM map stickers for now?
-            // Let's stick to the player flow first.
-            // Actually, let's try to grab selected actor from MapState if possible, but MapStateProvider is inside Main. 
-            // Main wraps StickerPicker inside MapStateProvider, so we CAN use useMapState()!
+            // DM doesn't have an actor
         }
-
-        // Actually, we can't easily access MapState here because we are IN Main, 
-        // and MapStateProvider wraps the content. 
-        // StickerPicker will be inside MapStateProvider if we place it correctly.
-        // But for filtering, let's stick to the requirement: "players can use to emote... above THEIR character token"
 
         if (isPlayer && !actorId) return;
 

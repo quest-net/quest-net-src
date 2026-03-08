@@ -21,6 +21,10 @@ export function AppSettingEdit() {
     Math.round(AppSettingActions.getPlayerVolume(context) * 100)
   );
 
+  const [sfxVolumePercent, setSfxVolumePercent] = useState<number>(
+    Math.round(AppSettingActions.getSfxVolume() * 100)
+  );
+
   const [imageApiKey, setImageApiKey] = useState<string>(
     AppSettingActions.getImageApiKey(context) ?? ""
   );
@@ -42,6 +46,9 @@ export function AppSettingEdit() {
       { volume: volumePercent / 100 },
       context
     );
+
+    // SFX volume
+    AppSettingActions.setSfxVolume({ volume: sfxVolumePercent / 100 });
 
     // API key – allow clearing
     const trimmedKey = imageApiKey.trim();
@@ -144,6 +151,30 @@ export function AppSettingEdit() {
                   This only affects audio on your device. The DM&apos;s volume
                   choice still controls the &quot;master&quot; level for the
                   table.
+                </p>
+              </div>
+
+              {/* SFX Volume */}
+              <div className="flex flex-col gap-2">
+                <label className="font-medium">
+                  Sound Effects Volume{" "}
+                  <span className="text-sm opacity-70">
+                    ({sfxVolumePercent}%)
+                  </span>
+                </label>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={sfxVolumePercent}
+                  onChange={(e) =>
+                    setSfxVolumePercent(Number(e.target.value) || 0)
+                  }
+                  className="range range-secondary"
+                />
+                <p className="text-xs opacity-70">
+                  Controls the volume of short sound effects like sticker
+                  pops. Independent of music volume.
                 </p>
               </div>
             </div>

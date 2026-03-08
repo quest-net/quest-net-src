@@ -1,8 +1,9 @@
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { CampaignActions } from "../../../domains/Campaign/CampaignActions";
 import { useQuestContext } from "../../../domains/Context/ContextProvider";
 import { LogActions } from "../../../domains/Log/LogActions";
+import { SoundEffectService } from "../../../services/SoundEffectService";
 
 const STICKER_DURATION_MS = 5000;
 
@@ -10,6 +11,9 @@ export function useActiveStickers() {
     const context = useQuestContext();
     const campaign = CampaignActions.getActiveCampaign(context);
     const [now, setNow] = useState(Date.now());
+
+    // Track which sticker log entry IDs we've already played sounds for
+    const playedStickerIdsRef = useRef<Set<string>>(new Set());
 
     // Force re-render periodically to clear old stickers
     useEffect(() => {
@@ -34,7 +38,7 @@ export function useActiveStickers() {
 
             // Check if expired
             if (now - entry.Timestamp > STICKER_DURATION_MS) {
-                // Since logs are chronological, if we hit an expired one, all previous ones are also expired 
+                // Since logs are chronological, if we hit an expired one, all previous ones are also expired
                 // (mostly true, unless clocks are weird, but good enough)
                 break;
             }
@@ -43,6 +47,24 @@ export function useActiveStickers() {
             if (!map.has(entry.ActorId)) {
                 map.set(entry.ActorId, entry.Details);
             }
+
+            // Play sound for stickers we haven't seen yet
+            if (!playedStickerIdsRef.current.has(entry.Id)) {
+                playedStickerIdsRef.current.add(entry.Id);
+                SoundEffectService.playSticker(entry.Details);
+            }
+        }
+
+        // Prune old IDs from the set to prevent unbounded growth
+        // (keep only IDs that are still in the active window)
+        if (playedStickerIdsRef.current.size > 100) {
+            const activeIds = new Set<string>();
+            for (let i = logs.length - 1; i >= 0; i--) {
+                const entry = logs[i];
+                if (now - entry.Timestamp > STICKER_DURATION_MS) break;
+                if (entry.Category === "sticker") activeIds.add(entry.Id);
+            }
+            playedStickerIdsRef.current = activeIds;
         }
 
         return map;

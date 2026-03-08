@@ -202,7 +202,6 @@ export class StateSync {
 
 		this.currentState = update.data;
 		this.version = 0;
-
 		if (this.onUpdateCallback) {
 			this.onUpdateCallback(update.data);
 		}
