@@ -3,7 +3,7 @@
 import { Context } from "../Context/Context";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
-import { restoreCharacter } from "../Calendar/CalendarActions";
+import { restoreCharacter, restoreSharedInventories } from "../Calendar/CalendarActions";
 import { Actor } from "../Actor/Actor";
 
 export const CombatActions = {
@@ -43,6 +43,9 @@ export const CombatActions = {
 		campaign.GameState.Characters.forEach((character) => {
 			restoreCharacter(character, "combatEnd", campaign);
 		});
+
+		// Restore shared inventory stats
+		restoreSharedInventories(campaign, "combatEnd");
 
 		// Reset actions for all actors
 		resetActions(campaign);

@@ -45,6 +45,7 @@ export function StatusIndex() {
 		<IndexView
 			items={statuses}
 			title="Statuses"
+			sortKey="statuses-sort"
 			description="Manage your status effect templates"
 			createLabel="Create Status"
 			onCreateClick={() => setCreateCounter((prev) => prev + 1)}

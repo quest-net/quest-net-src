@@ -40,6 +40,7 @@ interface CollectionViewProps {
 }
 
 type ViewMode = "grid" | "list";
+type SortOrder = "newest" | "oldest";
 
 // ============================================================================
 // MAIN COMPONENT
@@ -63,6 +64,15 @@ export function CollectionView({
 		}
 	});
 
+	const sortKey = `${viewModeKey}-sort`;
+	const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
+		try {
+			return (localStorage.getItem(sortKey) as SortOrder) || "newest";
+		} catch {
+			return "newest";
+		}
+	});
+
 	// Persist view mode changes
 	useEffect(() => {
 		try {
@@ -72,12 +82,26 @@ export function CollectionView({
 		}
 	}, [viewMode, viewModeKey]);
 
+	// Persist sort order changes
+	useEffect(() => {
+		try {
+			localStorage.setItem(sortKey, sortOrder);
+		} catch {
+			// Ignore localStorage errors
+		}
+	}, [sortOrder, sortKey]);
+
 	// Filter items by search query
-	const filteredItems = searchQuery.trim()
+	const filteredItemsUnsorted = searchQuery.trim()
 		? items.filter((item) =>
 				item.label.toLowerCase().includes(searchQuery.toLowerCase())
 		  )
 		: items;
+
+	// Apply sort order
+	const filteredItems = sortOrder === "newest"
+		? [...filteredItemsUnsorted].reverse()
+		: filteredItemsUnsorted;
 
 	// Format count text
 	const countText = searchQuery.trim() && filteredItems.length !== items.length
@@ -98,8 +122,18 @@ export function CollectionView({
 					)}
 				</div>
 
-				{/* View Mode Toggle */}
+				{/* View Mode Toggle + Sort Toggle */}
 				<div className="flex gap-2">
+					{/* Sort Order Toggle */}
+					<button
+						onClick={() => setSortOrder(sortOrder === "newest" ? "oldest" : "newest")}
+						className="btn btn-sm btn-ghost tooltip tooltip-bottom"
+						data-tip={sortOrder === "newest" ? "Newest first" : "Oldest first"}
+						aria-label={`Sort: ${sortOrder === "newest" ? "Newest first" : "Oldest first"}`}
+					>
+						<span className={`${sortOrder === "newest" ? "icon-[mdi--sort-descending]" : "icon-[mdi--sort-ascending]"} w-5 h-5`} />
+					</button>
+
 					<button
 						onClick={() => setViewMode("grid")}
 						className={`btn btn-sm ${

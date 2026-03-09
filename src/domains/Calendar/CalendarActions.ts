@@ -122,6 +122,9 @@ export const CalendarActions = {
 			restoreCharacter(character, "shortRest", campaign);
 		});
 
+		// Restore shared inventory stats
+		restoreSharedInventories(campaign, "shortRest");
+
 		// Clear "until short rest" statuses from all characters and entities
 		clearStatusesByExpirationType(campaign, ["shortRest"]);
 
@@ -154,6 +157,9 @@ export const CalendarActions = {
 		campaign.GameState.Characters.forEach((character) => {
 			restoreCharacter(character, "longRest", campaign);
 		});
+
+		// Restore shared inventory stats
+		restoreSharedInventories(campaign, "longRest");
 
 		// Clear "until short rest" and "until long rest" statuses (long rest is a superset)
 		clearStatusesByExpirationType(campaign, ["shortRest", "longRest"]);
@@ -334,6 +340,35 @@ export function restoreCharacter(
 				skillTemplate.MaxUses
 			);
 		}
+	});
+}
+
+/**
+ * Restores shared inventory stats based on the specified rest type.
+ * Exported for use by CombatActions.
+ */
+export function restoreSharedInventories(
+	campaign: any,
+	restType: "shortRest" | "longRest" | "combatEnd",
+): void {
+	const sharedInventories = campaign.Settings.SharedInventories || [];
+
+	sharedInventories.forEach((inv: any) => {
+		inv.Stats.forEach((stat: any) => {
+			if (!stat.RestoreRule) return;
+
+			const restoreValue = stat.RestoreRule[restType];
+			if (restoreValue === undefined) return;
+
+			if (restoreValue === "max") {
+				stat.Current = stat.Max;
+			} else if (typeof restoreValue === "object" && "setTo" in restoreValue) {
+				stat.Current = Math.min(Math.max(0, restoreValue.setTo), stat.Max);
+			} else {
+				// Increment by amount, capped at Max
+				stat.Current = Math.min((stat.Current || 0) + restoreValue, stat.Max);
+			}
+		});
 	});
 }
 

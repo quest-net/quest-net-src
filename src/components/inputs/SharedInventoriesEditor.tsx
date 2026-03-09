@@ -4,6 +4,7 @@ import { SharedInventory } from "../../domains/CampaignSetting/CampaignSetting";
 import { useFormReadOnly } from "../Form/Form";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { RestoreRuleEditor } from "./RestoreRuleEditor";
 
 interface SharedInventoriesEditorProps {
     inventories: SharedInventory[];
@@ -124,56 +125,76 @@ export function SharedInventoriesEditor({
                         <h3 className="font-bold text-lg mb-4">
                             {editingInventory.Name} Stats
                         </h3>
-                        <div className="space-y-2 max-h-96 overflow-y-auto p-2">
+                        <div className="space-y-2 max-h-[32rem] overflow-y-auto p-2">
                             {globalStats.map(gStat => {
                                 const trackedStat = editingInventory.Stats.find(s => s.Id === gStat.Id);
                                 const isTracked = !!trackedStat;
 
                                 return (
-                                    <div key={gStat.Id} className="flex items-center gap-4 p-2 border border-base-300 rounded-lg">
-                                        <input
-                                            type="checkbox"
-                                            className="checkbox checkbox-primary"
-                                            checked={isTracked}
-                                            disabled={readOnly}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    // Add to tracked 
-                                                    handleChange(editingInventory.Id, {
-                                                        Stats: [...editingInventory.Stats, {
-                                                            Id: gStat.Id,
-                                                            Name: gStat.Name,
-                                                            Color: gStat.Color,
-                                                            Max: gStat.Max,
-                                                            Current: gStat.Max
-                                                        }]
-                                                    });
-                                                } else {
-                                                    // Remove from tracked
-                                                    handleChange(editingInventory.Id, {
-                                                        Stats: editingInventory.Stats.filter(s => s.Id !== gStat.Id)
-                                                    });
-                                                }
-                                            }}
-                                        />
-                                        <div className="flex-1 flex items-center gap-2">
-                                            <div className="w-4 h-4 rounded-full" style={{ backgroundColor: gStat.Color }}></div>
-                                            <span className="font-semibold">{gStat.Name}</span>
+                                    <div key={gStat.Id} className="p-2 border border-base-300 rounded-lg space-y-2">
+                                        <div className="flex items-center gap-4">
+                                            <input
+                                                type="checkbox"
+                                                className="checkbox checkbox-primary"
+                                                checked={isTracked}
+                                                disabled={readOnly}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        // Add to tracked
+                                                        handleChange(editingInventory.Id, {
+                                                            Stats: [...editingInventory.Stats, {
+                                                                Id: gStat.Id,
+                                                                Name: gStat.Name,
+                                                                Color: gStat.Color,
+                                                                Max: gStat.Max,
+                                                                Current: gStat.Max
+                                                            }]
+                                                        });
+                                                    } else {
+                                                        // Remove from tracked
+                                                        handleChange(editingInventory.Id, {
+                                                            Stats: editingInventory.Stats.filter(s => s.Id !== gStat.Id)
+                                                        });
+                                                    }
+                                                }}
+                                            />
+                                            <div className="flex-1 flex items-center gap-2">
+                                                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: gStat.Color }}></div>
+                                                <span className="font-semibold">{gStat.Name}</span>
+                                            </div>
+
+                                            {isTracked && (
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm opacity-70">Max:</span>
+                                                    <input
+                                                        type="number"
+                                                        className="input input-bordered input-sm w-20"
+                                                        disabled={readOnly}
+                                                        value={trackedStat.Max}
+                                                        onChange={e => {
+                                                            const newMax = Math.max(1, parseInt(e.target.value) || 1);
+                                                            handleChange(editingInventory.Id, {
+                                                                Stats: editingInventory.Stats.map(s =>
+                                                                    s.Id === gStat.Id ? { ...s, Max: newMax } : s
+                                                                )
+                                                            });
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
                                         </div>
 
+                                        {/* Restore Rule Editor for tracked stats */}
                                         {isTracked && (
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-sm opacity-70">Max:</span>
-                                                <input
-                                                    type="number"
-                                                    className="input input-bordered input-sm w-20"
-                                                    disabled={readOnly}
-                                                    value={trackedStat.Max}
-                                                    onChange={e => {
-                                                        const newMax = Math.max(1, parseInt(e.target.value) || 1);
+                                            <div className="ml-10">
+                                                <p className="text-sm font-medium mb-1 opacity-70">Restore Rules</p>
+                                                <RestoreRuleEditor
+                                                    value={trackedStat.RestoreRule}
+                                                    readOnly={readOnly}
+                                                    onChange={(rule) => {
                                                         handleChange(editingInventory.Id, {
                                                             Stats: editingInventory.Stats.map(s =>
-                                                                s.Id === gStat.Id ? { ...s, Max: newMax } : s
+                                                                s.Id === gStat.Id ? { ...s, RestoreRule: rule } : s
                                                             )
                                                         });
                                                     }}

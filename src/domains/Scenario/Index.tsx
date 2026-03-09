@@ -110,6 +110,7 @@ export function ScenarioIndex() {
             <IndexView
                 items={items}
                 title="Saved Scenarios"
+                sortKey="scenarios-sort"
                 description="Quick-load pre-configured game states"
                 searchEnabled={true}
                 searchPlaceholder="Search scenarios by name..."

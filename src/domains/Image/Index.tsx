@@ -68,6 +68,7 @@ export function ImageIndex() {
 			<IndexView
 				items={items}
 				title="Image Library"
+				sortKey="images-sort"
 				description="Manage campaign images"
 				searchEnabled={true}
 				searchPlaceholder="Search images by name..."

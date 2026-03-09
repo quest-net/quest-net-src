@@ -119,6 +119,7 @@ export function EntityIndex() {
 			<IndexView
 				items={items}
 				title="Entity Templates"
+				sortKey="entities-sort"
 				description="Manage your entity templates"
 				createLabel="Create Entity"
 				onCreateClick={() => setCreateCounter((prev) => prev + 1)}

@@ -44,6 +44,7 @@ export function SkillIndex() {
 		<IndexView
 			items={skills}
 			title="Skills"
+			sortKey="skills-sort"
 			description="Manage your skill templates"
 			createLabel="Create Skill"
 			onCreateClick={() => setCreateCounter((prev) => prev + 1)}

@@ -67,6 +67,7 @@ export function AudioIndex() {
 			<IndexView
 				items={items}
 				title="Audio Library"
+				sortKey="audio-sort"
 				description="Manage campaign music and sound effects"
 				createLabel="Add Audio Track"
 				onCreateClick={() => setCreateCounter((prev) => prev + 1)}

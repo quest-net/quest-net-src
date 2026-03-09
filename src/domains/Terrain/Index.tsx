@@ -95,6 +95,7 @@ export function TerrainIndex() {
 		<IndexView
 			items={items}
 			title="Terrains"
+			sortKey="terrain-sort"
 			description="Manage campaign terrains and maps"
 			createLabel="Create Terrain"
 			onCreateClick={() => setCreateCounter((prev) => prev + 1)}

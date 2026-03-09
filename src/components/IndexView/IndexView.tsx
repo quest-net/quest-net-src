@@ -15,6 +15,8 @@ import {
 // TYPES
 // ============================================================================
 
+type SortOrder = "newest" | "oldest";
+
 export interface IndexViewItem {
 	id: string;
 	label: string;
@@ -53,6 +55,7 @@ interface IndexViewProps {
 	// Features
 	searchEnabled?: boolean;
 	searchPlaceholder?: string;
+	sortKey?: string; // localStorage key for sort order persistence (e.g., "items-sort")
 
 	// Pagination
 	itemsPerPage?: number; // Default: 20
@@ -88,6 +91,7 @@ export function IndexView({
 	extraButtons,
 	searchEnabled = true,
 	searchPlaceholder = "Search...",
+	sortKey,
 	itemsPerPage = 25,
 	renderEditForm,
 	onBulkUpdateItemTags,
@@ -110,15 +114,43 @@ export function IndexView({
 	// Pagination state
 	const [currentPage, setCurrentPage] = useState(1);
 
+	// Sort order state (persisted to localStorage if sortKey provided)
+	const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
+		if (sortKey) {
+			try {
+				return (localStorage.getItem(sortKey) as SortOrder) || "newest";
+			} catch {
+				return "newest";
+			}
+		}
+		return "newest";
+	});
+
+	// Persist sort order changes
+	useEffect(() => {
+		if (sortKey) {
+			try {
+				localStorage.setItem(sortKey, sortOrder);
+			} catch {
+				// Ignore localStorage errors
+			}
+		}
+	}, [sortOrder, sortKey]);
+
 	// When searching, show all items that match (ignore folders)
 	// When not searching, filter by current path
 	const isSearching = searchQuery.trim().length > 0;
 
-	const filteredItems = isSearching
+	const filteredItemsUnsorted = isSearching
 		? items.filter((item) =>
 				item.label.toLowerCase().includes(searchQuery.toLowerCase())
 		  )
 		: getItemsAtPath(items, currentPath);
+
+	// Apply sort order
+	const filteredItems = sortOrder === "newest"
+		? [...filteredItemsUnsorted].reverse()
+		: filteredItemsUnsorted;
 
 	// Get folders at current path (only when not searching)
 	const folders = isSearching ? [] : getFoldersAtPath(items, currentPath);
@@ -480,7 +512,18 @@ export function IndexView({
 							)}
 						</div>
 
-						{/* Right side - Search */}
+						{/* Right side - Sort Toggle + Search */}
+						<div className="flex gap-2 items-center">
+							{/* Sort Order Toggle */}
+							<button
+								onClick={() => setSortOrder(sortOrder === "newest" ? "oldest" : "newest")}
+								className="btn btn-ghost btn-sm tooltip tooltip-bottom"
+								data-tip={sortOrder === "newest" ? "Newest first" : "Oldest first"}
+								aria-label={`Sort: ${sortOrder === "newest" ? "Newest first" : "Oldest first"}`}
+							>
+								<span className={`${sortOrder === "newest" ? "icon-[mdi--sort-descending]" : "icon-[mdi--sort-ascending]"} w-5 h-5`} />
+							</button>
+
 						{searchEnabled && (
 							<div className="flex gap-2 w-96">
 								<input
@@ -501,6 +544,7 @@ export function IndexView({
 								)}
 							</div>
 						)}
+						</div>
 					</div>
 
 					{/* Items or Empty State */}

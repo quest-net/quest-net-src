@@ -119,6 +119,7 @@ export function CharacterIndex() {
 			<IndexView
 				items={items}
 				title="Character Roster"
+				sortKey="characters-sort"
 				description="Manage your character roster"
 				createLabel="Create Character"
 				onCreateClick={() => setCreateCounter((prev) => prev + 1)}

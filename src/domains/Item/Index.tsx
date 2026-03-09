@@ -44,6 +44,7 @@ export function ItemIndex() {
 		<IndexView
 			items={items}
 			title="Items"
+			sortKey="items-sort"
 			description="Manage your item templates"
 			createLabel="Create Item"
 			onCreateClick={() => setCreateCounter((prev) => prev + 1)}
