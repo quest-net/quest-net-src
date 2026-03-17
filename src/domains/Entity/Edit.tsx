@@ -190,6 +190,7 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 							className="select select-bordered w-full"
 							onChange={(e) => handleFieldChange("Size", e.target.value)}
 						>
+							<option>extra-small</option>
 							<option>small</option>
 							<option>medium</option>
 							<option>large</option>

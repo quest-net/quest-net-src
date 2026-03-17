@@ -583,6 +583,7 @@ function ActorInfoTab({
 						className="select select-sm select-bordered"
 						disabled={!actionService}
 					>
+						<option value="extra-small">Extra Small</option>
 						<option value="small">Small</option>
 						<option value="medium">Medium</option>
 						<option value="large">Large</option>

@@ -1,6 +1,6 @@
 import { StatDefinition, ActionDefinition } from "../CampaignSetting/CampaignSetting";
 
-export type ActorSize = "small" | "medium" | "large";
+export type ActorSize = "extra-small" | "small" | "medium" | "large";
 
 export interface Actor {
 	Id: string;

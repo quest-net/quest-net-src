@@ -170,7 +170,7 @@ export function MapWorldLayer({
 			kind: Kind,
 			name: string,
 			imageId: string | undefined,
-			size: "small" | "medium" | "large",
+			size: ActorSize,
 			x: number,
 			y: number,
 			h: number

@@ -5,7 +5,7 @@ import type { Character } from "../../domains/Character/Character";
 import type { Entity } from "../../domains/Entity/Entity";
 import type { ActorSize } from "../../domains/Actor/Actor";
 import { MAX_HEIGHT, getTerrainColorByIndex } from "../../domains/Terrain/Terrain";
-import { getTokenDimensions } from "./Token";
+import { getTokenPosition } from "./Token";
 import { TILE_H, TILE_W, V_SCALE } from "./Terrain";
 
 export const MIN_SCALE = 0.5;
@@ -404,13 +404,14 @@ export function isPointInToken(
 		width: TOKEN_W_SCALED,
 		height: TOKEN_H_SCALED,
 		cornerRadius,
-	} = getTokenDimensions(size);
+		centerY: centerYOffset,
+	} = getTokenPosition(size);
 
 	const halfW = TOKEN_W_SCALED / 2;
 	const halfH = TOKEN_H_SCALED / 2;
 
-	// Token is centered at -0.75 * TOKEN_H (matching MASK_CENTER_Y in Token.tsx)
-	const centerY = tokenCy - TOKEN_H_SCALED * 0.75;
+	// Token center uses the same positioning as Token.tsx / FallbackToken.tsx
+	const centerY = tokenCy + centerYOffset;
 
 	// Relative position from token center
 	const dx = px - tokenCx;

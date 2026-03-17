@@ -6,7 +6,7 @@ import type { Graphics as PixiGraphics } from "pixi.js";
 import { SpriteDisplay } from "../../../domains/Image/SpriteDisplay";
 import { FallbackToken } from "./FallbackToken";
 import {
-	getTokenDimensions,
+	getTokenPosition,
 	OUTLINE_DEFAULT_COLOR,
 	OUTLINE_SELECTED_COLOR,
 	OUTLINE_SELECTED_WIDTH,
@@ -41,13 +41,11 @@ export function Token({
 		width: TOKEN_W,
 		height: TOKEN_H,
 		cornerRadius,
-	} = getTokenDimensions(size);
-
-	const rx = -TOKEN_W * 0.5;
-	const ry = -TOKEN_H * 1.25;
-	const MASK_CENTER_Y = -TOKEN_H * 0.75;
-	// Position sticker above the token
-	const STICKER_Y = -TOKEN_H * 2.0;
+		rx,
+		ry,
+		centerY: MASK_CENTER_Y,
+		stickerY: STICKER_Y,
+	} = getTokenPosition(size);
 
 	const drawOutlinePath = useMemo(
 		() => (g: PixiGraphics) => {

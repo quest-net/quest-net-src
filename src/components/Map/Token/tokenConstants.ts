@@ -14,6 +14,7 @@ export const CORNER_RADIUS = Math.min(TOKEN_W, TOKEN_H) * 0.45;
 
 // Actor size scaling factors
 export const SIZE_SCALE: Record<ActorSize, number> = {
+	"extra-small": 0.6, // 60% of default, used for ground items
 	small: 1.0, // Default size (current)
 	medium: 1.5, // 50% larger
 	large: 2.0, // 2x larger
@@ -37,6 +38,11 @@ export const SHADOW_SCALE_MIN = 0.5;
 export const SHADOW_ALPHA_BASE = 0.3;
 export const SHADOW_ALPHA_MIN = 0.15;
 
+// Fixed bottom offset from the tile anchor point.
+// The token's bottom edge always sits this far above (cx, cy),
+// so tokens grow upward as they get larger instead of floating.
+export const TOKEN_GROUND_OFFSET = -TOKEN_H * 0.25;
+
 /**
  * Get scaled token dimensions based on actor size
  */
@@ -48,4 +54,17 @@ export function getTokenDimensions(size: ActorSize = "small") {
 		cornerRadius: CORNER_RADIUS * scale,
 		scale, // Also export the raw scale factor
 	};
+}
+
+/**
+ * Get token positioning relative to (cx, cy) tile anchor.
+ * Bottom edge is anchored at TOKEN_GROUND_OFFSET; token grows upward with size.
+ */
+export function getTokenPosition(size: ActorSize = "small") {
+	const { width, height, cornerRadius, scale } = getTokenDimensions(size);
+	const rx = -width * 0.5;                       // left edge
+	const ry = TOKEN_GROUND_OFFSET - height;        // top edge (grows upward)
+	const centerY = TOKEN_GROUND_OFFSET - height * 0.5; // vertical center of the token
+	const stickerY = ry - height * 0.15;            // just above the top edge
+	return { rx, ry, centerY, stickerY, width, height, cornerRadius, scale };
 }

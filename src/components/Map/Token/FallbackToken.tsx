@@ -1,5 +1,6 @@
 // components/Map/Token/FallbackToken.tsx
 // Fallback token component for actors without images
+// Uses the same rounded-rect shape and positioning as image tokens
 
 import { useMemo } from "react";
 import type {
@@ -7,12 +8,11 @@ import type {
 	TextStyleOptions,
 	TextStyleAlign,
 } from "pixi.js";
-import { TILE_W, TILE_H } from "../Terrain";
 import {
+	getTokenPosition,
 	OUTLINE_OUTER_WIDTH,
 	OUTLINE_DEFAULT_COLOR,
 	OUTLINE_SELECTED_COLOR,
-	SIZE_SCALE,
 	type ActorSize,
 } from "./tokenConstants";
 
@@ -33,12 +33,21 @@ export function FallbackToken({
 	selected = false,
 	size = "small",
 }: FallbackTokenProps) {
-	const scale = SIZE_SCALE[size];
-	const R = TILE_W * 0.35 * scale;
-	const centerX = cx;
-	const centerY = cy - TILE_H - (scale*6); //HACK ALERT: FIND A BETTER WAY TO DO THIS
+	const {
+		width: TOKEN_W,
+		height: TOKEN_H,
+		cornerRadius,
+		scale,
+		rx: rxLocal,
+		ry: ryLocal,
+		centerY: centerYLocal,
+	} = getTokenPosition(size);
 
-	const drawCircle = useMemo(
+	// Offset by (cx, cy) to position in parent coords
+	const rx = cx + rxLocal;
+	const ry = cy + ryLocal;
+
+	const drawRect = useMemo(
 		() => (g: PixiGraphics) => {
 			g.clear();
 			// Fill
@@ -49,14 +58,18 @@ export function FallbackToken({
 				: OUTLINE_DEFAULT_COLOR;
 			const outlineWidth = selected ? 3 : OUTLINE_OUTER_WIDTH;
 			g.setStrokeStyle({ width: outlineWidth, color: outlineColor, alpha });
-			g.circle(centerX, centerY, R);
+			g.roundRect(rx, ry, TOKEN_W, TOKEN_H, cornerRadius);
 			g.fill();
 			g.stroke();
 		},
-		[centerX, centerY, R, alpha, selected]
+		[rx, ry, TOKEN_W, TOKEN_H, cornerRadius, alpha, selected]
 	);
 
-	const fontSize = Math.max(10, Math.round(TILE_W * 0.22 * scale));
+	// Center the text inside the rounded rect
+	const textCenterX = cx;
+	const textCenterY = cy + centerYLocal;
+
+	const fontSize = Math.max(10, Math.round(14 * scale));
 	const align: TextStyleAlign = "center";
 	const textStyle = useMemo<TextStyleOptions>(
 		() => ({
@@ -66,18 +79,19 @@ export function FallbackToken({
 			align,
 			stroke: { color: 0x000000, width: 2 },
 			wordWrap: true,
+			wordWrapWidth: TOKEN_W * 0.9,
 		}),
-		[align, fontSize]
+		[align, fontSize, TOKEN_W]
 	);
 
 	return (
 		<pixiContainer>
-			<pixiGraphics draw={drawCircle} />
+			<pixiGraphics draw={drawRect} />
 			{!!name && (
 				<pixiText
 					text={name}
-					x={centerX}
-					y={centerY}
+					x={textCenterX}
+					y={textCenterY}
 					anchor={{ x: 0.5, y: 0.5 }}
 					style={textStyle}
 					alpha={alpha}
