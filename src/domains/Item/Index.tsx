@@ -30,6 +30,17 @@ export function ItemIndex() {
 		});
 	};
 
+	const handleSpawnItem = (itemId: string) => {
+		if (!actionService) return;
+
+		actionService.execute("item:spawn", {
+			itemId,
+			position: { x: 0, y: 0, h: 0 },
+		});
+	};
+
+	const isDM = context.User.Role === "dm";
+
 	const items: IndexViewItem[] = (campaign.ItemTemplates as Item[]).map(
 		(it) => ({
 			id: it.Id,
@@ -37,6 +48,15 @@ export function ItemIndex() {
 			details: it.Description,
 			imageId: it.Image,
 			tags: it.Tags || [],
+			...(isDM
+				? {
+						action: {
+							label: "Spawn",
+							icon: "icon-[mdi--map-marker-plus]",
+							onClick: () => handleSpawnItem(it.Id),
+						},
+					}
+				: {}),
 		})
 	);
 

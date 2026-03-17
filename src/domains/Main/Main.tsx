@@ -210,12 +210,10 @@ export function Main() {
 					{/* Dice Roller */}
 					<DiceRoller />
 
-					{/* Sticker Picker - Players only */}
-					{!isDM && (
-						<div className="absolute right-2 bottom-18 z-20">
-							<StickerPicker />
-						</div>
-					)}
+					{/* Sticker Picker */}
+					<div className="absolute right-2 bottom-18 z-20">
+						<StickerPicker />
+					</div>
 				</div>
 
 				{/* Right 30%: Side Panel */}

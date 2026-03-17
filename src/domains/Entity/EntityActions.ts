@@ -218,6 +218,13 @@ export const EntityActions = {
 		// Remove from GameState
 		const [entity] = campaign.GameState.Entities.splice(gameStateIndex, 1);
 
+		// Clear impersonation if DM was impersonating this entity
+		const impersonated = (context.User.ImpersonatedActors ?? {})[campaign.RoomCode];
+		if (impersonated === params.entityId) {
+			if (!context.User.ImpersonatedActors) context.User.ImpersonatedActors = {};
+			delete context.User.ImpersonatedActors[campaign.RoomCode];
+		}
+
 		LogActions.create(
 			{
 				action: "Entity removed",

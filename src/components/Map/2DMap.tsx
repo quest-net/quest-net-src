@@ -26,6 +26,7 @@ import {
 } from "./MapUtilities";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
+import { isItemEntity } from "../../domains/Item/ItemDropUtils";
 
 // ----------------------------------------------------------------------------
 // Types
@@ -229,8 +230,9 @@ export default function TwoDMap({
 			// Use the helper function for target height calculation
 			const targetH = calculateTargetHeight(x, y, currentH, canFly, terrain);
 
-			// Check occupancy - this is the ONLY restriction
+			// Check occupancy - item entities can move freely onto occupied tiles
 			if (
+				!isItemEntity(actorObj) &&
 				isTileOccupiedAtHeight(
 					x,
 					y,

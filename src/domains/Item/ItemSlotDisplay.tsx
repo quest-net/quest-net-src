@@ -37,6 +37,11 @@ export function ItemSlotDisplay({
 	// Find the item template
 	const item = campaign.ItemTemplates.find((i) => i.Id === slot.Id);
 
+	// Check if actor is spawned on the map (needed for Drop)
+	const isSpawned =
+		campaign.GameState.Characters.some((c) => c.Id === actor.Id) ||
+		campaign.GameState.Entities.some((e) => e.Id === actor.Id);
+
 	// Reset state when drawer closes or slot changes
 	useEffect(() => {
 		setDiscardClickCount(0);
@@ -119,6 +124,16 @@ export function ItemSlotDisplay({
 			}
 			onClose();
 		}
+	};
+
+	const handleDrop = () => {
+		if (!actionService) return;
+
+		actionService.execute("item:drop", {
+			actorId: actor.Id,
+			itemId: slot.Id,
+		});
+		onClose();
 	};
 
 	const handleTransferClick = () => {
@@ -316,6 +331,18 @@ export function ItemSlotDisplay({
 
 								{/* Divider */}
 								<div className="divider my-2"></div>
+
+								{/* Drop Button - only for spawned actors with a map position */}
+								{isSpawned && mode !== "shared-inventory" && (
+									<button
+										onClick={handleDrop}
+										disabled={!actionService}
+										className="btn w-full justify-start btn-ghost"
+									>
+										<span className="icon-[mdi--arrow-down-circle] w-5 h-5" />
+										Drop
+									</button>
+								)}
 
 								{/* Discard Button */}
 								<button

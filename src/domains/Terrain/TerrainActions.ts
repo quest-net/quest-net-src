@@ -5,6 +5,7 @@ import { MAX_HEIGHT, Terrain } from "./Terrain";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { Actor } from "../Actor/Actor";
+import { isItemEntity } from "../Item/ItemDropUtils";
 
 export const TerrainActions = {
 	/**
@@ -362,6 +363,11 @@ export const TerrainActions = {
 
 			// Position is in bounds - adjust height based on terrain and flying ability
 			this.adjustHeight(actor, terrain);
+
+			// Item entities (dropped items) can stack freely on occupied tiles
+			if (isItemEntity(actor)) {
+				continue;
+			}
 
 			// Now check if this exact position (x, y, h) is occupied
 			const tileKey = `${actor.Position.x},${actor.Position.y},${actor.Position.h}`;

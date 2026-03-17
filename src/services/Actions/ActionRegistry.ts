@@ -128,6 +128,18 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm", "player"],
 		handler: ItemActions.adjustUses,
 	},
+	"item:drop": {
+		roles: ["dm", "player"],
+		handler: ItemActions.drop,
+	},
+	"item:pickup": {
+		roles: ["dm", "player"],
+		handler: ItemActions.pickup,
+	},
+	"item:spawn": {
+		roles: ["dm"],
+		handler: ItemActions.spawn,
+	},
 	"item:bulkEditTags": {
 		roles: ["dm"],
 		handler: ItemActions.bulkEditTags,

@@ -6,4 +6,5 @@ export interface User {
 	Role?: "dm" | "player";
 
 	SelectedCharacters: Record<string, string>; //campaignId -> characterId
+	ImpersonatedActors?: Record<string, string>; //campaignId -> actorId (DM only, local-only)
 }

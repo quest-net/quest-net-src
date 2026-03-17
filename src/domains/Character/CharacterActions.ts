@@ -194,6 +194,13 @@ export const CharacterActions = {
 			return;
 		}
 
+		// Clear impersonation if DM was impersonating this character
+		const impersonated = (context.User.ImpersonatedActors ?? {})[campaign.RoomCode];
+		if (impersonated === params.characterId) {
+			if (!context.User.ImpersonatedActors) context.User.ImpersonatedActors = {};
+			delete context.User.ImpersonatedActors[campaign.RoomCode];
+		}
+
 		const alreadyInRoster = campaign.CharacterRoster.some(
 			(c) => c.Id === params.characterId
 		);

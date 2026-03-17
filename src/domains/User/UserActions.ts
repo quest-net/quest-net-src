@@ -69,4 +69,22 @@ export const UserActions = {
 			delete context.User.SelectedCharacters[params.campaignId];
 		}
 	},
+
+	/**
+	 * DM-only, local-only. Sets which actor the DM is impersonating.
+	 * This is not a networked action — players don't need to know.
+	 */
+	impersonate(
+		params: { campaignId: string; actorId: string | null },
+		context: Context
+	): void {
+		if (!context.User.ImpersonatedActors) {
+			context.User.ImpersonatedActors = {};
+		}
+		if (params.actorId) {
+			context.User.ImpersonatedActors[params.campaignId] = params.actorId;
+		} else {
+			delete context.User.ImpersonatedActors[params.campaignId];
+		}
+	},
 };

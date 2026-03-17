@@ -23,9 +23,13 @@ export function StickerPicker() {
     const campaign = CampaignActions.getActiveCampaign(context);
     const isPlayer = context.User.Role === "player";
     const selectedCharacterId = context.User.SelectedCharacters[campaign.RoomCode];
+    const impersonatedActorId = (context.User.ImpersonatedActors ?? {})[campaign.RoomCode];
 
-    // Disable if player but no character selected
-    const isDisabled = isPlayer && !selectedCharacterId;
+    // Active actor: player uses selected character, DM uses impersonated actor
+    const activeActorId = isPlayer ? selectedCharacterId : impersonatedActorId;
+
+    // Disable if no active actor identity
+    const isDisabled = !activeActorId;
 
     // Close on click outside
     useEffect(() => {
@@ -57,17 +61,7 @@ export function StickerPicker() {
     }, [lastUsedTime]);
 
     const handleStickerClick = (emoji: string) => {
-        if (timeLeft > 0 || isDisabled) return;
-
-        // Determine actor ID
-        let actorId = undefined;
-        if (isPlayer) {
-            actorId = selectedCharacterId;
-        } else {
-            // DM doesn't have an actor
-        }
-
-        if (isPlayer && !actorId) return;
+        if (timeLeft > 0 || isDisabled || !activeActorId) return;
 
         if (actionService) {
             actionService.execute("log:create", {
@@ -76,7 +70,7 @@ export function StickerPicker() {
                 details: emoji,
                 level: "info",
                 visibility: ["all"],
-                actorId: actorId
+                actorId: activeActorId
             });
 
             setLastUsedTime(Date.now());
@@ -96,7 +90,7 @@ export function StickerPicker() {
                 className={`btn btn-square btn-lg shadow-lg text-xl ${timeLeft > 0 || isDisabled ? "btn-disabled opacity-50" : "btn-accent"
                     }`}
                 onClick={toggleOpen}
-                title={isDisabled ? "Select a character first" : timeLeft > 0 ? `Wait ${timeLeft}s` : "Send Sticker"}
+                title={isDisabled ? (isPlayer ? "Select a character first" : "Impersonate an actor first") : timeLeft > 0 ? `Wait ${timeLeft}s` : "Send Sticker"}
             >
                 {timeLeft > 0 ? (
                     <span className="text-xs font-bold">{timeLeft}</span>

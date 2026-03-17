@@ -10,6 +10,7 @@ import {
 	syncItemSlotsAfterEdit,
 	getAllActors,
 } from "../../utils/SlotSyncUtils";
+import { createItemEntity, createItemEntityFromTemplate, getItemDataFromEntity, isItemEntity } from "./ItemDropUtils";
 
 /**
  * Item action handlers
@@ -642,6 +643,181 @@ export const ItemActions = {
 	 * Can set UsesLeft to a specific value or undefined (unlimited)
 	 * Works with items in both inventory and equipment
 	 */
+	/**
+	 * Drops an item from an actor's inventory/equipment onto the ground.
+	 * Creates a templateless entity at the actor's position with the item data
+	 * serialized in a tag. Removes the item from the actor.
+	 */
+	drop(
+		params: { actorId: string; itemId: string },
+		context: Context
+	): void {
+		const campaign = CampaignActions.getActiveCampaign(context);
+
+		// Find the actor (must be in GameState since we need a position)
+		const actor =
+			campaign.GameState.Characters.find((c) => c.Id === params.actorId) ??
+			campaign.GameState.Entities.find((e) => e.Id === params.actorId);
+		if (!actor) {
+			console.warn(`Spawned actor not found: ${params.actorId}`);
+			return;
+		}
+
+		// Find the slot — check inventory first, then equipment
+		let slotIndex = actor.Inventory.findIndex((s) => s.Id === params.itemId);
+		let slotSource: "inventory" | "equipment" = "inventory";
+		if (slotIndex === -1) {
+			slotIndex = actor.Equipment.findIndex((s) => s.Id === params.itemId);
+			slotSource = "equipment";
+		}
+		if (slotIndex === -1) {
+			console.warn(`Item slot not found on actor: ${params.itemId}`);
+			return;
+		}
+
+		const slots = slotSource === "inventory" ? actor.Inventory : actor.Equipment;
+		const slot = slots[slotIndex];
+
+		// Find the item template
+		const template = campaign.ItemTemplates.find((t) => t.Id === slot.Id);
+		if (!template) {
+			console.warn(`Item template not found: ${slot.Id}`);
+			return;
+		}
+
+		// Create the ground entity directly in GameState (no template)
+		const entity = createItemEntity(
+			template,
+			slot,
+			actor.Position,
+			campaign.Settings.StatDefinitions,
+			campaign.Settings.ActionDefinitions
+		);
+		campaign.GameState.Entities.push(entity);
+
+		// Remove item from actor
+		slots.splice(slotIndex, 1);
+
+		LogActions.create(
+			{
+				action: "Item dropped",
+				details: `${actor.Name} dropped ${template.Name}`,
+				category: "item",
+				level: "info",
+				visibility: ["all"],
+				actorId: params.actorId,
+			},
+			context
+		);
+	},
+
+	/**
+	 * Picks up a dropped item entity, giving the item to a receiving actor.
+	 * Deserializes the item snapshot from the entity's tag, creates an inventory
+	 * slot on the receiver, and despawns the entity.
+	 */
+	pickup(
+		params: { entityId: string; actorId: string },
+		context: Context
+	): void {
+		const campaign = CampaignActions.getActiveCampaign(context);
+
+		// Find the item entity
+		const entityIndex = campaign.GameState.Entities.findIndex(
+			(e) => e.Id === params.entityId
+		);
+		if (entityIndex === -1) {
+			console.warn(`Entity not found: ${params.entityId}`);
+			return;
+		}
+		const entity = campaign.GameState.Entities[entityIndex];
+
+		// Verify it's an item entity and get the snapshot
+		if (!isItemEntity(entity)) {
+			console.warn(`Entity is not an item entity: ${params.entityId}`);
+			return;
+		}
+		const itemData = getItemDataFromEntity(entity);
+		if (!itemData) {
+			console.warn(`Could not parse item data from entity: ${params.entityId}`);
+			return;
+		}
+
+		// Find the receiving actor (must be spawned)
+		const receiver =
+			campaign.GameState.Characters.find((c) => c.Id === params.actorId) ??
+			campaign.GameState.Entities.find((e) => e.Id === params.actorId);
+		if (!receiver) {
+			console.warn(`Receiving actor not found: ${params.actorId}`);
+			return;
+		}
+
+		// Add item to receiver's inventory
+		receiver.Inventory.push({
+			Id: itemData.Id,
+			UsesLeft: itemData.UsesLeft,
+		});
+
+		// Remove entity from GameState
+		campaign.GameState.Entities.splice(entityIndex, 1);
+
+		// Clear impersonation if this was the impersonated actor
+		const roomCode = campaign.RoomCode;
+		if ((context.User.ImpersonatedActors ?? {})[roomCode] === entity.Id) {
+			if (!context.User.ImpersonatedActors) context.User.ImpersonatedActors = {};
+			delete context.User.ImpersonatedActors[roomCode];
+		}
+
+		LogActions.create(
+			{
+				action: "Item picked up",
+				details: `${receiver.Name} picked up ${itemData.Name}`,
+				category: "item",
+				level: "info",
+				visibility: ["all"],
+				actorId: params.actorId,
+			},
+			context
+		);
+	},
+
+	/**
+	 * Spawns an item entity on the map directly from a template.
+	 * Like item:drop but without requiring an actor to drop it from.
+	 * Position must be provided explicitly.
+	 */
+	spawn(
+		params: { itemId: string; position: { x: number; y: number; h: number } },
+		context: Context
+	): void {
+		const campaign = CampaignActions.getActiveCampaign(context);
+
+		const template = campaign.ItemTemplates.find((t) => t.Id === params.itemId);
+		if (!template) {
+			console.warn(`Item template not found: ${params.itemId}`);
+			return;
+		}
+
+		const entity = createItemEntityFromTemplate(
+			template,
+			params.position,
+			campaign.Settings.StatDefinitions,
+			campaign.Settings.ActionDefinitions
+		);
+		campaign.GameState.Entities.push(entity);
+
+		LogActions.create(
+			{
+				action: "Item spawned",
+				details: `${template.Name} placed on the ground`,
+				category: "item",
+				level: "info",
+				visibility: ["dm"],
+			},
+			context
+		);
+	},
+
 	adjustUses(
 		params: { actorId: string; itemId: string; usesLeft: number | undefined },
 		context: Context

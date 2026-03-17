@@ -53,6 +53,7 @@ import {
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { useActiveStickers } from "./hooks/useActiveStickers";
+import { isItemEntity } from "../../domains/Item/ItemDropUtils";
 
 interface MapProps {
 	characters: Character[];
@@ -419,7 +420,8 @@ export default function Map({
 						selectedActor.id
 					);
 
-					if (!isOccupied) {
+					// Allow movement onto/from tiles with item entities
+					if (!isOccupied || isItemEntity(selectedActorObj!)) {
 						updateHoveredTile(tile);
 					} else {
 						updateHoveredTile(null);

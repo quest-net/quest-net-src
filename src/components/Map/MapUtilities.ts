@@ -6,6 +6,7 @@ import type { Entity } from "../../domains/Entity/Entity";
 import type { ActorSize } from "../../domains/Actor/Actor";
 import { MAX_HEIGHT, getTerrainColorByIndex } from "../../domains/Terrain/Terrain";
 import { getTokenPosition } from "./Token";
+import { isItemEntity } from "../../domains/Item/ItemDropUtils";
 import { TILE_H, TILE_W, V_SCALE } from "./Terrain";
 
 export const MIN_SCALE = 0.5;
@@ -843,9 +844,10 @@ export function isTileOccupiedAtHeight(
 		}
 	}
 
-	// Check entities
+	// Check entities (skip item entities — they don't block movement)
 	for (const e of entities) {
 		if (e.Id === excludeActorId) continue;
+		if (isItemEntity(e)) continue;
 		if (e.Position.x === x && e.Position.y === y && e.Position.h === h) {
 			return true;
 		}

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "./CampaignActions";
+import { ImpersonationPicker } from "../../components/inputs/ImpersonationPicker";
 import { CharacterIndex } from "../Character/Index";
 import { CampaignSettingEdit } from "../CampaignSetting/Edit";
 import { TerrainIndex } from "../Terrain/Index";
@@ -83,12 +84,15 @@ export function DMView() {
 						<PeerStatus connectionStatus={connectionStatus} peers={peers} />
 					</div>
 					<h1 className="text-xl font-bold">{campaign.Name}</h1>
-					<button
-						className="btn btn-neutral"
-						onClick={() => navigate("/campaigns")}
-					>
-						Leave Campaign
-					</button>
+					<div className="flex items-center gap-2">
+						<ImpersonationPicker />
+						<button
+							className="btn btn-neutral"
+							onClick={() => navigate("/campaigns")}
+						>
+							Leave Campaign
+						</button>
+					</div>
 				</header>
 
 				{/* Main Layout */}

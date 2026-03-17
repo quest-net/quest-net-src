@@ -15,6 +15,7 @@ import { SkillCollection } from "../Skill/Collection";
 import { StatusCollection } from "../Status/Collection";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
 import { ActionDefinition } from "../CampaignSetting/CampaignSetting";
+import { EntityActionBar } from "./EntityActionBar";
 
 type InspectorTab = "info" | "inventory" | "equipment" | "skills" | "statuses";
 
@@ -451,6 +452,9 @@ function ActorInfoTab({
 					</div>
 				)}
 			</div>
+
+			{/* Entity-specific actions (e.g. Pick Up for item entities) */}
+			<EntityActionBar actor={actor} />
 
 			{/* Image*/}
 			{isDM ? (
