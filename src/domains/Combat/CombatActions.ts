@@ -297,7 +297,7 @@ function resetActions(campaign: any): void {
 	allActors.forEach((actor) => {
 		if (actor.Actions) {
 			actor.Actions.forEach((action) => {
-				action.Current = action.Default;
+				action.Current = action.Max;
 			});
 		}
 	});

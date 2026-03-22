@@ -4,6 +4,7 @@ import { InventorySlot } from "../Actor/Actor";
 export interface CampaignSettings {
 	StatDefinitions: StatDefinition[];
 	ActionDefinitions: ActionDefinition[];
+	AttributeDefinitions: AttributeDefinition[];
 	VisibilitySettings: VisibilitySettings;
 	CalendarSettings: CalendarSettings;
 	RestSettings: RestSettings;
@@ -14,17 +15,22 @@ export interface CampaignSettings {
 export interface SharedInventory {
 	Id: string;
 	Name: string;
-	Stats: StatDefinition[];
+	Stats: import("../Actor/Actor").StatSlot[];
 	Inventory: InventorySlot[];
 }
 
+/**
+ * StatDefinition is a campaign-wide template that defines a stat type.
+ * Actors store StatSlots that reference these by Id.
+ * Max/RegenRate/RestoreRule/OverflowTarget serve as defaults for new actors;
+ * individual actors can override these in their StatSlot.
+ */
 export interface StatDefinition {
 	Id: string;
 	Name: string;
 	Color: string;
-	RegenRate?: number;
-	Current?: number;
 	Max: number;
+	RegenRate?: number;
 	RestoreRule?: RestoreRule;
 	OverflowTarget?: {
 		InventoryId: string;
@@ -32,12 +38,27 @@ export interface StatDefinition {
 	};
 }
 
+/**
+ * ActionDefinition is a campaign-wide template that defines an action type.
+ * Actors store ActionSlots that reference these by Id.
+ * Name and Color always come from the template.
+ * Max serves as the default "actions per turn" for new actors.
+ */
 export interface ActionDefinition {
 	Id: string;
 	Name: string;
 	Color: string;
-	Default: number;
-	Current?: number;
+	Max: number;
+}
+
+/**
+ * AttributeDefinition is a campaign-wide template that defines an attribute key.
+ * Actors store AttributeSlots that reference these by Id.
+ * All actors auto-receive a slot for each defined attribute.
+ */
+export interface AttributeDefinition {
+	Id: string;
+	Name: string;
 }
 
 export interface VisibilitySettings {

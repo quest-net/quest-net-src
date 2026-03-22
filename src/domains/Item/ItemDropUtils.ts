@@ -87,7 +87,7 @@ export function createItemEntity(
 		CanFly: false,
 		Stats: statDefs.map((s) => ({ ...s, Current: 0, Max: 0 })),
 		Actions: actionDefs.map((a) => ({ ...a, Current: 0, Max: 0 })),
-		Attributes: {},
+		Attributes: [],
 		Inventory: [],
 		Equipment: [],
 		Skills: [],

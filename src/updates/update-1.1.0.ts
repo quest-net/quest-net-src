@@ -26,9 +26,9 @@ export const migration_1_1_0: VersionedMigration = {
                     return {
                         ...actor,
                         // Initialize Actions from definitions
-                        Actions: actionDefs.map(def => ({
+                        Actions: actionDefs.map((def: any) => ({
                             ...def,
-                            Current: def.Default
+                            Current: (def as any).Default
                         })),
                     };
                 }

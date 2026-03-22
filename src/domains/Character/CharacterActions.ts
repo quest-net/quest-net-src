@@ -7,6 +7,7 @@ import { LogActions } from "../Log/LogActions";
 import { ActorActions } from "../Actor/ActorActions";
 import { Position } from "../Actor/Actor";
 import { TerrainActions } from "../Terrain/TerrainActions";
+import { createDefaultStatSlots, createDefaultActionSlots, createDefaultAttributeSlots } from "../../utils/ActorResolvers";
 
 /**
  * Character action handlers
@@ -19,25 +20,16 @@ export const CharacterActions = {
 	 */
 	createDefault(context: Context): Character {
 		const campaign = CampaignActions.getActiveCampaign(context);
-
-		const stats = campaign.Settings.StatDefinitions.map((statDef) => ({
-			...statDef,
-			Current: statDef.Max,
-		}));
-
-		const actions = campaign.Settings.ActionDefinitions.map((actionDef) => ({
-			...actionDef,
-			Current: actionDef.Default,
-		}));
+		const settings = campaign.Settings;
 
 		return {
 			Id: crypto.randomUUID(),
 			Name: "New Character",
 			Description: "",
 			Image: undefined,
-			Stats: stats,
-			Actions: actions,
-			Attributes: {},
+			Stats: createDefaultStatSlots(settings.StatDefinitions),
+			Actions: createDefaultActionSlots(settings.ActionDefinitions),
+			Attributes: createDefaultAttributeSlots(settings.AttributeDefinitions ?? []),
 			Position: { x: 0, y: 0, h: 0 },
 			MoveSpeed: 5,
 			CanFly: false,

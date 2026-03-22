@@ -273,12 +273,16 @@ export const SkillActions = {
 		if (skillTemplate.StatCost) {
 			const stat = actor.Stats.find((s) => s.Id === skillTemplate.StatCost!.statId);
 			if (stat) {
-				const currentValue = stat.Current ?? stat.Max;
+				const currentValue = stat.Current;
 				const costAmount = skillTemplate.StatCost.amount;
 				const newValue = Math.max(0, currentValue - costAmount);
 				stat.Current = newValue;
 
-				statCostDetails = ` (-${Math.min(currentValue, costAmount)} ${stat.Name})`;
+				// Look up stat name from campaign settings
+				const statDef = campaign.Settings.StatDefinitions.find(d => d.Id === stat.Id);
+				const statName = statDef?.Name ?? stat.Id;
+
+				statCostDetails = ` (-${Math.min(currentValue, costAmount)} ${statName})`;
 			}
 		}
 

@@ -1,11 +1,11 @@
 // components/ActionBubbles.tsx
 
 import { useRef, useState, useEffect } from "react";
-import { ActionDefinition } from "../../domains/CampaignSetting/CampaignSetting";
+import type { ResolvedAction } from "../../utils/ActorResolvers";
 
 interface ActionBubblesProps {
-	actions: ActionDefinition[];
-	onChange: (actions: ActionDefinition[]) => void;
+	actions: ResolvedAction[];
+	onChange: (actions: ResolvedAction[]) => void;
 	readonly?: boolean;
 }
 
@@ -19,7 +19,7 @@ export function ActionBubbles({ actions, onChange, readonly }: ActionBubblesProp
 		setLocalActions(actions);
 	}, [actions]);
 
-	const handleChange = (updatedActions: ActionDefinition[]) => {
+	const handleChange = (updatedActions: ResolvedAction[]) => {
 		setLocalActions(updatedActions);
 
 		if (debounceTimer.current) clearTimeout(debounceTimer.current);
@@ -31,9 +31,8 @@ export function ActionBubbles({ actions, onChange, readonly }: ActionBubblesProp
 	const handleSpend = (actionId: string) => {
 		const updated = localActions.map((a) => {
 			if (a.Id !== actionId) return a;
-			const current = a.Current ?? a.Default;
-			if (current <= 0) return a;
-			return { ...a, Current: current - 1 };
+			if (a.Current <= 0) return a;
+			return { ...a, Current: a.Current - 1 };
 		});
 		handleChange(updated);
 	};
@@ -41,16 +40,14 @@ export function ActionBubbles({ actions, onChange, readonly }: ActionBubblesProp
 	const handleIncrement = (actionId: string) => {
 		const updated = localActions.map((a) => {
 			if (a.Id !== actionId) return a;
-			const current = a.Current ?? a.Default;
-			return { ...a, Current: current + 1 };
+			return { ...a, Current: a.Current + 1 };
 		});
 		handleChange(updated);
 	};
 
 	// Calculate total bubbles to determine layout
 	const totalBubbles = localActions.reduce((sum, a) => {
-		const current = a.Current ?? a.Default;
-		return sum + Math.max(current, a.Default);
+		return sum + Math.max(a.Current, a.Max);
 	}, 0);
 
 	const useVerticalLayout = totalBubbles > 8;
@@ -95,7 +92,7 @@ export function ActionBubbles({ actions, onChange, readonly }: ActionBubblesProp
 }
 
 interface ActionRowProps {
-	action: ActionDefinition;
+	action: ResolvedAction;
 	onSpend: () => void;
 	onIncrement: () => void;
 	showLabel: boolean;
@@ -103,8 +100,8 @@ interface ActionRowProps {
 }
 
 function ActionRow({ action, onSpend, onIncrement, showLabel, readonly }: ActionRowProps) {
-	const current = action.Current ?? action.Default;
-	const maxDisplay = Math.max(current, action.Default);
+	const current = action.Current;
+	const maxDisplay = Math.max(current, action.Max);
 
 	// Track which bubble is animating
 	const [spendingIndex, setSpendingIndex] = useState<number | null>(null);

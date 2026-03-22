@@ -1,4 +1,4 @@
-import { StatDefinition, ActionDefinition } from "../CampaignSetting/CampaignSetting";
+import type { RestoreRule } from "../CampaignSetting/CampaignSetting";
 
 export type ActorSize = "extra-small" | "small" | "medium" | "large";
 
@@ -8,14 +8,12 @@ export interface Actor {
 	Description?: string;
 	Image?: string;
 
-	// Stats
-	Stats: StatDefinition[];
-	Actions: ActionDefinition[];
+	// Slots referencing campaign-level templates by Id
+	Stats: StatSlot[];
+	Actions: ActionSlot[];
+	Attributes: AttributeSlot[];
 
-	//Attributes
-	Attributes: Record<string, string>;
-
-	//Position
+	// Position
 	Position: Position;
 	MoveSpeed: number;
 	CanFly: boolean;
@@ -29,6 +27,47 @@ export interface Actor {
 
 	// Optional
 	Tags?: string[];
+}
+
+// ---- Stat/Action/Attribute Slots (instance data on actors) ----
+
+/**
+ * StatSlot stores per-actor stat instance data.
+ * Id references a StatDefinition in CampaignSettings.
+ * RegenRate/RestoreRule/OverflowTarget are optional overrides;
+ * if undefined, the template's value is used.
+ */
+export interface StatSlot {
+	Id: string;
+	Current: number;
+	Max: number;
+	RegenRate?: number;
+	RestoreRule?: RestoreRule;
+	OverflowTarget?: {
+		InventoryId: string;
+		StatId: string;
+	};
+}
+
+/**
+ * ActionSlot stores per-actor action instance data.
+ * Id references an ActionDefinition in CampaignSettings.
+ * Max is the per-actor "actions per turn" (may differ from template default).
+ * Current is the remaining actions this turn.
+ */
+export interface ActionSlot {
+	Id: string;
+	Max: number;
+	Current: number;
+}
+
+/**
+ * AttributeSlot stores per-actor attribute value.
+ * Id references an AttributeDefinition in CampaignSettings.
+ */
+export interface AttributeSlot {
+	Id: string;
+	Value: string;
 }
 
 export interface InventorySlot {

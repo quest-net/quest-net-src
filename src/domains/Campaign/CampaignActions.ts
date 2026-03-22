@@ -7,7 +7,7 @@ import { TerrainActions } from "../Terrain/TerrainActions";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 import { APP_VERSION, type VersionString } from "../../version";
 import { runMigrations } from "../../updates/migrator";
-import { isQuestNetV1Save, importQuestNetV1Save } from "../../legacy/QuestNetV1Migration";
+
 
 /**
  * Generates a random room code (lowercase, alphanumeric, max 32 chars)
@@ -315,12 +315,6 @@ export const CampaignActions = {
 
 			const text = await params.file.text();
 			const data = JSON.parse(text);
-
-			// === LEGACY QUEST-NET 1.0 MIGRATION (remove when no longer needed) ===
-			if (isQuestNetV1Save(data)) {
-				return await importQuestNetV1Save(data, context, onProgress);
-			}
-			// === END LEGACY QUEST-NET 1.0 MIGRATION ===
 
 			let campaign: Campaign;
 			let imageData: Record<string, { base64: string; mimeType: string }> = {};

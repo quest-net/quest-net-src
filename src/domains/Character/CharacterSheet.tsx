@@ -8,8 +8,14 @@ import { Character } from "./Character";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { StatBar } from "../../components/StatBar/StatBar";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
-import { ActionDefinition, StatDefinition } from "../CampaignSetting/CampaignSetting";
 import { ActorPicker } from "../../components/inputs/ActorPicker";
+import {
+	ResolvedAction,
+	ResolvedStat,
+	resolveStats,
+	resolveActions,
+	resolveAttributes,
+} from "../../utils/ActorResolvers";
 
 export function CharacterSheet() {
 	const context = useQuestContext();
@@ -17,7 +23,7 @@ export function CharacterSheet() {
 	const campaign = CampaignActions.getActiveCampaign(context);
 
 	const [editingMaxStats, setEditingMaxStats] = useState(false);
-	const [transferStat, setTransferStat] = useState<StatDefinition | null>(null);
+	const [transferStat, setTransferStat] = useState<ResolvedStat | null>(null);
 
 	// Get the selected character for this campaign
 	const selectedCharacterId =
@@ -30,7 +36,9 @@ export function CharacterSheet() {
 	const [localName, setLocalName] = useState("");
 	const [localDescription, setLocalDescription] = useState("");
 	const [localCritMessage, setLocalCritMessage] = useState("");
-	const [localAttributes, setLocalAttributes] = useState<Record<string, string>>({});
+	const [localAttributes, setLocalAttributes] = useState<Map<string, string>>(
+		new Map()
+	);
 
 	// Debounce timers
 	const nameTimer = useRef<NodeJS.Timeout | null>(null);
@@ -44,7 +52,9 @@ export function CharacterSheet() {
 			setLocalName(character.Name);
 			setLocalDescription(character.Description || "");
 			setLocalCritMessage(character.CritMessage || "");
-			setLocalAttributes(character.Attributes);
+			setLocalAttributes(
+				new Map(character.Attributes.map((attr) => [attr.Id, attr.Value]))
+			);
 		}
 	}, [character?.Id]);
 
@@ -106,14 +116,16 @@ export function CharacterSheet() {
 		});
 	};
 
-	const handleAttributeChange = (key: string, value: string) => {
-		setLocalAttributes((prev) => ({ ...prev, [key]: value }));
+	const handleAttributeChange = (id: string, value: string) => {
+		setLocalAttributes((prev) => new Map(prev).set(id, value));
 
 		if (attrTimer.current) clearTimeout(attrTimer.current);
 		attrTimer.current = setTimeout(() => {
 			if (!actionService) return;
 
-			const updatedAttributes = { ...character.Attributes, [key]: value };
+			const updatedAttributes = character.Attributes.map((attr) =>
+				attr.Id === id ? { ...attr, Value: value } : attr
+			);
 
 			actionService.execute("character:edit", {
 				characterId: character.Id,
@@ -122,12 +134,18 @@ export function CharacterSheet() {
 		}, 500);
 	};
 
-	const handleActionsChange = (updatedActions: ActionDefinition[]) => {
+	const handleActionsChange = (updatedActions: ResolvedAction[]) => {
 		if (!actionService) return;
+
+		const actionSlots = updatedActions.map((a) => ({
+			Id: a.Id,
+			Max: a.Max,
+			Current: a.Current,
+		}));
 
 		actionService.execute("character:edit", {
 			characterId: character.Id,
-			updates: { Actions: updatedActions },
+			updates: { Actions: actionSlots },
 		});
 	};
 
@@ -176,7 +194,10 @@ export function CharacterSheet() {
 				</div>
 
 				<div className="space-y-3">
-					{character.Stats.map((stat) => (
+					{resolveStats(
+						character.Stats,
+						campaign.Settings.StatDefinitions
+					).map((stat) => (
 						<StatBar
 							key={stat.Id}
 							stat={stat}
@@ -185,13 +206,7 @@ export function CharacterSheet() {
 								handleStatChange(stat.Id, "Current", value)
 							}
 							onMaxChange={(value) => handleStatChange(stat.Id, "Max", value)}
-							onTransfer={() => setTransferStat({
-								Id: stat.Id,
-								Name: stat.Name,
-								Color: stat.Color,
-								Max: stat.Max,
-								Current: stat.Current,
-							})}
+							onTransfer={() => setTransferStat(stat)}
 						/>
 					))}
 				</div>
@@ -201,7 +216,10 @@ export function CharacterSheet() {
 			{character.Actions && character.Actions.length > 0 && (
 				<div className="pt-2">
 					<ActionBubbles
-						actions={character.Actions}
+						actions={resolveActions(
+							character.Actions,
+							campaign.Settings.ActionDefinitions
+						)}
 						onChange={handleActionsChange}
 					/>
 				</div>
@@ -240,15 +258,18 @@ export function CharacterSheet() {
 			</div>
 
 			{/* Attributes */}
-			{Object.keys(character.Attributes).length > 0 && (
+			{character.Attributes.length > 0 && (
 				<div className="space-y-2">
-					{Object.entries(character.Attributes).map(([key, _value]) => (
-						<div key={key} className="flex gap-2 items-center">
-							<div className="text-sm font-medium flex-1">{key}</div>
+					{resolveAttributes(
+						character.Attributes,
+						campaign.Settings.AttributeDefinitions ?? []
+					).map((attr) => (
+						<div key={attr.Id} className="flex gap-2 items-center">
+							<div className="text-sm font-medium flex-1">{attr.Name}</div>
 							<input
 								type="text"
-								value={localAttributes[key] ?? ""}
-								onChange={(e) => handleAttributeChange(key, e.target.value)}
+								value={localAttributes.get(attr.Id) ?? ""}
+								onChange={(e) => handleAttributeChange(attr.Id, e.target.value)}
 								className="input input-bordered input-sm flex-2"
 								placeholder="Value"
 							/>

@@ -182,13 +182,17 @@ export const SharedInventoryActions = {
 
         if (transferSuccess) {
             // Deduct from source
-            const sCurrent = sourceStat.Current ?? sourceStat.Max;
+            const sCurrent = sourceStat.Current;
             sourceStat.Current = Math.max(0, sCurrent - availableAmount);
+
+            // Look up stat name from campaign settings
+            const statDef = campaign.Settings.StatDefinitions.find(d => d.Id === sourceStat.Id);
+            const statName = statDef?.Name ?? sourceStat.Id;
 
             LogActions.create(
                 {
                     action: "Stat Transferred",
-                    details: `${availableAmount} ${sourceStat.Name} was transferred from ${sourceInv.Name} to ${targetName}.`,
+                    details: `${availableAmount} ${statName} was transferred from ${sourceInv.Name} to ${targetName}.`,
                     category: "character",
                     level: "info",
                     visibility: ["all"],

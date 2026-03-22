@@ -196,6 +196,12 @@ export const ActorActions = {
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
+		// Look up stat name from campaign templates
+		const statTemplate = campaign.Settings.StatDefinitions.find(
+			(d) => d.Id === params.sourceStatId
+		);
+		const statName = statTemplate?.Name ?? params.sourceStatId;
+
 		// Resolve source
 		const allActors = [
 			...campaign.GameState.Characters,
@@ -208,10 +214,7 @@ export const ActorActions = {
 		if (!sourceStat) return;
 
 		// Ensure source has enough points
-		const availableAmount = Math.min(
-			sourceStat.Current ?? sourceStat.Max,
-			params.amount
-		);
+		const availableAmount = Math.min(sourceStat.Current, params.amount);
 		if (availableAmount <= 0) return;
 
 		// Resolve target
@@ -227,29 +230,26 @@ export const ActorActions = {
 			targetName = targetActor.Name;
 			const tStat = targetActor.Stats.find((s) => s.Id === params.targetStatId);
 			if (tStat) {
-				const current = tStat.Current ?? tStat.Max;
-				tStat.Current = Math.min(tStat.Max, current + availableAmount);
+				tStat.Current = Math.min(tStat.Max, tStat.Current + availableAmount);
 				transferSuccess = true;
 			}
 		} else if (targetSharedInv) {
 			targetName = targetSharedInv.Name;
 			const tStat = targetSharedInv.Stats.find((s) => s.Id === params.targetStatId);
 			if (tStat) {
-				const current = tStat.Current ?? tStat.Max;
-				tStat.Current = Math.min(tStat.Max, current + availableAmount);
+				tStat.Current = Math.min(tStat.Max, tStat.Current + availableAmount);
 				transferSuccess = true;
 			}
 		}
 
 		if (transferSuccess) {
 			// Deduct from source
-			const sCurrent = sourceStat.Current ?? sourceStat.Max;
-			sourceStat.Current = Math.max(0, sCurrent - availableAmount);
+			sourceStat.Current = Math.max(0, sourceStat.Current - availableAmount);
 
 			LogActions.create(
 				{
 					action: "Stat Transferred",
-					details: `${availableAmount} ${sourceStat.Name} was transferred from ${sourceActor.Name} to ${targetName}.`,
+					details: `${availableAmount} ${statName} was transferred from ${sourceActor.Name} to ${targetName}.`,
 					category: "character",
 					level: "info",
 					visibility: ["all"],

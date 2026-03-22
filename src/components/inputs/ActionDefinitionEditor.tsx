@@ -22,7 +22,7 @@ export function ActionDefinitionEditor({
 			Id: crypto.randomUUID(),
 			Name: "New Action",
 			Color: "#808080",
-			Default: 1,
+			Max: 1,
 		};
 		onChange([...actions, newAction]);
 	};
@@ -45,7 +45,7 @@ export function ActionDefinitionEditor({
 						<tr>
 							<th>Name</th>
 							<th>Color</th>
-							<th>Default</th>
+							<th>Max</th>
 							{!readOnly && <th className="w-12"></th>}
 						</tr>
 					</thead>
@@ -78,10 +78,10 @@ export function ActionDefinitionEditor({
 								<td>
 									<input
 										type="number"
-										value={action.Default}
+										value={action.Max}
 										onChange={(e) => {
 											const val = Math.max(0, Number(e.target.value));
-											handleChange(action.Id, { Default: val });
+											handleChange(action.Id, { Max: val });
 										}}
 										disabled={readOnly}
 										min={0}

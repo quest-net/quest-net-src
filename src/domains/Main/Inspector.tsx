@@ -14,7 +14,12 @@ import { ItemCollection } from "../Item/Collection";
 import { SkillCollection } from "../Skill/Collection";
 import { StatusCollection } from "../Status/Collection";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
-import { ActionDefinition } from "../CampaignSetting/CampaignSetting";
+import {
+	ResolvedAction,
+	resolveStats,
+	resolveActions,
+	resolveAttributes,
+} from "../../utils/ActorResolvers";
 import { EntityActionBar } from "./EntityActionBar";
 
 type InspectorTab = "info" | "inventory" | "equipment" | "skills" | "statuses";
@@ -86,6 +91,7 @@ function UnifiedInspector({
 
 	// Tab state
 	const [activeTab, setActiveTab] = useState<InspectorTab>("info");
+	const [editingMaxStats, setEditingMaxStats] = useState(false);
 
 	// Local state for debounced fields
 	const [localName, setLocalName] = useState(actor.Name);
@@ -93,7 +99,11 @@ function UnifiedInspector({
 		actor.Description || ""
 	);
 	const [localMoveSpeed, setLocalMoveSpeed] = useState(actor.MoveSpeed);
-	const [localAttributes, setLocalAttributes] = useState(actor.Attributes);
+	const [localAttributes, setLocalAttributes] = useState<
+		Map<string, string>
+	>(
+		new Map(actor.Attributes.map((attr) => [attr.Id, attr.Value]))
+	);
 
 	// Object picker state
 	const [showObjectPicker, setShowObjectPicker] = useState(false);
@@ -109,7 +119,7 @@ function UnifiedInspector({
 		setLocalName(actor.Name);
 		setLocalDescription(actor.Description || "");
 		setLocalMoveSpeed(actor.MoveSpeed);
-		setLocalAttributes(actor.Attributes);
+		setLocalAttributes(new Map(actor.Attributes.map((attr) => [attr.Id, attr.Value])));
 		setActiveTab("info"); // Reset to info tab when actor changes
 	}, [actor.Id]);
 
@@ -153,12 +163,14 @@ function UnifiedInspector({
 		}, 500);
 	};
 
-	const handleAttributeChange = (key: string, value: string) => {
-		setLocalAttributes((prev) => ({ ...prev, [key]: value }));
+	const handleAttributeChange = (id: string, value: string) => {
+		setLocalAttributes((prev) => new Map(prev).set(id, value));
 
 		if (attrTimer.current) clearTimeout(attrTimer.current);
 		attrTimer.current = setTimeout(() => {
-			const updatedAttributes = { ...actor.Attributes, [key]: value };
+			const updatedAttributes = actor.Attributes.map((attr) =>
+				attr.Id === id ? { ...attr, Value: value } : attr
+			);
 			handleFieldChange("Attributes", updatedAttributes);
 		}, 500);
 	};
@@ -183,15 +195,21 @@ function UnifiedInspector({
 		});
 	};
 
-	const handleActionsChange = (updatedActions: ActionDefinition[]) => {
+	const handleActionsChange = (updatedActions: ResolvedAction[]) => {
 		if (!actionService) return;
+
+		const actionSlots = updatedActions.map((a) => ({
+			Id: a.Id,
+			Max: a.Max,
+			Current: a.Current,
+		}));
 
 		const actionKey = kind === "character" ? "character:edit" : "entity:edit";
 		const idKey = kind === "character" ? "characterId" : "entityId";
 
 		actionService.execute(actionKey, {
 			[idKey]: actor.Id,
-			updates: { Actions: updatedActions },
+			updates: { Actions: actionSlots },
 		});
 	};
 
@@ -304,11 +322,14 @@ function UnifiedInspector({
 							actor={actor}
 							kind={kind}
 							isDM={isDM}
+							campaign={campaign}
 							localName={localName}
 							localDescription={localDescription}
 							localMoveSpeed={localMoveSpeed}
 							localAttributes={localAttributes}
 							playersSeeEntityHealth={playersSeeEntityHealth}
+							editingMaxStats={editingMaxStats}
+							setEditingMaxStats={setEditingMaxStats}
 							handleNameChange={handleNameChange}
 							handleDescriptionChange={handleDescriptionChange}
 							handleMoveSpeedChange={handleMoveSpeedChange}
@@ -375,18 +396,21 @@ interface ActorInfoTabProps {
 	actor: Actor;
 	kind: "character" | "entity";
 	isDM: boolean;
+	campaign: import("../Campaign/Campaign").Campaign;
 	localName: string;
 	localDescription: string;
 	localMoveSpeed: number;
-	localAttributes: Record<string, string>;
+	localAttributes: Map<string, string>;
 	playersSeeEntityHealth: boolean;
+	editingMaxStats: boolean;
+	setEditingMaxStats: (value: boolean) => void;
 	handleNameChange: (value: string) => void;
 	handleDescriptionChange: (value: string) => void;
 	handleMoveSpeedChange: (value: number) => void;
-	handleAttributeChange: (key: string, value: string) => void;
+	handleAttributeChange: (id: string, value: string) => void;
 	handleFieldChange: (field: keyof Actor, value: any) => void;
 	handleStatChange: (statId: string, field: "Current" | "Max", value: number) => void;
-	handleActionsChange: (updatedActions: ActionDefinition[]) => void;
+	handleActionsChange: (updatedActions: ResolvedAction[]) => void;
 	handleDespawn: () => void;
 	setShowObjectPicker: (show: boolean) => void;
 	actionService: any;
@@ -397,12 +421,15 @@ function ActorInfoTab({
 	actor,
 	kind,
 	isDM,
+	campaign,
 	isMyCharacter,
 	localName,
 	localDescription,
 	localMoveSpeed,
 	localAttributes,
 	playersSeeEntityHealth,
+	editingMaxStats,
+	setEditingMaxStats,
 	handleNameChange,
 	handleDescriptionChange,
 	handleMoveSpeedChange,
@@ -479,26 +506,43 @@ function ActorInfoTab({
 			{/* Stats */}
 			{isDM ? (
 				// DM: Interactive StatBars for all actors (characters and entities)
-				<div className="space-y-3">
-					{actor.Stats.map((stat) => (
-						<StatBar
-							key={stat.Id}
-							stat={stat}
-							editingMax={false}
-							onCurrentChange={(value) =>
-								handleStatChange(stat.Id, "Current", value)
-							}
-							onMaxChange={(value) =>
-								handleStatChange(stat.Id, "Max", value)
-							}
-						/>
-					))}
+				<div className="space-y-2">
+					<div className="flex items-center justify-end">
+						<button
+							className={`btn btn-xs btn-circle ${editingMaxStats ? "btn-primary" : "btn-ghost"}`}
+							onClick={() => setEditingMaxStats(!editingMaxStats)}
+							title={editingMaxStats ? "Hide max stat controls" : "Edit max stats"}
+						>
+							<span className="icon-[mdi--cog] w-3.5 h-3.5" />
+						</button>
+					</div>
+					<div className="space-y-3">
+						{resolveStats(
+							actor.Stats,
+							campaign.Settings.StatDefinitions
+						).map((stat) => (
+							<StatBar
+								key={stat.Id}
+								stat={stat}
+								editingMax={editingMaxStats}
+								onCurrentChange={(value) =>
+									handleStatChange(stat.Id, "Current", value)
+								}
+								onMaxChange={(value) =>
+									handleStatChange(stat.Id, "Max", value)
+								}
+							/>
+						))}
+					</div>
 				</div>
 			) : kind === "character" || playersSeeEntityHealth ? (
 				// Player: Readonly progress bars for characters or entities (if visibility enabled)
 				<div className="space-y-3">
-					{actor.Stats.map((stat) => {
-						const current = stat.Current ?? stat.Max;
+					{resolveStats(
+						actor.Stats,
+						campaign.Settings.StatDefinitions
+					).map((stat) => {
+						const current = stat.Current;
 						const percentage = (current / stat.Max) * 100;
 
 						return (
@@ -525,8 +569,11 @@ function ActorInfoTab({
 			) : (
 				// Player viewing entity with visibility disabled: Show only stat loss for damaged stats
 				<div className="space-y-2">
-					{actor.Stats.map((stat) => {
-						const current = stat.Current ?? stat.Max;
+					{resolveStats(
+						actor.Stats,
+						campaign.Settings.StatDefinitions
+					).map((stat) => {
+						const current = stat.Current;
 						const lost = stat.Max - current;
 
 						// Don't show anything if stat is at max
@@ -544,7 +591,10 @@ function ActorInfoTab({
 			{actor.Actions && actor.Actions.length > 0 && (
 				<div className="pt-2">
 					<ActionBubbles
-						actions={actor.Actions}
+						actions={resolveActions(
+							actor.Actions,
+							campaign.Settings.ActionDefinitions
+						)}
 						onChange={handleActionsChange}
 						readonly={!isDM && !isMyCharacter}
 					/>
@@ -620,28 +670,34 @@ function ActorInfoTab({
 			)}
 
 			{/* Attributes */}
-			{Object.keys(actor.Attributes).length > 0 && (
+			{actor.Attributes.length > 0 && (
 				<div className="space-y-2">
 					<span className="text-sm font-semibold">Attributes</span>
 					{isDM
 						? // DM: Editable attributes
-						Object.entries(actor.Attributes).map(([key, _value]) => (
-							<div key={key} className="flex gap-2 items-center text-sm">
-								<div className="font-medium w-20 shrink-0">{key}</div>
+						resolveAttributes(
+							actor.Attributes,
+							campaign.Settings.AttributeDefinitions ?? []
+						).map((attr) => (
+							<div key={attr.Id} className="flex gap-2 items-center text-sm">
+								<div className="font-medium w-20 shrink-0">{attr.Name}</div>
 								<input
 									type="text"
-									value={localAttributes[key] ?? ""}
-									onChange={(e) => handleAttributeChange(key, e.target.value)}
+									value={localAttributes.get(attr.Id) ?? ""}
+									onChange={(e) => handleAttributeChange(attr.Id, e.target.value)}
 									className="input input-sm input-bordered flex-1"
 									placeholder="Value"
 								/>
 							</div>
 						))
 						: // Player: Readonly attributes
-						Object.entries(actor.Attributes).map(([key, value]) => (
-							<div key={key} className="flex gap-2 items-center text-sm">
-								<div className="font-medium flex-1">{key}</div>
-								<div className="opacity-70 flex-1 text-right">{value}</div>
+						resolveAttributes(
+							actor.Attributes,
+							campaign.Settings.AttributeDefinitions ?? []
+						).map((attr) => (
+							<div key={attr.Id} className="flex gap-2 items-center text-sm">
+								<div className="font-medium flex-1">{attr.Name}</div>
+								<div className="opacity-70 flex-1 text-right">{attr.Value}</div>
 							</div>
 						))}
 				</div>

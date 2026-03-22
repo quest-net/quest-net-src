@@ -1,10 +1,10 @@
 // components/StatBar/StatBar.tsx
 
 import { useRef, useState, useEffect } from "react";
-import type { StatDefinition } from "../../domains/CampaignSetting/CampaignSetting";
+import type { ResolvedStat } from "../../utils/ActorResolvers";
 
 interface StatBarProps {
-	stat: StatDefinition;
+	stat: ResolvedStat;
 	editingMax: boolean;
 	onCurrentChange: (value: number) => void;
 	onMaxChange: (value: number) => void;
@@ -18,7 +18,7 @@ export function StatBar({
 	onMaxChange,
 	onTransfer,
 }: StatBarProps) {
-	const actualCurrent = stat.Current ?? stat.Max;
+	const actualCurrent = stat.Current;
 	const barRef = useRef<HTMLDivElement>(null);
 
 	// Local state for dragging - only syncs on mouseup

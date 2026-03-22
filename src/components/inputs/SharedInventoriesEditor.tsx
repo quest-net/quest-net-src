@@ -144,8 +144,6 @@ export function SharedInventoriesEditor({
                                                         handleChange(editingInventory.Id, {
                                                             Stats: [...editingInventory.Stats, {
                                                                 Id: gStat.Id,
-                                                                Name: gStat.Name,
-                                                                Color: gStat.Color,
                                                                 Max: gStat.Max,
                                                                 Current: gStat.Max
                                                             }]

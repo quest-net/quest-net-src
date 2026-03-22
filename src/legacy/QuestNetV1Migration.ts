@@ -1,6 +1,10 @@
+// @ts-nocheck
 // src/legacy/QuestNetV1Migration.ts
-// LEGACY: Quest-Net 1.0 migration helpers
-// Remove this file + the importFromFile hook once everyone has migrated.
+// ⚠️ DEAD CODE — Retired as of V2 (March 2026).
+// This file is kept for reference only. It is no longer imported or used anywhere.
+// The V1 migration path has been removed from CampaignActions.importFromFile.
+//
+// Original purpose: Quest-Net 1.0 migration helpers that converted V1 saves to V2 Campaign format.
 
 import { Campaign } from "../domains/Campaign/Campaign";
 import { Context } from "../domains/Context/Context";

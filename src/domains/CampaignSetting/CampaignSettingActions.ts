@@ -1,9 +1,10 @@
 import { Context } from "../Context/Context";
-import { ActionDefinition, CampaignSettings, RestoreRule, StatDefinition } from "./CampaignSetting";
+import { CampaignSettings, RestoreRule } from "./CampaignSetting";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { MAX_HEIGHT } from "../Terrain/Terrain";
 import * as math from "mathjs";
 import { Campaign } from "../Campaign/Campaign";
+import { syncStatSlots, syncActionSlots, syncAttributeSlots } from "../../utils/ActorResolvers";
 
 // ============================================================================
 // FORMULA VALIDATION
@@ -95,98 +96,26 @@ export function formatRestoreRule(rule?: RestoreRule): string[] {
 	return lines;
 }
 
-export function syncActorsWithSettings(campaign: Campaign): void {
-	const settings: CampaignSettings = campaign.Settings;
+/**
+ * Propagates template changes to all actor slots in the campaign.
+ * When templates are added, actors get new default slots.
+ * When templates are removed, orphaned slots are dropped.
+ * Existing slot instance data (Current, Max, overrides) is preserved.
+ */
+export function propagateTemplatesToActors(campaign: Campaign): void {
+	const settings = campaign.Settings;
 
-	// Collect every "actor" container we care about:
-	// - Characters: roster + spawned
-	// - Entities: templates + spawned instances
-	const actors: Array<{
-		Stats?: StatDefinition[];
-		Actions?: ActionDefinition[];
-	}> = [
-			...campaign.CharacterRoster,
-			...campaign.GameState.Characters,
-			...campaign.EntityTemplates,
-			...campaign.GameState.Entities,
-		];
+	const actors = [
+		...campaign.CharacterRoster,
+		...campaign.GameState.Characters,
+		...campaign.EntityTemplates,
+		...campaign.GameState.Entities,
+	];
 
 	for (const actor of actors) {
-		// -------------------------
-		// STATS
-		// -------------------------
-		const existingStats = actor.Stats ?? [];
-		const existingStatsById = new Map(existingStats.map((s) => [s.Id, s]));
-
-		const nextStats: StatDefinition[] = settings.StatDefinitions.map((def) => {
-			const existing = existingStatsById.get(def.Id);
-
-			if (existing) {
-				// Preserve actor-specific Max/Current, but sync definition fields
-				const max = Number.isFinite(existing.Max) ? existing.Max : def.Max;
-				const current = existing.Current ?? max;
-
-				return {
-					...existing,
-					Max: max,
-					Current: current,
-
-					// Definition-driven fields (propagate)
-					Name: def.Name,
-					Color: def.Color,
-					RegenRate: def.RegenRate,
-					RestoreRule: def.RestoreRule,
-				};
-			}
-
-			// Newly added stat definition -> add to actor at default values
-			return {
-				...def,
-				Current: def.Max,
-			};
-		});
-
-		actor.Stats = nextStats;
-
-		// -------------------------
-		// ACTIONS
-		// -------------------------
-		const existingActions = actor.Actions ?? [];
-		const existingActionsById = new Map(
-			existingActions.map((a) => [a.Id, a])
-		);
-
-		const nextActions: ActionDefinition[] = settings.ActionDefinitions.map(
-			(def) => {
-				const existing = existingActionsById.get(def.Id);
-
-				if (existing) {
-					// Preserve actor Current, but sync definition fields
-					const current = existing.Current ?? def.Default;
-
-					return {
-						...existing,
-						Current: current,
-
-						// Definition-driven fields (propagate)
-						Name: def.Name,
-						Color: def.Color,
-
-						// Keep actor Default aligned to campaign settings,
-						// but do NOT reset Current.
-						Default: def.Default,
-					};
-				}
-
-				// Newly added action definition -> add to actor
-				return {
-					...def,
-					Current: def.Default,
-				};
-			}
-		);
-
-		actor.Actions = nextActions;
+		actor.Stats = syncStatSlots(actor.Stats ?? [], settings.StatDefinitions);
+		actor.Actions = syncActionSlots(actor.Actions ?? [], settings.ActionDefinitions);
+		actor.Attributes = syncAttributeSlots(actor.Attributes ?? [], settings.AttributeDefinitions ?? []);
 	}
 }
 // ============================================================================
@@ -229,9 +158,10 @@ export const CampaignSettingActions = {
 					},
 				],
 				ActionDefinitions: [
-					{ Id: "combat", Name: "Combat Action", Color: "#ef4444", Default: 1 },
-					{ Id: "noncombat", Name: "Non-Combat Action", Color: "#3b82f6", Default: 1 },
+					{ Id: "combat", Name: "Combat Action", Color: "#ef4444", Max: 1 },
+					{ Id: "noncombat", Name: "Non-Combat Action", Color: "#3b82f6", Max: 1 },
 				],
+				AttributeDefinitions: [],
 				SharedInventories: [],
 				VisibilitySettings: {
 					playersSeeDMRolls: false,
@@ -303,9 +233,10 @@ export const CampaignSettingActions = {
 				},
 			],
 			ActionDefinitions: [
-				{ Id: "combat", Name: "Combat Action", Color: "#ef4444", Default: 1 },
-				{ Id: "noncombat", Name: "Non-Combat Action", Color: "#3b82f6", Default: 1 },
+				{ Id: "combat", Name: "Combat Action", Color: "#ef4444", Max: 1 },
+				{ Id: "noncombat", Name: "Non-Combat Action", Color: "#3b82f6", Max: 1 },
 			],
+			AttributeDefinitions: [],
 			SharedInventories: [],
 			VisibilitySettings: {
 				playersSeeDMRolls: false,
@@ -362,6 +293,6 @@ export const CampaignSettingActions = {
 	edit(params: { updates: Partial<CampaignSettings> }, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 		Object.assign(campaign.Settings, params.updates);
-		syncActorsWithSettings(campaign);
+		propagateTemplatesToActors(campaign);
 	},
 };

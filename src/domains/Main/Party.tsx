@@ -8,7 +8,11 @@ import { ImageDisplay } from "../Image/ImageDisplay";
 import { StatBar } from "../../components/StatBar/StatBar";
 import { ObjectPicker, ObjectTypeConfig } from "../../components/inputs/ObjectPicker";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
-import { ActionDefinition } from "../CampaignSetting/CampaignSetting";
+import {
+	ResolvedAction,
+	resolveStats,
+	resolveActions,
+} from "../../utils/ActorResolvers";
 
 export function Party() {
 	const context = useQuestContext();
@@ -44,12 +48,18 @@ export function Party() {
 		});
 	};
 
-	const handleActionsChange = (characterId: string, updatedActions: ActionDefinition[]) => {
+	const handleActionsChange = (characterId: string, updatedActions: ResolvedAction[]) => {
 		if (!actionService) return;
+
+		const actionSlots = updatedActions.map((a) => ({
+			Id: a.Id,
+			Max: a.Max,
+			Current: a.Current,
+		}));
 
 		actionService.execute("character:edit", {
 			characterId: characterId,
-			updates: { Actions: updatedActions },
+			updates: { Actions: actionSlots },
 		});
 	};
 
@@ -103,17 +113,22 @@ export function Party() {
 			characters.forEach((character) => {
 				const stat = character.Stats.find((s) => s.Id === templateStat.Id);
 				if (stat) {
-					totalCurrent += stat.Current ?? stat.Max;
+					totalCurrent += stat.Current;
 					totalMax += stat.Max;
 				}
 			});
 
 			const percentage = totalMax > 0 ? (totalCurrent / totalMax) * 100 : 0;
 
+			// Look up stat name and color from campaign settings
+			const statDef = campaign.Settings.StatDefinitions.find(
+				(d) => d.Id === templateStat.Id
+			);
+
 			return {
 				id: templateStat.Id,
-				name: templateStat.Name,
-				color: templateStat.Color,
+				name: statDef?.Name ?? templateStat.Id,
+				color: statDef?.Color ?? "#888",
 				totalCurrent,
 				totalMax,
 				percentage,
@@ -269,7 +284,10 @@ export function Party() {
 								<div className="flex-1 space-y-2">
 									{isDM ? (
 										// DM: Interactive stat bars
-										character.Stats.map((stat) => (
+										resolveStats(
+											character.Stats,
+											campaign.Settings.StatDefinitions
+										).map((stat) => (
 											<StatBar
 												key={stat.Id}
 												stat={stat}
@@ -284,8 +302,11 @@ export function Party() {
 										))
 									) : (
 										// Player: Readonly stat bars
-										character.Stats.map((stat) => {
-											const current = stat.Current ?? stat.Max;
+										resolveStats(
+											character.Stats,
+											campaign.Settings.StatDefinitions
+										).map((stat) => {
+											const current = stat.Current;
 											const percentage = (current / stat.Max) * 100;
 
 											return (
@@ -315,7 +336,10 @@ export function Party() {
 							{character.Actions && character.Actions.length > 0 && (
 								<div className="pt-2 border-t border-base-300">
 									<ActionBubbles
-										actions={character.Actions}
+										actions={resolveActions(
+											character.Actions,
+											campaign.Settings.ActionDefinitions
+										)}
 										onChange={(updatedActions) =>
 											handleActionsChange(character.Id, updatedActions)
 										}

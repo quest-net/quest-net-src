@@ -8,6 +8,7 @@ import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { StatBar } from "../../components/StatBar/StatBar";
 import { ItemSlotDisplay } from "../Item/ItemSlotDisplay";
 import { ActorPicker } from "../../components/inputs/ActorPicker";
+import { resolveStats } from "../../utils/ActorResolvers";
 
 interface SharedInventoryDisplayProps {
     inventory: SharedInventory;
@@ -77,7 +78,7 @@ export function SharedInventoryDisplay({
                         </div>
 
                         <div className="space-y-3">
-                            {inventory.Stats.map((stat) => (
+                            {resolveStats(inventory.Stats, campaign.Settings.StatDefinitions).map((stat) => (
                                 <StatBar
                                     key={stat.Id}
                                     stat={stat}

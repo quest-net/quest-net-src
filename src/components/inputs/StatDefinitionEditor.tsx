@@ -7,6 +7,8 @@ import { RestoreRuleEditor } from "./RestoreRuleEditor";
 interface StatDefinitionsEditorProps {
 	stats: StatDefinition[];
 	sharedInventories?: SharedInventory[];
+	/** Campaign stat templates needed to resolve shared inventory stat names */
+	statTemplates?: StatDefinition[];
 	onChange: (stats: StatDefinition[]) => void;
 	readOnly?: boolean;
 }
@@ -14,9 +16,14 @@ interface StatDefinitionsEditorProps {
 export function StatDefinitionsEditor({
 	stats,
 	sharedInventories = [],
+	statTemplates,
 	onChange,
 	readOnly: readOnlyProp,
 }: StatDefinitionsEditorProps) {
+	// Build a map from stat Id → Name for resolving shared inventory stat names
+	const statNameMap = new Map(
+		(statTemplates ?? stats).map((s) => [s.Id, s.Name])
+	);
 	const contextReadOnly = useFormReadOnly();
 	const readOnly = readOnlyProp ?? contextReadOnly;
 
@@ -162,7 +169,7 @@ export function StatDefinitionsEditor({
 												<optgroup key={inv.Id} label={inv.Name}>
 													{inv.Stats.map((invStat) => (
 														<option key={invStat.Id} value={`${inv.Id}:${invStat.Id}`}>
-															{invStat.Name}
+															{statNameMap.get(invStat.Id) ?? invStat.Id}
 														</option>
 													))}
 												</optgroup>

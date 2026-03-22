@@ -2,6 +2,7 @@
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
+import { CampaignActions } from "../Campaign/CampaignActions";
 import { EntityActions } from "./EntityActions";
 import { Entity } from "./Entity";
 import {
@@ -10,11 +11,13 @@ import {
 	FormField,
 	FormGrid,
 } from "../../components/Form/Form";
-import { StatDefinitionsEditor } from "../../components/inputs/StatDefinitionEditor";
-import { ActionDefinitionEditor } from "../../components/inputs/ActionDefinitionEditor";
-import { AttributeEditor } from "../../components/inputs/AttributeEditor";
 import { TagEditor } from "../../components/inputs/TagEditor";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
+import {
+	resolveStats,
+	resolveActions,
+	resolveAttributes,
+} from "../../utils/ActorResolvers";
 
 interface EntityEditProps {
 	entity?: Entity;
@@ -41,11 +44,16 @@ export function EntityEdit({
 		if (!actionService) return;
 
 		// Clamp stat Current values to their Max before saving
+		// Ensure action Current always equals Max (not editable from this form)
 		const validatedData = {
 			...data,
 			Stats: data.Stats.map(stat => ({
 				...stat,
 				Current: Math.min(stat.Current ?? stat.Max, stat.Max)
+			})),
+			Actions: data.Actions.map(action => ({
+				...action,
+				Current: action.Max
 			}))
 		};
 
@@ -114,6 +122,9 @@ interface EntityFormProps {
 
 function EntityForm({ data, onChange }: EntityFormProps) {
 	if (!data || !onChange) return null;
+
+	const context = useQuestContext();
+	const campaign = CampaignActions.getActiveCampaign(context);
 
 	const handleFieldChange = (field: keyof Entity, value: any) => {
 		onChange({
@@ -204,29 +215,144 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 				title="Stats"
 				description="Entity statistics (HP, Mana, etc.)"
 			>
-				<StatDefinitionsEditor
-					stats={data.Stats}
-					onChange={(stats) => handleFieldChange("Stats", stats)}
-				/>
+				<div className="space-y-3">
+					{resolveStats(
+						data.Stats,
+						campaign.Settings.StatDefinitions
+					).map((stat) => {
+						const slot = data.Stats.find((s) => s.Id === stat.Id);
+						const isTrackingMax = slot ? slot.Current === slot.Max : true;
+
+						return (
+							<div key={stat.Id} className="flex items-center gap-4">
+								<div className="min-w-32">
+									<span
+										className="font-medium"
+										style={{ color: stat.Color }}
+									>
+										{stat.Name}
+									</span>
+								</div>
+								<div className="flex-1 flex items-center gap-2">
+									<label className="text-sm opacity-70">Max:</label>
+									<input
+										type="number"
+										value={stat.Max}
+										onChange={(e) => {
+											const newMax = Number(e.target.value);
+											const updatedSlots = data.Stats.map((s) =>
+												s.Id === stat.Id
+													? {
+														...s,
+														Max: newMax,
+														// If Current was tracking Max, keep it in sync
+														...(s.Current === s.Max ? { Current: newMax } : {}),
+													}
+													: s
+											);
+											handleFieldChange("Stats", updatedSlots);
+										}}
+										className="input input-bordered input-sm w-24"
+										min={0}
+									/>
+								</div>
+								<div className="flex-1 flex items-center gap-2">
+									<label className="text-sm opacity-70">Current:</label>
+									<input
+										type="number"
+										value={isTrackingMax ? "" : stat.Current}
+										onChange={(e) => {
+											const raw = e.target.value;
+											const newCurrent = raw === "" ? stat.Max : Number(raw);
+											const updatedSlots = data.Stats.map((s) =>
+												s.Id === stat.Id
+													? { ...s, Current: newCurrent }
+													: s
+											);
+											handleFieldChange("Stats", updatedSlots);
+										}}
+										className="input input-bordered input-sm w-24"
+										min={0}
+										max={stat.Max}
+										placeholder="same as max"
+									/>
+								</div>
+							</div>
+						);
+					})}
+				</div>
 			</FormSection>
 
 			{/* Actions */}
 			<FormSection
 				title="Actions"
-				description="Action economy (Combat Actions, etc.)"
+				description="Action economy (Combat Actions, etc.) — resets each turn"
 			>
-				<ActionDefinitionEditor
-					actions={data.Actions || []}
-					onChange={(actions) => handleFieldChange("Actions", actions)}
-				/>
+				<div className="space-y-3">
+					{resolveActions(
+						data.Actions || [],
+						campaign.Settings.ActionDefinitions
+					).map((action) => (
+						<div key={action.Id} className="flex items-center gap-4">
+							<div className="min-w-32">
+								<span
+									className="font-medium"
+									style={{ color: action.Color }}
+								>
+									{action.Name}
+								</span>
+							</div>
+							<div className="flex-1 flex items-center gap-2">
+								<label className="text-sm opacity-70">Per Turn:</label>
+								<input
+									type="number"
+									value={action.Max}
+									onChange={(e) => {
+										const newMax = Number(e.target.value);
+										const updatedSlots = (data.Actions || []).map((a) =>
+											a.Id === action.Id
+												? { ...a, Max: newMax, Current: newMax }
+												: a
+										);
+										handleFieldChange("Actions", updatedSlots);
+									}}
+									className="input input-bordered input-sm w-24"
+									min={0}
+								/>
+							</div>
+						</div>
+					))}
+				</div>
 			</FormSection>
 
 			{/* Attributes */}
 			<FormSection title="Attributes" description="Custom key-value attributes">
-				<AttributeEditor
-					attributes={data.Attributes}
-					onChange={(attributes) => handleFieldChange("Attributes", attributes)}
-				/>
+				<div className="space-y-3">
+					{resolveAttributes(
+						data.Attributes,
+						campaign.Settings.AttributeDefinitions ?? []
+					).map((attr) => (
+						<div key={attr.Id} className="flex items-center gap-4">
+							<div className="min-w-32">
+								<span className="font-medium">{attr.Name}</span>
+							</div>
+							<input
+								type="text"
+								value={attr.Value}
+								onChange={(e) => {
+									const updatedSlots = data.Attributes.map((a) =>
+										a.Id === attr.Id
+											? { ...a, Value: e.target.value }
+											: a
+									);
+									handleFieldChange("Attributes", updatedSlots);
+								}}
+								className="input input-bordered input-sm flex-1"
+								placeholder="Value"
+							/>
+						</div>
+					))}
+				</div>
 			</FormSection>
 
 			{/* Tags */}
