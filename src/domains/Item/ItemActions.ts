@@ -11,6 +11,7 @@ import {
 	getAllActors,
 } from "../../utils/SlotSyncUtils";
 import { createItemEntity, createItemEntityFromTemplate, getItemDataFromEntity, isItemEntity } from "./ItemDropUtils";
+import { TerrainActions } from "../Terrain/TerrainActions";
 
 /**
  * Item action handlers
@@ -805,6 +806,7 @@ export const ItemActions = {
 			campaign.Settings.ActionDefinitions
 		);
 		campaign.GameState.Entities.push(entity);
+		TerrainActions.validateActors(context);
 
 		LogActions.create(
 			{

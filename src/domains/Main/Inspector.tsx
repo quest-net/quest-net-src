@@ -14,11 +14,11 @@ import { ItemCollection } from "../Item/Collection";
 import { SkillCollection } from "../Skill/Collection";
 import { StatusCollection } from "../Status/Collection";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
+import { AttributesSection } from "../../components/AttributesSection/AttributesSection";
 import {
 	ResolvedAction,
 	resolveStats,
 	resolveActions,
-	resolveAttributes,
 } from "../../utils/ActorResolvers";
 import { EntityActionBar } from "./EntityActionBar";
 
@@ -670,38 +670,13 @@ function ActorInfoTab({
 			)}
 
 			{/* Attributes */}
-			{actor.Attributes.length > 0 && (
-				<div className="space-y-2">
-					<span className="text-sm font-semibold">Attributes</span>
-					{isDM
-						? // DM: Editable attributes
-						resolveAttributes(
-							actor.Attributes,
-							campaign.Settings.AttributeDefinitions ?? []
-						).map((attr) => (
-							<div key={attr.Id} className="flex gap-2 items-center text-sm">
-								<div className="font-medium w-20 shrink-0">{attr.Name}</div>
-								<input
-									type="text"
-									value={localAttributes.get(attr.Id) ?? ""}
-									onChange={(e) => handleAttributeChange(attr.Id, e.target.value)}
-									className="input input-sm input-bordered flex-1"
-									placeholder="Value"
-								/>
-							</div>
-						))
-						: // Player: Readonly attributes
-						resolveAttributes(
-							actor.Attributes,
-							campaign.Settings.AttributeDefinitions ?? []
-						).map((attr) => (
-							<div key={attr.Id} className="flex gap-2 items-center text-sm">
-								<div className="font-medium flex-1">{attr.Name}</div>
-								<div className="opacity-70 flex-1 text-right">{attr.Value}</div>
-							</div>
-						))}
-				</div>
-			)}
+			<AttributesSection
+				slots={actor.Attributes}
+				definitions={campaign.Settings.AttributeDefinitions ?? []}
+				localValues={localAttributes}
+				onChange={handleAttributeChange}
+				readOnly={!isDM}
+			/>
 		</div>
 	);
 }

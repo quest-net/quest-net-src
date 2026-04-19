@@ -9,12 +9,12 @@ import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { StatBar } from "../../components/StatBar/StatBar";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
 import { ActorPicker } from "../../components/inputs/ActorPicker";
+import { AttributesSection } from "../../components/AttributesSection/AttributesSection";
 import {
 	ResolvedAction,
 	ResolvedStat,
 	resolveStats,
 	resolveActions,
-	resolveAttributes,
 } from "../../utils/ActorResolvers";
 
 export function CharacterSheet() {
@@ -258,25 +258,12 @@ export function CharacterSheet() {
 			</div>
 
 			{/* Attributes */}
-			{character.Attributes.length > 0 && (
-				<div className="space-y-2">
-					{resolveAttributes(
-						character.Attributes,
-						campaign.Settings.AttributeDefinitions ?? []
-					).map((attr) => (
-						<div key={attr.Id} className="flex gap-2 items-center">
-							<div className="text-sm font-medium flex-1">{attr.Name}</div>
-							<input
-								type="text"
-								value={localAttributes.get(attr.Id) ?? ""}
-								onChange={(e) => handleAttributeChange(attr.Id, e.target.value)}
-								className="input input-bordered input-sm flex-2"
-								placeholder="Value"
-							/>
-						</div>
-					))}
-				</div>
-			)}
+			<AttributesSection
+				slots={character.Attributes}
+				definitions={campaign.Settings.AttributeDefinitions ?? []}
+				localValues={localAttributes}
+				onChange={handleAttributeChange}
+			/>
 
 			{/* Critical Success Message - Last and smaller */}
 			<div className="pt-4 border-t border-base-300">

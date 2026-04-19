@@ -13,6 +13,7 @@ import {
 } from "../../components/Form/Form";
 import { StatDefinitionsEditor } from "../../components/inputs/StatDefinitionEditor";
 import { ActionDefinitionEditor } from "../../components/inputs/ActionDefinitionEditor";
+import { AttributeDefinitionEditor } from "../../components/inputs/AttributeDefinitionEditor";
 import { SharedInventoriesEditor } from "../../components/inputs/SharedInventoriesEditor";
 import CalendarConfigEditor from "../../components/inputs/CalendarConfigEditor";
 import { MovementSettingsEditor } from "../../components/inputs/MovementSettingsEditor";
@@ -251,6 +252,19 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 				<ActionDefinitionEditor
 					actions={data.ActionDefinitions}
 					onChange={(actions) => updateSettings({ ActionDefinitions: actions })}
+				/>
+			</FormSection>
+
+			{/* Attribute Definitions */}
+			<FormSection
+				title="Attribute Definitions"
+				description="Define custom attributes for characters (Class, Level, Alignment, etc.). Attributes only appear on a character sheet if they have a value."
+			>
+				<AttributeDefinitionEditor
+					attributes={data.AttributeDefinitions ?? []}
+					onChange={(attributes) =>
+						updateSettings({ AttributeDefinitions: attributes })
+					}
 				/>
 			</FormSection>
 

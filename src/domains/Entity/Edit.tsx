@@ -13,10 +13,10 @@ import {
 } from "../../components/Form/Form";
 import { TagEditor } from "../../components/inputs/TagEditor";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
+import { AttributeEditor } from "../../components/inputs/AttributeEditor";
 import {
 	resolveStats,
 	resolveActions,
-	resolveAttributes,
 } from "../../utils/ActorResolvers";
 
 interface EntityEditProps {
@@ -326,33 +326,15 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 			</FormSection>
 
 			{/* Attributes */}
-			<FormSection title="Attributes" description="Custom key-value attributes">
-				<div className="space-y-3">
-					{resolveAttributes(
-						data.Attributes,
-						campaign.Settings.AttributeDefinitions ?? []
-					).map((attr) => (
-						<div key={attr.Id} className="flex items-center gap-4">
-							<div className="min-w-32">
-								<span className="font-medium">{attr.Name}</span>
-							</div>
-							<input
-								type="text"
-								value={attr.Value}
-								onChange={(e) => {
-									const updatedSlots = data.Attributes.map((a) =>
-										a.Id === attr.Id
-											? { ...a, Value: e.target.value }
-											: a
-									);
-									handleFieldChange("Attributes", updatedSlots);
-								}}
-								className="input input-bordered input-sm flex-1"
-								placeholder="Value"
-							/>
-						</div>
-					))}
-				</div>
+			<FormSection
+				title="Attributes"
+				description="Set values for campaign-defined attributes. Empty attributes are hidden on the entity sheet."
+			>
+				<AttributeEditor
+					slots={data.Attributes}
+					definitions={campaign.Settings.AttributeDefinitions ?? []}
+					onChange={(slots) => handleFieldChange("Attributes", slots)}
+				/>
 			</FormSection>
 
 			{/* Tags */}
