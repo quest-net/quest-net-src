@@ -17,14 +17,34 @@ export interface ResolvedStat {
 	Id: string;
 	Name: string;
 	Color: string;
-	Current: number;
+	/**
+	 * Current value of the stat for this actor/inventory.
+	 * null = the owner does not have this stat (display should hide it;
+	 * regen/restore should skip it).
+	 */
+	Current: number | null;
 	Max: number;
 	RegenRate?: number;
 	RestoreRule?: RestoreRule;
+	/**
+	 * Resolved overflow target after slot/template merge.
+	 * undefined = no overflow for this owner (either template has none, or
+	 * the slot explicitly disabled it via null).
+	 */
 	OverflowTarget?: {
 		InventoryId: string;
 		StatId: string;
 	};
+}
+
+/**
+ * Convenience predicate: true when a resolved (or raw) stat slot is "set" —
+ * i.e. the owner currently has this stat.
+ */
+export function isStatSet(
+	slot: Pick<StatSlot, "Current"> | Pick<ResolvedStat, "Current">
+): boolean {
+	return slot.Current !== null;
 }
 
 export interface ResolvedAction {
@@ -45,13 +65,32 @@ export interface ResolvedAttribute {
 
 /**
  * Resolves a single StatSlot against its template.
- * Slot overrides (RegenRate, RestoreRule, OverflowTarget) take precedence
- * over template defaults when defined.
+ *
+ * Slot-level overrides take precedence over template defaults when *defined*:
+ *   - RegenRate / RestoreRule: slot value used iff not undefined, else template.
+ *   - OverflowTarget: three-state resolution. A slot value of `null` means
+ *     the slot *explicitly disables* overflow and wins over any template
+ *     target; `undefined` inherits; an object overrides.
+ *
+ * Current is passed through unchanged (including null = unset).
  */
 export function resolveStat(
 	slot: StatSlot,
 	template: StatDefinition
 ): ResolvedStat {
+	// OverflowTarget three-state resolution:
+	//   slot === undefined → inherit from template
+	//   slot === null      → explicitly disabled (undefined in resolved form)
+	//   slot === object    → override with slot's value
+	let overflowTarget: ResolvedStat["OverflowTarget"];
+	if (slot.OverflowTarget === undefined) {
+		overflowTarget = template.OverflowTarget;
+	} else if (slot.OverflowTarget === null) {
+		overflowTarget = undefined;
+	} else {
+		overflowTarget = slot.OverflowTarget;
+	}
+
 	return {
 		Id: slot.Id,
 		Name: template.Name,
@@ -60,7 +99,7 @@ export function resolveStat(
 		Max: slot.Max,
 		RegenRate: slot.RegenRate ?? template.RegenRate,
 		RestoreRule: slot.RestoreRule ?? template.RestoreRule,
-		OverflowTarget: slot.OverflowTarget ?? template.OverflowTarget,
+		OverflowTarget: overflowTarget,
 	};
 }
 

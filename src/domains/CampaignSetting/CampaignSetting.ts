@@ -10,7 +10,31 @@ export interface CampaignSettings {
 	RestSettings: RestSettings;
 	MovementSettings: MovementSettings;
 	SharedInventories?: SharedInventory[];
+	InitiativeSettings?: InitiativeSettings;
 }
+
+/**
+ * InitiativeSettings configures how combat turn order is determined within a side.
+ * Sources is an ordered chain: the first entry is the primary sort key, subsequent
+ * entries are tiebreakers applied in order. All sources are sorted greatest-first.
+ * Actors with no value for a source are placed at the bottom of the list.
+ *
+ * If undefined or Sources is empty, no initiative ordering is displayed.
+ */
+export interface InitiativeSettings {
+	Sources: InitiativeSource[];
+}
+
+/**
+ * InitiativeSource identifies a single sortable field on an actor.
+ * - stat: reads StatSlot.Current (resolved through campaign templates) by Id
+ * - attribute: reads AttributeSlot.Value (parsed as a number) by Id
+ * - moveSpeed: reads the Actor.MoveSpeed direct field
+ */
+export type InitiativeSource =
+	| { kind: "stat"; statId: string }
+	| { kind: "attribute"; attributeId: string }
+	| { kind: "moveSpeed" };
 
 export interface SharedInventory {
 	Id: string;

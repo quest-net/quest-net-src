@@ -212,6 +212,8 @@ export const ActorActions = {
 
 		const sourceStat = sourceActor.Stats.find((s) => s.Id === params.sourceStatId);
 		if (!sourceStat) return;
+		// Refuse transfers from unset stats — the actor doesn't have this stat.
+		if (sourceStat.Current === null) return;
 
 		// Ensure source has enough points
 		const availableAmount = Math.min(sourceStat.Current, params.amount);
@@ -229,21 +231,22 @@ export const ActorActions = {
 		if (targetActor) {
 			targetName = targetActor.Name;
 			const tStat = targetActor.Stats.find((s) => s.Id === params.targetStatId);
-			if (tStat) {
+			// Refuse transfers into unset stats — target doesn't have this stat.
+			if (tStat && tStat.Current !== null) {
 				tStat.Current = Math.min(tStat.Max, tStat.Current + availableAmount);
 				transferSuccess = true;
 			}
 		} else if (targetSharedInv) {
 			targetName = targetSharedInv.Name;
 			const tStat = targetSharedInv.Stats.find((s) => s.Id === params.targetStatId);
-			if (tStat) {
+			if (tStat && tStat.Current !== null) {
 				tStat.Current = Math.min(tStat.Max, tStat.Current + availableAmount);
 				transferSuccess = true;
 			}
 		}
 
 		if (transferSuccess) {
-			// Deduct from source
+			// Deduct from source (sourceStat.Current guaranteed non-null above)
 			sourceStat.Current = Math.max(0, sourceStat.Current - availableAmount);
 
 			LogActions.create(

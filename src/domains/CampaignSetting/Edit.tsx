@@ -17,6 +17,7 @@ import { AttributeDefinitionEditor } from "../../components/inputs/AttributeDefi
 import { SharedInventoriesEditor } from "../../components/inputs/SharedInventoriesEditor";
 import CalendarConfigEditor from "../../components/inputs/CalendarConfigEditor";
 import { MovementSettingsEditor } from "../../components/inputs/MovementSettingsEditor";
+import { InitiativeSettingsEditor } from "../../components/inputs/InitiativeSettingsEditor";
 import { Campaign } from "../Campaign/Campaign";
 
 export function CampaignSettingEdit() {
@@ -372,6 +373,17 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 						className="toggle toggle-primary"
 					/>
 				</FormField>
+			</FormSection>
+			<FormSection
+				title="Initiative Order"
+				description="Configure how combat turn order is determined within a side. Pick a primary stat/attribute/move speed, then optionally add tiebreakers."
+			>
+				<InitiativeSettingsEditor
+					value={data.InitiativeSettings}
+					statDefinitions={data.StatDefinitions}
+					attributeDefinitions={data.AttributeDefinitions ?? []}
+					onChange={(InitiativeSettings) => updateSettings({ InitiativeSettings })}
+				/>
 			</FormSection>
 			<FormSection
 				title="Movement & Height"

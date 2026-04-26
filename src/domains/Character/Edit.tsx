@@ -44,13 +44,16 @@ export function CharacterEdit({
 	const handleSave = (data: Character) => {
 		if (!actionService) return;
 
-		// Clamp stat Current values to their Max before saving
-		// Ensure action Current always equals Max (not editable from this form)
+		// Clamp stat Current values to their Max before saving.
+		// Preserve null (unset) — actor doesn't have this stat.
+		// Ensure action Current always equals Max (not editable from this form).
 		const validatedData = {
 			...data,
 			Stats: data.Stats.map(stat => ({
 				...stat,
-				Current: Math.min(stat.Current ?? stat.Max, stat.Max)
+				Current: stat.Current === null
+					? null
+					: Math.min(stat.Current, stat.Max)
 			})),
 			Actions: data.Actions.map(action => ({
 				...action,
@@ -266,11 +269,13 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 								<label className="text-sm opacity-70">Current:</label>
 								<input
 									type="number"
-									value={stat.Current}
+									value={stat.Current ?? ""}
 									onChange={(e) => {
+										const raw = e.target.value;
+										const parsed = raw === "" ? null : Number(raw);
 										const updatedSlots = data.Stats.map((s) =>
 											s.Id === stat.Id
-												? { ...s, Current: Number(e.target.value) }
+												? { ...s, Current: parsed }
 												: s
 										);
 										handleFieldChange("Stats", updatedSlots);
@@ -278,7 +283,23 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 									className="input input-bordered input-sm w-24"
 									min={0}
 									max={stat.Max}
+									placeholder="unset"
 								/>
+								<button
+									type="button"
+									onClick={() => {
+										const updatedSlots = data.Stats.map((s) =>
+											s.Id === stat.Id ? { ...s, Current: null } : s
+										);
+										handleFieldChange("Stats", updatedSlots);
+									}}
+									disabled={stat.Current === null}
+									className="btn btn-ghost btn-sm btn-square shrink-0"
+									aria-label="Unset stat"
+									title="Unset (character doesn't have this stat)"
+								>
+									<span className="icon-[mdi--close] h-5 w-5" />
+								</button>
 							</div>
 						</div>
 					))}

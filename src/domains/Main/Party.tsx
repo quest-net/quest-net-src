@@ -13,6 +13,7 @@ import {
 	resolveStats,
 	resolveActions,
 } from "../../utils/ActorResolvers";
+import { computeInitiativeOrder } from "../../utils/InitiativeUtils";
 
 export function Party() {
 	const context = useQuestContext();
@@ -109,10 +110,11 @@ export function Party() {
 			let totalCurrent = 0;
 			let totalMax = 0;
 
-			// Sum up this stat across all characters
+			// Sum up this stat across all characters. Skip characters where the
+			// stat is unset (they don't have this stat).
 			characters.forEach((character) => {
 				const stat = character.Stats.find((s) => s.Id === templateStat.Id);
-				if (stat) {
+				if (stat && stat.Current !== null) {
 					totalCurrent += stat.Current;
 					totalMax += stat.Max;
 				}
@@ -137,6 +139,79 @@ export function Party() {
 	};
 
 	const partyStats = calculatePartyStats();
+
+	// ---- Initiative state (party-side only) -------------------------------
+	// Order is recomputed on every render from current actor stats — see
+	// InitiativeUtils. The done list lives on CombatState so it survives
+	// network sync. Badges render only while combat is active and the DM has
+	// configured at least one initiative source.
+	const combatState = campaign.GameState.CombatState;
+	const initiativeEntries = combatState.isActive
+		? computeInitiativeOrder(
+			characters,
+			campaign.Settings.InitiativeSettings,
+			campaign.Settings
+		)
+		: [];
+	const orderByActorId = new Map(
+		initiativeEntries.map((e) => [e.ActorId, e.Order])
+	);
+	const partyDoneSet = new Set(combatState.PartyTurnsCompleted ?? []);
+	const showInitiative = initiativeEntries.length > 0;
+
+	// When initiative is configured during combat, render party cards in
+	// initiative order (lowest Order first). Otherwise keep the natural
+	// roster order.
+	const displayCharacters = showInitiative
+		? [...characters].sort((a, b) => {
+			const ao = orderByActorId.get(a.Id) ?? Number.POSITIVE_INFINITY;
+			const bo = orderByActorId.get(b.Id) ?? Number.POSITIVE_INFINITY;
+			return ao - bo;
+		})
+		: characters;
+
+	const handleBadgeClick = (characterId: string) => {
+		if (!actionService) return;
+		// DM can toggle any badge; players can only toggle their own.
+		const allowed = isDM || characterId === myCharacterId;
+		if (!allowed) return;
+		actionService.execute("combat:markActorTurnDone", {
+			actorId: characterId,
+			side: "party",
+		});
+	};
+
+	// Renders the corner initiative badge for a character card. Returns null
+	// when initiative isn't configured / combat isn't active so the card stays
+	// clean. The badge is a small clickable square flush with the top-left
+	// corner of the parent (which must be `relative`).
+	const renderInitiativeBadge = (characterId: string) => {
+		if (!showInitiative) return null;
+		const order = orderByActorId.get(characterId);
+		if (order === undefined) return null;
+		const isDone = partyDoneSet.has(characterId);
+		const canToggle = isDM || characterId === myCharacterId;
+		return (
+			<button
+				type="button"
+				onClick={() => handleBadgeClick(characterId)}
+				disabled={!canToggle}
+				title={
+					isDone
+						? "Turn done — click to undo"
+						: canToggle
+							? "Click to mark turn done"
+							: `Initiative ${order}`
+				}
+				className={`absolute top-0 left-0 w-7 h-7 rounded-tl-md rounded-br-md flex items-center justify-center text-sm font-bold z-10 ${isDone
+					? "bg-base-300 text-base-content/40 line-through"
+					: "bg-primary text-primary-content"
+					} ${canToggle ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
+			>
+				{order}
+			</button>
+		);
+	};
 
 	// Prepare object types for ObjectPicker
 	const objectTypes: ObjectTypeConfig<any>[] = [
@@ -244,14 +319,17 @@ export function Party() {
 
 			{/* Individual Characters */}
 			<div className="space-y-2">
-				{characters.map((character) => (
+				{displayCharacters.map((character) => (
 					<div
 						key={character.Id}
-						className={`card bg-base-100 border-2 transition-all ${isDM && selectedActorIds.includes(character.Id)
+						className={`card bg-base-100 border-2 relative transition-all ${isDM && selectedActorIds.includes(character.Id)
 							? "border-primary ring-2 ring-primary"
 							: "border-base-300"
 							}`}
 					>
+						{/* Corner initiative badge — flush with the top-left corner.
+						    Click toggles turn done (DM any actor, players only their own). */}
+						{renderInitiativeBadge(character.Id)}
 						<div className="card-body p-4">
 							<div className="flex gap-2 items-center">
 								{/* DM Selection Checkbox */}
@@ -306,6 +384,8 @@ export function Party() {
 											character.Stats,
 											campaign.Settings.StatDefinitions
 										).map((stat) => {
+											// Hide unset stats — character doesn't have this one.
+											if (stat.Current === null) return null;
 											const current = stat.Current;
 											const percentage = (current / stat.Max) * 100;
 

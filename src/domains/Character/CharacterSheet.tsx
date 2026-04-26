@@ -300,7 +300,7 @@ export function CharacterSheet() {
 					excludeActorId={character.Id}
 					includeSharedInventories={true}
 					showAmount={true}
-					amountMax={transferStat.Current ?? transferStat.Max}
+					amountMax={transferStat.Current ?? 0}
 				/>
 			)}
 		</div>

@@ -141,13 +141,15 @@ export function SkillSlotDisplay({
 		}
 	}
 
-	// Check if actor has enough of the stat
+	// Check if actor has enough of the stat.
+	// If the stat is unset (actor doesn't have this stat), treat as 0 available
+	// so the skill is correctly flagged as unavailable.
 	let hasEnoughStat = true;
 	let currentStatValue = 0;
 	if (skill.StatCost && statCostStat) {
 		const actorStat = actor.Stats.find((s) => s.Id === statCostStat.Id);
 		if (actorStat) {
-			currentStatValue = actorStat.Current ?? actorStat.Max;
+			currentStatValue = actorStat.Current ?? 0;
 			hasEnoughStat = currentStatValue >= skill.StatCost.amount;
 		}
 	}

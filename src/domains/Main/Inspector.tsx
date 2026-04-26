@@ -542,6 +542,8 @@ function ActorInfoTab({
 						actor.Stats,
 						campaign.Settings.StatDefinitions
 					).map((stat) => {
+						// Hide unset stats (actor doesn't have this stat).
+						if (stat.Current === null) return null;
 						const current = stat.Current;
 						const percentage = (current / stat.Max) * 100;
 
@@ -573,6 +575,8 @@ function ActorInfoTab({
 						actor.Stats,
 						campaign.Settings.StatDefinitions
 					).map((stat) => {
+						// Hide unset stats (actor doesn't have this stat).
+						if (stat.Current === null) return null;
 						const current = stat.Current;
 						const lost = stat.Max - current;
 

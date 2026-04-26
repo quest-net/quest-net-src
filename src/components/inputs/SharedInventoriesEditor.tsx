@@ -129,6 +129,9 @@ export function SharedInventoriesEditor({
                             {globalStats.map(gStat => {
                                 const trackedStat = editingInventory.Stats.find(s => s.Id === gStat.Id);
                                 const isTracked = !!trackedStat;
+                                const isUnset = isTracked && trackedStat.Current === null;
+                                // Effective regen: slot override if defined, else template default (may be undefined).
+                                const effectiveRegen = trackedStat?.RegenRate ?? gStat.RegenRate;
 
                                 return (
                                     <div key={gStat.Id} className="p-2 border border-base-300 rounded-lg space-y-2">
@@ -159,6 +162,9 @@ export function SharedInventoriesEditor({
                                             <div className="flex-1 flex items-center gap-2">
                                                 <div className="w-4 h-4 rounded-full" style={{ backgroundColor: gStat.Color }}></div>
                                                 <span className="font-semibold">{gStat.Name}</span>
+                                                {isUnset && (
+                                                    <span className="badge badge-ghost badge-sm">unset</span>
+                                                )}
                                             </div>
 
                                             {isTracked && (
@@ -173,30 +179,154 @@ export function SharedInventoriesEditor({
                                                             const newMax = Math.max(1, parseInt(e.target.value) || 1);
                                                             handleChange(editingInventory.Id, {
                                                                 Stats: editingInventory.Stats.map(s =>
-                                                                    s.Id === gStat.Id ? { ...s, Max: newMax } : s
+                                                                    s.Id === gStat.Id
+                                                                        ? {
+                                                                            ...s,
+                                                                            Max: newMax,
+                                                                            // If Current was tracking Max, keep them in sync.
+                                                                            ...(s.Current !== null && s.Current === s.Max
+                                                                                ? { Current: newMax }
+                                                                                : {}),
+                                                                        }
+                                                                        : s
                                                                 )
                                                             });
                                                         }}
                                                     />
                                                 </div>
                                             )}
+
+                                            {isTracked && (
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm opacity-70">Current:</span>
+                                                    <input
+                                                        type="number"
+                                                        className="input input-bordered input-sm w-20"
+                                                        disabled={readOnly}
+                                                        value={trackedStat.Current ?? ""}
+                                                        onChange={e => {
+                                                            const raw = e.target.value;
+                                                            const parsed = raw === "" ? null : Number(raw);
+                                                            handleChange(editingInventory.Id, {
+                                                                Stats: editingInventory.Stats.map(s =>
+                                                                    s.Id === gStat.Id ? { ...s, Current: parsed } : s
+                                                                )
+                                                            });
+                                                        }}
+                                                        placeholder="unset"
+                                                        min={0}
+                                                        max={trackedStat.Max}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            handleChange(editingInventory.Id, {
+                                                                Stats: editingInventory.Stats.map(s =>
+                                                                    s.Id === gStat.Id ? { ...s, Current: null } : s
+                                                                )
+                                                            });
+                                                        }}
+                                                        disabled={readOnly || isUnset}
+                                                        className="btn btn-ghost btn-sm btn-square shrink-0"
+                                                        aria-label="Unset stat"
+                                                        title="Unset (inventory doesn't track this stat)"
+                                                    >
+                                                        <span className="icon-[mdi--close] h-5 w-5" />
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
 
-                                        {/* Restore Rule Editor for tracked stats */}
+                                        {/* Overrides (Regen + Restore) for tracked stats */}
                                         {isTracked && (
-                                            <div className="ml-10">
-                                                <p className="text-sm font-medium mb-1 opacity-70">Restore Rules</p>
-                                                <RestoreRuleEditor
-                                                    value={trackedStat.RestoreRule}
-                                                    readOnly={readOnly}
-                                                    onChange={(rule) => {
-                                                        handleChange(editingInventory.Id, {
-                                                            Stats: editingInventory.Stats.map(s =>
-                                                                s.Id === gStat.Id ? { ...s, RestoreRule: rule } : s
-                                                            )
-                                                        });
-                                                    }}
-                                                />
+                                            <div className="ml-10 space-y-2">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-sm font-medium opacity-70 min-w-24">
+                                                        Regen / Turn
+                                                    </span>
+                                                    <input
+                                                        type="number"
+                                                        className="input input-bordered input-sm w-24"
+                                                        disabled={readOnly}
+                                                        value={trackedStat.RegenRate ?? ""}
+                                                        onChange={(e) => {
+                                                            const raw = e.target.value;
+                                                            const parsed = raw === "" ? undefined : Number(raw);
+                                                            handleChange(editingInventory.Id, {
+                                                                Stats: editingInventory.Stats.map(s =>
+                                                                    s.Id === gStat.Id ? { ...s, RegenRate: parsed } : s
+                                                                )
+                                                            });
+                                                        }}
+                                                        placeholder={
+                                                            gStat.RegenRate !== undefined
+                                                                ? `default: ${gStat.RegenRate}`
+                                                                : "none"
+                                                        }
+                                                    />
+                                                    {trackedStat.RegenRate !== undefined && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                handleChange(editingInventory.Id, {
+                                                                    Stats: editingInventory.Stats.map(s => {
+                                                                        if (s.Id !== gStat.Id) return s;
+                                                                        const { RegenRate: _, ...rest } = s;
+                                                                        return rest;
+                                                                    })
+                                                                });
+                                                            }}
+                                                            disabled={readOnly}
+                                                            className="btn btn-ghost btn-xs"
+                                                            title="Reset to campaign default"
+                                                        >
+                                                            Reset
+                                                        </button>
+                                                    )}
+                                                    <span className="text-xs opacity-60">
+                                                        Effective: {effectiveRegen ?? "none"}
+                                                    </span>
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-medium mb-1 opacity-70">
+                                                        Restore Rules
+                                                        {trackedStat.RestoreRule === undefined && gStat.RestoreRule && (
+                                                            <span className="ml-2 text-xs opacity-60 italic">
+                                                                (inheriting from campaign default)
+                                                            </span>
+                                                        )}
+                                                    </p>
+                                                    <RestoreRuleEditor
+                                                        value={trackedStat.RestoreRule ?? gStat.RestoreRule}
+                                                        readOnly={readOnly}
+                                                        onChange={(rule) => {
+                                                            handleChange(editingInventory.Id, {
+                                                                Stats: editingInventory.Stats.map(s =>
+                                                                    s.Id === gStat.Id ? { ...s, RestoreRule: rule } : s
+                                                                )
+                                                            });
+                                                        }}
+                                                    />
+                                                    {trackedStat.RestoreRule !== undefined && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                handleChange(editingInventory.Id, {
+                                                                    Stats: editingInventory.Stats.map(s => {
+                                                                        if (s.Id !== gStat.Id) return s;
+                                                                        const { RestoreRule: _, ...rest } = s;
+                                                                        return rest;
+                                                                    })
+                                                                });
+                                                            }}
+                                                            disabled={readOnly}
+                                                            className="btn btn-ghost btn-xs mt-1"
+                                                            title="Reset to campaign default"
+                                                        >
+                                                            Reset to default
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
                                     </div>

@@ -18,7 +18,11 @@ export function StatBar({
 	onMaxChange,
 	onTransfer,
 }: StatBarProps) {
-	const actualCurrent = stat.Current;
+	// Treat null (unset) as 0 internally so local state stays numeric; the
+	// component early-returns before rendering so the input value is never
+	// exposed. Callers that want to keep unset stats in the DOM should filter
+	// them out before reaching this component.
+	const actualCurrent = stat.Current ?? 0;
 	const barRef = useRef<HTMLDivElement>(null);
 
 	// Local state for dragging - only syncs on mouseup
@@ -26,7 +30,7 @@ export function StatBar({
 	const [localValue, setLocalValue] = useState<number | null>(null);
 
 	// Local state for debounced values
-	const [localCurrent, setLocalCurrent] = useState(actualCurrent);
+	const [localCurrent, setLocalCurrent] = useState<number>(actualCurrent);
 	const [localMax, setLocalMax] = useState(stat.Max);
 
 	// Debounce timers
@@ -43,8 +47,11 @@ export function StatBar({
 	}, [stat.Max]);
 
 	// Use local value while dragging, local current otherwise
-	const displayValue = isDragging && localValue !== null ? localValue : localCurrent;
+	const displayValue: number = isDragging && localValue !== null ? localValue : localCurrent;
 	const percentage = (displayValue / localMax) * 100;
+
+	// Unset stat: render nothing. (Hooks above must stay unconditional.)
+	if (stat.Current === null) return null;
 
 	const calculateValueFromPosition = (clientX: number): number => {
 		if (!barRef.current) return displayValue;

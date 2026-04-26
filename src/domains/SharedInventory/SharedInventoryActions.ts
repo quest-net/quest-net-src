@@ -141,12 +141,11 @@ export const SharedInventoryActions = {
 
         const sourceStat = sourceInv.Stats.find((s) => s.Id === params.sourceStatId);
         if (!sourceStat) return;
+        // Refuse transfers from unset stats — the inventory doesn't track this stat.
+        if (sourceStat.Current === null) return;
 
         // Ensure source has enough points
-        const availableAmount = Math.min(
-            sourceStat.Current ?? sourceStat.Max,
-            params.amount
-        );
+        const availableAmount = Math.min(sourceStat.Current, params.amount);
         if (availableAmount <= 0) return;
 
         // Resolve target
@@ -165,25 +164,23 @@ export const SharedInventoryActions = {
         if (targetActor) {
             targetName = targetActor.Name;
             const tStat = targetActor.Stats.find((s) => s.Id === params.targetStatId);
-            if (tStat) {
-                const current = tStat.Current ?? tStat.Max;
-                tStat.Current = Math.min(tStat.Max, current + availableAmount);
+            // Refuse transfers into unset stats — target doesn't have this stat.
+            if (tStat && tStat.Current !== null) {
+                tStat.Current = Math.min(tStat.Max, tStat.Current + availableAmount);
                 transferSuccess = true;
             }
         } else if (targetSharedInv) {
             targetName = targetSharedInv.Name;
             const tStat = targetSharedInv.Stats.find((s) => s.Id === params.targetStatId);
-            if (tStat) {
-                const current = tStat.Current ?? tStat.Max;
-                tStat.Current = Math.min(tStat.Max, current + availableAmount);
+            if (tStat && tStat.Current !== null) {
+                tStat.Current = Math.min(tStat.Max, tStat.Current + availableAmount);
                 transferSuccess = true;
             }
         }
 
         if (transferSuccess) {
-            // Deduct from source
-            const sCurrent = sourceStat.Current;
-            sourceStat.Current = Math.max(0, sCurrent - availableAmount);
+            // Deduct from source (sourceStat.Current guaranteed non-null above)
+            sourceStat.Current = Math.max(0, sourceStat.Current - availableAmount);
 
             // Look up stat name from campaign settings
             const statDef = campaign.Settings.StatDefinitions.find(d => d.Id === sourceStat.Id);
@@ -204,12 +201,16 @@ export const SharedInventoryActions = {
 
     /**
      * Edits a stat in a shared inventory (e.g. changing Current/Max values)
+     *
+     * Current: a number sets the value, null marks the stat as "unset"
+     * (inventory no longer tracks this stat — hidden in UI, skipped by
+     * regen/restore). Pass undefined to leave Current untouched.
      */
     editStat(
         params: {
             inventoryId: string;
             statId: string;
-            updates: { Current?: number; Max?: number };
+            updates: { Current?: number | null; Max?: number };
         },
         context: Context
     ): void {

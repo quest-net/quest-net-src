@@ -254,6 +254,12 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm"],
 		handler: CombatActions.setInitiativeSide,
 	},
+	"combat:markActorTurnDone": {
+		// Both roles allowed: UI restricts players to their own selected character.
+		// The handler itself is non-destructive (toggles a string-array entry).
+		roles: ["dm", "player"],
+		handler: CombatActions.markActorTurnDone,
+	},
 
 	// ============================================================================
 	// AUDIO ACTIONS (uncomment when AudioActions is implemented)

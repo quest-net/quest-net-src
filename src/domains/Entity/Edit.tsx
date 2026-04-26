@@ -43,13 +43,16 @@ export function EntityEdit({
 	const handleSave = (data: Entity) => {
 		if (!actionService) return;
 
-		// Clamp stat Current values to their Max before saving
-		// Ensure action Current always equals Max (not editable from this form)
+		// Clamp stat Current values to their Max before saving.
+		// Preserve null (unset) — entity doesn't have this stat.
+		// Ensure action Current always equals Max (not editable from this form).
 		const validatedData = {
 			...data,
 			Stats: data.Stats.map(stat => ({
 				...stat,
-				Current: Math.min(stat.Current ?? stat.Max, stat.Max)
+				Current: stat.Current === null
+					? null
+					: Math.min(stat.Current, stat.Max)
 			})),
 			Actions: data.Actions.map(action => ({
 				...action,
@@ -221,7 +224,12 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 						campaign.Settings.StatDefinitions
 					).map((stat) => {
 						const slot = data.Stats.find((s) => s.Id === stat.Id);
-						const isTrackingMax = slot ? slot.Current === slot.Max : true;
+						// "Tracking max" means: blank field displays, treated as Current == Max.
+						// If the stat is unset (Current === null), don't treat it as tracking max —
+						// render the value as-is (empty) and let the user re-enter a number.
+						const isTrackingMax = slot
+							? slot.Current !== null && slot.Current === slot.Max
+							: true;
 
 						return (
 							<div key={stat.Id} className="flex items-center gap-4">
@@ -260,9 +268,12 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 									<label className="text-sm opacity-70">Current:</label>
 									<input
 										type="number"
-										value={isTrackingMax ? "" : stat.Current}
+										value={isTrackingMax ? "" : (stat.Current ?? "")}
 										onChange={(e) => {
 											const raw = e.target.value;
+											// Clearing the input re-enters "same as max" tracking
+											// (legacy behavior). The X button to the right is the
+											// way to unset the stat entirely.
 											const newCurrent = raw === "" ? stat.Max : Number(raw);
 											const updatedSlots = data.Stats.map((s) =>
 												s.Id === stat.Id
@@ -274,8 +285,23 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 										className="input input-bordered input-sm w-24"
 										min={0}
 										max={stat.Max}
-										placeholder="same as max"
+										placeholder={stat.Current === null ? "unset" : "same as max"}
 									/>
+									<button
+										type="button"
+										onClick={() => {
+											const updatedSlots = data.Stats.map((s) =>
+												s.Id === stat.Id ? { ...s, Current: null } : s
+											);
+											handleFieldChange("Stats", updatedSlots);
+										}}
+										disabled={stat.Current === null}
+										className="btn btn-ghost btn-sm btn-square shrink-0"
+										aria-label="Unset stat"
+										title="Unset (entity doesn't have this stat)"
+									>
+										<span className="icon-[mdi--close] h-5 w-5" />
+									</button>
 								</div>
 							</div>
 						);

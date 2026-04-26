@@ -34,19 +34,27 @@ export interface Actor {
 /**
  * StatSlot stores per-actor stat instance data.
  * Id references a StatDefinition in CampaignSettings.
- * RegenRate/RestoreRule/OverflowTarget are optional overrides;
- * if undefined, the template's value is used.
+ *
+ * Current: number = stat is set to that value; null = actor does not have
+ * this stat (hidden from UI, skipped by regen/restore). Max is retained
+ * while unset so re-enabling the stat can restore a sensible cap.
+ *
+ * RegenRate / RestoreRule / OverflowTarget are optional slot-level overrides.
+ *   - undefined  → inherit the value from the StatDefinition template
+ *   - a value    → override the template (including RegenRate = 0, etc.)
+ *   - null       → (OverflowTarget only) explicitly disable overflow for this
+ *                  slot even if the template defines a target
  */
 export interface StatSlot {
 	Id: string;
-	Current: number;
+	Current: number | null;
 	Max: number;
 	RegenRate?: number;
 	RestoreRule?: RestoreRule;
 	OverflowTarget?: {
 		InventoryId: string;
 		StatId: string;
-	};
+	} | null;
 }
 
 /**

@@ -5,6 +5,7 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { restoreCharacter, restoreSharedInventories } from "../Calendar/CalendarActions";
 import { Actor } from "../Actor/Actor";
+import { resolveStat } from "../../utils/ActorResolvers";
 
 export const CombatActions = {
 	/**
@@ -18,6 +19,8 @@ export const CombatActions = {
 			isActive: true,
 			currentTurn: 1,
 			initiativeSide: params.startingSide,
+			PartyTurnsCompleted: [],
+			EnemyTurnsCompleted: [],
 		};
 
 		LogActions.create(
@@ -66,6 +69,8 @@ export const CombatActions = {
 			isActive: false,
 			currentTurn: 0,
 			initiativeSide: "party",
+			PartyTurnsCompleted: [],
+			EnemyTurnsCompleted: [],
 		};
 
 		LogActions.create(
@@ -100,8 +105,16 @@ export const CombatActions = {
 		combatState.initiativeSide =
 			combatState.initiativeSide === "party" ? "enemies" : "party";
 
+		// Clear the *destination* side's "turn done" list so the next turn
+		// starts with everyone unmarked. Initiative order itself is recomputed
+		// live at render time, so there's nothing else to refresh.
+		clearTurnsCompletedForSide(combatState, combatState.initiativeSide);
+
 		// Apply regen to all actors with regen rates
 		applyRegenToAllActors(campaign, 1);
+
+		// Apply regen to shared inventory pools
+		applyRegenToSharedInventories(campaign, 1);
 
 		// Reset actions for all actors
 		resetActions(campaign);
@@ -146,8 +159,14 @@ export const CombatActions = {
 		combatState.initiativeSide =
 			combatState.initiativeSide === "party" ? "enemies" : "party";
 
+		// Clear the side we're rewinding into — same reasoning as incrementTurn.
+		clearTurnsCompletedForSide(combatState, combatState.initiativeSide);
+
 		// Reverse regen from all actors
 		applyRegenToAllActors(campaign, -1);
+
+		// Reverse regen from shared inventory pools
+		applyRegenToSharedInventories(campaign, -1);
 
 		// Reset actions for all actors
 		resetActions(campaign);
@@ -165,6 +184,34 @@ export const CombatActions = {
 			},
 			context
 		);
+	},
+
+	/**
+	 * Toggles whether an actor's turn is marked "done" for the current side's
+	 * turn. Purely visual — used by the party-tab badge click handler and the
+	 * battle banner. Allowed for DM and players alike (the UI restricts which
+	 * actors a player can click; this handler trusts the call).
+	 */
+	markActorTurnDone(
+		params: { actorId: string; side: "party" | "enemies" },
+		context: Context
+	): void {
+		const campaign = CampaignActions.getActiveCampaign(context);
+		const combatState = campaign.GameState.CombatState;
+
+		if (!combatState.isActive) {
+			console.warn("[Combat] Cannot mark turn done - combat is not active");
+			return;
+		}
+
+		const key =
+			params.side === "party" ? "PartyTurnsCompleted" : "EnemyTurnsCompleted";
+		const existing = combatState[key] ?? [];
+		const isDone = existing.includes(params.actorId);
+
+		combatState[key] = isDone
+			? existing.filter((id) => id !== params.actorId)
+			: [...existing, params.actorId];
 	},
 
 	/**
@@ -203,49 +250,123 @@ export const CombatActions = {
 // ============================================================================
 
 /**
- * Applies regen to all actors (characters and entities) with RegenRate
+ * Clears the "turn done" list for one side. Used when initiative flips so the
+ * incoming side starts fresh. The opposite side's list is left intact so a
+ * decrementTurn rewind doesn't lose data within a round.
+ */
+function clearTurnsCompletedForSide(
+	combatState: { PartyTurnsCompleted?: string[]; EnemyTurnsCompleted?: string[] },
+	side: "party" | "enemies"
+): void {
+	if (side === "party") combatState.PartyTurnsCompleted = [];
+	else combatState.EnemyTurnsCompleted = [];
+}
+
+/**
+ * Applies regen to all actors (characters and entities) with RegenRate.
+ *
+ * Per-actor overrides: RegenRate and OverflowTarget are read through
+ * resolveStat so slot-level overrides (including a null OverflowTarget
+ * meaning "explicitly disable overflow for this actor") take effect.
+ *
+ * Overflow scope: only Characters (party members) contribute their
+ * surplus to shared inventory pools. Entities (NPCs/enemies) regen
+ * normally but any excess beyond Max is simply discarded — they do
+ * not feed the party's shared inventory.
+ *
  * @param multiplier 1 for normal regen, -1 for reversing regen
  */
 function applyRegenToAllActors(campaign: any, multiplier: 1 | -1): void {
 	const statDefinitions = campaign.Settings.StatDefinitions;
 	const sharedInventories = campaign.Settings.SharedInventories || [];
-	const allActors: Actor[] = [
-		...campaign.GameState.Characters,
-		...campaign.GameState.Entities,
-	];
 
-	allActors.forEach((actor) => {
-		actor.Stats.forEach((stat) => {
-			const definition = statDefinitions.find((d: any) => d.Id === stat.Id);
-			if (!definition?.RegenRate) return;
+	const runForActors = (actors: Actor[], overflowAllowed: boolean) => {
+		actors.forEach((actor) => {
+			actor.Stats.forEach((stat) => {
+				// Skip unset stats — actor doesn't have this stat, so no regen.
+				if (stat.Current === null) return;
 
-			const regenAmount = definition.RegenRate * multiplier;
-			const current = stat.Current ?? stat.Max;
-			const newValue = current + regenAmount;
+				const definition = statDefinitions.find((d: any) => d.Id === stat.Id);
+				if (!definition) return;
 
-			// Handle overflow if applicable (only when regenerating positively)
-			if (multiplier === 1 && newValue > stat.Max && definition.OverflowTarget) {
-				const overflowAmount = newValue - stat.Max;
-				const targetInv = sharedInventories.find(
-					(inv: any) => inv.Id === definition.OverflowTarget.InventoryId
-				);
+				// Resolve through slot so per-actor RegenRate / OverflowTarget
+				// overrides win (slot.null for OverflowTarget = explicitly disabled).
+				const resolved = resolveStat(stat, definition);
+				if (!resolved.RegenRate) return;
 
-				if (targetInv) {
-					const targetStat = targetInv.Stats.find(
-						(s: any) => s.Id === definition.OverflowTarget.StatId
+				const regenAmount = resolved.RegenRate * multiplier;
+				const newValue = stat.Current + regenAmount;
+
+				// Handle overflow only for party members, only on positive regen,
+				// and only when the resolved target is defined.
+				if (
+					overflowAllowed
+					&& multiplier === 1
+					&& newValue > stat.Max
+					&& resolved.OverflowTarget
+				) {
+					const overflowAmount = newValue - stat.Max;
+					const targetInv = sharedInventories.find(
+						(inv: any) => inv.Id === resolved.OverflowTarget!.InventoryId
 					);
-					if (targetStat) {
-						const tCurrent = targetStat.Current ?? targetStat.Max;
-						targetStat.Current = Math.min(
-							targetStat.Max,
-							tCurrent + overflowAmount
+
+					if (targetInv) {
+						const targetStat = targetInv.Stats.find(
+							(s: any) => s.Id === resolved.OverflowTarget!.StatId
 						);
+						// Skip overflow target if it's unset — don't silently
+						// materialize points into a stat the inventory doesn't track.
+						if (targetStat && targetStat.Current !== null) {
+							targetStat.Current = Math.min(
+								targetStat.Max,
+								targetStat.Current + overflowAmount
+							);
+						}
 					}
 				}
-			}
 
-			// Clamp between 0 and Max
-			stat.Current = Math.max(0, Math.min(newValue, stat.Max));
+				// Clamp between 0 and Max
+				stat.Current = Math.max(0, Math.min(newValue, stat.Max));
+			});
+		});
+	};
+
+	// Party members may contribute overflow to shared inventories.
+	runForActors(campaign.GameState.Characters, true);
+	// Entities regen normally but surplus is discarded (not overflowed).
+	runForActors(campaign.GameState.Entities, false);
+}
+
+/**
+ * Applies regen to stats in all shared inventory pools.
+ *
+ * Shared inventory stats reference campaign StatDefinitions by Id, so we
+ * resolve each slot through its template — slot-level RegenRate wins, else
+ * the template default is used. Unset stats (Current === null) are skipped.
+ *
+ * Shared inventory stats do NOT participate in overflow — they are the
+ * terminal destination. If a pool regens past Max, the surplus is discarded.
+ *
+ * @param multiplier 1 for normal regen, -1 for reversing regen
+ */
+function applyRegenToSharedInventories(campaign: any, multiplier: 1 | -1): void {
+	const statDefinitions = campaign.Settings.StatDefinitions;
+	const sharedInventories = campaign.Settings.SharedInventories || [];
+
+	sharedInventories.forEach((inv: any) => {
+		inv.Stats.forEach((stat: any) => {
+			// Skip unset pool stats.
+			if (stat.Current === null) return;
+
+			const definition = statDefinitions.find((d: any) => d.Id === stat.Id);
+			if (!definition) return;
+
+			const resolved = resolveStat(stat, definition);
+			if (!resolved.RegenRate) return;
+
+			const regenAmount = resolved.RegenRate * multiplier;
+			// Clamp between 0 and Max — shared pools never overflow anywhere.
+			stat.Current = Math.max(0, Math.min(stat.Current + regenAmount, stat.Max));
 		});
 	});
 }

@@ -9,6 +9,7 @@ import { Character } from "../Character/Character";
 import { Item } from "../Item/Item";
 import { Skill } from "../Skill/Skill";
 import { Actor } from "../Actor/Actor";
+import { resolveStat } from "../../utils/ActorResolvers";
 
 export const CalendarActions = {
 	/**
@@ -255,11 +256,19 @@ export function restoreCharacter(
 	const statDefinitions = campaign.Settings.StatDefinitions;
 
 	// Restore stats
+	// Per-actor overrides: RestoreRule is read through resolveStat so
+	// slot-level overrides win over the template default.
+	// Unset stats (Current === null) are skipped — actor doesn't have this stat.
 	character.Stats.forEach((stat) => {
-		const definition = statDefinitions.find((d: any) => d.Id === stat.Id);
-		if (!definition?.RestoreRule) return;
+		if (stat.Current === null) return;
 
-		const restoreValue = definition.RestoreRule[restType];
+		const definition = statDefinitions.find((d: any) => d.Id === stat.Id);
+		if (!definition) return;
+
+		const resolved = resolveStat(stat, definition);
+		if (!resolved.RestoreRule) return;
+
+		const restoreValue = resolved.RestoreRule[restType];
 		if (restoreValue === undefined) return;
 
 		if (restoreValue === "max") {
@@ -269,7 +278,7 @@ export function restoreCharacter(
 			stat.Current = Math.min(Math.max(0, restoreValue.setTo), stat.Max);
 		} else {
 			// Increment by amount, capped at Max
-			stat.Current = Math.min((stat.Current || 0) + restoreValue, stat.Max);
+			stat.Current = Math.min((stat.Current ?? 0) + restoreValue, stat.Max);
 		}
 	});
 
@@ -351,13 +360,23 @@ export function restoreSharedInventories(
 	campaign: any,
 	restType: "shortRest" | "longRest" | "combatEnd",
 ): void {
+	const statDefinitions = campaign.Settings.StatDefinitions;
 	const sharedInventories = campaign.Settings.SharedInventories || [];
 
 	sharedInventories.forEach((inv: any) => {
 		inv.Stats.forEach((stat: any) => {
-			if (!stat.RestoreRule) return;
+			// Skip unset pool stats — inventory doesn't track this stat.
+			if (stat.Current === null) return;
 
-			const restoreValue = stat.RestoreRule[restType];
+			const definition = statDefinitions.find((d: any) => d.Id === stat.Id);
+			if (!definition) return;
+
+			// Resolve through slot so inventory-level RestoreRule overrides
+			// the campaign template default.
+			const resolved = resolveStat(stat, definition);
+			if (!resolved.RestoreRule) return;
+
+			const restoreValue = resolved.RestoreRule[restType];
 			if (restoreValue === undefined) return;
 
 			if (restoreValue === "max") {
@@ -366,7 +385,7 @@ export function restoreSharedInventories(
 				stat.Current = Math.min(Math.max(0, restoreValue.setTo), stat.Max);
 			} else {
 				// Increment by amount, capped at Max
-				stat.Current = Math.min((stat.Current || 0) + restoreValue, stat.Max);
+				stat.Current = Math.min((stat.Current ?? 0) + restoreValue, stat.Max);
 			}
 		});
 	});

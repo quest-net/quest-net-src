@@ -268,11 +268,13 @@ export const SkillActions = {
 			slot.UsesLeft--;
 		}
 
-		// Handle stat cost deduction (graceful - deduct to 0, don't block)
+		// Handle stat cost deduction (graceful - deduct to 0, don't block).
+		// If the actor doesn't have this stat (Current === null) we simply skip
+		// the deduction; the skill still fires.
 		let statCostDetails = "";
 		if (skillTemplate.StatCost) {
 			const stat = actor.Stats.find((s) => s.Id === skillTemplate.StatCost!.statId);
-			if (stat) {
+			if (stat && stat.Current !== null) {
 				const currentValue = stat.Current;
 				const costAmount = skillTemplate.StatCost.amount;
 				const newValue = Math.max(0, currentValue - costAmount);
