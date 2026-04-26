@@ -667,6 +667,18 @@ interface PathNode {
 }
 
 /**
+ * Result of a movement-range Dijkstra. `tiles` lists every (x,y) reachable
+ * within the budget (deduped across heights). `costs` maps "x,y" → the
+ * cheapest path cost to that tile across all (h, climbUsed) states — used
+ * by callers that need to know how much movement was spent to reach a
+ * specific tile (e.g. computing remaining range from a turn-start snapshot).
+ */
+export interface MovementRangeResult {
+	tiles: Array<{ x: number; y: number }>;
+	costs: Map<string, number>;
+}
+
+/**
  * Calculate all reachable tiles using Dijkstra's algorithm with movement costs
  */
 export function calculateMovementRange(
@@ -680,12 +692,16 @@ export function calculateMovementRange(
 	terrainHeightMap: number[][],
 	heightCostLookup: number[],
 	flyingIgnoresHeight: boolean
-): Array<{ x: number; y: number }> {
+): MovementRangeResult {
+	const tileKey = (x: number, y: number) => `${x},${y}`;
+
 	// Hard clamp to what's actually reachable
 	const maxDistance = clampMoveTiles(moveSpeed, terrainWidth, terrainLength);
 
 	if (maxDistance <= 0) {
-		return [{ x: fromX, y: fromY }];
+		const costs = new Map<string, number>();
+		costs.set(tileKey(fromX, fromY), 0);
+		return { tiles: [{ x: fromX, y: fromY }], costs };
 	}
 
 	// Track cost to reach each (x,y,h,climbUsed) node
@@ -693,9 +709,10 @@ export function calculateMovementRange(
 	const nodeKey = (x: number, y: number, h: number, climbUsed: number) =>
 		`${x},${y},${h},${climbUsed}`;
 
-	// Track which 2D tiles (x,y) we've reached at any height
+	// Track which 2D tiles (x,y) we've reached at any height, and the cheapest
+	// cost to reach each (across all h/climbUsed states).
 	const reachableTiles = new Set<string>();
-	const tileKey = (x: number, y: number) => `${x},${y}`;
+	const tileCosts = new Map<string, number>();
 
 	// Priority queue: nodes sorted by cost
 	const queue = new PriorityQueue<PathNode>();
@@ -705,6 +722,7 @@ export function calculateMovementRange(
 	costMap.set(startKey, 0);
 	queue.enqueue({ x: fromX, y: fromY, h: fromH, climbUsed: 0 }, 0);
 	reachableTiles.add(tileKey(fromX, fromY));
+	tileCosts.set(tileKey(fromX, fromY), 0);
 
 	// Four cardinal directions
 	const directions = [
@@ -790,6 +808,13 @@ export function calculateMovementRange(
 				costMap.set(neighborKey, newCost);
 				queue.enqueue({ x: nx, y: ny, h: targetH, climbUsed: newClimbUsed }, newCost);
 				reachableTiles.add(tileKey(nx, ny));
+
+				// Track cheapest 2D-tile cost across all (h, climbUsed) states.
+				const tk = tileKey(nx, ny);
+				const prevTileCost = tileCosts.get(tk);
+				if (prevTileCost === undefined || newCost < prevTileCost) {
+					tileCosts.set(tk, newCost);
+				}
 			}
 		}
 	}
@@ -801,7 +826,7 @@ export function calculateMovementRange(
 		result.push({ x, y });
 	});
 
-	return result;
+	return { tiles: result, costs: tileCosts };
 }
 export function findActor(
 	actorId: string,

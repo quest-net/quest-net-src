@@ -2,7 +2,8 @@
 // Terrain rendering constants and configuration
 
 // Highlight colors
-export const RANGE_COLOR = 0xfa4398; // movement range highlight
+export const RANGE_COLOR = 0xfa4398; // movement range highlight (full move budget from current position)
+export const REMAINING_COLOR = 0x06b6d4; // remaining movement range during a combat turn (cyan, distinct from hover blue)
 export const HOVER_COLOR = 0x002bff; // hovered tile highlight
 
 // Elevation shading configuration

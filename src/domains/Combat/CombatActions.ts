@@ -23,6 +23,12 @@ export const CombatActions = {
 			EnemyTurnsCompleted: [],
 		};
 
+		// Snapshot turn-start positions for everyone. Both sides are entering
+		// their first turn fresh — even the side that doesn't go first benefits
+		// from having an anchor (it just won't be consulted until their turn).
+		snapshotTurnStartForActors(campaign.GameState.Characters);
+		snapshotTurnStartForActors(campaign.GameState.Entities);
+
 		LogActions.create(
 			{
 				action: "Combat started",
@@ -64,6 +70,9 @@ export const CombatActions = {
 				(status) => status.expiration.type !== "turns"
 			);
 		});
+
+		// Clear turn-start position snapshots — they're a combat-only concept
+		clearTurnStartForActors(allActors);
 
 		campaign.GameState.CombatState = {
 			isActive: false,
@@ -109,6 +118,13 @@ export const CombatActions = {
 		// starts with everyone unmarked. Initiative order itself is recomputed
 		// live at render time, so there's nothing else to refresh.
 		clearTurnsCompletedForSide(combatState, combatState.initiativeSide);
+
+		// Snapshot turn-start positions for the side whose turn is now
+		// beginning, so remaining-movement UI re-anchors at this position.
+		// Note: decrementTurn deliberately does NOT do this — rewinding loses
+		// historical turn-start data, matching the existing "we don't perfectly
+		// reverse complex state" stance for that direction.
+		snapshotTurnStartForSide(campaign, combatState.initiativeSide);
 
 		// Apply regen to all actors with regen rates
 		applyRegenToAllActors(campaign, 1);
@@ -421,5 +437,42 @@ function resetActions(campaign: any): void {
 				action.Current = action.Max;
 			});
 		}
+	});
+}
+
+/**
+ * Snapshots the current Position of each actor into TurnStartPosition.
+ * Used to anchor the "remaining movement" calculation: spent = cheapest
+ * path cost from TurnStartPosition to current Position.
+ */
+function snapshotTurnStartForActors(actors: Actor[]): void {
+	actors.forEach((actor) => {
+		actor.TurnStartPosition = { ...actor.Position };
+	});
+}
+
+/**
+ * Snapshots turn-start positions for one side only. Party = Characters,
+ * Enemies = Entities. Called when initiative flips to that side so the
+ * acting players see their fresh budget zone.
+ */
+function snapshotTurnStartForSide(
+	campaign: any,
+	side: "party" | "enemies"
+): void {
+	const actors: Actor[] =
+		side === "party"
+			? campaign.GameState.Characters
+			: campaign.GameState.Entities;
+	snapshotTurnStartForActors(actors);
+}
+
+/**
+ * Clears TurnStartPosition on every actor — used when combat ends so the
+ * field doesn't linger as stale data outside of combat.
+ */
+function clearTurnStartForActors(actors: Actor[]): void {
+	actors.forEach((actor) => {
+		delete actor.TurnStartPosition;
 	});
 }

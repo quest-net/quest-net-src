@@ -141,7 +141,7 @@ export default function TwoDMap({
 		const { heightCostLookup, flyingIgnoresHeight } =
 			campaign.Settings.MovementSettings;
 
-		const allTiles = calculateMovementRange(
+		const { tiles: allTiles } = calculateMovementRange(
 			selectedActorInfo.x,
 			selectedActorInfo.y,
 			selectedActorInfo.h,

@@ -257,8 +257,6 @@ export default function Map({
 	// POINTER INTERACTION HANDLERS
 	// ============================================================================
 	// Calculate movement range for selected actor
-	// Calculate movement range for selected actor
-	// Calculate movement range for selected actor
 	const movementRange = useMemo(() => {
 		if (!selectedActor || !terrain) return [];
 		// Hide range if the user doesn't control the selected actor
@@ -270,19 +268,88 @@ export default function Map({
 		const campaign = CampaignActions.getActiveCampaign(context);
 		const { heightCostLookup, flyingIgnoresHeight } = campaign.Settings.MovementSettings;
 
-		// Calculate pathfinding-based movement range
-		return calculateMovementRange(
+		const moveSpeed = selectedActorObj?.MoveSpeed ?? 5;
+		const canFly = selectedActorObj?.CanFly ?? false;
+
+		// Calculate pathfinding-based movement range (full budget from current position = pink)
+		const { tiles } = calculateMovementRange(
 			actor.x,
 			actor.y,
 			actor.h,
-			selectedActorObj?.MoveSpeed ?? 5,
-			selectedActorObj?.CanFly ?? false,
+			moveSpeed,
+			canFly,
 			terrain.Width,
 			terrain.Length,
 			terrain.HeightMap,
 			heightCostLookup,
 			flyingIgnoresHeight
 		);
+		return tiles;
+	}, [
+		selectedActor,
+		actorHitCandidates,
+		terrain,
+		canControlSelected,
+		selectedActorObj,
+		context,
+	]);
+
+	// Remaining movement range (blue): only during combat when TurnStartPosition is set.
+	// Runs Dijkstra from TurnStartPosition to find the cheapest path cost to the actor's
+	// current tile, then shows reachable tiles from current position with the leftover budget.
+	const remainingMovementRange = useMemo(() => {
+		if (!selectedActor || !terrain) return null;
+		if (!canControlSelected) return null;
+
+		const campaign = CampaignActions.getActiveCampaign(context);
+		if (!campaign.GameState.CombatState?.isActive) return null;
+
+		const turnStart = selectedActorObj?.TurnStartPosition;
+		if (!turnStart) return null;
+
+		const actor = actorHitCandidates.find((a) => a.id === selectedActor.id);
+		if (!actor) return null;
+
+		const moveSpeed = selectedActorObj?.MoveSpeed ?? 5;
+		const canFly = selectedActorObj?.CanFly ?? false;
+		const { heightCostLookup, flyingIgnoresHeight } = campaign.Settings.MovementSettings;
+
+		// Run Dijkstra from turn-start to get cost of reaching the current tile
+		const { costs: startCosts } = calculateMovementRange(
+			turnStart.x,
+			turnStart.y,
+			turnStart.h,
+			moveSpeed,
+			canFly,
+			terrain.Width,
+			terrain.Length,
+			terrain.HeightMap,
+			heightCostLookup,
+			flyingIgnoresHeight
+		);
+
+		const spentCost = startCosts.get(`${actor.x},${actor.y}`);
+
+		// Forced movement carried them outside the budget zone — suppress blue per spec
+		if (spentCost === undefined) return null;
+
+		const remaining = moveSpeed - spentCost;
+		if (remaining <= 0) return [];
+
+		// Run Dijkstra from current position with remaining budget
+		const { tiles: remainingTiles } = calculateMovementRange(
+			actor.x,
+			actor.y,
+			actor.h,
+			remaining,
+			canFly,
+			terrain.Width,
+			terrain.Length,
+			terrain.HeightMap,
+			heightCostLookup,
+			flyingIgnoresHeight
+		);
+		return remainingTiles;
 	}, [
 		selectedActor,
 		actorHitCandidates,
@@ -660,6 +727,14 @@ export default function Map({
 		return set;
 	}, [terrain, movementRange]);
 
+	const remainingRangeIndices = useMemo(() => {
+		if (!terrain || !remainingMovementRange) return undefined;
+		const set = new Set<number>();
+		for (const t of remainingMovementRange)
+			set.add(getTileIndex(t.x, t.y, terrain.Width));
+		return set;
+	}, [terrain, remainingMovementRange]);
+
 	const hoveredIndex = useMemo(() => {
 		if (!terrain || !hoveredTile) return null;
 		return getTileIndex(hoveredTile.x, hoveredTile.y, terrain.Width);
@@ -701,6 +776,7 @@ export default function Map({
 							selectedActorId={selectedActor?.id}
 							getActorPosition={getActorPosition}
 							movementRangeIndices={movementRangeIndices}
+							remainingRangeIndices={remainingRangeIndices}
 							hoveredIndex={hoveredIndex}
 							ladderInfo={ladderInfo}
 							hoveredLadderHeight={hoveredLadderHeight}

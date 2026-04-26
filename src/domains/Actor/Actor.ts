@@ -18,6 +18,19 @@ export interface Actor {
 	MoveSpeed: number;
 	CanFly: boolean;
 	Size?: ActorSize;
+	/**
+	 * Snapshot of the actor's position at the start of their current turn in
+	 * combat. Set by CombatActions on combat start and on each side flip
+	 * (for actors on the side whose turn is beginning). Cleared when combat
+	 * ends. Used to compute remaining movement range during a turn — the
+	 * difference between the actor's full move budget and the cheapest path
+	 * cost from this snapshot to their current position.
+	 *
+	 * Not updated by ordinary moves; if forced movement carries the actor
+	 * outside their original budget zone, the remaining-range UI is
+	 * suppressed rather than re-anchored.
+	 */
+	TurnStartPosition?: Position;
 
 	// Collections
 	Inventory: InventorySlot[];

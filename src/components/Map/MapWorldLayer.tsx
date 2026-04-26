@@ -28,6 +28,7 @@ import {
 } from "./Token";
 import {
 	RANGE_COLOR,
+	REMAINING_COLOR,
 	HOVER_COLOR,
 	ELEV_TOP_STRENGTH,
 	ELEV_SIDE_STRENGTH,
@@ -98,6 +99,8 @@ export interface MapWorldLayerProps {
 		isAnimating: boolean;
 	};
 	movementRangeIndices?: Set<number>;
+	/** Subset of movementRangeIndices: tiles reachable with the remaining movement budget (cyan). */
+	remainingRangeIndices?: Set<number>;
 	hoveredIndex?: number | null;
 	ladderInfo?: LadderInfo | null;
 	hoveredLadderHeight?: number | null;
@@ -115,6 +118,7 @@ export function MapWorldLayer({
 	selectedActorId,
 	getActorPosition,
 	movementRangeIndices,
+	remainingRangeIndices,
 	hoveredIndex,
 	ladderInfo,
 	hoveredLadderHeight,
@@ -354,10 +358,16 @@ export function MapWorldLayer({
 			g.stroke();
 
 			// Highlight overlay (movement range or hover)
+			// Priority: hover (blue thick) > remaining budget (cyan) > full range (pink)
 			const isHovered = hoveredIndex != null && i === hoveredIndex;
-			const inRange = !!movementRangeIndices && movementRangeIndices.has(i);
-			if (isHovered || inRange) {
-				const outlineColor = isHovered ? HOVER_COLOR : RANGE_COLOR;
+			const inRemaining = !!remainingRangeIndices && remainingRangeIndices.has(i);
+			const inFull = !!movementRangeIndices && movementRangeIndices.has(i);
+			if (isHovered || inRemaining || inFull) {
+				const outlineColor = isHovered
+					? HOVER_COLOR
+					: inRemaining
+						? REMAINING_COLOR
+						: RANGE_COLOR;
 				const outlineWidth = isHovered
 					? HOVER_OUTLINE_WIDTH
 					: RANGE_OUTLINE_WIDTH;

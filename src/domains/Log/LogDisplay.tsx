@@ -1,43 +1,84 @@
-// domains/Log/LogDisplay.tsx - Updated
+// domains/Log/LogDisplay.tsx
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import {
+	useState,
+	useRef,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+} from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogEntry, LogCategory } from "./LogEntry";
 import { LogActions } from "./LogActions";
 
-// Category color configuration - easily customizable
-const CATEGORY_COLORS: Record<LogCategory, string> = {
-	combat: "text-red-400",
-	character: "text-blue-400",
-	item: "text-yellow-400",
-	skill: "text-purple-400",
-	dice: "text-green-400",
-	movement: "text-gray-400",
-	scene: "text-cyan-400",
-	chat: "text-orange-400",
-	sticker: "text-slate-400",
-	system: "text-slate-400",
+// ============================================================================
+// CATEGORY PALETTE
+// ============================================================================
+// Per-theme foreground colors. Backgrounds are derived from these via
+// color-mix at runtime, so each row gets a subtle tint that matches its
+// label color in both themes without fighting the surface.
+
+const CATEGORY_FG_LIGHT: Record<LogCategory, string> = {
+	combat: "#b91c1c",     // red-700
+	character: "#1d4ed8",  // blue-700
+	item: "#a16207",       // amber-700
+	skill: "#7e22ce",      // purple-700
+	dice: "#15803d",       // green-700
+	movement: "#374151",   // gray-700
+	scene: "#0e7490",      // cyan-700
+	chat: "#c2410c",       // orange-700
+	sticker: "#334155",    // slate-700
+	system: "#334155",     // slate-700
 };
 
-const CATEGORY_BG: Record<LogCategory, string> = {
-	combat: "bg-red-950/30",
-	character: "bg-blue-950/30",
-	item: "bg-yellow-950/30",
-	skill: "bg-purple-950/30",
-	dice: "bg-green-950/30",
-	movement: "bg-gray-950/30",
-	scene: "bg-cyan-950/30",
-	chat: "bg-orange-950/30",
-	sticker: "text-slate-400",
-	system: "bg-slate-950/30",
+const CATEGORY_FG_DARK: Record<LogCategory, string> = {
+	combat: "#f87171",     // red-400
+	character: "#60a5fa",  // blue-400
+	item: "#fbbf24",       // amber-400
+	skill: "#c084fc",      // purple-400
+	dice: "#4ade80",       // green-400
+	movement: "#9ca3af",   // gray-400
+	scene: "#22d3ee",      // cyan-400
+	chat: "#fb923c",       // orange-400
+	sticker: "#94a3b8",    // slate-400
+	system: "#94a3b8",     // slate-400
 };
+
+// 12% of the foreground over the surface — subtle row band in either theme.
+function tintBg(fg: string): string {
+	return `color-mix(in oklab, ${fg} 12%, transparent)`;
+}
+
+// Tracks the current daisyUI theme set on <html data-theme="…">.
+function useDataTheme(): "light" | "dark" {
+	const [theme, setTheme] = useState<"light" | "dark">(() => {
+		const t = document.documentElement.getAttribute("data-theme");
+		return t === "dark" ? "dark" : "light";
+	});
+
+	useEffect(() => {
+		const update = () => {
+			const t = document.documentElement.getAttribute("data-theme");
+			setTheme(t === "dark" ? "dark" : "light");
+		};
+		const observer = new MutationObserver(update);
+		observer.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ["data-theme"],
+		});
+		return () => observer.disconnect();
+	}, []);
+
+	return theme;
+}
 
 const FILTER_STORAGE_KEY = "quest-net-log-filters";
 const INITIAL_MESSAGES_SHOWN = 50;
 const MESSAGES_PER_LOAD = 50;
-const SCROLL_THRESHOLD = 100; // Auto-scroll if within 100px of bottom
+const SCROLL_THRESHOLD = 100; // Considered "near bottom" within this many px.
+const LOAD_MORE_TRIGGER = 100; // Distance from top that triggers load-more.
 
 interface LogDisplayProps {
 	isFloating?: boolean;
@@ -47,28 +88,40 @@ interface LogDisplayProps {
 export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
+	const theme = useDataTheme();
+	const palette = theme === "dark" ? CATEGORY_FG_DARK : CATEGORY_FG_LIGHT;
+
 	const [message, setMessage] = useState("");
 	const [searchQuery, setSearchQuery] = useState("");
-	const logEndRef = useRef<HTMLDivElement>(null);
-	const logContainerRef = useRef<HTMLDivElement>(null);
 	const [showFilters, setShowFilters] = useState(false);
 	const [messagesToShow, setMessagesToShow] = useState(INITIAL_MESSAGES_SHOWN);
-	const [isNearBottom, setIsNearBottom] = useState(true);
-	const userScrolledUp = useRef(false);
+	const [showScrollButton, setShowScrollButton] = useState(false);
+
+	const logEndRef = useRef<HTMLDivElement>(null);
+	const logContainerRef = useRef<HTMLDivElement>(null);
+
+	// `isNearBottom` lives in a ref so the auto-scroll effect doesn't refire
+	// on its own state change — only on actual new content.
+	const isNearBottomRef = useRef(true);
+
+	// Snapshot for restoring scroll position after prepending older messages.
+	const pendingScrollRestore = useRef<number | null>(null);
+
+	// Track previous tail so we only auto-scroll when a new message lands.
+	const prevDisplayedLengthRef = useRef(0);
+	const prevLastIdRef = useRef<string | undefined>(undefined);
 
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const userRole = context.User.Role;
 	const selectedCharacterId =
 		context.User.SelectedCharacters[campaign.RoomCode];
 
-	// Load filters from localStorage
+	// --- Filters (persisted) -------------------------------------------------
 	const [hiddenCategories, setHiddenCategories] = useState<Set<LogCategory>>(
 		() => {
 			try {
 				const saved = localStorage.getItem(FILTER_STORAGE_KEY);
-				if (saved) {
-					return new Set(JSON.parse(saved));
-				}
+				if (saved) return new Set(JSON.parse(saved));
 			} catch (e) {
 				console.error("Failed to load log filters:", e);
 			}
@@ -76,7 +129,6 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 		}
 	);
 
-	// Save filters to localStorage whenever they change
 	useEffect(() => {
 		try {
 			localStorage.setItem(
@@ -88,28 +140,25 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 		}
 	}, [hiddenCategories]);
 
-	// Helps recompute memos when Log is mutated in-place via push/splice
+	// --- Derived log views ---------------------------------------------------
+	// Recompute memos when Log is mutated in-place via push/splice.
 	const logLength = campaign.Log.length;
 	const lastLogId = logLength > 0 ? campaign.Log[logLength - 1].Id : "∅";
 
 	const visibleLog = useMemo(() => {
-		// Get chronologically sorted log from ring buffer
 		const chronologicalLog = LogActions.getChronologicalLog(campaign);
 		return chronologicalLog.filter((entry) =>
 			LogActions.canUserSeeEntry(entry, userRole)
 		);
 	}, [campaign.Log, campaign.LogHead, userRole, selectedCharacterId, logLength, lastLogId]);
 
-	// Filter by category preferences
 	const categoryFilteredLog = useMemo(
 		() => visibleLog.filter((entry) => !hiddenCategories.has(entry.Category)),
 		[visibleLog, hiddenCategories]
 	);
 
-	// Filter by search query
 	const searchFilteredLog = useMemo(() => {
 		if (!searchQuery.trim()) return categoryFilteredLog;
-
 		const query = searchQuery.toLowerCase();
 		return categoryFilteredLog.filter(
 			(entry) =>
@@ -118,73 +167,86 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 		);
 	}, [categoryFilteredLog, searchQuery]);
 
-	// Get only the messages we want to display (last N messages)
 	const displayedLog = useMemo(() => {
-		const totalMessages = searchFilteredLog.length;
-		const startIndex = Math.max(0, totalMessages - messagesToShow);
-		return searchFilteredLog.slice(startIndex);
+		const total = searchFilteredLog.length;
+		return searchFilteredLog.slice(Math.max(0, total - messagesToShow));
 	}, [searchFilteredLog, messagesToShow]);
 
 	const hasMoreMessages = searchFilteredLog.length > messagesToShow;
 	const remainingMessages = searchFilteredLog.length - messagesToShow;
 
-	// Check if user is near bottom of scroll
-	const checkScrollPosition = () => {
+	// Reset pagination when filters/search change so we don't carry an
+	// inflated window across a different result set.
+	useEffect(() => {
+		setMessagesToShow(INITIAL_MESSAGES_SHOWN);
+	}, [searchQuery, hiddenCategories]);
+
+	// --- Scroll handling -----------------------------------------------------
+	const updateScrollPosition = () => {
 		const container = logContainerRef.current;
 		if (!container) return;
-
 		const distanceFromBottom =
 			container.scrollHeight - container.scrollTop - container.clientHeight;
 		const nearBottom = distanceFromBottom < SCROLL_THRESHOLD;
-
-		setIsNearBottom(nearBottom);
-		userScrolledUp.current = !nearBottom;
+		isNearBottomRef.current = nearBottom;
+		setShowScrollButton(!nearBottom);
 	};
 
-	// Handle scroll events
 	const handleScroll = () => {
-		checkScrollPosition();
-
+		updateScrollPosition();
 		const container = logContainerRef.current;
 		if (!container) return;
 
-		// Load more messages when scrolling near the top
-		if (container.scrollTop < 100 && hasMoreMessages) {
-			const oldScrollHeight = container.scrollHeight;
+		// Load older messages when near the top.
+		if (container.scrollTop < LOAD_MORE_TRIGGER && hasMoreMessages) {
+			pendingScrollRestore.current = container.scrollHeight;
 			setMessagesToShow((prev) => prev + MESSAGES_PER_LOAD);
-
-			// Maintain scroll position after loading
-			requestAnimationFrame(() => {
-				if (container) {
-					const newScrollHeight = container.scrollHeight;
-					container.scrollTop = newScrollHeight - oldScrollHeight;
-				}
-			});
 		}
 	};
 
-	// Auto-scroll to bottom when new messages arrive (if user hasn't scrolled up)
-	useEffect(() => {
-		if (isNearBottom && logEndRef.current && !userScrolledUp.current) {
-			logEndRef.current.scrollIntoView({ behavior: "smooth" });
-		}
-	}, [displayedLog.length, isNearBottom]);
+	// Restore scroll position synchronously after older messages prepend, so
+	// the user stays anchored at the same row instead of jumping to the top.
+	useLayoutEffect(() => {
+		const container = logContainerRef.current;
+		if (!container || pendingScrollRestore.current == null) return;
+		const oldHeight = pendingScrollRestore.current;
+		pendingScrollRestore.current = null;
+		container.scrollTop = container.scrollHeight - oldHeight;
+	}, [messagesToShow]);
 
-	// Scroll to bottom button handler
+	// Auto-scroll to bottom on *new* messages only — never on length decreases,
+	// older-message loads, or filter/search shrinks. Disabled while searching.
+	useLayoutEffect(() => {
+		const length = displayedLog.length;
+		const lastId = displayedLog[length - 1]?.Id;
+		const grew = length > prevDisplayedLengthRef.current;
+		const tailChanged = lastId !== prevLastIdRef.current;
+
+		prevDisplayedLengthRef.current = length;
+		prevLastIdRef.current = lastId;
+
+		if (!grew || !tailChanged) return;
+		if (searchQuery.trim()) return; // Don't yank away from search results.
+		if (!isNearBottomRef.current) return;
+
+		// Use "auto" (instant) for new-message tracking — "smooth" stutters when
+		// multiple messages arrive in quick succession.
+		logEndRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+	}, [displayedLog, searchQuery]);
+
 	const scrollToBottom = () => {
-		logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-		setIsNearBottom(true);
-		userScrolledUp.current = false;
+		// Smooth is fine here because it's a single explicit user action.
+		logEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+		isNearBottomRef.current = true;
+		setShowScrollButton(false);
 	};
 
+	// --- Filters & messaging -------------------------------------------------
 	const toggleCategory = (category: LogCategory) => {
 		setHiddenCategories((prev) => {
 			const next = new Set(prev);
-			if (next.has(category)) {
-				next.delete(category);
-			} else {
-				next.add(category);
-			}
+			if (next.has(category)) next.delete(category);
+			else next.add(category);
 			return next;
 		});
 	};
@@ -192,12 +254,9 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	const handleSendMessage = () => {
 		if (!actionService || !message.trim()) return;
 
-		// For players, use their selected character's ID as actorId
 		let actorId: string | undefined;
 		if (userRole !== "dm") {
-			const selectedCharId =
-				context.User.SelectedCharacters[campaign.RoomCode];
-			actorId = selectedCharId;
+			actorId = context.User.SelectedCharacters[campaign.RoomCode];
 		}
 
 		actionService.execute("log:create", {
@@ -205,7 +264,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 			category: "chat",
 			level: "info",
 			visibility: ["all"],
-			actorId: actorId,
+			actorId,
 		});
 
 		setMessage("");
@@ -219,24 +278,16 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	};
 
 	const getEntryLabel = (entry: LogEntry): string => {
-		// If it has an actorId, it's from a player
 		if (entry.ActorId) {
 			const character = campaign.GameState.Characters.find(
 				(c) => c.Id === entry.ActorId
 			);
 			return character?.Name || "Player";
 		}
-
-		// If it's dice or chat without actorId, it's from DM
-		if (entry.Category === "dice" || entry.Category === "chat") {
-			return "DM";
-		}
-
-		// Otherwise it's a system message
+		if (entry.Category === "dice" || entry.Category === "chat") return "DM";
 		return "System";
 	};
 
-	// Categories available to current user
 	const availableCategories: LogCategory[] =
 		userRole === "player"
 			? ["chat", "dice"]
@@ -254,7 +305,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 
 	return (
 		<div className={`flex flex-col h-full ${isFloating ? "p-4" : ""}`}>
-			{/* Header with Search */}
+			{/* Header */}
 			<div className="flex justify-between items-center gap-3 mb-4">
 				<div className="flex items-center gap-2">
 					<h3 className="font-bold text-lg">Log</h3>
@@ -262,12 +313,12 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 						onClick={() => setShowFilters(!showFilters)}
 						className="btn btn-ghost btn-xs"
 						title="Toggle filters"
+						aria-expanded={showFilters}
 					>
 						<span className="icon-[mdi--filter] w-4 h-4"></span>
 					</button>
 				</div>
 
-				{/* Compact Search Bar */}
 				<div className="flex-1 max-w-xs relative">
 					<input
 						type="text"
@@ -300,42 +351,51 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 				)}
 			</div>
 
-			{/* Search Results Info */}
+			{/* Search results info */}
 			{searchQuery && (
 				<p className="text-xs opacity-60 mb-3 -mt-2">
-					Found {searchFilteredLog.length} message{searchFilteredLog.length !== 1 ? "s" : ""}
+					Found {searchFilteredLog.length} message
+					{searchFilteredLog.length !== 1 ? "s" : ""}
 				</p>
 			)}
 
-			{/* Collapsible Filter Pills */}
+			{/* Collapsible filter pills — colored by category, theme-aware. */}
 			{showFilters && (
-				<div className="flex flex-wrap gap-2 mb-4 p-2 bg-base-200 rounded-lg">
-					{availableCategories.map((cat) => (
-						<button
-							key={cat}
-							onClick={() => toggleCategory(cat)}
-							className={`badge badge-sm cursor-pointer transition-all ${hiddenCategories.has(cat)
-									? "badge-ghost opacity-40"
-									: "badge-neutral"
-								}`}
-							title={`${hiddenCategories.has(cat) ? "Show" : "Hide"} ${cat}`}
-						>
-							<span className={`${CATEGORY_COLORS[cat]} font-semibold`}>
-								{cat}
-							</span>
-						</button>
-					))}
+				<div className="flex flex-wrap gap-2 mb-4 p-2 bg-base-100 rounded-lg border border-base-content/10">
+					{availableCategories.map((cat) => {
+						const hidden = hiddenCategories.has(cat);
+						const fg = palette[cat];
+						return (
+							<button
+								key={cat}
+								onClick={() => toggleCategory(cat)}
+								className={`badge badge-sm cursor-pointer transition-all border ${hidden ? "opacity-40" : ""
+									}`}
+								style={{
+									color: fg,
+									backgroundColor: hidden ? "transparent" : tintBg(fg),
+									borderColor: fg,
+								}}
+								title={`${hidden ? "Show" : "Hide"} ${cat}`}
+								aria-pressed={!hidden}
+							>
+								<span className="font-semibold">{cat}</span>
+							</button>
+						);
+					})}
 				</div>
 			)}
 
-			{/* Log Entries */}
+			{/* Log entries — surface uses base-200 so it's calm in both themes. */}
 			<div
 				ref={logContainerRef}
 				onScroll={handleScroll}
-				className="flex-1 overflow-y-auto bg-base-300 rounded-lg p-3 space-y-1 font-mono text-sm relative"
+				role="log"
+				aria-live="polite"
+				className="flex-1 overflow-y-auto bg-base-200 text-base-content rounded-lg p-3 space-y-1 font-mono text-sm relative border border-base-content/10"
 			>
 				{hasMoreMessages && (
-					<div className="text-center py-2 opacity-60 text-xs sticky top-0 bg-base-300 z-10">
+					<div className="text-center py-2 opacity-60 text-xs sticky top-0 bg-base-200 z-10">
 						<button
 							onClick={() => setMessagesToShow((prev) => prev + MESSAGES_PER_LOAD)}
 							className="btn btn-ghost btn-xs"
@@ -347,48 +407,56 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 				)}
 
 				{displayedLog.length === 0 ? (
-					<p className="text-center text-base-content opacity-50">
+					<p className="text-center opacity-50">
 						{searchQuery ? "No messages match your search" : "No log entries"}
 					</p>
 				) : (
 					displayedLog.map((entry) => {
+						const fg = palette[entry.Category];
 						const label = getEntryLabel(entry);
-						const colorClass = CATEGORY_COLORS[entry.Category];
-						const bgClass = CATEGORY_BG[entry.Category];
-
 						return (
 							<div
 								key={entry.Id}
-								className={`flex gap-2 p-1 rounded ${bgClass} hover:bg-opacity-50 transition-colors`}
+								className="flex gap-2 p-1 rounded"
+								style={{ backgroundColor: tintBg(fg) }}
 								title={
 									entry.Timestamp
 										? new Date(entry.Timestamp).toLocaleString()
 										: undefined
 								}
 							>
-								<span className={`${colorClass} font-bold shrink-0 min-w-12`}>
+								<span
+									className="font-bold shrink-0 min-w-[6ch] truncate"
+									style={{ color: fg }}
+								>
 									[{label}]
 								</span>
-								<span className="text-white wrap-break-word">{entry.Action}</span>
+								<span className="break-words text-base-content">
+									{entry.Action}
+								</span>
 							</div>
 						);
 					})
 				)}
 				<div ref={logEndRef}></div>
 
-				{/* Scroll to Bottom Button */}
-				{!isNearBottom && (
+			</div>
+
+			{/* Scroll-to-bottom — pinned just above the input bar. */}
+			{showScrollButton && (
+				<div className="relative">
 					<button
 						onClick={scrollToBottom}
-						className="absolute bottom-4 right-4 btn btn-sm btn-circle btn-primary shadow-lg"
+						className="absolute -top-12 right-3 btn btn-sm btn-circle btn-primary shadow-lg"
 						title="Scroll to bottom"
+						aria-label="Scroll to bottom"
 					>
 						<span className="icon-[mdi--arrow-down] w-4 h-4"></span>
 					</button>
-				)}
-			</div>
+				</div>
+			)}
 
-			{/* Message Input */}
+			{/* Message input */}
 			<div className="flex gap-2 mt-4">
 				<input
 					type="text"
