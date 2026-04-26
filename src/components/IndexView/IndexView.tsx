@@ -66,6 +66,13 @@ interface IndexViewProps {
 		context: { currentPath: string[]; closeDrawer: () => void }
 	) => ReactNode;
 
+	/**
+	 * When true, the edit drawer expands to fill the screen instead of being
+	 * capped at max-w-4xl. Use for domains that need a full-page editor layout
+	 * (e.g. terrain editor + live preview).
+	 */
+	editFormFullWidth?: boolean;
+
 	// Folder support - callback for bulk tag updates
 	onBulkUpdateItemTags?: (
 		updates: Array<{ itemId: string; newTags: string[] }>
@@ -94,6 +101,7 @@ export function IndexView({
 	sortKey,
 	itemsPerPage = 25,
 	renderEditForm,
+	editFormFullWidth = false,
 	onBulkUpdateItemTags,
 	selectionActions = [],
 	emptyMessage = "No items yet. Create one to get started!",
@@ -633,7 +641,11 @@ export function IndexView({
 					aria-label="close sidebar"
 					className="drawer-overlay"
 				></label>
-				<div className="bg-base-200 min-h-full w-full max-w-4xl p-6 overflow-y-auto">
+				<div
+					className={`bg-base-200 min-h-full w-full p-6 overflow-y-auto ${
+						editFormFullWidth ? "" : "max-w-4xl"
+					}`}
+				>
 					{(selectedItem || isCreating) &&
 						renderEditForm(selectedItem, { currentPath, closeDrawer })}
 				</div>

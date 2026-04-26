@@ -103,6 +103,7 @@ export function TerrainIndex() {
 			searchPlaceholder="Search terrains by name..."
 			emptyMessage="No terrains yet. Create one to get started!"
 			onBulkUpdateItemTags={handleBulkUpdateItemTags}
+			editFormFullWidth
 			renderEditForm={(item, { currentPath, closeDrawer }) => {
 				const terrain = item
 					? campaign.Terrains.find((t) => t.Id === item.id)

@@ -3,12 +3,7 @@
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { Terrain } from "./Terrain";
 import { TerrainActions } from "./TerrainActions";
-import {
-	FormWrapper,
-	FormSection,
-	FormField,
-	FormGrid,
-} from "../../components/Form/Form";
+import { FormWrapper, useFormReadOnly } from "../../components/Form/Form";
 import Map from "../../components/Map/Map";
 import { TagEditor } from "../../components/inputs/TagEditor";
 import TerrainEditor from "../../components/inputs/TerrainEditor";
@@ -76,6 +71,7 @@ export function TerrainEdit({ terrain, isDefault, initialTags, onClose }: Terrai
 			createTitle="Create Terrain"
 			editTitle="Edit Terrain"
 			viewTitle="View Terrain"
+			fullWidth
 		>
 			<TerrainForm />
 		</FormWrapper>
@@ -92,6 +88,8 @@ interface TerrainFormProps {
 }
 
 function TerrainForm({ data, onChange }: TerrainFormProps) {
+	const readOnly = useFormReadOnly();
+
 	if (!data || !onChange) return null;
 
 	const handleFieldChange = (field: keyof Terrain, value: any) => {
@@ -150,88 +148,123 @@ function TerrainForm({ data, onChange }: TerrainFormProps) {
 	};
 
 	return (
-		<>
-			{/* Basic Information */}
-			<FormSection
-				title="Basic Information"
-				description="Terrain name and dimensions"
-			>
-				<FormGrid cols={2}>
-					<FormField label="Name" span={2}>
-						<input
-							type="text"
-							value={data.Name}
-							onChange={(e) => handleFieldChange("Name", e.target.value)}
-							className="input input-bordered w-full"
-							placeholder="Terrain Name"
-						/>
-					</FormField>
-
-					<FormField label="Width" hint="(1-48 tiles)">
-						<input
-							type="number"
-							value={data.Width}
-							onChange={(e) =>
-								handleSizeChange(Number(e.target.value), data.Length)
-							}
-							className="input input-bordered w-full"
-							min={1}
-							max={48}
-						/>
-					</FormField>
-
-					<FormField label="Length" hint="(1-48 tiles)">
-						<input
-							type="number"
-							value={data.Length}
-							onChange={(e) =>
-								handleSizeChange(data.Width, Number(e.target.value))
-							}
-							className="input input-bordered w-full"
-							min={1}
-							max={48}
-						/>
-					</FormField>
-				</FormGrid>
-			</FormSection>
-
-			{/* Terrain Editor */}
-			<FormSection
-				title="Terrain Editor"
-				description="Paint colors and adjust terrain heights"
-			>
-				<TerrainEditor
-					width={data.Width}
-					length={data.Length}
-					heightMap={data.HeightMap}
-					colorMap={data.ColorMap}
-					onChange={handleTerrainEdited}
-				/>
-			</FormSection>
-			<FormSection
-				title="Live Map Preview"
-			>
-				<div className="h-168 w-full rounded-lg border bg-base-200 overflow-hidden">
-					<MapStateProvider>
-						<Map
-							preview
-							allowPanZoom
-							showControls
-							characters={[]}
-							entities={[]}
-							terrain={data}
-						/>
-					</MapStateProvider>
+		<div className="flex flex-col gap-4 h-[calc(100vh-14rem)] min-h-[560px]">
+			{/* Compact header bar: Name | Width | Length */}
+			<div className="card border-2 bg-base-100 shrink-0">
+				<div className="card-body p-4">
+					<div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+						<div className="md:col-span-8 flex flex-col">
+							<label className="text-sm font-medium mb-1">Name</label>
+							<input
+								type="text"
+								value={data.Name}
+								onChange={(e) => handleFieldChange("Name", e.target.value)}
+								className="input input-bordered w-full"
+								placeholder="Terrain Name"
+								disabled={readOnly}
+								readOnly={readOnly}
+							/>
+						</div>
+						<div className="md:col-span-2 flex flex-col">
+							<label className="text-sm font-medium mb-1">
+								Width
+								<span className="text-xs text-base-content/60 ml-1">
+									(1-48)
+								</span>
+							</label>
+							<input
+								type="number"
+								value={data.Width}
+								onChange={(e) =>
+									handleSizeChange(Number(e.target.value), data.Length)
+								}
+								className="input input-bordered w-full"
+								min={1}
+								max={48}
+								disabled={readOnly}
+								readOnly={readOnly}
+							/>
+						</div>
+						<div className="md:col-span-2 flex flex-col">
+							<label className="text-sm font-medium mb-1">
+								Length
+								<span className="text-xs text-base-content/60 ml-1">
+									(1-48)
+								</span>
+							</label>
+							<input
+								type="number"
+								value={data.Length}
+								onChange={(e) =>
+									handleSizeChange(data.Width, Number(e.target.value))
+								}
+								className="input input-bordered w-full"
+								min={1}
+								max={48}
+								disabled={readOnly}
+								readOnly={readOnly}
+							/>
+						</div>
+					</div>
 				</div>
-			</FormSection>
-			{/* Tags */}
-			<FormSection title="Tags" description="Organize terrains with tags">
-				<TagEditor
-					tags={data.Tags || []}
-					onChange={(tags) => handleFieldChange("Tags", tags)}
-				/>
-			</FormSection>
-		</>
+			</div>
+
+			{/* 40/60 split: editor on the left, live preview on the right */}
+			<div className="grid grid-cols-1 lg:grid-cols-5 gap-4 flex-1 min-h-0">
+				{/* Editor (40%) */}
+				<div className="lg:col-span-2 card border-2 bg-base-100 overflow-hidden flex flex-col">
+					<div className="card-body p-4 overflow-y-auto space-y-3">
+						<div>
+							<h3 className="text-lg font-semibold">Terrain Editor</h3>
+							<p className="text-sm text-base-content/70">
+								Paint colors and adjust terrain heights
+							</p>
+						</div>
+						<TerrainEditor
+							width={data.Width}
+							length={data.Length}
+							heightMap={data.HeightMap}
+							colorMap={data.ColorMap}
+							onChange={handleTerrainEdited}
+						/>
+					</div>
+				</div>
+
+				{/* Preview (60%) */}
+				<div className="lg:col-span-3 card border-2 bg-base-100 overflow-hidden flex flex-col">
+					<div className="card-body p-4 flex flex-col gap-3 min-h-0">
+						<div className="shrink-0">
+							<h3 className="text-lg font-semibold">Live Map Preview</h3>
+						</div>
+						<div className="flex-1 min-h-0 w-full rounded-lg border bg-base-200 overflow-hidden">
+							<MapStateProvider>
+								<Map
+									preview
+									allowPanZoom
+									showControls
+									characters={[]}
+									entities={[]}
+									terrain={data}
+								/>
+							</MapStateProvider>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			{/* Tags at the bottom */}
+			<div className="card border-2 bg-base-100 shrink-0">
+				<div className="card-body p-4">
+					<div className="flex flex-col">
+						<label className="text-sm font-medium mb-1">Tags</label>
+						<TagEditor
+							tags={data.Tags || []}
+							onChange={(tags) => handleFieldChange("Tags", tags)}
+						/>
+					</div>
+				</div>
+			</div>
+		</div>
 	);
 }
 

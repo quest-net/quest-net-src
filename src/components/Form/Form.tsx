@@ -63,6 +63,12 @@ interface FormWrapperProps<T> {
 	viewTitle: string;
 	children: ReactNode;
 	buttonConfig?: ButtonConfig;
+	/**
+	 * When true, the form wrapper stretches to fill its container instead of
+	 * being constrained to max-w-4xl. Use for editors that need a full-page
+	 * layout (e.g. TerrainEdit's editor + preview split).
+	 */
+	fullWidth?: boolean;
 }
 
 export function FormWrapper<T extends Record<string, any>>({
@@ -78,6 +84,7 @@ export function FormWrapper<T extends Record<string, any>>({
 	viewTitle,
 	children,
 	buttonConfig = {},
+	fullWidth = false,
 }: FormWrapperProps<T>) {
 	const context = useQuestContext();
 	
@@ -162,7 +169,7 @@ export function FormWrapper<T extends Record<string, any>>({
 
 	return (
 		<FormContext.Provider value={contextValue}>
-			<div className="space-y-6 max-w-4xl">
+			<div className={`space-y-6 ${fullWidth ? "w-full" : "max-w-4xl"}`}>
 				<FormHeader
 					createTitle={createTitle}
 					editTitle={editTitle}
