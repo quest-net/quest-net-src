@@ -284,6 +284,10 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm", "player"],
 		handler: ImageActions.bulkCreate,
 	},
+	"image:edit": {
+		roles: ["dm"],
+		handler: ImageActions.edit,
+	},
 	"image:delete": {
 		roles: ["dm"],
 		handler: ImageActions.delete,

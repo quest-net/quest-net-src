@@ -5,8 +5,8 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { ImageUpload } from "../../components/inputs/ImageUpload";
-import { ImageDisplay } from "./ImageDisplay";
 import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
+import { ImageEdit } from "./Edit";
 
 export function ImageIndex() {
 	const context = useQuestContext();
@@ -74,7 +74,7 @@ export function ImageIndex() {
 				searchPlaceholder="Search images by name..."
 				emptyMessage="No images yet. Upload one to get started!"
 				onBulkUpdateItemTags={handleBulkUpdateImageTags}
-				renderEditForm={(item) => {
+				renderEditForm={(item, { closeDrawer }) => {
 					const image = item
 						? campaign.Images.find((img) => img.Id === item.id)
 						: null;
@@ -88,64 +88,11 @@ export function ImageIndex() {
 					}
 
 					return (
-						<div className="space-y-4">
-							<h2 className="text-2xl font-bold">{image.Name}</h2>
-
-							{/* Full Size Image Display */}
-							<div
-								className="w-full bg-base-200 rounded-lg overflow-hidden flex items-center justify-center"
-								style={{ maxHeight: "70vh" }}
-							>
-								<ImageDisplay
-									imageId={image.Id}
-									className="w-full h-full object-contain"
-									alt={image.Name}
-								/>
-							</div>
-
-							{/* Metadata */}
-							<div className="card bg-base-200">
-								<div className="card-body">
-									<h3 className="font-semibold mb-2">Details</h3>
-									<div className="space-y-2 text-sm">
-										<div className="flex justify-between">
-											<span className="opacity-70">Size:</span>
-											<span className="font-mono">
-												{formatFileSize(image.FileSize)}
-											</span>
-										</div>
-										<div className="flex justify-between">
-											<span className="opacity-70">Dimensions:</span>
-											<span className="font-mono">
-												{image.Width}×{image.Height}
-											</span>
-										</div>
-										<div className="flex justify-between">
-											<span className="opacity-70">Format:</span>
-											<span className="font-mono">
-												{image.MimeType.split("/")[1].toUpperCase()}
-											</span>
-										</div>
-									</div>
-								</div>
-							</div>
-
-							{/* Tags Display */}
-							{image.Tags && image.Tags.length > 0 && (
-								<div className="card bg-base-200">
-									<div className="card-body">
-										<h3 className="font-semibold mb-2">Tags</h3>
-										<div className="flex flex-wrap gap-2">
-											{image.Tags.map((tag) => (
-												<div key={tag} className="badge badge-outline">
-													{tag}
-												</div>
-											))}
-										</div>
-									</div>
-								</div>
-							)}
-						</div>
+						<ImageEdit
+							key={image.Id}
+							image={image}
+							onClose={() => closeDrawer?.()}
+						/>
 					);
 				}}
 			/>
