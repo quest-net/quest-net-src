@@ -7,12 +7,16 @@ import {
   triggerContextUpdate,
 } from "../Context/ContextProvider";
 import { AppSettingActions } from "./AppSettingActions";
+import {
+  PROVIDER_REGISTRY,
+  DEFAULT_PROVIDER_ID,
+} from "../../services/ImageGenerationService";
 
 export function AppSettingEdit() {
   const context = useQuestContext();
   const navigate = useNavigate();
 
-  // Initial values from actions
+  // --- General settings ---
   const [theme, setTheme] = useState<"light" | "dark">(
     AppSettingActions.getTheme(context)
   );
@@ -25,9 +29,32 @@ export function AppSettingEdit() {
     Math.round(AppSettingActions.getSfxVolume() * 100)
   );
 
-  const [imageApiKey, setImageApiKey] = useState<string>(
-    AppSettingActions.getImageApiKey(context) ?? ""
+  // --- Image generation settings ---
+  const [imageService, setImageService] = useState<string>(
+    AppSettingActions.getImageService(context)
   );
+
+  // Per-provider key state: { [providerId]: apiKey }
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const provider of PROVIDER_REGISTRY) {
+      initial[provider.id] =
+        AppSettingActions.getProviderApiKey(context, provider.id) ?? "";
+    }
+    return initial;
+  });
+
+  // Per-provider secret state: { [providerId]: apiSecret }
+  const [apiSecrets, setApiSecrets] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const provider of PROVIDER_REGISTRY) {
+      if (provider.requiresSecret) {
+        initial[provider.id] =
+          AppSettingActions.getProviderApiSecret(context, provider.id) ?? "";
+      }
+    }
+    return initial;
+  });
 
   const [imagePromptTemplate, setImagePromptTemplate] = useState<string>(
     AppSettingActions.getImagePromptTemplate(context)
@@ -35,39 +62,46 @@ export function AppSettingEdit() {
 
   const [isSaving, setIsSaving] = useState(false);
 
+  // Derived: the provider object for the currently selected service
+  const selectedProvider =
+    PROVIDER_REGISTRY.find((p) => p.id === imageService) ??
+    PROVIDER_REGISTRY.find((p) => p.id === DEFAULT_PROVIDER_ID)!;
+
   const handleSave = () => {
     setIsSaving(true);
 
-    // Theme
+    // General
     AppSettingActions.setTheme({ theme }, context);
-
-    // Volume (0–1)
-    AppSettingActions.setPlayerVolume(
-      { volume: volumePercent / 100 },
-      context
-    );
-
-    // SFX volume
+    AppSettingActions.setPlayerVolume({ volume: volumePercent / 100 }, context);
     AppSettingActions.setSfxVolume({ volume: sfxVolumePercent / 100 });
 
-    // API key – allow clearing
-    const trimmedKey = imageApiKey.trim();
-    AppSettingActions.setImageApiKey(
-      { apiKey: trimmedKey || undefined },
-      context
-    );
+    // Image service selection
+    AppSettingActions.setImageService({ providerId: imageService }, context);
 
-    // Prompt template – allow resetting to default behavior
+    // Save ALL entered keys (so switching back to a provider doesn't lose its key)
+    for (const provider of PROVIDER_REGISTRY) {
+      const key = apiKeys[provider.id]?.trim();
+      AppSettingActions.setProviderApiKey(
+        { providerId: provider.id, apiKey: key || undefined },
+        context
+      );
+      if (provider.requiresSecret) {
+        const secret = apiSecrets[provider.id]?.trim();
+        AppSettingActions.setProviderApiSecret(
+          { providerId: provider.id, apiSecret: secret || undefined },
+          context
+        );
+      }
+    }
+
+    // Prompt template
     AppSettingActions.setImagePromptTemplate(
       { template: imagePromptTemplate },
       context
     );
 
-    // Persist + rerender
     triggerContextUpdate();
     setIsSaving(false);
-
-    // Navigate back home (or you could stay on page)
     navigate("/");
   };
 
@@ -185,29 +219,85 @@ export function AppSettingEdit() {
             <div className="card-body space-y-4">
               <h2 className="card-title">AI Image Generation</h2>
               <p className="text-sm opacity-80">
-                Configure optional AI image generation using your own Google AI
-                Studio API key. Keys are stored locally in your browser and are
-                never shared with other players.
+                Generate images directly inside Quest-Net using your own API
+                key. Keys are stored locally in your browser and are never
+                shared with other players.
               </p>
 
-              {/* API Key */}
+              {/* Provider selector */}
               <div className="flex flex-col gap-2">
-                <label className="font-medium">Google AI API Key</label>
+                <label className="font-medium">Image Generation Service</label>
+                <select
+                  className="select select-bordered w-full"
+                  value={imageService}
+                  onChange={(e) => setImageService(e.target.value)}
+                >
+                  {PROVIDER_REGISTRY.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.displayName}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs opacity-70">
+                  {selectedProvider.description}{" "}
+                  <a
+                    href={selectedProvider.docsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="link link-primary"
+                  >
+                    Get API key ↗
+                  </a>
+                </p>
+              </div>
+
+              {/* Primary API key — label/placeholder driven by selected provider */}
+              <div className="flex flex-col gap-2">
+                <label className="font-medium">
+                  {selectedProvider.apiKeyLabel}
+                </label>
                 <input
                   type="password"
                   className="input input-bordered w-full"
-                  placeholder="AIza..."
-                  value={imageApiKey}
-                  onChange={(e) => setImageApiKey(e.target.value)}
+                  placeholder={
+                    selectedProvider.apiKeyPlaceholder ?? "Paste your key here"
+                  }
+                  value={apiKeys[selectedProvider.id] ?? ""}
+                  onChange={(e) =>
+                    setApiKeys((prev) => ({
+                      ...prev,
+                      [selectedProvider.id]: e.target.value,
+                    }))
+                  }
                   autoComplete="off"
                 />
-                <p className="text-xs opacity-70">
-                  Used to call the{" "}
-                  <code className="kbd kbd-xs">gemini-2.5-flash-image</code>{" "}
-                  model (a.k.a. nano-banana) to generate images. Leave blank to
-                  disable in-app generation.
-                </p>
               </div>
+
+              {/* Secondary secret key — only shown for providers that need it (e.g. Kling) */}
+              {selectedProvider.requiresSecret && (
+                <div className="flex flex-col gap-2">
+                  <label className="font-medium">
+                    {selectedProvider.apiSecretLabel ?? "Secret Key"}
+                  </label>
+                  <input
+                    type="password"
+                    className="input input-bordered w-full"
+                    placeholder="Paste your secret key here"
+                    value={apiSecrets[selectedProvider.id] ?? ""}
+                    onChange={(e) =>
+                      setApiSecrets((prev) => ({
+                        ...prev,
+                        [selectedProvider.id]: e.target.value,
+                      }))
+                    }
+                    autoComplete="off"
+                  />
+                  <p className="text-xs opacity-70">
+                    This service requires two credentials. Both are stored
+                    locally and never shared.
+                  </p>
+                </div>
+              )}
 
               {/* Prompt template */}
               <div className="flex flex-col gap-2">
@@ -249,7 +339,7 @@ export function AppSettingEdit() {
             </div>
           </section>
 
-          {/* Footer actions (optional extra buttons) */}
+          {/* Footer actions */}
           <div className="flex justify-between mt-4">
             <button className="btn btn-ghost" onClick={handleCancel}>
               Cancel
