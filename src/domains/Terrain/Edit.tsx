@@ -148,7 +148,7 @@ function TerrainForm({ data, onChange }: TerrainFormProps) {
 	};
 
 	return (
-		<div className="flex flex-col gap-4 h-[calc(100vh-14rem)] min-h-[560px]">
+		<div className="flex flex-col gap-4 min-h-[calc(100dvh-14rem)]">
 			{/* Compact header bar: Name | Width | Length */}
 			<div className="card border-2 bg-base-100 shrink-0">
 				<div className="card-body p-4">
@@ -209,11 +209,11 @@ function TerrainForm({ data, onChange }: TerrainFormProps) {
 				</div>
 			</div>
 
-			{/* 40/60 split: editor on the left, live preview on the right */}
-			<div className="grid grid-cols-1 lg:grid-cols-5 gap-4 flex-1 min-h-0">
-				{/* Editor (40%) */}
-				<div className="lg:col-span-2 card border-2 bg-base-100 overflow-hidden flex flex-col">
-					<div className="card-body p-4 overflow-y-auto space-y-3">
+			{/* Editor keeps its intrinsic size; preview takes the remaining space. */}
+			<div className="grid grid-cols-1 grid-rows-[max-content_minmax(14rem,1fr)] xl:grid-cols-[minmax(34rem,42rem)_minmax(16rem,1fr)] xl:grid-rows-1 gap-4 flex-1 min-h-0">
+				{/* Editor */}
+				<div className="card border-2 bg-base-100 flex flex-col min-h-fit overflow-visible">
+					<div className="card-body p-4 space-y-3 flex flex-col overflow-visible">
 						<div>
 							<h3 className="text-lg font-semibold">Terrain Editor</h3>
 							<p className="text-sm text-base-content/70">
@@ -230,13 +230,13 @@ function TerrainForm({ data, onChange }: TerrainFormProps) {
 					</div>
 				</div>
 
-				{/* Preview (60%) */}
-				<div className="lg:col-span-3 card border-2 bg-base-100 overflow-hidden flex flex-col">
+				{/* Preview */}
+				<div className="card border-2 bg-base-100 overflow-hidden flex flex-col min-h-[14rem]">
 					<div className="card-body p-4 flex flex-col gap-3 min-h-0">
 						<div className="shrink-0">
 							<h3 className="text-lg font-semibold">Live Map Preview</h3>
 						</div>
-						<div className="flex-1 min-h-0 w-full rounded-lg border bg-base-200 overflow-hidden">
+						<div className="flex-1 min-h-[10rem] w-full rounded-lg border bg-base-200 overflow-hidden">
 							<MapStateProvider>
 								<Map
 									preview

@@ -18,6 +18,51 @@ import {
 } from "../../utils/TerrainUtils";
 
 type Tool = "paint" | "raise" | "lower" | "set";
+type BrushShape = "square" | "round";
+
+const TOOL_OPTIONS: Array<{
+	value: Tool;
+	label: string;
+	icon: string;
+	title: string;
+}> = [
+	{
+		value: "paint",
+		label: "Paint",
+		icon: "icon-[mdi--brush]",
+		title: "Paint color",
+	},
+	{
+		value: "raise",
+		label: "Raise",
+		icon: "icon-[mdi--arrow-up-bold]",
+		title: "Raise terrain",
+	},
+	{
+		value: "lower",
+		label: "Lower",
+		icon: "icon-[mdi--arrow-down-bold]",
+		title: "Lower terrain",
+	},
+	{
+		value: "set",
+		label: "Set",
+		icon: "icon-[mdi--ruler]",
+		title: "Set fixed height",
+	},
+];
+
+const BRUSH_OPTIONS: Array<{ size: number; shape: BrushShape }> = [
+	{ size: 1, shape: "square" },
+	{ size: 2, shape: "round" },
+	{ size: 2, shape: "square" },
+	{ size: 3, shape: "round" },
+	{ size: 3, shape: "square" },
+	{ size: 4, shape: "round" },
+	{ size: 4, shape: "square" },
+	{ size: 5, shape: "round" },
+	{ size: 5, shape: "square" },
+];
 
 export interface TerrainEditorProps {
 	width: number;
@@ -39,6 +84,8 @@ export interface TerrainEditorProps {
 
 const GRID_GAP = 1;
 const MAX_HISTORY = 50;
+const MIN_TILE_PX = 4;
+const MAX_TILE_PX = 24;
 
 const clamp = (v: number, min: number, max: number) =>
 	Math.max(min, Math.min(max, v));
@@ -67,19 +114,52 @@ function applySquareBrush(
 	}
 }
 
+function isRoundBrushTile(cx: number, cy: number, x: number, y: number, size: number) {
+	const r = Math.max(0, size - 1);
+	const dx = x - cx;
+	const dy = y - cy;
+	return dx * dx + dy * dy <= r * r;
+}
+
+function applyBrush(
+	cx: number,
+	cy: number,
+	size: number,
+	shape: BrushShape,
+	width: number,
+	length: number,
+	fn: (x: number, y: number) => void
+) {
+	applySquareBrush(cx, cy, size, width, length, (x, y) => {
+		if (shape === "round" && !isRoundBrushTile(cx, cy, x, y, size)) return;
+		fn(x, y);
+	});
+}
+
 /** Get set of tiles that would be affected by brush at position */
 function getBrushTiles(
 	cx: number,
 	cy: number,
 	size: number,
+	shape: BrushShape,
 	width: number,
 	length: number
 ): Set<string> {
 	const tiles = new Set<string>();
-	applySquareBrush(cx, cy, size, width, length, (x, y) => {
+	applyBrush(cx, cy, size, shape, width, length, (x, y) => {
 		tiles.add(`${x},${y}`);
 	});
 	return tiles;
+}
+
+function getBrushPreviewCells(size: number, shape: BrushShape): boolean[] {
+	const footprint = size * 2 - 1;
+	const center = size - 1;
+	return Array.from({ length: footprint * footprint }, (_, idx) => {
+		const x = idx % footprint;
+		const y = Math.floor(idx / footprint);
+		return shape === "square" || isRoundBrushTile(center, center, x, y, size);
+	});
 }
 
 interface HistorySnapshot {
@@ -105,6 +185,7 @@ export function TerrainEditor({
 	// Tool state
 	const [tool, setTool] = useState<Tool>("paint");
 	const [brushSize, setBrushSize] = useState<number>(1);
+	const [brushShape, setBrushShape] = useState<BrushShape>("square");
 	const [selectedColorIndex, setSelectedColorIndex] = useState<number>(0);
 	const [targetHeight, setTargetHeight] = useState<number>(8);
 
@@ -200,8 +281,53 @@ export function TerrainEditor({
 	// LAYOUT
 	// ========================================================================
 	const containerRef = useRef<HTMLDivElement | null>(null);
+	const toolbarStackRef = useRef<HTMLDivElement | null>(null);
 	const gridContainerRef = useRef<HTMLDivElement | null>(null);
+	const footerRef = useRef<HTMLDivElement | null>(null);
 	const [tilePx, setTilePx] = useState<number>(16);
+	const [toolbarHeight, setToolbarHeight] = useState<number>(0);
+	const [footerHeight, setFooterHeight] = useState<number>(0);
+
+	const minGridWidth = Math.max(0, width * MIN_TILE_PX + (width - 1) * GRID_GAP);
+	const minGridHeight = Math.max(
+		0,
+		length * MIN_TILE_PX + (length - 1) * GRID_GAP
+	);
+	const editorMinHeight = toolbarHeight + footerHeight + minGridHeight + 12;
+
+	useEffect(() => {
+		if (!toolbarStackRef.current) return;
+
+		const measureToolbar = () => {
+			const toolbarStack = toolbarStackRef.current;
+			if (!toolbarStack) return;
+			setToolbarHeight(toolbarStack.getBoundingClientRect().height);
+		};
+
+		measureToolbar();
+
+		const ro = new ResizeObserver(measureToolbar);
+		ro.observe(toolbarStackRef.current);
+
+		return () => ro.disconnect();
+	}, []);
+
+	useEffect(() => {
+		if (!footerRef.current) return;
+
+		const measureFooter = () => {
+			const footer = footerRef.current;
+			if (!footer) return;
+			setFooterHeight(footer.getBoundingClientRect().height);
+		};
+
+		measureFooter();
+
+		const ro = new ResizeObserver(measureFooter);
+		ro.observe(footerRef.current);
+
+		return () => ro.disconnect();
+	}, []);
 
 	useEffect(() => {
 		if (!containerRef.current || !gridContainerRef.current) return;
@@ -225,11 +351,13 @@ export function TerrainEditor({
 			const maxTileW = (availableW - gapTotalW) / width;
 			const maxTileH = (availableH - gapTotalH) / length;
 
-			const px = Math.floor(Math.min(maxTileW, maxTileH));
+			const px = clamp(
+				Math.floor(Math.min(maxTileW, maxTileH)),
+				MIN_TILE_PX,
+				MAX_TILE_PX
+			);
 
-			if (px >= 4 && px !== tilePx) {
-				setTilePx(px);
-			}
+			setTilePx((prev) => (px !== prev ? px : prev));
 		};
 
 		compute();
@@ -240,7 +368,7 @@ export function TerrainEditor({
 		return () => {
 			ro.disconnect();
 		};
-	}, [width, length, tilePx]);
+	}, [width, length, toolbarHeight, footerHeight]);
 
 	// ========================================================================
 	// STROKE HANDLING
@@ -293,7 +421,7 @@ export function TerrainEditor({
 		(gx: number, gy: number) => {
 			if (!workHeightsRef.current || !workColorsRef.current) return;
 
-			applySquareBrush(gx, gy, brushSize, width, length, (x, y) => {
+			applyBrush(gx, gy, brushSize, brushShape, width, length, (x, y) => {
 				const key = `${x},${y}`;
 				if (touchedRef.current.has(key)) return;
 				touchedRef.current.add(key);
@@ -319,7 +447,7 @@ export function TerrainEditor({
 
 			scheduleCommit();
 		},
-		[brushSize, width, length, selectedColorIndex, tool, targetHeight, scheduleCommit]
+		[brushSize, brushShape, width, length, selectedColorIndex, tool, targetHeight, scheduleCommit]
 	);
 
 	// ========================================================================
@@ -386,8 +514,8 @@ export function TerrainEditor({
 	// Compute hovered brush tiles
 	const hoveredTiles = useMemo(() => {
 		if (!hoverTile || isReadOnly) return new Set<string>();
-		return getBrushTiles(hoverTile.x, hoverTile.y, brushSize, width, length);
-	}, [hoverTile, brushSize, width, length, isReadOnly]);
+		return getBrushTiles(hoverTile.x, hoverTile.y, brushSize, brushShape, width, length);
+	}, [hoverTile, brushSize, brushShape, width, length, isReadOnly]);
 
 	// ========================================================================
 	// PRESET HANDLERS
@@ -507,217 +635,235 @@ export function TerrainEditor({
 	return (
 		<div
 			ref={containerRef}
-			className="w-full flex flex-col"
-			style={{ height: "65vh", minHeight: 400 }}
+			className="w-full h-full flex flex-col min-h-0"
+			style={{ minHeight: editorMinHeight }}
 		>
-			{/* Tools Toolbar */}
-			<div className="flex flex-wrap items-center gap-3 mb-2">
-				{/* Undo/Redo */}
-				<div className="flex items-center gap-1">
-					<button
-						type="button"
-						className="btn btn-sm btn-ghost"
-						onClick={undo}
-						disabled={isReadOnly || undoStack.length === 0}
-						title="Undo (Ctrl+Z)"
-					>
-						<span className="icon-[mdi--undo]" />
-					</button>
-					<button
-						type="button"
-						className="btn btn-sm btn-ghost"
-						onClick={redo}
-						disabled={isReadOnly || redoStack.length === 0}
-						title="Redo (Ctrl+Shift+Z)"
-					>
-						<span className="icon-[mdi--redo]" />
-					</button>
-				</div>
-
-				<div className="divider divider-horizontal mx-0" />
-
-				<div className="flex items-center gap-2">
-					<span className="text-sm opacity-70">Tool</span>
-					<div className="join">
+			<div ref={toolbarStackRef} className="shrink-0 space-y-2">
+				<div className="flex flex-wrap items-center gap-3 rounded-lg border border-base-300 bg-base-200/60 p-2">
+					<div className="flex items-center gap-1" aria-label="History">
 						<button
 							type="button"
-							className={`btn btn-sm join-item ${tool === "paint" ? "btn-primary" : ""}`}
-							onClick={() => setTool("paint")}
-							disabled={isReadOnly}
-							title="Paint color"
+							className="btn btn-sm btn-square btn-ghost"
+							onClick={undo}
+							disabled={isReadOnly || undoStack.length === 0}
+							title="Undo (Ctrl+Z)"
 						>
-							<span className="icon-[mdi--brush]" />
+							<span className="icon-[mdi--undo]" />
 						</button>
 						<button
 							type="button"
-							className={`btn btn-sm join-item ${tool === "raise" ? "btn-primary" : ""}`}
-							onClick={() => setTool("raise")}
-							disabled={isReadOnly}
-							title="Raise terrain"
+							className="btn btn-sm btn-square btn-ghost"
+							onClick={redo}
+							disabled={isReadOnly || redoStack.length === 0}
+							title="Redo (Ctrl+Shift+Z)"
 						>
-							<span className="icon-[mdi--arrow-up-bold]" />
-						</button>
-						<button
-							type="button"
-							className={`btn btn-sm join-item ${tool === "lower" ? "btn-primary" : ""}`}
-							onClick={() => setTool("lower")}
-							disabled={isReadOnly}
-							title="Lower terrain"
-						>
-							<span className="icon-[mdi--arrow-down-bold]" />
-						</button>
-						<button
-							type="button"
-							className={`btn btn-sm join-item ${tool === "set" ? "btn-primary" : ""}`}
-							onClick={() => setTool("set")}
-							disabled={isReadOnly}
-							title="Set fixed height"
-						>
-							<span className="icon-[mdi--ruler]" />
+							<span className="icon-[mdi--redo]" />
 						</button>
 					</div>
-				</div>
 
-				<div className="flex items-center gap-2">
-					<span className="text-sm opacity-70">Height</span>
-					<input
-						type="number"
-						min={0}
-						max={16}
-						step={1}
-						value={targetHeight}
-						onChange={(e) =>
-							setTargetHeight(clamp(Number(e.target.value) || 0, 0, 16))
-						}
-						className="input input-sm input-bordered w-14 text-center"
-						disabled={isReadOnly || tool !== "set"}
-					/>
-				</div>
+					<div className="h-8 w-px bg-base-300" />
 
-				<div className="flex items-center gap-2">
-					<span className="text-sm opacity-70">Brush</span>
-					<input
-						type="range"
-						min={1}
-						max={5}
-						step={1}
-						value={brushSize}
-						onChange={(e) => setBrushSize(Number(e.target.value))}
-						className="range range-xs w-20"
-						disabled={isReadOnly}
-					/>
-					<span className="text-xs tabular-nums w-4 text-center">
-						{brushSize}
-					</span>
-				</div>
+					<div className="flex items-center gap-2">
+						<span className="text-sm font-medium opacity-70">Tool</span>
+						<div className="join">
+							{TOOL_OPTIONS.map((option) => (
+								<button
+									key={option.value}
+									type="button"
+									className={`btn btn-sm join-item gap-1 ${
+										tool === option.value ? "btn-primary" : ""
+									}`}
+									onClick={() => setTool(option.value)}
+									disabled={isReadOnly}
+									title={option.title}
+								>
+									<span className={option.icon} />
+									<span className="hidden 2xl:inline">{option.label}</span>
+								</button>
+							))}
+						</div>
+					</div>
 
-				<button
-					type="button"
-					onClick={doFillAll}
-					className="btn btn-sm"
-					disabled={isReadOnly}
-					title={
-						tool === "set"
-							? "Set height for all tiles"
-							: "Fill all tiles with selected color"
-					}
-				>
-					Fill All
-				</button>
+					<div className="flex flex-wrap items-center gap-2">
+						<span className="text-sm font-medium opacity-70">Brush</span>
+						<div className="flex items-center gap-1">
+							{BRUSH_OPTIONS.map(({ size, shape }) => {
+								const footprint = size * 2 - 1;
+								const isSelected =
+									brushSize === size && brushShape === shape;
+								const previewCells = getBrushPreviewCells(size, shape);
+								return (
+									<button
+										key={`${shape}-${size}`}
+										type="button"
+										className={`btn btn-sm h-12 min-h-0 px-2 ${
+											isSelected ? "btn-primary" : "btn-ghost"
+										}`}
+										onClick={() => {
+											setBrushSize(size);
+											setBrushShape(shape);
+										}}
+										disabled={isReadOnly}
+										title={`${shape === "round" ? "Round" : "Square"} brush ${footprint}x${footprint}`}
+									>
+										<span className="flex flex-col items-center gap-0.5">
+											<span
+												className="grid h-6 w-6 place-items-center"
+												style={{
+													gridTemplateColumns: `repeat(${footprint}, minmax(0, 1fr))`,
+													gridTemplateRows: `repeat(${footprint}, minmax(0, 1fr))`,
+													gap: footprint > 5 ? 1 : 2,
+												}}
+											>
+												{previewCells.map((isActiveCell, idx) => (
+													<span
+														key={idx}
+														className={`block h-full w-full rounded-[1px] ${
+															isActiveCell
+																? isSelected
+																	? "bg-primary-content"
+																	: "bg-base-content/60"
+																: isSelected
+																	? "bg-primary-content/20"
+																	: "bg-base-content/10"
+														}`}
+													/>
+												))}
+											</span>
+											<span className="text-[10px] leading-none tabular-nums">
+												{footprint}x{footprint}
+											</span>
+										</span>
+									</button>
+								);
+							})}
+						</div>
+					</div>
 
-				<div className="divider divider-horizontal mx-0" />
+					{tool === "set" && (
+						<div className="flex items-center gap-2">
+							<span className="text-sm font-medium opacity-70">Height</span>
+							<input
+								type="number"
+								min={0}
+								max={16}
+								step={1}
+								value={targetHeight}
+								onChange={(e) =>
+									setTargetHeight(clamp(Number(e.target.value) || 0, 0, 16))
+								}
+								className="input input-sm input-bordered w-16 text-center"
+								disabled={isReadOnly}
+							/>
+						</div>
+					)}
 
-				{/* Height display toggle */}
-				<button
-					type="button"
-					className={`btn btn-sm ${showHeights ? "btn-info" : ""}`}
-					onClick={() => setShowHeights((v) => !v)}
-					title="Toggle height numbers"
-				>
-					<span className="icon-[mdi--numeric]" />
-				</button>
-			</div>
-
-			{/* Color Palette Toolbar */}
-			<div className="flex items-center gap-3 mb-2">
-				<span className="text-sm opacity-70">Color</span>
-				<div className="flex items-center gap-1">
-					{palette.map((c, idx) => (
+					{tool === "set" && (
 						<button
-							key={c}
 							type="button"
-							className={`w-6 h-6 rounded ${
-								selectedColorIndex === idx
-									? "ring-2 ring-offset-2 ring-primary"
-									: "ring-1 ring-base-300"
-							}`}
-							style={{ backgroundColor: getTerrainColorByIndex(idx) }}
-							onClick={() => setSelectedColorIndex(idx)}
+							onClick={doFillAll}
+							className="btn btn-sm btn-secondary"
 							disabled={isReadOnly}
-							title={c}
-						/>
-					))}
+							title="Set height for all tiles"
+						>
+							<span className="icon-[mdi--format-color-fill]" />
+							Fill Height
+						</button>
+					)}
 				</div>
-			</div>
 
-			{/* Presets Toolbar */}
-			<div className="flex items-center gap-2 mb-3">
-				<span className="text-sm opacity-70">Presets</span>
-				<div className="join">
-					<button
-						type="button"
-						className="btn btn-sm join-item"
-						onClick={() => handlePreset("hills")}
-						disabled={isReadOnly}
-						title="Add random hills to the terrain"
-					>
-						<span className="icon-[mdi--terrain]" /> Hills
-					</button>
-					<button
-						type="button"
-						className="btn btn-sm join-item"
-						onClick={() => handlePreset("trees")}
-						disabled={isReadOnly}
-						title="Add random tree-like pillars"
-					>
-						<span className="icon-[mdi--pine-tree]" /> Trees
-					</button>
-					<button
-						type="button"
-						className="btn btn-sm join-item"
-						onClick={() => handlePreset("islands")}
-						disabled={isReadOnly}
-						title="Add raised plateau islands"
-					>
-						<span className="icon-[mdi--island]" /> Islands
-					</button>
-					<button
-						type="button"
-						className="btn btn-sm join-item"
-						onClick={() => handlePreset("valley")}
-						disabled={isReadOnly}
-						title="Carve a meandering valley (subtractive)"
-					>
-						<span className="icon-[game-icons--edge-crack]" /> Valley
-					</button>
-					<button
-						type="button"
-						className="btn btn-sm join-item"
-						onClick={() => handlePreset("smooth")}
-						disabled={isReadOnly}
-						title="Smooth jagged terrain edges"
-					>
-						<span className="icon-[mdi--blur]" /> Smooth
-					</button>
-					<button
-						type="button"
-						className={`btn btn-sm join-item ${flattenConfirm ? "btn-warning" : ""}`}
-						onClick={handleFlatten}
-						disabled={isReadOnly}
-						title="Reset all heights to 0"
-					>
-						<span className="icon-[mdi--eraser]" /> {flattenConfirm ? "Confirm?" : "Flatten"}
-					</button>
+				{tool === "paint" && (
+					<div className="flex flex-wrap items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-2">
+						<span className="text-sm font-medium opacity-70">Color</span>
+						<div className="flex flex-wrap items-center gap-1">
+							{palette.map((c, idx) => (
+								<button
+									key={c}
+									type="button"
+									className={`h-7 w-7 rounded ${
+										selectedColorIndex === idx
+											? "ring-2 ring-offset-2 ring-primary"
+											: "ring-1 ring-base-300"
+									}`}
+									style={{ backgroundColor: getTerrainColorByIndex(idx) }}
+									onClick={() => setSelectedColorIndex(idx)}
+									disabled={isReadOnly}
+									title={c}
+								/>
+							))}
+						</div>
+						<button
+							type="button"
+							onClick={doFillAll}
+							className="btn btn-sm btn-secondary"
+							disabled={isReadOnly}
+							title="Fill all tiles with selected color"
+						>
+							<span className="icon-[mdi--format-color-fill]" />
+							Fill Color
+						</button>
+					</div>
+				)}
+
+				<div className="flex flex-wrap items-center gap-2 rounded-lg border border-base-300 bg-base-100 p-2">
+					<span className="text-sm font-medium opacity-70">Presets</span>
+					<div className="flex flex-wrap gap-1">
+						<button
+							type="button"
+							className="btn btn-sm"
+							onClick={() => handlePreset("hills")}
+							disabled={isReadOnly}
+							title="Add random hills to the terrain"
+						>
+							<span className="icon-[mdi--terrain]" /> Hills
+						</button>
+						<button
+							type="button"
+							className="btn btn-sm"
+							onClick={() => handlePreset("trees")}
+							disabled={isReadOnly}
+							title="Add random tree-like pillars"
+						>
+							<span className="icon-[mdi--pine-tree]" /> Trees
+						</button>
+						<button
+							type="button"
+							className="btn btn-sm"
+							onClick={() => handlePreset("islands")}
+							disabled={isReadOnly}
+							title="Add raised plateau islands"
+						>
+							<span className="icon-[mdi--island]" /> Islands
+						</button>
+						<button
+							type="button"
+							className="btn btn-sm"
+							onClick={() => handlePreset("valley")}
+							disabled={isReadOnly}
+							title="Carve a meandering valley (subtractive)"
+						>
+							<span className="icon-[game-icons--edge-crack]" /> Valley
+						</button>
+						<button
+							type="button"
+							className="btn btn-sm"
+							onClick={() => handlePreset("smooth")}
+							disabled={isReadOnly}
+							title="Smooth jagged terrain edges"
+						>
+							<span className="icon-[mdi--blur]" /> Smooth
+						</button>
+						<div className="mx-1 hidden min-h-8 w-px bg-base-300 sm:block" />
+						<button
+							type="button"
+							className={`btn btn-sm ${flattenConfirm ? "btn-warning" : ""}`}
+							onClick={handleFlatten}
+							disabled={isReadOnly}
+							title="Reset all heights to 0"
+						>
+							<span className="icon-[mdi--eraser]" /> {flattenConfirm ? "Confirm?" : "Flatten"}
+						</button>
+					</div>
 				</div>
 			</div>
 
@@ -725,6 +871,7 @@ export function TerrainEditor({
 			<div
 				ref={gridContainerRef}
 				className="flex-1 w-full flex items-center justify-center overflow-hidden"
+				style={{ minWidth: minGridWidth, minHeight: minGridHeight }}
 			>
 				<div
 					ref={gridRef}
@@ -782,6 +929,18 @@ export function TerrainEditor({
 						})
 					)}
 				</div>
+			</div>
+
+			<div ref={footerRef} className="shrink-0 pt-2 flex justify-end">
+				<button
+					type="button"
+					className={`btn btn-sm gap-1 ${showHeights ? "btn-info" : "btn-ghost"}`}
+					onClick={() => setShowHeights((v) => !v)}
+					title="Toggle height numbers"
+				>
+					<span className="icon-[mdi--numeric]" />
+					<span>Heights</span>
+				</button>
 			</div>
 		</div>
 	);
