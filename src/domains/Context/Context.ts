@@ -12,4 +12,6 @@ export interface Context {
 	version: string;
 	// Runtime flag to indicate if we are in an optimistic update
 	IsOptimistic?: boolean;
+	// Runtime flag for DM to prevent broadcasting changes per campaign ID
+	SecretModes?: Record<string, boolean>;
 }

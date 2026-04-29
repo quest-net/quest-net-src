@@ -147,8 +147,11 @@ export class ActionService {
 		this.room.onPeerJoin(() => {
 			if (this.context.User.Role === "dm") {
 				const campaign = CampaignActions.getActiveCampaign(this.context);
-				// Force full state for new peer
-				this.stateSync.broadcastFull(campaign);
+				const isSecret = this.context.SecretModes?.[campaign.Id];
+				if (!isSecret) {
+					// Force full state for new peer
+					this.stateSync.broadcastFull(campaign);
+				}
 			}
 		});
 
@@ -214,7 +217,10 @@ export class ActionService {
 
 		this.bumpMapRefs(campaign);
 
-		this.stateSync.broadcast(campaign);
+		const isSecret = this.context.SecretModes?.[campaign.Id];
+		if (!isSecret) {
+			this.stateSync.broadcast(campaign);
+		}
 
 		triggerContextUpdate();
 	}
@@ -256,6 +262,14 @@ export class ActionService {
 	 * DM receives and processes player action requests
 	 */
 	private handlePlayerRequest(data: any) {
+		// While the DM is in secret mode, drop player requests on the floor.
+		// Applying them would corrupt the prep state (e.g. a move request
+		// scoped to the player's stale terrain). The full sync that fires when
+		// secret mode is turned off reconciles the player's optimistic state.
+		const activeCampaign = CampaignActions.getActiveCampaign(this.context);
+		if (this.context.SecretModes?.[activeCampaign.Id]) {
+			return;
+		}
 
 		try {
 			// Execute the domain action
@@ -295,6 +309,17 @@ export class ActionService {
 		} catch (error) {
 			console.error(`[ActionService] Error executing ${actionKey}:`, error);
 			throw error;
+		}
+	}
+
+	/**
+	 * Forces a full sync broadcast to all players (used when turning off secret mode)
+	 */
+	public forceSync(): void {
+		if (this.context.User.Role === "dm") {
+			const campaign = CampaignActions.getActiveCampaign(this.context);
+			this.bumpMapRefs(campaign);
+			this.stateSync.broadcastFull(campaign);
 		}
 	}
 

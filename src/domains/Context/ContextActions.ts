@@ -19,6 +19,7 @@ export const ContextActions = {
 			Campaigns: [],
 			AppSettings: {},
 			version: APP_VERSION,
+			SecretModes: {},
 		};
 
 		this.save(context);
@@ -39,6 +40,10 @@ export const ContextActions = {
 
 		try {
 			const migrated = runMigrations(stored, APP_VERSION);
+			
+			if (!migrated.SecretModes) {
+				migrated.SecretModes = {};
+			}
 
 			// If migration changed version, persist
 			if (migrated.version !== stored.version) {

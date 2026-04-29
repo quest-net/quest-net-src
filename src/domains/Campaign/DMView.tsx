@@ -5,6 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "./CampaignActions";
 import { ImpersonationPicker } from "../../components/inputs/ImpersonationPicker";
+import { SecretModeToggle } from "../../components/inputs/SecretModeToggle";
 import { CharacterIndex } from "../Character/Index";
 import { CampaignSettingEdit } from "../CampaignSetting/Edit";
 import { TerrainIndex } from "../Terrain/Index";
@@ -85,6 +86,7 @@ export function DMView() {
 					</div>
 					<h1 className="text-xl font-bold">{campaign.Name}</h1>
 					<div className="flex items-center gap-2">
+						<SecretModeToggle />
 						<ImpersonationPicker />
 						<button
 							className="btn btn-neutral"

@@ -8,6 +8,7 @@ import { useNavigate } from "react-router-dom";
 import CircularText from "../../components/CircularText/CircularText";
 import PixelBlast from "../../components/PixelBlast/PixelBlast";
 import { useThemeColors } from "../../utils/ThemeUtils";
+import { isGUID } from "../../utils/UrlParser";
 
 export function CampaignIndex() {
 	const context = useQuestContext();
@@ -406,7 +407,23 @@ export function CampaignIndex() {
 												</div>
 
 												<div className="card-actions justify-end mt-2">
-												<button
+													{isGUID(campaign.Id) && (
+														<div className="tooltip tooltip-bottom" data-tip="Start in secret mode to prepare without broadcasting updates">
+															<button
+																onClick={(e) => {
+																	e.stopPropagation();
+																	if (!context.SecretModes) context.SecretModes = {};
+																	context.SecretModes[campaign.Id] = true;
+																	navigate(`/${campaign.Id}`);
+																}}
+																className="btn btn-neutral btn-sm gap-1"
+															>
+																<span className="icon-[mdi--eye-off] w-4 h-4" />
+																Secret Start
+															</button>
+														</div>
+													)}
+													<button
 														onClick={(e) => {
 															e.stopPropagation();
 															handleEditRoomCodeClick(campaign.Id, campaign.RoomCode);
