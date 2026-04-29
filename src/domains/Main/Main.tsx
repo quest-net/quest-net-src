@@ -72,6 +72,14 @@ export function Main() {
 	const selectedCharacter = selectedCharacterId
 		? campaign.GameState.Characters.find((c) => c.Id === selectedCharacterId)
 		: null;
+
+	// Hide Shared Inventories tab when none are configured. Tracking the count
+	// (rather than the array reference) keeps the effect from firing on every
+	// state-sync re-render, and bounces the user off the tab if a DM deletes
+	// the last shared inventory while it's open.
+	const sharedInventoriesCount =
+		campaign.Settings.SharedInventories?.length ?? 0;
+	const hasSharedInventories = sharedInventoriesCount > 0;
 	// Track indicators for new items (players only)
 	const [showInventoryIndicator, setShowInventoryIndicator] = useState(false);
 	const [showEquipmentIndicator, setShowEquipmentIndicator] = useState(false);
@@ -142,6 +150,15 @@ export function Main() {
 		isDM,
 		selectedCharacter,
 	]);
+
+	// If the Shared Inventories tab is open and the last shared inventory gets
+	// deleted, fall back to a sensible default for the current role rather than
+	// leaving the user on a tab whose button has just disappeared.
+	useEffect(() => {
+		if (activeBottomTab === "shared-inventories" && !hasSharedInventories) {
+			setActiveBottomTab(isDM ? "inspector" : "character");
+		}
+	}, [hasSharedInventories, activeBottomTab, isDM]);
 
 	// Handle tab changes and clear indicators
 	const handleBottomTabChange = (tab: PlayerBottomTab | DMBottomTab) => {
@@ -267,14 +284,16 @@ export function Main() {
 									>
 										<span className="icon-[mdi--account-group] w-6 h-6" />
 									</button>
-									<button
-										className={`btn btn-square ${activeBottomTab === "shared-inventories" ? "btn-neutral" : ""
-											}`}
-										onClick={() => setActiveBottomTab("shared-inventories")}
-										title="Shared Inventories"
-									>
-										<span className="icon-[mdi--treasure-chest] w-6 h-6" />
-									</button>
+									{hasSharedInventories && (
+										<button
+											className={`btn btn-square ${activeBottomTab === "shared-inventories" ? "btn-neutral" : ""
+												}`}
+											onClick={() => setActiveBottomTab("shared-inventories")}
+											title="Shared Inventories"
+										>
+											<span className="icon-[mdi--treasure-chest] w-6 h-6" />
+										</button>
+									)}
 								</>
 							) : (
 								// Player Tabs
@@ -352,14 +371,16 @@ export function Main() {
 									>
 										<span className="icon-[mdi--account-group] w-6 h-6" />
 									</button>
-									<button
-										className={`btn btn-square ${activeBottomTab === "shared-inventories" ? "btn-neutral" : ""
-											}`}
-										onClick={() => setActiveBottomTab("shared-inventories")}
-										title="Shared Inventories"
-									>
-										<span className="icon-[mdi--treasure-chest] w-6 h-6" />
-									</button>
+									{hasSharedInventories && (
+										<button
+											className={`btn btn-square ${activeBottomTab === "shared-inventories" ? "btn-neutral" : ""
+												}`}
+											onClick={() => setActiveBottomTab("shared-inventories")}
+											title="Shared Inventories"
+										>
+											<span className="icon-[mdi--treasure-chest] w-6 h-6" />
+										</button>
+									)}
 									<button
 										className={`btn btn-square ${activeBottomTab === "inspector" ? "btn-neutral" : ""
 											}`}
