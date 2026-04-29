@@ -7,6 +7,27 @@ import { AppSettings, DEFAULT_IMAGE_PROMPT } from "./AppSetting";
 import { SoundEffectService } from "../../services/SoundEffectService";
 import { DEFAULT_PROVIDER_ID } from "../../services/ImageGenerationService";
 
+// ---------------------------------------------------------------------------
+// Helpers — AppSettings is a flat Record<string, string> on the Context, so
+// any value that isn't a plain string must be JSON-serialized.
+// ---------------------------------------------------------------------------
+
+function getJson<T>(context: Context, key: string): T | undefined {
+  const raw = context.AppSettings[key];
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+function setJson<T>(context: Context, key: string, value: T): void {
+  context.AppSettings[key] = JSON.stringify(value);
+}
+
+// ---------------------------------------------------------------------------
+
 export const AppSettingActions = {
   createDefault(): AppSettings {
     return {
@@ -66,21 +87,21 @@ export const AppSettingActions = {
   // ---------------------------------------------------------------------------
 
   getProviderApiKey(context: Context, providerId: string): string | undefined {
-    return context.AppSettings.imageApiKeys?.[providerId] || undefined;
+    const map = getJson<Record<string, string>>(context, "imageApiKeys");
+    return map?.[providerId] || undefined;
   },
 
   setProviderApiKey(
     params: { providerId: string; apiKey: string | undefined },
     context: Context
   ): void {
-    if (!context.AppSettings.imageApiKeys) {
-      context.AppSettings.imageApiKeys = {};
-    }
+    const map = getJson<Record<string, string>>(context, "imageApiKeys") ?? {};
     if (params.apiKey?.trim()) {
-      context.AppSettings.imageApiKeys[params.providerId] = params.apiKey.trim();
+      map[params.providerId] = params.apiKey.trim();
     } else {
-      delete context.AppSettings.imageApiKeys[params.providerId];
+      delete map[params.providerId];
     }
+    setJson(context, "imageApiKeys", map);
     ContextActions.save(context);
   },
 
@@ -88,22 +109,22 @@ export const AppSettingActions = {
     context: Context,
     providerId: string
   ): string | undefined {
-    return context.AppSettings.imageApiSecrets?.[providerId] || undefined;
+    const map = getJson<Record<string, string>>(context, "imageApiSecrets");
+    return map?.[providerId] || undefined;
   },
 
   setProviderApiSecret(
     params: { providerId: string; apiSecret: string | undefined },
     context: Context
   ): void {
-    if (!context.AppSettings.imageApiSecrets) {
-      context.AppSettings.imageApiSecrets = {};
-    }
+    const map =
+      getJson<Record<string, string>>(context, "imageApiSecrets") ?? {};
     if (params.apiSecret?.trim()) {
-      context.AppSettings.imageApiSecrets[params.providerId] =
-        params.apiSecret.trim();
+      map[params.providerId] = params.apiSecret.trim();
     } else {
-      delete context.AppSettings.imageApiSecrets[params.providerId];
+      delete map[params.providerId];
     }
+    setJson(context, "imageApiSecrets", map);
     ContextActions.save(context);
   },
 
@@ -144,8 +165,11 @@ export const AppSettingActions = {
       sfxVolume: this.getSfxVolume(),
       imagePromptTemplate: this.getImagePromptTemplate(context),
       imageService: this.getImageService(context),
-      imageApiKeys: context.AppSettings.imageApiKeys,
-      imageApiSecrets: context.AppSettings.imageApiSecrets,
+      imageApiKeys: getJson<Record<string, string>>(context, "imageApiKeys"),
+      imageApiSecrets: getJson<Record<string, string>>(
+        context,
+        "imageApiSecrets"
+      ),
     };
   },
 };

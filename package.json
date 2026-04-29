@@ -23,7 +23,7 @@
 		"react-router-dom": "^7.9.4",
 		"react-use": "^17.6.0",
 		"three": "0.180.0",
-		"trystero": "^0.21.0",
+		"trystero": "^0.24.0",
 		"uuid": "^11.0.2",
 		"web-vitals": "^2.1.4"
 	},

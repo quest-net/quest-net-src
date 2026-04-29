@@ -10,19 +10,29 @@ import { Room } from "../../domains/Room/Room";
 import { triggerContextUpdate } from "../../domains/Context/ContextProvider";
 import { RoomActions } from "../../domains/Room/RoomActions";
 import { LogActions } from "../../domains/Log/LogActions";
+import { User } from "../../domains/User/User";
+
+const PING_INTERVAL_MS = 3000;
 
 export class ActionService {
 	private context: Context;
 	private room: Room;
 	private stateSync: StateSync;
 	public imageService: ImageService;
-	private onPeerJoinCallback?: (peerId: string) => void;
-	private onPeerLeaveCallback?: (peerId: string) => void;
 
 	private onFirstUpdateCallback?: () => void;
 
 	// Trystero channel functions
 	private sendActionRequest!: (data: any) => void;
+	private sendUserUpdate!: (data: any, peerId?: string) => void;
+
+	// Peer state — populated via the joinRoom handshake (initial sync) and
+	// the `userUpdate` action (runtime updates). Owned here so all consumers
+	// (hooks, components) read the same source of truth.
+	public peerUsers: Map<string, User> = new Map();
+	public peerPings: Map<string, number> = new Map();
+	private pingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
+	private lastBroadcastUserJson = "";
 
 	constructor(context: Context, room: Room) {
 		console.log("[ActionService] Initializing...");
@@ -40,15 +50,6 @@ export class ActionService {
 	}
 
 	/**
-	 * Allows external code to register additional peer join handlers
-	 */
-	setOnPeerJoin(callback: (peerId: string) => void) {
-		this.onPeerJoinCallback = callback;
-	}
-	setOnPeerLeave(callback: (peerId: string) => void) {
-		this.onPeerLeaveCallback = callback;
-	}
-	/**
 	 * Registers a callback that will be executed only once,
 	 * upon receiving the first state update.
 	 */
@@ -56,18 +57,61 @@ export class ActionService {
 		this.onFirstUpdateCallback = callback;
 	}
 
-	private setupChannels() {
-		// Create channel for action requests: Player → DM
-		// Note: Trystero has 12-byte limit for action names
-		const [sendReq, receiveReq] = this.room.makeAction("actionReq");
+	/**
+	 * Records a peer's User payload (called from the room handshake).
+	 * Starts the ping cadence for that peer and triggers a re-render.
+	 */
+	recordPeerUser(peerId: string, user: User) {
+		this.peerUsers.set(peerId, user);
+		this.startPinging(peerId);
+		triggerContextUpdate();
+	}
 
+	/**
+	 * Drops a peer's User payload and stops pinging them.
+	 */
+	private forgetPeerUser(peerId: string) {
+		const had = this.peerUsers.delete(peerId);
+		this.stopPinging(peerId);
+		if (had) {
+			triggerContextUpdate();
+		}
+	}
+
+	/**
+	 * Re-broadcasts the local User to peers if it has changed since the
+	 * last broadcast. Safe to call from multiple components — only the
+	 * actual changes are sent.
+	 */
+	broadcastSelf(): void {
+		if (!this.sendUserUpdate) return;
+		const json = JSON.stringify(this.context.User);
+		if (json === this.lastBroadcastUserJson) return;
+		this.lastBroadcastUserJson = json;
+		this.sendUserUpdate(this.context.User);
+	}
+
+	private setupChannels() {
+		// Channel for action requests: Player → DM
+		// Note: Trystero 0.23+ allows up to 32 bytes per action name.
+		const [sendReq, receiveReq] = this.room.makeAction("actionReq");
 		this.sendActionRequest = sendReq;
 
-		// Set up listeners based on role
 		if (this.context.User.Role === "dm") {
 			// DM listens for action requests from players
 			receiveReq(this.handlePlayerRequest.bind(this));
 		}
+
+		// Runtime user updates (e.g., character selection mid-session).
+		// Initial user exchange is handled by the joinRoom handshake.
+		const [sendUserUpdate, getUserUpdate] = this.room.makeAction("userUpdate");
+		this.sendUserUpdate = sendUserUpdate;
+		getUserUpdate((data, peerId) => {
+			if (data && typeof data === "object") {
+				this.peerUsers.set(peerId, data as unknown as User);
+				triggerContextUpdate();
+			}
+		});
 	}
 
 	private setupStateSync() {
@@ -100,23 +144,41 @@ export class ActionService {
 	}
 
 	private setupPeerHandlers() {
-		this.room.onPeerJoin((peerId) => {
+		this.room.onPeerJoin(() => {
 			if (this.context.User.Role === "dm") {
 				const campaign = CampaignActions.getActiveCampaign(this.context);
 				// Force full state for new peer
 				this.stateSync.broadcastFull(campaign);
 			}
-
-			if (this.onPeerJoinCallback) {
-				this.onPeerJoinCallback(peerId);
-			}
 		});
 
 		this.room.onPeerLeave((peerId) => {
-			if (this.onPeerLeaveCallback) {
-				this.onPeerLeaveCallback(peerId);
-			}
+			this.forgetPeerUser(peerId);
 		});
+	}
+
+	private startPinging(peerId: string) {
+		this.stopPinging(peerId);
+		const tick = async () => {
+			try {
+				const ms = await this.room.ping(peerId);
+				this.peerPings.set(peerId, ms);
+				triggerContextUpdate();
+			} catch {
+				// Transient ping failures are expected on flaky links — ignore.
+			}
+		};
+		tick();
+		this.pingIntervals.set(peerId, setInterval(tick, PING_INTERVAL_MS));
+	}
+
+	private stopPinging(peerId: string) {
+		const interval = this.pingIntervals.get(peerId);
+		if (interval) {
+			clearInterval(interval);
+			this.pingIntervals.delete(peerId);
+		}
+		this.peerPings.delete(peerId);
 	}
 
 	/**
@@ -238,15 +300,16 @@ export class ActionService {
 
 	cleanup(): void {
 		console.log("[ActionService] Cleaning up...");
+		this.pingIntervals.forEach(clearInterval);
+		this.pingIntervals.clear();
+		this.peerPings.clear();
+		this.peerUsers.clear();
 		if (this.room) {
 			RoomActions.leave(this.room);
 		}
-		// Unset any callbacks to prevent memory leaks
-		this.onPeerJoinCallback = undefined;
-		this.onPeerLeaveCallback = undefined;
 	}
 
-	/** 
+	/**
    * Make new references for collections the Map memoizes against.
    * This avoids stale useMemo caches when domain code mutates in place.
    */

@@ -1,8 +1,7 @@
 // hooks/usePeerTracking.ts
-import { useState, useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useActionService } from "../services/Actions/ActionServiceProvider";
 import { useQuestContext } from "../domains/Context/ContextProvider";
-import { RoomActions } from "../domains/Room/RoomActions";
 import { User } from "../domains/User/User";
 import { CampaignActions } from "../domains/Campaign/CampaignActions";
 
@@ -21,208 +20,73 @@ export interface PeerTrackingData {
 	canAccessActor: (actorId: string) => boolean;
 }
 
+/**
+ * Reads peer presence and ping data from ActionService and re-broadcasts
+ * the local User when it changes. Peer state itself (User payloads, pings)
+ * is owned by ActionService — see `recordPeerUser` / `broadcastSelf` there.
+ *
+ * Initial peer User exchange happens via the joinRoom handshake, set up
+ * in `CampaignView`. Runtime updates (e.g., character selection) flow
+ * through the `userUpdate` action.
+ */
 export function usePeerTracking(): PeerTrackingData {
 	const { actionService } = useActionService();
 	const context = useQuestContext();
 	const campaign = CampaignActions.getActiveCampaign(context);
 
-	const [peerUsers, setPeerUsers] = useState<Record<string, User>>({});
-	const [peerPings, setPeerPings] = useState<Record<string, number>>({});
-
-	const sendUserRef = useRef<((data: any, peerId?: string) => void) | null>(null);
-	const pingIntervalsRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
-	const peerUsersRef = useRef<Record<string, User>>({});
-	const currentUserRef = useRef(context.User);
-
+	// Re-broadcast our User whenever it changes (character selection, etc.).
+	// ActionService dedupes against the last broadcast, so calling this from
+	// multiple components is a no-op after the first one.
+	const userJson = JSON.stringify(context.User);
 	useEffect(() => {
-		peerUsersRef.current = peerUsers;
-	}, [peerUsers]);
+		actionService?.broadcastSelf();
+	}, [userJson, actionService]);
 
-	useEffect(() => {
-		currentUserRef.current = context.User;
-	}, [context.User]);
+	const peerUsersMap = actionService?.peerUsers ?? new Map<string, User>();
+	const peerPingsMap = actionService?.peerPings ?? new Map<string, number>();
 
-	// Convenience function: Get actor ID from user ID
+	const peers: PeerInfo[] = Array.from(peerUsersMap.entries()).map(
+		([peerId, user]) => ({
+			peerId,
+			user,
+			ping: peerPingsMap.get(peerId) ?? null,
+		})
+	);
+
+	const connectionStatus: "online" | "connected" =
+		peers.length === 0 ? "online" : "connected";
+
 	const getActorIdFromUserId = (userId: string): string | null => {
-		const peer = Object.values(peerUsers).find((user) => user.Id === userId);
-		if (!peer) return null;
-		return peer.SelectedCharacters[campaign.RoomCode] || null;
+		for (const user of peerUsersMap.values()) {
+			if (user.Id === userId) {
+				return user.SelectedCharacters[campaign.RoomCode] || null;
+			}
+		}
+		return null;
 	};
 
-	// Convenience function: Get user ID from actor ID
 	const getUserIdFromActorId = (actorId: string): string | null => {
-		const peer = Object.values(peerUsers).find(
-			(user) => user.SelectedCharacters[campaign.RoomCode] === actorId
-		);
-		return peer?.Id || null;
+		for (const user of peerUsersMap.values()) {
+			if (user.SelectedCharacters[campaign.RoomCode] === actorId) {
+				return user.Id;
+			}
+		}
+		return null;
 	};
 
-	// Convenience function: Get full user from actor ID
 	const getUserFromActorId = (actorId: string): User | null => {
-		const peer = Object.values(peerUsers).find(
-			(user) => user.SelectedCharacters[campaign.RoomCode] === actorId
-		);
-		return peer || null;
+		for (const user of peerUsersMap.values()) {
+			if (user.SelectedCharacters[campaign.RoomCode] === actorId) {
+				return user;
+			}
+		}
+		return null;
 	};
 
-	// Convenience function: Check if current user can access this actor
 	const canAccessActor = (actorId: string): boolean => {
 		if (context.User.Role === "dm") return true;
 		return context.User.SelectedCharacters[campaign.RoomCode] === actorId;
 	};
-
-	useEffect(() => {
-		if (!actionService) {
-			return;
-		}
-
-		const room = actionService["room"];
-		if (!room) {
-			return;
-		}
-
-		// STEP 1: Create action
-		const [sendUser, getUser] = room.makeAction("userState");
-		sendUserRef.current = sendUser;
-
-		// STEP 2: Set up receiver FIRST (before any broadcasting)
-		getUser((userData, peerId) => {
-			if (typeof userData === "object" && userData !== null) {
-				setPeerUsers((current) => {
-					const isNewPeer = !current[peerId];
-					const updated = {
-						...current,
-						[peerId]: userData as unknown as User,
-					};
-
-					// If this is the first time we're hearing from this peer,
-					// respond by sending our user data back to ensure mutual awareness
-					if (isNewPeer && sendUserRef.current) {
-						sendUserRef.current(context.User as any, peerId);
-					}
-
-					return updated;
-				});
-			}
-		});
-
-		// STEP 3: NOW broadcast to all existing peers
-		sendUser(context.User as any);
-
-		const startPingingPeer = (peerId: string) => {
-			if (pingIntervalsRef.current[peerId]) {
-				clearInterval(pingIntervalsRef.current[peerId]);
-			}
-
-			room
-				.ping(peerId)
-				.then((ms) => {
-					setPeerPings((current) => ({
-						...current,
-						[peerId]: ms,
-					}));
-				})
-				.catch((err) => {
-					console.warn("[usePeerTracking] Failed initial ping:", {
-						peerId,
-						error: err,
-					});
-				});
-
-			pingIntervalsRef.current[peerId] = setInterval(async () => {
-				// Retry handshake if we don't know who this is yet
-				if (!peerUsersRef.current[peerId] && sendUserRef.current) {
-					sendUserRef.current(currentUserRef.current as any, peerId);
-				}
-
-				try {
-					const ms = await room.ping(peerId);
-					setPeerPings((current) => ({
-						...current,
-						[peerId]: ms,
-					}));
-				} catch (err) {
-					console.warn("[usePeerTracking] Failed to ping peer:", {
-						peerId,
-						error: err,
-					});
-				}
-			}, 3000);
-		};
-
-		// Set up peer join handler
-		actionService.setOnPeerJoin((peerId) => {
-			// Send our User object to the new peer
-			if (sendUserRef.current) {
-				sendUserRef.current(context.User as any, peerId);
-			} else {
-				console.warn(
-					"[usePeerTracking] sendUserRef not set, cannot send to peer:",
-					peerId
-				);
-			}
-
-			startPingingPeer(peerId);
-		});
-
-		// Set up peer leave handler
-		actionService.setOnPeerLeave((peerId) => {
-			setPeerUsers((current) => {
-				const updated = { ...current };
-				delete updated[peerId];
-				return updated;
-			});
-
-			setPeerPings((current) => {
-				const updated = { ...current };
-				delete updated[peerId];
-				return updated;
-			});
-
-			if (pingIntervalsRef.current[peerId]) {
-				clearInterval(pingIntervalsRef.current[peerId]);
-				delete pingIntervalsRef.current[peerId];
-			}
-		});
-
-		// Start pinging current peers
-		const currentPeers = RoomActions.getConnectedPeerIds(room);
-		currentPeers.forEach((peerId) => {
-			// Explicitly send our user data to existing peers to ensure they know us
-			sendUser(context.User as any, peerId);
-			startPingingPeer(peerId);
-		});
-
-		return () => {
-			Object.values(pingIntervalsRef.current).forEach(clearInterval);
-			pingIntervalsRef.current = {};
-			// neutralize the userState receiver so unmounted closures never fire
-			getUser(() => { });
-			sendUserRef.current = null;
-			// Clear state on cleanup - this only happens when actionService changes
-			setPeerUsers({});
-			setPeerPings({});
-		};
-	}, [actionService]);
-
-	// Re-broadcast when User object changes (e.g., character selection)
-	const userJson = JSON.stringify(context.User);
-
-	useEffect(() => {
-		if (sendUserRef.current) {
-			sendUserRef.current(context.User as any);
-		}
-	}, [userJson]);
-
-	// Build clean peer list from internal state
-	const peers: PeerInfo[] = Object.keys(peerUsers).map((peerId) => ({
-		peerId,
-		user: peerUsers[peerId],
-		ping: peerPings[peerId] ?? null,
-	}));
-
-	const connectionStatus: "online" | "connected" =
-		peers.length === 0 ? "online" : "connected";
 
 	return {
 		peers,

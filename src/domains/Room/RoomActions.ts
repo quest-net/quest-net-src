@@ -1,9 +1,26 @@
 // domains/Room/RoomActions.ts
 
-import { joinRoom } from "trystero/nostr";
+import { joinRoom } from "trystero";
+import type { JoinRoomCallbacks } from "trystero";
 import type { Room } from "./Room";
 
 const APP_ID = "quest-net";
+
+/**
+ * Optional callbacks passed to `joinRoom` (Trystero 0.23+).
+ *
+ * - `onPeerHandshake` runs once per peer right after the transport connects
+ *   and BEFORE the peer becomes visible to `getPeers()`, `onPeerJoin`, or
+ *   any action receivers. Use it to exchange identity payloads. Throw/reject
+ *   to deny the peer (the other side gets `onJoinError`).
+ *
+ * - `onJoinError` fires on join failures: bad password, handshake denial,
+ *   or handshake timeout. Per-peer.
+ *
+ * This is a direct re-export of trystero's `JoinRoomCallbacks` type so it
+ * can never drift from the library's own definitions.
+ */
+export type RoomCallbacks = JoinRoomCallbacks;
 
 /**
  * Room lifecycle management
@@ -21,20 +38,15 @@ export const RoomActions = {
 	 * Creates a new Trystero connection
 	 *
 	 * @param roomCode - The room code to join (e.g., "brave-dragon-42")
+	 * @param callbacks - Optional `joinRoom` callbacks (handshake, join error)
 	 * @returns Room object with WebRTC connections
 	 */
-	join(roomCode: string | undefined): Room {
+	join(roomCode: string | undefined, callbacks?: RoomCallbacks): Room {
 		if (!roomCode) {
 			roomCode = "ROOMCODE";
 		}
 
-		const config = {
-			appId: APP_ID,
-		};
-
-		const room = joinRoom(config, roomCode);
-
-		return room;
+		return joinRoom({ appId: APP_ID }, roomCode, callbacks);
 	},
 
 	/**

@@ -11,11 +11,14 @@ import { useAutoReconnect } from "../../hooks/useAutoReconnect";
 import { CampaignActions } from "./CampaignActions";
 import { ContextActions } from "../Context/ContextActions";
 import { RoomActions } from "../Room/RoomActions";
+import type { RoomCallbacks } from "../Room/RoomActions";
+import type { DataPayload } from "trystero";
 import { ActionService } from "../../services/Actions/ActionService";
 import { isGUID } from "../../utils/UrlParser";
 import { DMView } from "./DMView";
 import { PlayerView } from "./PlayerView";
 import { Campaign } from "./Campaign";
+import type { User } from "../User/User";
 
 type ViewStatus = "loading" | "ready" | "waiting-for-dm" | "error";
 
@@ -38,9 +41,13 @@ export function CampaignView() {
 	useAutoReconnect(
 		{
 			enabled: state.status === "ready", // Only auto-reconnect when we're supposed to be connected
-			checkIntervalMs: 5000, // Check every 5 seconds
-			reconnectDelayMs: 3000, // Wait 3 seconds of 0 peers before reconnecting
-			// maxAttempts is now Infinity by default - unlimited retries!
+			// Trystero 0.22+ pauses relay reconnects when the browser is offline
+			// and resumes when it comes back, so the previous 5s/3s tuning was
+			// over-aggressive. Loosen to give the library time to recover before
+			// we leave-and-rejoin the room ourselves.
+			checkIntervalMs: 10000,
+			reconnectDelayMs: 8000,
+			// maxAttempts is Infinity by default - unlimited retries!
 		},
 		() => {
 			// Increment the trigger to force useEffect to re-run
@@ -127,7 +134,49 @@ export function CampaignView() {
 				// STEP 2: Join room
 				// =====================================================================
 				const roomCode = isDM ? campaign?.RoomCode || identifier : identifier;
-				room = RoomActions.join(roomCode);
+
+				// Build joinRoom callbacks BEFORE constructing the room.
+				// The handshake closure references `service` (declared above as
+				// `let service`); by the time a peer actually connects and the
+				// handshake fires, `service` will already have been assigned.
+				const callbacks: RoomCallbacks = {
+					onPeerHandshake: async (peerId, send, receive, isInitiator) => {
+						// Symmetrical User exchange. `isInitiator` is set
+						// deterministically by Trystero to avoid deadlocks: the
+						// initiator sends first, the other side receives first.
+						const myUser = context.User;
+						let theirUser: User;
+						if (isInitiator) {
+							await send(myUser as unknown as DataPayload);
+							const { data } = await receive();
+							theirUser = data as unknown as User;
+						} else {
+							const { data } = await receive();
+							await send(myUser as unknown as DataPayload);
+							theirUser = data as unknown as User;
+						}
+						service?.recordPeerUser(peerId, theirUser);
+					},
+					onJoinError: (details) => {
+						console.error("[CampaignView] onJoinError:", details);
+						if (!isSubscribed) return;
+						// Only convert to a hard error while we're still waiting
+						// for the DM to admit us. After we're "ready", peer-level
+						// join failures are transient and useAutoReconnect handles
+						// them.
+						setState((cur) => {
+							if (cur.status !== "waiting-for-dm") return cur;
+							// details.error is typed as string in trystero 0.24
+							const message = details.error || "unknown";
+							return {
+								status: "error",
+								errorMessage: `Couldn't join the room: ${message}`,
+							};
+						});
+					},
+				};
+
+				room = RoomActions.join(roomCode, callbacks);
 				console.log(`[CampaignView] Joined room: ${roomCode}`);
 
 				// =====================================================================
