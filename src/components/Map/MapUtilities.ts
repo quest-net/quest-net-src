@@ -4,7 +4,11 @@ import type { Terrain } from "../../domains/Terrain/Terrain";
 import type { Character } from "../../domains/Character/Character";
 import type { Entity } from "../../domains/Entity/Entity";
 import type { ActorSize } from "../../domains/Actor/Actor";
-import { MAX_HEIGHT, getTerrainColorByIndex } from "../../domains/Terrain/Terrain";
+import { MAX_HEIGHT } from "../../domains/Terrain/Terrain";
+import {
+	DEFAULT_TERRAIN_COLOR_INDEX,
+	getTerrainColorByIndex,
+} from "../../utils/TerrainPaletteUtils";
 import { getTokenPosition } from "./Token";
 import { isItemEntity } from "../../domains/Item/ItemDropUtils";
 import { TILE_H, TILE_W, V_SCALE } from "./Terrain";
@@ -136,7 +140,7 @@ export function buildBaseTiles(terrain: Terrain): BaseTile[] {
 	for (let y = 0; y < L; y++) {
 		for (let x = 0; x < W; x++) {
 			const hgt = (hmap[y]?.[x] ?? 0) | 0;
-			const colorIndex = cmap[y]?.[x] ?? 6; // Default to grey (index 6)
+			const colorIndex = cmap[y]?.[x] ?? DEFAULT_TERRAIN_COLOR_INDEX;
 			const color = hexToNum(getTerrainColorByIndex(colorIndex));
 			out.push({ x, y, h: hgt, color });
 		}

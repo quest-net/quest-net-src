@@ -1,11 +1,54 @@
 // domains/Terrain/TerrainActions.ts
 
 import { Context } from "../Context/Context";
-import { MAX_HEIGHT, Terrain } from "./Terrain";
+import { DEFAULT_TERRAIN_HEIGHT, MAX_HEIGHT, Terrain } from "./Terrain";
+import {
+	DEFAULT_TERRAIN_COLOR_INDEX,
+	getTerrainPaletteIndex,
+} from "../../utils/TerrainPaletteUtils";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { Actor } from "../Actor/Actor";
 import { isItemEntity } from "../Item/ItemDropUtils";
+
+/**
+ * Build a flat terrain of the given dimensions, uniformly filled with the
+ * default height and color. Shared by createDefault (campaign bootstrap) and
+ * createNew (editor "new terrain" button).
+ */
+function makeFlatTerrain(params: {
+	id: string;
+	name: string;
+	width: number;
+	length: number;
+	height?: number;
+	colorIndex?: number;
+}): Terrain {
+	const {
+		id,
+		name,
+		width,
+		length,
+		height = DEFAULT_TERRAIN_HEIGHT,
+		colorIndex = DEFAULT_TERRAIN_COLOR_INDEX,
+	} = params;
+
+	const heightMap: number[][] = Array.from({ length }, () =>
+		Array(width).fill(height)
+	);
+	const colorMap: number[][] = Array.from({ length }, () =>
+		Array(width).fill(colorIndex)
+	);
+
+	return {
+		Id: id,
+		Name: name,
+		Width: width,
+		Length: length,
+		HeightMap: heightMap,
+		ColorMap: colorMap,
+	};
+}
 
 export const TerrainActions = {
 	/**
@@ -13,26 +56,12 @@ export const TerrainActions = {
 	 * This terrain cannot be deleted and is always available
 	 */
 	createDefault(): Terrain {
-		const width = 16;
-		const length = 16;
-
-		const heightMap: number[][] = Array(length)
-			.fill(null)
-			.map(() => Array(width).fill(8));
-
-		// ColorMap now stores indices into TERRAIN_TYPES
-		const colorMap: number[][] = Array(length)
-			.fill(null)
-			.map(() => Array(width).fill(1)); // 1 = white
-
-		return {
-			Id: "DEFAULT_TERRAIN",
-			Name: "Default Terrain",
-			Width: width,
-			Length: length,
-			HeightMap: heightMap,
-			ColorMap: colorMap,
-		};
+		return makeFlatTerrain({
+			id: "DEFAULT_TERRAIN",
+			name: "Default Terrain",
+			width: 16,
+			length: 16,
+		});
 	},
 
 	createHills(): Terrain {
@@ -49,9 +78,10 @@ export const TerrainActions = {
 		const heightMap: number[][] = Array.from({ length }, () =>
 			Array(width).fill(0)
 		);
-		// ColorMap uses indices: 0 = green, 2 = blue
+		const green = getTerrainPaletteIndex(5, 2);
+		const blue = getTerrainPaletteIndex(8, 2);
 		const colorMap: number[][] = Array.from({ length }, () =>
-			Array(width).fill(2) // 2 = blue
+			Array(width).fill(blue)
 		);
 
 		const hills = Array.from({ length: HILLS_COUNT }, () => {
@@ -101,7 +131,7 @@ export const TerrainActions = {
 		const threshold = Math.floor(MAX_HEIGHT * 0.45);
 		for (let y = 0; y < length; y++) {
 			for (let x = 0; x < width; x++) {
-				colorMap[y][x] = heightMap[y][x] > threshold ? 0 : 2; // 0 = green, 2 = blue
+				colorMap[y][x] = heightMap[y][x] > threshold ? green : blue;
 			}
 		}
 
@@ -116,26 +146,12 @@ export const TerrainActions = {
 	},
 
 	createNew(): Terrain {
-		const width = 20;
-		const length = 20;
-
-		const heightMap: number[][] = Array(length)
-			.fill(null)
-			.map(() => Array(width).fill(0));
-
-		// ColorMap uses indices: 0 = green
-		const colorMap: number[][] = Array(length)
-			.fill(null)
-			.map(() => Array(width).fill(0)); // 0 = green
-
-		return {
-			Id: crypto.randomUUID(),
-			Name: "New Terrain",
-			Width: width,
-			Length: length,
-			HeightMap: heightMap,
-			ColorMap: colorMap,
-		};
+		return makeFlatTerrain({
+			id: crypto.randomUUID(),
+			name: "New Terrain",
+			width: 20,
+			length: 20,
+		});
 	},
 
 	create(params: { terrain: Terrain }, context: Context): void {

@@ -2,6 +2,7 @@
 
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { Terrain } from "./Terrain";
+import { DEFAULT_TERRAIN_COLOR_INDEX } from "../../utils/TerrainPaletteUtils";
 import { TerrainActions } from "./TerrainActions";
 import { FormWrapper, useFormReadOnly } from "../../components/Form/Form";
 import Map from "../../components/Map/Map";
@@ -109,7 +110,7 @@ function TerrainForm({ data, onChange }: TerrainFormProps) {
 			Array.from({ length: width }, () => 0)
 		);
 		const newColorMap: number[][] = Array.from({ length }, () =>
-			Array.from({ length: width }, () => 0) // Default to green (index 0)
+			Array.from({ length: width }, () => DEFAULT_TERRAIN_COLOR_INDEX)
 		);
 
 		// Copy existing data where possible (non-destructive resize)
@@ -231,12 +232,12 @@ function TerrainForm({ data, onChange }: TerrainFormProps) {
 				</div>
 
 				{/* Preview */}
-				<div className="card border-2 bg-base-100 overflow-hidden flex flex-col min-h-[14rem]">
+				<div className="card border-2 bg-base-100 overflow-hidden flex flex-col min-h-56">
 					<div className="card-body p-4 flex flex-col gap-3 min-h-0">
 						<div className="shrink-0">
 							<h3 className="text-lg font-semibold">Live Map Preview</h3>
 						</div>
-						<div className="flex-1 min-h-[10rem] w-full rounded-lg border bg-base-200 overflow-hidden">
+						<div className="flex-1 min-h-40 w-full rounded-lg border bg-base-200 overflow-hidden">
 							<MapStateProvider>
 								<Map
 									preview

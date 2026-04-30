@@ -1,6 +1,34 @@
 import { Context } from "../domains/Context/Context";
 import { VersionedMigration } from "./types";
-import { TerrainType, TERRAIN_TYPES } from "../domains/Terrain/Terrain";
+
+type TerrainType =
+    | "green"
+    | "white"
+    | "blue"
+    | "yellow"
+    | "brown"
+    | "red"
+    | "grey"
+    | "black"
+    | "orange"
+    | "purple"
+    | "cyan"
+    | "pink";
+
+const TERRAIN_TYPES: readonly TerrainType[] = [
+    "green",
+    "white",
+    "blue",
+    "yellow",
+    "brown",
+    "red",
+    "grey",
+    "black",
+    "orange",
+    "purple",
+    "cyan",
+    "pink",
+] as const;
 
 // Legacy terrain type with string-based ColorMap (pre-1.0.6)
 interface LegacyTerrain {

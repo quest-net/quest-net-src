@@ -3,7 +3,8 @@
 
 import { useMemo } from "react";
 import type { Graphics as PixiGraphics } from "pixi.js";
-import { Terrain } from "../../domains/Terrain/Terrain";
+import type { Terrain } from "../../domains/Terrain/Terrain";
+import { DEFAULT_TERRAIN_COLOR_INDEX } from "../../utils/TerrainPaletteUtils";
 import type { Character } from "../../domains/Character/Character";
 import type { Entity } from "../../domains/Entity/Entity";
 import type { ActorSize } from "../../domains/Actor/Actor";
@@ -35,15 +36,18 @@ import {
 	EAST_FACE_MULTIPLIER,
 	SOUTH_FACE_MULTIPLIER,
 	TILE_STROKE_WIDTH,
-	TILE_STROKE_ALPHA,
 	EAST_FACE_STROKE_ALPHA,
 	SOUTH_FACE_STROKE_ALPHA,
+	SURFACE_EDGE_ALPHA,
+	SURFACE_EDGE_WIDTH,
+	SURFACE_VARIATION_STRENGTH,
 	HOVER_OUTLINE_WIDTH,
 	RANGE_OUTLINE_WIDTH,
 	HIGHLIGHT_ALPHA,
 	HIGHLIGHT_MITER_LIMIT,
 	normalizeHeight,
 	applyElevationTint,
+	lerpColor,
 	getDiamondCorners,
 	getInsetDiamondCorners,
 	V_SCALE,
@@ -77,6 +81,70 @@ interface ActorView {
 
 	depth: number; // tie-break within same row
 	selected: boolean;
+}
+
+type SurfaceEdge = "topRight" | "rightBottom" | "bottomLeft" | "leftTop";
+
+const SURFACE_EDGES: SurfaceEdge[] = [
+	"topRight",
+	"rightBottom",
+	"bottomLeft",
+	"leftTop",
+];
+
+function screenNeighborForEdge(
+	x: number,
+	y: number,
+	edge: SurfaceEdge,
+	o: Orientation
+): { nx: number; ny: number } {
+	switch (edge) {
+		case "rightBottom":
+			return screenEastNeighbor(x, y, o);
+		case "bottomLeft":
+			return screenSouthNeighbor(x, y, o);
+		case "leftTop":
+			switch (o) {
+				case 0:
+					return { nx: x - 1, ny: y };
+				case 1:
+					return { nx: x, ny: y - 1 };
+				case 2:
+					return { nx: x + 1, ny: y };
+				case 3:
+					return { nx: x, ny: y + 1 };
+			}
+		case "topRight":
+			switch (o) {
+				case 0:
+					return { nx: x, ny: y - 1 };
+				case 1:
+					return { nx: x + 1, ny: y };
+				case 2:
+					return { nx: x, ny: y + 1 };
+				case 3:
+					return { nx: x - 1, ny: y };
+			}
+	}
+}
+
+function deterministicNoise(x: number, y: number): number {
+	const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+	return (n - Math.floor(n)) * 2 - 1;
+}
+
+function applySurfaceVariation(
+	color: number,
+	x: number,
+	y: number
+): number {
+	const noise = deterministicNoise(x, y);
+	const target = noise >= 0 ? 0xffffff : 0x000000;
+	return lerpColor(
+		color,
+		target,
+		Math.abs(noise) * SURFACE_VARIATION_STRENGTH
+	);
 }
 
 // -------------------- Component Props ------------------------------
@@ -280,7 +348,75 @@ export function MapWorldLayer({
 
 		const halfW = TILE_W / 2;
 		const halfH = TILE_H / 2;
+		const cmap = terrain.ColorMap || [];
 
+		const getHeight = (x: number, y: number) => hmap[y]?.[x] ?? 0;
+		const getColorIndex = (x: number, y: number) =>
+			cmap[y]?.[x] ?? DEFAULT_TERRAIN_COLOR_INDEX;
+		const isInBounds = (x: number, y: number) =>
+			x >= 0 && x < W && y >= 0 && y < L;
+
+		const strokeLine = (
+			a: { x: number; y: number },
+			b: { x: number; y: number },
+			width: number,
+			color: number,
+			alpha: number
+		) => {
+			if (alpha <= 0 || width <= 0) return;
+			g.setStrokeStyle({ width, color, alpha });
+			g.beginPath();
+			g.moveTo(a.x, a.y);
+			g.lineTo(b.x, b.y);
+			g.stroke();
+		};
+
+		const strokeSurfaceEdge = (
+			corners: ReturnType<typeof getDiamondCorners>,
+			edge: SurfaceEdge,
+			color: number
+		) => {
+			switch (edge) {
+				case "topRight":
+					strokeLine(
+						corners.top,
+						corners.right,
+						SURFACE_EDGE_WIDTH,
+						color,
+						SURFACE_EDGE_ALPHA
+					);
+					break;
+				case "rightBottom":
+					strokeLine(
+						corners.right,
+						corners.bottom,
+						SURFACE_EDGE_WIDTH,
+						color,
+						SURFACE_EDGE_ALPHA
+					);
+					break;
+				case "bottomLeft":
+					strokeLine(
+						corners.bottom,
+						corners.left,
+						SURFACE_EDGE_WIDTH,
+						color,
+						SURFACE_EDGE_ALPHA
+					);
+					break;
+				case "leftTop":
+					strokeLine(
+						corners.left,
+						corners.top,
+						SURFACE_EDGE_WIDTH,
+						color,
+						SURFACE_EDGE_ALPHA
+					);
+					break;
+			}
+		};
+
+		// Pass 1: vertical faces exposed toward the camera.
 		for (const i of rowIndices) {
 			const base = baseTiles[i];
 			const proj = currentProjections[i];
@@ -340,14 +476,23 @@ export function MapWorldLayer({
 				}
 			}
 
-			// Top face (diamond)
-			const topBase = applyElevationTint(color, hNorm, ELEV_TOP_STRENGTH);
+		}
+
+		// Pass 2: top surfaces. These intentionally have no universal stroke; the
+		// edge pass below draws only meaningful boundaries.
+		for (const i of rowIndices) {
+			const base = baseTiles[i];
+			const proj = currentProjections[i];
+			const { cx, cy } = proj;
+			const hNorm = normalizeHeight(base.h);
+			const corners = getDiamondCorners(cx, cy, halfW, halfH);
+			const topBase = applyElevationTint(
+				applySurfaceVariation(base.color, base.x, base.y),
+				hNorm,
+				ELEV_TOP_STRENGTH
+			);
+
 			g.setFillStyle({ color: topBase });
-			g.setStrokeStyle({
-				width: TILE_STROKE_WIDTH,
-				color: 0x000000,
-				alpha: TILE_STROKE_ALPHA,
-			});
 			g.beginPath();
 			g.moveTo(corners.top.x, corners.top.y);
 			g.lineTo(corners.right.x, corners.right.y);
@@ -355,8 +500,53 @@ export function MapWorldLayer({
 			g.lineTo(corners.left.x, corners.left.y);
 			g.closePath();
 			g.fill();
-			g.stroke();
+		}
 
+		// Pass 3: top surface boundaries. Same-height/same-material interior edges
+		// are skipped so flat water and plains read as continuous surfaces.
+		for (const i of rowIndices) {
+			const base = baseTiles[i];
+			const proj = currentProjections[i];
+			const { cx, cy } = proj;
+			const colorIndex = getColorIndex(base.x, base.y);
+			const corners = getDiamondCorners(cx, cy, halfW, halfH);
+
+			for (const edge of SURFACE_EDGES) {
+				const { nx, ny } = screenNeighborForEdge(
+					base.x,
+					base.y,
+					edge,
+					faceOrient
+				);
+
+				if (!isInBounds(nx, ny)) {
+					strokeSurfaceEdge(corners, edge, 0x111827);
+					continue;
+				}
+
+				const neighborH = getHeight(nx, ny);
+				const neighborColorIndex = getColorIndex(nx, ny);
+				const heightDelta = base.h - neighborH;
+
+				if (heightDelta > 0) {
+					strokeSurfaceEdge(corners, edge, 0x111827);
+					continue;
+				}
+				if (heightDelta < 0) continue;
+
+				if (colorIndex !== neighborColorIndex) {
+					// Equal-height material transitions are drawn only on the screen-east
+					// and screen-south edges to avoid double-darkening shared borders.
+					if (edge === "topRight" || edge === "leftTop") continue;
+					strokeSurfaceEdge(corners, edge, 0x111827);
+				}
+			}
+		}
+
+		// Pass 4: tactical overlays.
+		for (const i of rowIndices) {
+			const proj = currentProjections[i];
+			const { cx, cy } = proj;
 			// Highlight overlay (movement range or hover)
 			// Priority: hover (blue thick) > remaining budget (cyan) > full range (pink)
 			const isHovered = hoveredIndex != null && i === hoveredIndex;

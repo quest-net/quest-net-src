@@ -6,7 +6,12 @@ import React, {
 	useRef,
 	useState,
 } from "react";
-import { TerrainType, TERRAIN_TYPES, getTerrainColorByIndex } from "../../domains/Terrain/Terrain";
+import {
+	DEFAULT_TERRAIN_COLOR_INDEX,
+	TERRAIN_PALETTE_FAMILIES,
+	getTerrainColorByIndex,
+	getTerrainPaletteIndex,
+} from "../../utils/TerrainPaletteUtils";
 import { useFormReadOnly } from "../Form/Form";
 import {
 	applyRandomHills,
@@ -17,7 +22,7 @@ import {
 	applySmooth,
 } from "../../utils/TerrainUtils";
 
-type Tool = "paint" | "raise" | "lower" | "set";
+type Tool = "paint" | "eyedropper" | "raise" | "lower" | "set";
 type BrushShape = "square" | "round";
 
 const TOOL_OPTIONS: Array<{
@@ -31,6 +36,12 @@ const TOOL_OPTIONS: Array<{
 		label: "Paint",
 		icon: "icon-[mdi--brush]",
 		title: "Paint color",
+	},
+	{
+		value: "eyedropper",
+		label: "Pick",
+		icon: "icon-[mdi--eyedropper-variant]",
+		title: "Pick color from terrain (or Alt+click while painting)",
 	},
 	{
 		value: "raise",
@@ -186,7 +197,9 @@ export function TerrainEditor({
 	const [tool, setTool] = useState<Tool>("paint");
 	const [brushSize, setBrushSize] = useState<number>(1);
 	const [brushShape, setBrushShape] = useState<BrushShape>("square");
-	const [selectedColorIndex, setSelectedColorIndex] = useState<number>(0);
+	const [selectedColorIndex, setSelectedColorIndex] = useState<number>(
+		DEFAULT_TERRAIN_COLOR_INDEX
+	);
 	const [targetHeight, setTargetHeight] = useState<number>(8);
 
 	// Display options
@@ -197,6 +210,7 @@ export function TerrainEditor({
 
 	// Flatten confirmation state
 	const [flattenConfirm, setFlattenConfirm] = useState(false);
+	const isColorTool = tool === "paint" || tool === "eyedropper";
 
 	// ========================================================================
 	// UNDO / REDO
@@ -478,15 +492,36 @@ export function TerrainEditor({
 		[tilePx, width, length]
 	);
 
+	const pickColorAt = useCallback(
+		(gx: number, gy: number) => {
+			const row = colorMap[gy];
+			if (!row) return;
+			const picked = row[gx];
+			if (picked == null) return;
+			setSelectedColorIndex(picked);
+		},
+		[colorMap]
+	);
+
 	const onGridPointerDown = useCallback(
 		(e: React.PointerEvent<HTMLDivElement>) => {
 			if (isReadOnly) return;
+
+			const pt = eventToGridXY(e.clientX, e.clientY);
+
+			// Eyedropper tool, or Alt+click shortcut while painting:
+			// pick the tile's color and skip starting a destructive stroke.
+			if (pt && (tool === "eyedropper" || (tool === "paint" && e.altKey))) {
+				pickColorAt(pt.x, pt.y);
+				if (tool === "eyedropper") setTool("paint");
+				return;
+			}
+
 			isPointerDownRef.current = true;
 			beginStroke();
-			const pt = eventToGridXY(e.clientX, e.clientY);
 			if (pt) applyAt(pt.x, pt.y);
 		},
-		[applyAt, beginStroke, eventToGridXY, isReadOnly]
+		[applyAt, beginStroke, eventToGridXY, isReadOnly, tool, pickColorAt]
 	);
 
 	const onGridPointerMove = useCallback(
@@ -514,8 +549,12 @@ export function TerrainEditor({
 	// Compute hovered brush tiles
 	const hoveredTiles = useMemo(() => {
 		if (!hoverTile || isReadOnly) return new Set<string>();
+		// Eyedropper always targets a single tile regardless of brush size.
+		if (tool === "eyedropper") {
+			return new Set([`${hoverTile.x},${hoverTile.y}`]);
+		}
 		return getBrushTiles(hoverTile.x, hoverTile.y, brushSize, brushShape, width, length);
-	}, [hoverTile, brushSize, brushShape, width, length, isReadOnly]);
+	}, [hoverTile, brushSize, brushShape, width, length, isReadOnly, tool]);
 
 	// ========================================================================
 	// PRESET HANDLERS
@@ -605,8 +644,6 @@ export function TerrainEditor({
 		length,
 		pushToHistory,
 	]);
-
-	const palette: TerrainType[] = useMemo(() => [...TERRAIN_TYPES], []);
 
 	// Determine font size for height labels based on grid size and tile size
 	const heightFontSize = useMemo(() => {
@@ -772,38 +809,46 @@ export function TerrainEditor({
 					)}
 				</div>
 
-				{tool === "paint" && (
-					<div className="flex flex-wrap items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-2">
-						<span className="text-sm font-medium opacity-70">Color</span>
-						<div className="flex flex-wrap items-center gap-1">
-							{palette.map((c, idx) => (
-								<button
-									key={c}
-									type="button"
-									className={`h-7 w-7 rounded ${
-										selectedColorIndex === idx
-											? "ring-2 ring-offset-2 ring-primary"
-											: "ring-1 ring-base-300"
-									}`}
-									style={{ backgroundColor: getTerrainColorByIndex(idx) }}
-									onClick={() => setSelectedColorIndex(idx)}
-									disabled={isReadOnly}
-									title={c}
-								/>
-							))}
-						</div>
-						<button
-							type="button"
-							onClick={doFillAll}
-							className="btn btn-sm btn-secondary"
-							disabled={isReadOnly}
-							title="Fill all tiles with selected color"
-						>
-							<span className="icon-[mdi--format-color-fill]" />
-							Fill Color
-						</button>
+				<div
+					className={`flex flex-wrap items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-2 transition-opacity ${
+						isColorTool ? "" : "opacity-45"
+					}`}
+					aria-disabled={!isColorTool}
+				>
+					<span className="text-sm font-medium opacity-70">Color</span>
+					<div className="grid grid-cols-[repeat(13,1.75rem)] gap-1">
+						{Array.from({ length: 5 }, (_, levelIndex) =>
+							TERRAIN_PALETTE_FAMILIES.map((family, familyIndex) => {
+								const idx = getTerrainPaletteIndex(familyIndex, levelIndex);
+								return (
+									<button
+										key={idx}
+										type="button"
+										className={`h-7 w-7 rounded ${
+											selectedColorIndex === idx
+												? "ring-2 ring-offset-2 ring-primary"
+												: "ring-1 ring-base-300"
+										}`}
+										style={{ backgroundColor: getTerrainColorByIndex(idx) }}
+										onClick={() => setSelectedColorIndex(idx)}
+										disabled={isReadOnly || !isColorTool}
+										title={`${family.label} ${levelIndex + 1}`}
+									/>
+								);
+							})
+						)}
 					</div>
-				)}
+					<button
+						type="button"
+						onClick={doFillAll}
+						className="btn btn-sm btn-secondary"
+						disabled={isReadOnly || !isColorTool}
+						title="Fill all tiles with selected color"
+					>
+						<span className="icon-[mdi--format-color-fill]" />
+						Fill Color
+					</button>
+				</div>
 
 				<div className="flex flex-wrap items-center gap-2 rounded-lg border border-base-300 bg-base-100 p-2">
 					<span className="text-sm font-medium opacity-70">Presets</span>
@@ -884,7 +929,7 @@ export function TerrainEditor({
 				>
 					{Array.from({ length }, (_, y) =>
 						Array.from({ length: width }, (_, x) => {
-							const colorIndex = colorMap[y][x] ?? 0;
+							const colorIndex = colorMap[y][x] ?? DEFAULT_TERRAIN_COLOR_INDEX;
 							const color = getTerrainColorByIndex(colorIndex);
 							const h = clamp(heightMap[y][x] ?? 0, 0, 16);
 							const overlay = Math.round((h / 16 - 0.5) * 30);

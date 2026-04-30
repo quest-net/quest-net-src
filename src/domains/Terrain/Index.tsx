@@ -4,16 +4,14 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { TerrainEdit } from "./Edit";
 import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
 import { useState } from "react";
-import { Terrain, TERRAIN_TYPES, getTerrainColorByIndex } from "./Terrain";
+import { Terrain } from "./Terrain";
+import { TERRAIN_PALETTE, getTerrainColorByIndex } from "../../utils/TerrainPaletteUtils";
 import { replacePathTag } from "../../utils/FolderUtils";
 
-/**
- * Calculates the most common terrain type in a ColorMap
- * and returns its corresponding hex color
- */
+/** Calculates the most common fixed terrain color. */
 function getMostCommonTerrainColor(terrain: Terrain): string {
 	// Count occurrences of each color index
-	const colorCounts: number[] = new Array(TERRAIN_TYPES.length).fill(0);
+	const colorCounts: number[] = new Array(TERRAIN_PALETTE.length).fill(0);
 
 	for (let y = 0; y < terrain.Length; y++) {
 		for (let x = 0; x < terrain.Width; x++) {
@@ -35,9 +33,13 @@ function getMostCommonTerrainColor(terrain: Terrain): string {
 		}
 	}
 
-	// Return black for white terrain (index 1) for visibility
-	if (mostCommonIndex === 1) return "black";
-	return getTerrainColorByIndex(mostCommonIndex);
+	const color = getTerrainColorByIndex(mostCommonIndex);
+	const r = parseInt(color.slice(1, 3), 16);
+	const g = parseInt(color.slice(3, 5), 16);
+	const b = parseInt(color.slice(5, 7), 16);
+	const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+
+	return luminance > 0.86 ? "black" : color;
 }
 
 export function TerrainIndex() {

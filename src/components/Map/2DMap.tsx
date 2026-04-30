@@ -5,7 +5,10 @@ import { useMemo, useRef, useState, useLayoutEffect, useCallback } from "react";
 import type { Character } from "../../domains/Character/Character";
 import type { Entity } from "../../domains/Entity/Entity";
 import type { Terrain } from "../../domains/Terrain/Terrain";
-import { getTerrainColorByIndex } from "../../domains/Terrain/Terrain";
+import {
+	DEFAULT_TERRAIN_COLOR_INDEX,
+	getTerrainColorByIndex,
+} from "../../utils/TerrainPaletteUtils";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { usePeerTracking } from "../../hooks/usePeerTracking";
 import { useMapState } from "./MapStateProvider";
@@ -289,7 +292,7 @@ export default function TwoDMap({
 	const renderTile = (x: number, y: number) => {
 		if (!terrain) return null;
 
-		const colorIndex = terrain.ColorMap?.[y]?.[x] ?? 6; // Default to grey (index 6)
+		const colorIndex = terrain.ColorMap?.[y]?.[x] ?? DEFAULT_TERRAIN_COLOR_INDEX;
 		const baseColorNum = hexToNum(getTerrainColorByIndex(colorIndex));
 		const hVal = terrain.HeightMap?.[y]?.[x] ?? 0;
 		const hNorm = normalizeHeight(hVal);
