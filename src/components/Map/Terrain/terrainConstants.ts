@@ -22,14 +22,11 @@ export const HEIGHT_MAX = 16;
 export const EAST_FACE_MULTIPLIER = 0.82; // Slightly darker
 export const SOUTH_FACE_MULTIPLIER = 0.68; // More darker
 
-// Stroke styling
-export const TILE_STROKE_WIDTH = 1;
-export const EAST_FACE_STROKE_ALPHA = 0.08;
-export const SOUTH_FACE_STROKE_ALPHA = 0.1;
-
 // Meaningful surface boundaries: map perimeter and height drops.
 export const SURFACE_EDGE_ALPHA = 0.22;
 export const SURFACE_EDGE_WIDTH = 1.25;
+export const WALL_END_STROKE_ALPHA = 0.18;
+export const WALL_END_STROKE_WIDTH = 1.25;
 
 // Very subtle per-tile material variation so broad areas do not look flat when
 // interior grid strokes are suppressed.

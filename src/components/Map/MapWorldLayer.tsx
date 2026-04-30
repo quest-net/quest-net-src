@@ -34,11 +34,10 @@ import {
 	ELEV_SIDE_STRENGTH,
 	EAST_FACE_MULTIPLIER,
 	SOUTH_FACE_MULTIPLIER,
-	TILE_STROKE_WIDTH,
-	EAST_FACE_STROKE_ALPHA,
-	SOUTH_FACE_STROKE_ALPHA,
 	SURFACE_EDGE_ALPHA,
 	SURFACE_EDGE_WIDTH,
+	WALL_END_STROKE_ALPHA,
+	WALL_END_STROKE_WIDTH,
 	SURFACE_VARIATION_STRENGTH,
 	HOVER_OUTLINE_WIDTH,
 	RANGE_OUTLINE_WIDTH,
@@ -83,6 +82,12 @@ interface ActorView {
 }
 
 type SurfaceEdge = "topRight" | "rightBottom" | "bottomLeft" | "leftTop";
+type SideFace = "east" | "south";
+
+interface HeightSpan {
+	bottom: number;
+	top: number;
+}
 
 const SURFACE_EDGES: SurfaceEdge[] = [
 	"topRight",
@@ -124,6 +129,40 @@ function screenNeighborForEdge(
 				case 3:
 					return { nx: x - 1, ny: y };
 			}
+	}
+}
+
+function screenWestNeighbor(
+	x: number,
+	y: number,
+	o: Orientation
+): { nx: number; ny: number } {
+	switch (o) {
+		case 0:
+			return { nx: x - 1, ny: y };
+		case 1:
+			return { nx: x, ny: y - 1 };
+		case 2:
+			return { nx: x + 1, ny: y };
+		case 3:
+			return { nx: x, ny: y + 1 };
+	}
+}
+
+function screenNorthNeighbor(
+	x: number,
+	y: number,
+	o: Orientation
+): { nx: number; ny: number } {
+	switch (o) {
+		case 0:
+			return { nx: x, ny: y - 1 };
+		case 1:
+			return { nx: x + 1, ny: y };
+		case 2:
+			return { nx: x, ny: y + 1 };
+		case 3:
+			return { nx: x - 1, ny: y };
 	}
 }
 
@@ -351,6 +390,22 @@ export function MapWorldLayer({
 		const getHeight = (x: number, y: number) => hmap[y]?.[x] ?? 0;
 		const isInBounds = (x: number, y: number) =>
 			x >= 0 && x < W && y >= 0 && y < L;
+		const getSideFaceSpan = (
+			x: number,
+			y: number,
+			face: SideFace
+		): HeightSpan | null => {
+			if (!isInBounds(x, y)) return null;
+
+			const h = getHeight(x, y);
+			const { nx, ny } =
+				face === "east"
+					? screenEastNeighbor(x, y, faceOrient)
+					: screenSouthNeighbor(x, y, faceOrient);
+			const nh = isInBounds(nx, ny) ? getHeight(nx, ny) : 0;
+
+			return h > nh ? { bottom: nh, top: h } : null;
+		};
 
 		const strokeLine = (
 			a: { x: number; y: number },
@@ -412,6 +467,41 @@ export function MapWorldLayer({
 			}
 		};
 
+		const strokeWallEnd = (
+			point: { x: number; y: number },
+			current: HeightSpan,
+			coveredBy: HeightSpan | null
+		) => {
+			const strokeHeightRange = (bottom: number, top: number) => {
+				if (top <= bottom) return;
+				const yForHeight = (height: number) =>
+					point.y + (current.top - height) * V_SCALE;
+
+				strokeLine(
+					{ x: point.x, y: yForHeight(top) },
+					{ x: point.x, y: yForHeight(bottom) },
+					WALL_END_STROKE_WIDTH,
+					0x111827,
+					WALL_END_STROKE_ALPHA
+				);
+			};
+
+			if (!coveredBy) {
+				strokeHeightRange(current.bottom, current.top);
+				return;
+			}
+
+			const coveredBottom = Math.max(current.bottom, coveredBy.bottom);
+			const coveredTop = Math.min(current.top, coveredBy.top);
+			if (coveredTop <= coveredBottom) {
+				strokeHeightRange(current.bottom, current.top);
+				return;
+			}
+
+			strokeHeightRange(current.bottom, coveredBottom);
+			strokeHeightRange(coveredTop, current.top);
+		};
+
 		// Pass 1: vertical faces exposed toward the camera.
 		for (const i of rowIndices) {
 			const base = baseTiles[i];
@@ -431,11 +521,6 @@ export function MapWorldLayer({
 					const dh = (base.h - nh) * V_SCALE;
 					const sideBase = applyElevationTint(color, hNorm, ELEV_SIDE_STRENGTH);
 					g.setFillStyle({ color: mulColor(sideBase, EAST_FACE_MULTIPLIER) });
-					g.setStrokeStyle({
-						width: TILE_STROKE_WIDTH,
-						color: 0x000000,
-						alpha: EAST_FACE_STROKE_ALPHA,
-					});
 					g.beginPath();
 					g.moveTo(corners.right.x, corners.right.y);
 					g.lineTo(corners.bottom.x, corners.bottom.y);
@@ -443,7 +528,6 @@ export function MapWorldLayer({
 					g.lineTo(corners.right.x, corners.right.y + dh);
 					g.closePath();
 					g.fill();
-					g.stroke();
 				}
 			}
 
@@ -456,11 +540,6 @@ export function MapWorldLayer({
 					const dh = (base.h - nh) * V_SCALE;
 					const sideBase = applyElevationTint(color, hNorm, ELEV_SIDE_STRENGTH);
 					g.setFillStyle({ color: mulColor(sideBase, SOUTH_FACE_MULTIPLIER) });
-					g.setStrokeStyle({
-						width: TILE_STROKE_WIDTH,
-						color: 0x000000,
-						alpha: SOUTH_FACE_STROKE_ALPHA,
-					});
 					g.beginPath();
 					g.moveTo(corners.bottom.x, corners.bottom.y);
 					g.lineTo(corners.left.x, corners.left.y);
@@ -468,10 +547,50 @@ export function MapWorldLayer({
 					g.lineTo(corners.bottom.x, corners.bottom.y + dh);
 					g.closePath();
 					g.fill();
-					g.stroke();
 				}
 			}
 
+		}
+
+		// Pass 1b: side wall terminal edges. Adjacent wall segments with matching
+		// vertical spans stay seamless; only wall ends or height discontinuities get lines.
+		for (const i of rowIndices) {
+			const base = baseTiles[i];
+			const proj = currentProjections[i];
+			const { cx, cy } = proj;
+			const corners = getDiamondCorners(cx, cy, halfW, halfH);
+
+			const eastSpan = getSideFaceSpan(base.x, base.y, "east");
+			if (eastSpan) {
+				const north = screenNorthNeighbor(base.x, base.y, faceOrient);
+				const south = screenSouthNeighbor(base.x, base.y, faceOrient);
+				strokeWallEnd(
+					corners.right,
+					eastSpan,
+					getSideFaceSpan(north.nx, north.ny, "east")
+				);
+				strokeWallEnd(
+					corners.bottom,
+					eastSpan,
+					getSideFaceSpan(south.nx, south.ny, "east")
+				);
+			}
+
+			const southSpan = getSideFaceSpan(base.x, base.y, "south");
+			if (southSpan) {
+				const east = screenEastNeighbor(base.x, base.y, faceOrient);
+				const west = screenWestNeighbor(base.x, base.y, faceOrient);
+				strokeWallEnd(
+					corners.bottom,
+					southSpan,
+					getSideFaceSpan(east.nx, east.ny, "south")
+				);
+				strokeWallEnd(
+					corners.left,
+					southSpan,
+					getSideFaceSpan(west.nx, west.ny, "south")
+				);
+			}
 		}
 
 		// Pass 2: top surfaces. These intentionally have no universal stroke; the
