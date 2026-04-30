@@ -27,7 +27,7 @@ export const TILE_STROKE_WIDTH = 1;
 export const EAST_FACE_STROKE_ALPHA = 0.08;
 export const SOUTH_FACE_STROKE_ALPHA = 0.1;
 
-// Meaningful surface boundaries: map perimeter, material changes, and height drops.
+// Meaningful surface boundaries: map perimeter and height drops.
 export const SURFACE_EDGE_ALPHA = 0.22;
 export const SURFACE_EDGE_WIDTH = 1.25;
 

@@ -4,7 +4,6 @@
 import { useMemo } from "react";
 import type { Graphics as PixiGraphics } from "pixi.js";
 import type { Terrain } from "../../domains/Terrain/Terrain";
-import { DEFAULT_TERRAIN_COLOR_INDEX } from "../../utils/TerrainPaletteUtils";
 import type { Character } from "../../domains/Character/Character";
 import type { Entity } from "../../domains/Entity/Entity";
 import type { ActorSize } from "../../domains/Actor/Actor";
@@ -348,11 +347,8 @@ export function MapWorldLayer({
 
 		const halfW = TILE_W / 2;
 		const halfH = TILE_H / 2;
-		const cmap = terrain.ColorMap || [];
 
 		const getHeight = (x: number, y: number) => hmap[y]?.[x] ?? 0;
-		const getColorIndex = (x: number, y: number) =>
-			cmap[y]?.[x] ?? DEFAULT_TERRAIN_COLOR_INDEX;
 		const isInBounds = (x: number, y: number) =>
 			x >= 0 && x < W && y >= 0 && y < L;
 
@@ -502,13 +498,12 @@ export function MapWorldLayer({
 			g.fill();
 		}
 
-		// Pass 3: top surface boundaries. Same-height/same-material interior edges
-		// are skipped so flat water and plains read as continuous surfaces.
+		// Pass 3: top surface boundaries. Same-height interior edges are skipped
+		// so flat water and plains read as continuous surfaces.
 		for (const i of rowIndices) {
 			const base = baseTiles[i];
 			const proj = currentProjections[i];
 			const { cx, cy } = proj;
-			const colorIndex = getColorIndex(base.x, base.y);
 			const corners = getDiamondCorners(cx, cy, halfW, halfH);
 
 			for (const edge of SURFACE_EDGES) {
@@ -525,20 +520,11 @@ export function MapWorldLayer({
 				}
 
 				const neighborH = getHeight(nx, ny);
-				const neighborColorIndex = getColorIndex(nx, ny);
 				const heightDelta = base.h - neighborH;
 
 				if (heightDelta > 0) {
 					strokeSurfaceEdge(corners, edge, 0x111827);
 					continue;
-				}
-				if (heightDelta < 0) continue;
-
-				if (colorIndex !== neighborColorIndex) {
-					// Equal-height material transitions are drawn only on the screen-east
-					// and screen-south edges to avoid double-darkening shared borders.
-					if (edge === "topRight" || edge === "leftTop") continue;
-					strokeSurfaceEdge(corners, edge, 0x111827);
 				}
 			}
 		}
