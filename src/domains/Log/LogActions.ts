@@ -125,7 +125,7 @@ export const LogActions = {
 	): boolean {
 		if (userRole === "dm" && (entry.Visibility.includes("dm") || entry.Visibility.includes("all"))) return true;
 		let visibilityCheck = entry.Visibility.includes("all") || (entry.Visibility.includes("player"));
-		let categoryCheck = entry.Category.includes("chat") || entry.Category.includes("dice") || entry.Category.includes("sticker");
+		let categoryCheck = entry.Category.includes("chat") || entry.Category.includes("dice") || entry.Category.includes("sticker") || entry.Category.includes("ping");
 		if (visibilityCheck && categoryCheck) {
 			return true;
 		}

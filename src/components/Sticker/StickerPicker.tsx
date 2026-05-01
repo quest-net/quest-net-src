@@ -3,14 +3,10 @@ import { useState, useRef, useEffect } from "react";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
-
-const RATE_LIMIT_MS = 10000; // 10 seconds
-const COMMON_EMOJIS = [
-    "😂", "😢", "😱", "😬", "🤔", "😈",
-    "❤️", "💀", "🔥", "✨", "🎉",
-    "👍", "👎", "🍆", "👋", "😫",
-    "❓", "❗", "😡", "😮", 
-];
+import {
+    COMMON_EMOJIS,
+    STICKER_RATE_LIMIT_MS,
+} from "../../domains/Sticker/Sticker";
 
 export function StickerPicker() {
     const context = useQuestContext();
@@ -49,11 +45,11 @@ export function StickerPicker() {
         const interval = setInterval(() => {
             const now = Date.now();
             const diff = now - lastUsedTime;
-            if (diff >= RATE_LIMIT_MS) {
+            if (diff >= STICKER_RATE_LIMIT_MS) {
                 setTimeLeft(0);
                 clearInterval(interval);
             } else {
-                setTimeLeft(Math.ceil((RATE_LIMIT_MS - diff) / 1000));
+                setTimeLeft(Math.ceil((STICKER_RATE_LIMIT_MS - diff) / 1000));
             }
         }, 100);
 
@@ -64,18 +60,14 @@ export function StickerPicker() {
         if (timeLeft > 0 || isDisabled || !activeActorId) return;
 
         if (actionService) {
-            actionService.execute("log:create", {
-                category: "sticker",
-                action: `sent a sticker: ${emoji}`,
-                details: emoji,
-                level: "info",
-                visibility: ["all"],
-                actorId: activeActorId
+            actionService.execute("sticker:create", {
+                emoji,
+                actorId: activeActorId,
             });
 
             setLastUsedTime(Date.now());
             setIsOpen(false);
-            setTimeLeft(RATE_LIMIT_MS / 1000);
+            setTimeLeft(STICKER_RATE_LIMIT_MS / 1000);
         }
     };
 

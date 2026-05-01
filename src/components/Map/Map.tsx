@@ -53,6 +53,8 @@ import {
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { useActiveStickers } from "./hooks/useActiveStickers";
+import { useActivePings } from "./hooks/useActivePings";
+import { PING_DURATION_MS } from "../../domains/Ping/Ping"; // ping cooldown
 import { isItemEntity } from "../../domains/Item/ItemDropUtils";
 
 interface MapProps {
@@ -105,6 +107,21 @@ export default function Map({
 		null
 	);
 	const activeStickers = useActiveStickers();
+	const { pings: activePings, now: pingNow } = useActivePings();
+
+	// Active actor identity for ping authorship — players use their selected
+	// character, the DM uses whichever actor they're impersonating (if any).
+	// Mirrors the pattern used by StickerPicker.
+	const pingCampaign = CampaignActions.getActiveCampaign(context);
+	const pingIsPlayer = context.User.Role === "player";
+	const pingActiveActorId = pingIsPlayer
+		? context.User.SelectedCharacters?.[pingCampaign.RoomCode]
+		: (context.User.ImpersonatedActors ?? {})[pingCampaign.RoomCode];
+	// Local cooldown so a single user can only have one ping on the map at
+	// a time. Matches PING_DURATION_MS so the cooldown ends right as the
+	// previous ping fades out. Server-side check in PingActions.create
+	// enforces the same rule against malformed peer requests.
+	const lastPingTimeRef = useRef(0);
 
 	// Custom hooks for state management
 	const { orientation, animationState, rotateCW, rotateCCW } = useMapRotation();
@@ -523,13 +540,55 @@ export default function Map({
 	const handlePointerDown = useCallback(
 		(e: React.MouseEvent<HTMLDivElement>) => {
 			if (preview) return;
-			if (e.button !== 0 || !terrain || !ref.current) return;
+			if (!terrain || !ref.current) return;
 
 			const rect = ref.current.getBoundingClientRect();
 			const screenX = e.clientX - rect.left;
 			const screenY = e.clientY - rect.top;
 
 			const o: Orientation = animationState ? animationState.to : orientation;
+
+			// ========================================================================
+			// 0) PING (middle-click or Alt+left-click)
+			// Highlights a tile briefly for tactical communication. Does not move
+			// or select anything; the rest of the click pipeline is short-circuited.
+			// ========================================================================
+			const isMiddleClick = e.button === 1;
+			const isAltLeftClick = e.button === 0 && e.altKey;
+			if (isMiddleClick || isAltLeftClick) {
+				e.preventDefault();
+				// Per-user cooldown: only one of this user's pings on the
+				// map at a time. Silently ignore extra clicks during the
+				// cooldown window so the gesture feels neutral, not buggy.
+				if (Date.now() - lastPingTimeRef.current < PING_DURATION_MS) {
+					return;
+				}
+				const tile = screenToTile(
+					screenX,
+					screenY,
+					centerRef.current.x,
+					centerRef.current.y,
+					panRef.current.x,
+					panRef.current.y,
+					scaleRef.current,
+					terrain.Width,
+					terrain.Length,
+					o,
+					terrain.HeightMap
+				);
+				if (tile && actionService) {
+					actionService.execute("ping:create", {
+						x: tile.x,
+						y: tile.y,
+						actorId: pingActiveActorId,
+					});
+					lastPingTimeRef.current = Date.now();
+				}
+				return;
+			}
+
+			// Past this point we only care about left-click.
+			if (e.button !== 0) return;
 			const isAuthorized = selectedActor
 				? canAccessActor(selectedActor.id)
 				: false;
@@ -705,6 +764,7 @@ export default function Map({
 			toggleActorSelection,
 			clearSelection,
 			canAccessActor,
+			pingActiveActorId,
 		]
 	);
 
@@ -781,6 +841,8 @@ export default function Map({
 							ladderInfo={ladderInfo}
 							hoveredLadderHeight={hoveredLadderHeight}
 							activeStickers={activeStickers}
+							activePings={activePings}
+							pingNow={pingNow}
 						/>
 					</pixiContainer>
 				</Application>

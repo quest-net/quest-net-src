@@ -30,6 +30,7 @@ const CATEGORY_FG_LIGHT: Record<LogCategory, string> = {
 	scene: "#0e7490",      // cyan-700
 	chat: "#c2410c",       // orange-700
 	sticker: "#334155",    // slate-700
+	ping: "#0e7490",       // cyan-700
 	system: "#334155",     // slate-700
 };
 
@@ -43,6 +44,7 @@ const CATEGORY_FG_DARK: Record<LogCategory, string> = {
 	scene: "#22d3ee",      // cyan-400
 	chat: "#fb923c",       // orange-400
 	sticker: "#94a3b8",    // slate-400
+	ping: "#22d3ee",       // cyan-400
 	system: "#94a3b8",     // slate-400
 };
 

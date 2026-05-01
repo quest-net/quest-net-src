@@ -38,11 +38,18 @@ export function useMapInteraction({
 	const [isPanning, setIsPanning] = useState(false);
 	const dragStart = useRef<{ x: number; y: number } | null>(null);
 
-	// Mouse down handler (middle/right button for panning)
+	// Mouse down handler (right button for panning).
+	// NOTE: middle button used to pan but is now reserved for tile pings —
+	// see handlePointerDown in Map.tsx. We still preventDefault on middle
+	// clicks here so the browser's auto-scroll cursor does not appear.
 	const handleMouseDown = useCallback(
 		(e: React.MouseEvent<HTMLDivElement>) => {
+			if (e.button === 1) {
+				e.preventDefault();
+				return;
+			}
 			if (!allowPanZoom) return;
-			if (e.button !== 1 && e.button !== 2) return;
+			if (e.button !== 2) return;
 			e.preventDefault();
 			setIsPanning(true);
 			dragStart.current = { x: e.clientX, y: e.clientY };

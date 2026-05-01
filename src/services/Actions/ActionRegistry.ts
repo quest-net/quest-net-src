@@ -20,6 +20,8 @@ import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { ScenarioActions } from "../../domains/Scenario/ScenarioActions";
 import { SharedInventoryActions } from "../../domains/SharedInventory/SharedInventoryActions";
 import { ActorActions } from "../../domains/Actor/ActorActions";
+import { PingActions } from "../../domains/Ping/PingActions";
+import { StickerActions } from "../../domains/Sticker/StickerActions";
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
 // import { CombatActions } from '../domains/Combat/CombatActions';
@@ -338,6 +340,20 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"log:log": {
 		roles: ["dm", "player"],
 		handler: LogActions.log,
+	},
+	// ============================================================================
+	// PING ACTIONS
+	// ============================================================================
+	"ping:create": {
+		roles: ["dm", "player"],
+		handler: PingActions.create,
+	},
+	// ============================================================================
+	// STICKER ACTIONS
+	// ============================================================================
+	"sticker:create": {
+		roles: ["dm", "player"],
+		handler: StickerActions.create,
 	},
 	// NOTE ACTIONS
 	"note:create": {

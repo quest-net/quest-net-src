@@ -19,6 +19,8 @@ import {
 	rotXY,
 	easeInOut,
 } from "./MapUtilities";
+import { PING_DURATION_MS } from "../../domains/Ping/Ping";
+import type { ActivePing } from "./hooks/useActivePings";
 import {
 	Token,
 	MAIN_ALPHA,
@@ -211,6 +213,8 @@ export interface MapWorldLayerProps {
 	ladderInfo?: LadderInfo | null;
 	hoveredLadderHeight?: number | null;
 	activeStickers?: Map<string, string>;
+	activePings?: ActivePing[];
+	pingNow?: number;
 }
 
 export function MapWorldLayer({
@@ -229,6 +233,8 @@ export function MapWorldLayer({
 	ladderInfo,
 	hoveredLadderHeight,
 	activeStickers,
+	activePings,
+	pingNow,
 }: MapWorldLayerProps) {
 	if (!terrain || baseTiles.length === 0 || currentProjections.length === 0)
 		return null;
@@ -692,6 +698,37 @@ export function MapWorldLayer({
 		}
 	};
 
+	// ---------------------- Ping projections --------------------------------
+	// Convert each active ping's tile coords into the same screen-space we
+	// use for tiles/actors. We project under both the from- and to-orientations
+	// and lerp by tNorm so pings track tiles correctly during a rotation.
+	const projectedPings = useMemo(() => {
+		if (!activePings || activePings.length === 0) return [];
+		const nowTs = pingNow ?? Date.now();
+		const result: Array<{
+			id: string;
+			cx: number;
+			cy: number;
+			age: number;
+		}> = [];
+		for (const p of activePings) {
+			if (p.x < 0 || p.x >= W || p.y < 0 || p.y >= L) continue;
+			const tileH = (hmap[p.y]?.[p.x] ?? 0) | 0;
+			const rf = rotXY(p.x, p.y, W, L, fromO);
+			const rt = rotXY(p.x, p.y, W, L, toO);
+			const sf = isoToScreen(rf.rx, rf.ry, tileH);
+			const st = isoToScreen(rt.rx, rt.ry, tileH);
+			const cx = sf.cx * (1 - tNorm) + st.cx * tNorm;
+			const cy = sf.cy * (1 - tNorm) + st.cy * tNorm;
+			const age = Math.max(
+				0,
+				Math.min(PING_DURATION_MS, nowTs - p.timestamp)
+			);
+			result.push({ id: p.id, cx, cy, age });
+		}
+		return result;
+	}, [activePings, pingNow, W, L, hmap, fromO, toO, tNorm]);
+
 	// ----------------------------- Render -----------------------------------
 	return (
 		<>
@@ -748,7 +785,110 @@ export function MapWorldLayer({
 					/>
 				))}
 			</pixiContainer>
+
+			{/* Active pings — pulsing tile + bouncing arrow above it.
+			    Rendered last so they sit on top of every actor and terrain. */}
+			{projectedPings.length > 0 && (
+				<pixiContainer>
+					{projectedPings.map((p) => (
+						<PingMark key={p.id} cx={p.cx} cy={p.cy} age={p.age} />
+					))}
+				</pixiContainer>
+			)}
 		</>
+	);
+}
+
+// ----------------------------------------------------------------------------
+// PingMark — single ping's diamond pulse + bouncing arrow above the tile.
+// ----------------------------------------------------------------------------
+
+const PING_COLOR = 0x22d3ee; // cyan-400 — matches LogDisplay ping color
+const PING_FILL_ALPHA = 0.18;
+const PING_OUTLINE_BASE_ALPHA = 0.85;
+const PING_OUTLINE_WIDTH = 4;
+const PING_PULSE_PERIOD_MS = 700; // one full pulse expand-and-contract
+const PING_BOUNCE_PERIOD_MS = 600; // arrow bounce period
+const PING_BOUNCE_AMPLITUDE = 10; // px of vertical bounce
+const PING_ARROW_BASE_OFFSET = -TILE_H * 1.4; // arrow sits this far above the tile center
+const PING_ARROW_SIZE = 44;
+const PING_ARROW = "🡇"; // U+1F847 — plain glyph (not an emoji), so the
+//                          fill color below actually applies.
+const PING_ARROW_FILL = "#67e8f9"; // cyan-300 — matches the diamond family
+const PING_ARROW_STROKE = "#0e7490"; // cyan-700 — darker outline for contrast
+
+interface PingMarkProps {
+	cx: number;
+	cy: number;
+	age: number; // 0..PING_DURATION_MS
+}
+
+function PingMark({ cx, cy, age }: PingMarkProps) {
+	const progress = age / PING_DURATION_MS;
+	// Fade: hold full opacity for the first ~60%, then ease out.
+	const fade =
+		progress < 0.6 ? 1 : Math.max(0, 1 - (progress - 0.6) / 0.4);
+
+	// Pulse: smooth scale that grows from 1.0 to 1.45 and back to 1.0.
+	// Uses (1 - cos) so the pulse starts at 1.0 (not mid-cycle) and feels punchy.
+	const pulsePhase =
+		(age % PING_PULSE_PERIOD_MS) / PING_PULSE_PERIOD_MS; // 0..1
+	const pulse = 1 + 0.45 * (0.5 - 0.5 * Math.cos(pulsePhase * Math.PI * 2));
+
+	// Bounce: arrow bobs up and down above the tile.
+	const bouncePhase =
+		(age % PING_BOUNCE_PERIOD_MS) / PING_BOUNCE_PERIOD_MS; // 0..1
+	const bounce =
+		PING_ARROW_BASE_OFFSET -
+		PING_BOUNCE_AMPLITUDE * Math.abs(Math.sin(bouncePhase * Math.PI));
+
+	const halfW = (TILE_W / 2) * pulse;
+	const halfH = (TILE_H / 2) * pulse;
+
+	const drawDiamond = (g: PixiGraphics) => {
+		g.clear();
+		// Translucent fill so the tile reads as highlighted.
+		g.setFillStyle({ color: PING_COLOR, alpha: PING_FILL_ALPHA * fade });
+		g.beginPath();
+		g.moveTo(0, -halfH);
+		g.lineTo(halfW, 0);
+		g.lineTo(0, halfH);
+		g.lineTo(-halfW, 0);
+		g.closePath();
+		g.fill();
+
+		// Bright outline that pulses with the diamond.
+		g.setStrokeStyle({
+			width: PING_OUTLINE_WIDTH,
+			color: PING_COLOR,
+			alpha: PING_OUTLINE_BASE_ALPHA * fade,
+		});
+		g.beginPath();
+		g.moveTo(0, -halfH);
+		g.lineTo(halfW, 0);
+		g.lineTo(0, halfH);
+		g.lineTo(-halfW, 0);
+		g.closePath();
+		g.stroke();
+	};
+
+	return (
+		<pixiContainer x={cx} y={cy}>
+			<pixiGraphics draw={drawDiamond} />
+			<pixiText
+				text={PING_ARROW}
+				x={0}
+				y={bounce}
+				anchor={0.5}
+				alpha={fade}
+				style={{
+					fontSize: PING_ARROW_SIZE,
+					fontWeight: "bold",
+					fill: PING_ARROW_FILL,
+					stroke: { color: PING_ARROW_STROKE, width: 5, join: "round" },
+				}}
+			/>
+		</pixiContainer>
 	);
 }
 

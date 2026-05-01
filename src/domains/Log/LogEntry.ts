@@ -23,6 +23,7 @@ export type LogCategory =
 	| "scene" // Environment/audio changes
 	| "chat" // Messaging
 	| "sticker" // Ephemeral emojis
+	| "ping" // Ephemeral map tile highlights
 	| "system"; // Meta events
 
 export type LogLevel =

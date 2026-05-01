@@ -3,9 +3,11 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import { CampaignActions } from "../../../domains/Campaign/CampaignActions";
 import { useQuestContext } from "../../../domains/Context/ContextProvider";
 import { LogActions } from "../../../domains/Log/LogActions";
+import {
+    STICKER_DURATION_MS,
+    getStickerSoundId,
+} from "../../../domains/Sticker/Sticker";
 import { SoundEffectService } from "../../../services/SoundEffectService";
-
-const STICKER_DURATION_MS = 5000;
 
 export function useActiveStickers() {
     const context = useQuestContext();
@@ -51,7 +53,11 @@ export function useActiveStickers() {
             // Play sound for stickers we haven't seen yet
             if (!playedStickerIdsRef.current.has(entry.Id)) {
                 playedStickerIdsRef.current.add(entry.Id);
-                SoundEffectService.playSticker(entry.Details);
+                // Per-emoji override file with a fall-back to the default sound.
+                SoundEffectService.playWithFallback(
+                    getStickerSoundId(entry.Details),
+                    "sticker:default"
+                );
             }
         }
 

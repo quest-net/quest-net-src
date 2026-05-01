@@ -3,48 +3,31 @@
 // Lightweight, fire-and-forget sound-effect service.
 // Sound files live in  public/sfx/  and are referenced by ID.
 //
-// Adding a new sticker override:
-//   1. Find the emoji's name in EMOJI_NAMES below
-//   2. Drop a file named  sticker-<name>.mp3  into  public/sfx/
-//   That's it — the service will find it automatically.
+// This service is intentionally domain-agnostic: it just knows how to play
+// a sound from /sfx/ given a string id, with a fallback ladder so callers
+// can request an override id (e.g. "sticker:joy") and silently fall back to
+// a default (e.g. "sticker:default") if the override file is missing.
+//
+// Domain-specific logic (which emojis map to which sound names, which
+// sounds belong to stickers vs. pings vs. combat etc.) lives in the
+// respective domain — for example src/domains/Sticker/Sticker.ts holds
+// the sticker emoji-to-name map and the getStickerSoundId helper.
 
-// ---------------------------------------------------------------------------
-// Emoji → human-readable name map
-// Used to derive file names: emoji "😂" → name "joy" → file "sticker-joy.mp3"
-// ---------------------------------------------------------------------------
-
-const EMOJI_NAMES: Record<string, string> = {
-	"😂": "joy",
-	"😢": "cry",
-	"😱": "scream",
-	"😬": "grimace",
-	"🤔": "thinking",
-	"😈": "devil",
-	"❤️": "heart",
-	"💀": "skull",
-	"🔥": "fire",
-	"✨": "sparkles",
-	"🎉": "party",
-	"👍": "thumbsup",
-	"👎": "thumbsdown",
-	"🍆": "eggplant",
-	"👋": "wave",
-	"😫": "weary",
-	"❓": "question",
-	"❗": "exclamation",
-	"😡": "angry",
-	"😮": "surprised",
-};
+import { EMOJI_NAMES } from "../domains/Sticker/Sticker";
 
 // ---------------------------------------------------------------------------
 // Sound registry
 // Maps a sound ID (e.g. "sticker:default") to a path under /sfx/.
-// Sticker overrides are auto-generated from EMOJI_NAMES at module load.
-// You can also register non-sticker sounds here for future events.
+// Sticker overrides are auto-generated from the Sticker domain's
+// EMOJI_NAMES at module load.
 // ---------------------------------------------------------------------------
 
 const SOUND_REGISTRY: Record<string, string> = {
 	"sticker:default": "/sfx/sticker-default.mp3",
+	// Ping (tile highlight). Drop a /sfx/ping-default.mp3 file alongside the
+	// other sticker sounds to enable audio for pings; missing files are
+	// silently ignored by play().
+	"ping:default": "/sfx/ping-default.mp3",
 };
 
 // Auto-register per-emoji entries: "sticker:joy" → "/sfx/sticker-joy.mp3"
@@ -118,36 +101,30 @@ async function play(soundId: string): Promise<void> {
 }
 
 /**
- * Play the appropriate sticker sound for the given emoji.
- * Checks for a per-emoji override file (e.g. sticker-joy.mp3); if it doesn't
- * exist, falls back to sticker-default.mp3.
+ * Play `overrideId` if its file is available on the server, otherwise
+ * fall back to `fallbackId`. Override existence is probed once and cached.
+ *
+ * Useful for "I'd like the joy sticker to make a custom sound, but if no
+ * one's added joy.mp3 yet just play the default sticker sound" — without
+ * forcing every domain to know about probeFile or the cache.
  */
-async function playSticker(emoji: string): Promise<void> {
-	const name = EMOJI_NAMES[emoji];
-	if (name) {
-		const overrideId = `sticker:${name}`;
-		const overridePath = SOUND_REGISTRY[overrideId];
-
-		if (overridePath) {
-			// Check the cache first
-			if (fileExistsCache[overridePath] === null || fileExistsCache[overridePath] === undefined) {
-				fileExistsCache[overridePath] = await probeFile(overridePath);
-			}
-			if (fileExistsCache[overridePath]) {
-				return play(overrideId);
-			}
+async function playWithFallback(
+	overrideId: string,
+	fallbackId: string
+): Promise<void> {
+	const overridePath = SOUND_REGISTRY[overrideId];
+	if (overridePath) {
+		if (
+			fileExistsCache[overridePath] === null ||
+			fileExistsCache[overridePath] === undefined
+		) {
+			fileExistsCache[overridePath] = await probeFile(overridePath);
+		}
+		if (fileExistsCache[overridePath]) {
+			return play(overrideId);
 		}
 	}
-
-	// Fallback to default
-	return play("sticker:default");
-}
-
-/**
- * Get the human-readable name for an emoji (useful for debugging / docs).
- */
-function getEmojiName(emoji: string): string | undefined {
-	return EMOJI_NAMES[emoji];
+	return play(fallbackId);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,9 +133,7 @@ function getEmojiName(emoji: string): string | undefined {
 
 export const SoundEffectService = {
 	play,
-	playSticker,
+	playWithFallback,
 	getVolume,
 	setVolume,
-	getEmojiName,
-	EMOJI_NAMES,
 };
