@@ -418,6 +418,22 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 						className="toggle toggle-primary"
 					/>
 				</FormField>
+
+				<FormField label="Restrict player movement to range">
+					<input
+						type="checkbox"
+						checked={data.MovementSettings.restrictPlayerMovementToRange ?? false}
+						onChange={(e) =>
+							updateSettings({
+								MovementSettings: {
+									...data.MovementSettings,
+									restrictPlayerMovementToRange: e.target.checked,
+								},
+							})
+						}
+						className="toggle toggle-primary"
+					/>
+				</FormField>
 			</FormSection>
 		</>
 	);

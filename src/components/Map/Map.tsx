@@ -102,6 +102,7 @@ export default function Map({
 	const { actionService } = useActionService();
 	const context = useQuestContext();
 	const { canAccessActor } = usePeerTracking();
+	const campaign = CampaignActions.getActiveCampaign(context);
 	const dpr = typeof window !== "undefined" ? window.devicePixelRatio : 1;
 	const [hoveredLadderHeight, setHoveredLadderHeight] = useState<number | null>(
 		null
@@ -112,11 +113,14 @@ export default function Map({
 	// Active actor identity for ping authorship — players use their selected
 	// character, the DM uses whichever actor they're impersonating (if any).
 	// Mirrors the pattern used by StickerPicker.
-	const pingCampaign = CampaignActions.getActiveCampaign(context);
 	const pingIsPlayer = context.User.Role === "player";
 	const pingActiveActorId = pingIsPlayer
-		? context.User.SelectedCharacters?.[pingCampaign.RoomCode]
-		: (context.User.ImpersonatedActors ?? {})[pingCampaign.RoomCode];
+		? context.User.SelectedCharacters?.[campaign.RoomCode]
+		: (context.User.ImpersonatedActors ?? {})[campaign.RoomCode];
+	const isCombatActive = campaign.GameState.CombatState?.isActive ?? false;
+	const restrictPlayerMovementToRange =
+		context.User.Role === "player" &&
+		(campaign.Settings.MovementSettings?.restrictPlayerMovementToRange ?? false);
 	// Local cooldown so a single user can only have one ping on the map at
 	// a time. Matches PING_DURATION_MS so the cooldown ends right as the
 	// previous ping fades out. Server-side check in PingActions.create
@@ -375,6 +379,26 @@ export default function Map({
 		selectedActorObj,
 		context,
 	]);
+
+	const isTileAllowedForSelectedActor = useCallback(
+		(x: number, y: number) => {
+			if (!restrictPlayerMovementToRange) return true;
+
+			const allowedTiles = isCombatActive
+				? remainingMovementRange
+				: movementRange;
+			if (!allowedTiles) return false;
+
+			return allowedTiles.some((tile) => tile.x === x && tile.y === y);
+		},
+		[
+			restrictPlayerMovementToRange,
+			isCombatActive,
+			remainingMovementRange,
+			movementRange,
+		]
+	);
+
 	const handlePointerMove = useCallback(
 		(e: React.PointerEvent<HTMLDivElement>) => {
 			if (!ref.current || !terrain || isPanning) return;
@@ -485,6 +509,11 @@ export default function Map({
 
 			// Validate the tile is in movement range and not occupied
 			if (tile) {
+				if (!isTileAllowedForSelectedActor(tile.x, tile.y)) {
+					updateHoveredTile(null);
+					return;
+				}
+
 				const actor = actorHitCandidates.find((a) => a.id === selectedActor.id);
 				if (actor) {
 					const targetHeight = calculateTargetHeight(
@@ -534,6 +563,7 @@ export default function Map({
 			movementRange,
 			characters,
 			entities,
+			isTileAllowedForSelectedActor,
 		]
 	);
 
@@ -650,6 +680,10 @@ export default function Map({
 					});
 
 					if (targetHeight !== null) {
+						if (!isTileAllowedForSelectedActor(actorX, actorY)) {
+							return;
+						}
+
 						// Execute vertical movement
 						const fromHeight =
 							actorCandidate?.h ?? selectedActorObj.Position?.h ?? 0;
@@ -705,6 +739,10 @@ export default function Map({
 			// 3) TILE MOVE (ground movement)
 			// ========================================================================
 			if (hoveredTile && selectedActor && actionService && isAuthorized) {
+				if (!isTileAllowedForSelectedActor(hoveredTile.x, hoveredTile.y)) {
+					return;
+				}
+
 				const tileHeight =
 					terrain.HeightMap?.[hoveredTile.y]?.[hoveredTile.x] ?? 0;
 
@@ -765,6 +803,7 @@ export default function Map({
 			clearSelection,
 			canAccessActor,
 			pingActiveActorId,
+			isTileAllowedForSelectedActor,
 		]
 	);
 

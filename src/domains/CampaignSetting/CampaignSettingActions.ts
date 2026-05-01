@@ -207,6 +207,7 @@ export const CampaignSettingActions = {
 					heightCostFormula: "h",
 					heightCostLookup: fallback.lookup!,
 					flyingIgnoresHeight: true,
+					restrictPlayerMovementToRange: false,
 				},
 			};
 		}
@@ -282,6 +283,7 @@ export const CampaignSettingActions = {
 				heightCostFormula: defaultFormula,
 				heightCostLookup: defaultLookup.lookup!,
 				flyingIgnoresHeight: true,
+				restrictPlayerMovementToRange: false,
 			},
 		};
 	},

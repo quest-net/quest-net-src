@@ -11,6 +11,8 @@ import { triggerContextUpdate } from "../../domains/Context/ContextProvider";
 import { RoomActions } from "../../domains/Room/RoomActions";
 import { LogActions } from "../../domains/Log/LogActions";
 import { User } from "../../domains/User/User";
+import { calculateMovementRange } from "../../components/Map/MapUtilities";
+import type { Position } from "../../domains/Actor/Actor";
 
 const PING_INTERVAL_MS = 3000;
 
@@ -99,7 +101,7 @@ export class ActionService {
 
 		if (this.context.User.Role === "dm") {
 			// DM listens for action requests from players
-			receiveReq(this.handlePlayerRequest.bind(this));
+			receiveReq((data, peerId) => this.handlePlayerRequest(data, peerId));
 		}
 
 		// Runtime user updates (e.g., character selection mid-session).
@@ -261,13 +263,25 @@ export class ActionService {
 	/**
 	 * DM receives and processes player action requests
 	 */
-	private handlePlayerRequest(data: any) {
+	private handlePlayerRequest(data: any, peerId?: string) {
 		// While the DM is in secret mode, drop player requests on the floor.
 		// Applying them would corrupt the prep state (e.g. a move request
 		// scoped to the player's stale terrain). The full sync that fires when
 		// secret mode is turned off reconciles the player's optimistic state.
 		const activeCampaign = CampaignActions.getActiveCampaign(this.context);
 		if (this.context.SecretModes?.[activeCampaign.Id]) {
+			return;
+		}
+
+		const requestingUser = this.getRequestingPlayer(peerId, data?.playerId);
+		if (!canPerformAction(requestingUser, data?.actionKey)) {
+			console.warn(
+				`Player ${requestingUser.Id} cannot perform action: ${data?.actionKey}`
+			);
+			return;
+		}
+
+		if (!this.canPlayerRequestAction(data?.actionKey, data?.params, requestingUser)) {
 			return;
 		}
 
@@ -291,6 +305,126 @@ export class ActionService {
 			this.stateSync.broadcast(campaign, true);
 		}
 		triggerContextUpdate();
+	}
+
+	private getRequestingPlayer(peerId?: string, playerId?: string): User {
+		const peerUser = peerId ? this.peerUsers.get(peerId) : undefined;
+		return {
+			Id: peerUser?.Id ?? playerId ?? "unknown-player",
+			Name: peerUser?.Name ?? "Player",
+			Role: "player",
+			SelectedCharacters: peerUser?.SelectedCharacters ?? {},
+		};
+	}
+
+	private canPlayerRequestAction(
+		actionKey: string,
+		params: any,
+		requestingUser: User
+	): boolean {
+		if (actionKey !== "character:move") return true;
+
+		const campaign = CampaignActions.getActiveCampaign(this.context);
+		const restrictMovement =
+			campaign.Settings.MovementSettings?.restrictPlayerMovementToRange ?? false;
+		if (!restrictMovement) return true;
+
+		const characterId = params?.characterId;
+		const position = params?.position as Position | undefined;
+		if (!characterId || !position) return false;
+
+		if (requestingUser.SelectedCharacters?.[campaign.RoomCode] !== characterId) {
+			return false;
+		}
+
+		const character = campaign.GameState.Characters.find(
+			(c) => c.Id === characterId
+		);
+		if (!character) return false;
+
+		if (
+			!Number.isFinite(position.x) ||
+			!Number.isFinite(position.y) ||
+			!Number.isFinite(position.h)
+		) {
+			return false;
+		}
+
+		const targetX = Math.round(position.x);
+		const targetY = Math.round(position.y);
+		return this.isPlayerMoveInAllowedRange(characterId, targetX, targetY);
+	}
+
+	private isPlayerMoveInAllowedRange(
+		characterId: string,
+		targetX: number,
+		targetY: number
+	): boolean {
+		const campaign = CampaignActions.getActiveCampaign(this.context);
+		const terrain = campaign.Terrains.find(
+			(t) => t.Id === campaign.GameState.TerrainId
+		);
+		if (!terrain) return false;
+
+		if (
+			targetX < 0 ||
+			targetY < 0 ||
+			targetX >= terrain.Width ||
+			targetY >= terrain.Length
+		) {
+			return false;
+		}
+
+		const character = campaign.GameState.Characters.find(
+			(c) => c.Id === characterId
+		);
+		if (!character) return false;
+
+		const { heightCostLookup, flyingIgnoresHeight } =
+			campaign.Settings.MovementSettings;
+		const moveSpeed = character.MoveSpeed ?? 5;
+		const canFly = character.CanFly ?? false;
+		const current = character.Position;
+
+		let budget = moveSpeed;
+		if (campaign.GameState.CombatState?.isActive) {
+			const turnStart = character.TurnStartPosition;
+			if (!turnStart) return false;
+
+			const { costs: startCosts } = calculateMovementRange(
+				turnStart.x,
+				turnStart.y,
+				turnStart.h,
+				moveSpeed,
+				canFly,
+				terrain.Width,
+				terrain.Length,
+				terrain.HeightMap,
+				heightCostLookup,
+				flyingIgnoresHeight
+			);
+
+			const spentCost = startCosts.get(`${current.x},${current.y}`);
+			if (spentCost === undefined) return false;
+
+			budget = moveSpeed - spentCost;
+			if (budget <= 0) return false;
+		}
+
+		const { tiles } = calculateMovementRange(
+			current.x,
+			current.y,
+			current.h,
+			budget,
+			canFly,
+			terrain.Width,
+			terrain.Length,
+			terrain.HeightMap,
+			heightCostLookup,
+			flyingIgnoresHeight
+		);
+
+		return tiles.some((tile) => tile.x === targetX && tile.y === targetY);
 	}
 
 	/**

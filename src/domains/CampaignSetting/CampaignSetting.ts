@@ -141,6 +141,14 @@ export interface MovementSettings {
 	 * If true, CanFly actors only pay horizontal movement costs
 	 */
 	flyingIgnoresHeight: boolean;
+
+	/**
+	 * Whether players are restricted to their calculated movement range.
+	 * Outside combat, players may move within their full movement range.
+	 * During combat, players may only move within their remaining movement range.
+	 * DMs are never restricted by this setting.
+	 */
+	restrictPlayerMovementToRange: boolean;
 }
 
 /**

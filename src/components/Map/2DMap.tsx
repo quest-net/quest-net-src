@@ -17,6 +17,7 @@ import {
 	applyElevationTint,
 	normalizeHeight,
 	RANGE_COLOR,
+	REMAINING_COLOR,
 	HOVER_COLOR,
 	ELEV_TOP_STRENGTH,
 } from "./Terrain";
@@ -87,6 +88,11 @@ export default function TwoDMap({
 	const { actionService } = useActionService();
 	const { canAccessActor } = usePeerTracking();
 	const context = useQuestContext();
+	const campaign = CampaignActions.getActiveCampaign(context);
+	const isCombatActive = campaign.GameState.CombatState?.isActive ?? false;
+	const restrictPlayerMovementToRange =
+		context.User.Role === "player" &&
+		(campaign.Settings.MovementSettings?.restrictPlayerMovementToRange ?? false);
 	const {
 		selectedActor,
 		selectActor,
@@ -139,8 +145,6 @@ export default function TwoDMap({
 			return new Set<string>();
 		if (!canAccessActor(selectedActor.id)) return new Set<string>();
 
-		// Get campaign settings for movement costs
-		const campaign = CampaignActions.getActiveCampaign(context);
 		const { heightCostLookup, flyingIgnoresHeight } =
 			campaign.Settings.MovementSettings;
 
@@ -170,6 +174,88 @@ export default function TwoDMap({
 		L,
 		context,
 	]);
+
+	const remainingMovementSet = useMemo(() => {
+		if (!terrain || !selectedActor || !selectedActorInfo) return null;
+		if (!canAccessActor(selectedActor.id)) return null;
+		if (!isCombatActive) return null;
+
+		const turnStart = findActor(
+			selectedActor.id,
+			selectedActor.kind,
+			characters,
+			entities
+		)?.TurnStartPosition;
+		if (!turnStart) return null;
+
+		const { heightCostLookup, flyingIgnoresHeight } =
+			campaign.Settings.MovementSettings;
+
+		const { costs: startCosts } = calculateMovementRange(
+			turnStart.x,
+			turnStart.y,
+			turnStart.h,
+			selectedActorInfo.moveSpeed,
+			selectedActorInfo.canFly,
+			W,
+			L,
+			terrain.HeightMap,
+			heightCostLookup,
+			flyingIgnoresHeight
+		);
+
+		const spentCost = startCosts.get(
+			`${selectedActorInfo.x},${selectedActorInfo.y}`
+		);
+		if (spentCost === undefined) return null;
+
+		const remaining = selectedActorInfo.moveSpeed - spentCost;
+		if (remaining <= 0) return new Set<string>();
+
+		const { tiles } = calculateMovementRange(
+			selectedActorInfo.x,
+			selectedActorInfo.y,
+			selectedActorInfo.h,
+			remaining,
+			selectedActorInfo.canFly,
+			W,
+			L,
+			terrain.HeightMap,
+			heightCostLookup,
+			flyingIgnoresHeight
+		);
+
+		const s = new Set<string>();
+		for (const t of tiles) s.add(`${t.x},${t.y}`);
+		return s;
+	}, [
+		terrain,
+		selectedActor,
+		selectedActorInfo,
+		canAccessActor,
+		isCombatActive,
+		characters,
+		entities,
+		context,
+		W,
+		L,
+	]);
+
+	const isTileAllowedForSelectedActor = useCallback(
+		(x: number, y: number) => {
+			if (!restrictPlayerMovementToRange) return true;
+			const key = `${x},${y}`;
+			return isCombatActive
+				? remainingMovementSet?.has(key) ?? false
+				: movementSet.has(key);
+		},
+		[
+			restrictPlayerMovementToRange,
+			isCombatActive,
+			remainingMovementSet,
+			movementSet,
+		]
+	);
 
 	// Cycle state for stacked tiles
 	const cycleRef = useRef<Map<string, number>>(new Map());
@@ -218,6 +304,7 @@ export default function TwoDMap({
 			// Otherwise, attempt a move if we have a selected, authorized actor
 			if (!selectedActor || !canAccessActor(selectedActor.id) || !actionService)
 				return;
+			if (!isTileAllowedForSelectedActor(x, y)) return;
 
 			const actorObj = findActor(
 				selectedActor.id,
@@ -274,6 +361,7 @@ export default function TwoDMap({
 			toggleActorSelection,
 			selectActor,
 			clearSelection,
+			isTileAllowedForSelectedActor,
 		]
 	);
 
@@ -301,6 +389,7 @@ export default function TwoDMap({
 
 		const isHovered = hoveredTile && hoveredTile.x === x && hoveredTile.y === y;
 		const inRange = movementSet.has(`${x},${y}`);
+		const inRemaining = remainingMovementSet?.has(`${x},${y}`) ?? false;
 
 		// Gather actors for stack and badges
 		const hereChars = (characters || []).filter(
@@ -425,7 +514,9 @@ export default function TwoDMap({
 					<div
 						className="absolute inset-0 pointer-events-none"
 						style={{
-							boxShadow: `inset 0 0 0 2px ${numToCssHex(RANGE_COLOR)}`,
+							boxShadow: `inset 0 0 0 2px ${numToCssHex(
+								inRemaining ? REMAINING_COLOR : RANGE_COLOR
+							)}`,
 							opacity: 0.5,
 						}}
 					/>
