@@ -1,4 +1,5 @@
 import { Context } from "../domains/Context/Context";
+import type { Campaign } from "../domains/Campaign/Campaign";
 import { TERRAIN_PALETTE_LEVELS } from "../utils/TerrainPaletteUtils";
 import { VersionedMigration } from "./types";
 
@@ -99,7 +100,8 @@ export const migration_1_5_0: VersionedMigration = {
 	version: "1.5.0",
 
 	update: (context: Context): Context => {
-		for (const campaign of context.Campaigns ?? []) {
+		const campaigns = (context.Campaigns ?? []) as unknown as Campaign[];
+		for (const campaign of campaigns) {
 			for (const terrain of campaign.Terrains ?? []) {
 				terrain.ColorMap = terrain.ColorMap.map((row) =>
 					row.map((index) => LEGACY_INDEX_TO_FIXED[index] ?? DEFAULT_FIXED_INDEX)
@@ -112,7 +114,8 @@ export const migration_1_5_0: VersionedMigration = {
 	},
 
 	reset: (context: Context): Context => {
-		for (const campaign of context.Campaigns ?? []) {
+		const campaigns = (context.Campaigns ?? []) as unknown as Campaign[];
+		for (const campaign of campaigns) {
 			for (const terrain of campaign.Terrains ?? []) {
 				terrain.ColorMap = terrain.ColorMap.map((row) =>
 					row.map((index) => fixedIndexToLegacyIndex(index))

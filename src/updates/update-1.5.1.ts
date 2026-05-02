@@ -1,4 +1,5 @@
 import { Context } from "../domains/Context/Context";
+import type { Campaign } from "../domains/Campaign/Campaign";
 import { VersionedMigration } from "./types";
 
 /**
@@ -10,7 +11,8 @@ export const migration_1_5_1: VersionedMigration = {
 	version: "1.5.1",
 
 	update: (context: Context): Context => {
-		for (const campaign of context.Campaigns ?? []) {
+		const campaigns = (context.Campaigns ?? []) as unknown as Campaign[];
+		for (const campaign of campaigns) {
 			if (!campaign.Settings.MovementSettings) continue;
 			campaign.Settings.MovementSettings.restrictPlayerMovementToRange ??= false;
 		}
@@ -19,7 +21,8 @@ export const migration_1_5_1: VersionedMigration = {
 	},
 
 	reset: (context: Context): Context => {
-		for (const campaign of context.Campaigns ?? []) {
+		const campaigns = (context.Campaigns ?? []) as unknown as Campaign[];
+		for (const campaign of campaigns) {
 			if (!campaign.Settings.MovementSettings) continue;
 			delete (campaign.Settings.MovementSettings as {
 				restrictPlayerMovementToRange?: boolean;

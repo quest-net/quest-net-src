@@ -1,5 +1,5 @@
 import { Context } from "../Context/Context";
-import { Campaign } from "./Campaign";
+import { Campaign, CampaignInfo } from "./Campaign";
 import { getUrlIdentifier, isGUID } from "../../utils/UrlParser";
 import { ContextActions } from "../Context/ContextActions";
 import { CampaignSettingActions } from "../CampaignSetting/CampaignSettingActions";
@@ -83,6 +83,16 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 	};
 }
 
+/** Extracts a CampaignInfo stub from a Campaign */
+function toStub(campaign: Campaign): CampaignInfo {
+	return {
+		Id: campaign.Id,
+		Name: campaign.Name,
+		RoomCode: campaign.RoomCode,
+		CreatedAt: campaign.CreatedAt,
+	};
+}
+
 /**
  * Converts a Blob to base64 string
  */
@@ -126,63 +136,66 @@ export interface ExportProgress {
 }
 
 export const CampaignActions = {
+	/**
+	 * Finds the campaign for the given URL identifier by checking context.ActiveCampaign.
+	 * Returns undefined if ActiveCampaign doesn't match the identifier.
+	 */
 	findCampaignByIdentifier(
 		identifier: string | undefined,
 		context: Context
 	): Campaign | undefined {
-		if (!identifier) {
-			return undefined;
-		}
-		if (isGUID(identifier)) {
-			// DM mode: search by Campaign.Id (the secret GUID)
-			return context.Campaigns.find((c) => c.Id === identifier);
-		} else {
-			// Player mode: search by Campaign.RoomCode (the public identifier)
-			return context.Campaigns.find((c) => c.RoomCode === identifier);
-		}
+		if (!identifier) return undefined;
+		const active = context.ActiveCampaign;
+		if (!active) return undefined;
+		return isGUID(identifier)
+			? active.Id === identifier ? active : undefined
+			: active.RoomCode === identifier ? active : undefined;
 	},
 
+	/**
+	 * Returns context.ActiveCampaign, throwing if not set.
+	 * Use inside campaign views where a campaign is guaranteed to be loaded.
+	 */
 	getActiveCampaign(context: Context): Campaign {
-		const identifier = getUrlIdentifier();
-
-		if (!identifier) {
-			throw new Error("No campaign identifier in URL");
-		}
-
-		let campaign: Campaign | undefined;
-
-		if (isGUID(identifier)) {
-			campaign = context.Campaigns.find((c) => c.Id === identifier);
-		} else {
-			campaign = context.Campaigns.find((c) => c.RoomCode === identifier);
-		}
-
+		const campaign = context.ActiveCampaign;
 		if (!campaign) {
-			throw new Error(`Campaign not found for identifier: ${identifier}`);
+			// Fallback: check URL for legacy callers
+			const identifier = getUrlIdentifier();
+			if (identifier) {
+				throw new Error(
+					`Campaign not loaded yet for identifier: ${identifier}. ` +
+					`Use context.ActiveCampaign or await ContextActions.loadActiveCampaign().`
+				);
+			}
+			throw new Error("No active campaign");
 		}
-
 		return campaign;
 	},
 
 	/**
-	 * Creates a new campaign and adds it to context
+	 * Creates a new campaign, saves it to IndexedDB, and adds a stub to context.Campaigns.
+	 * Sets context.ActiveCampaign to the new campaign.
 	 */
-	create(
+	async create(
 		params: { name: string; roomCode?: string },
 		context: Context
-	): Campaign {
+	): Promise<Campaign> {
 		const campaign = createBlankCampaign(params.name, params.roomCode);
 
-		context.Campaigns.push(campaign);
+		await IndexedDBUtilities.saveCampaign(campaign);
+
+		context.Campaigns.push(toStub(campaign));
+		context.ActiveCampaign = campaign;
 		ContextActions.save(context);
 
 		return campaign;
 	},
 
 	/**
-	 * Deletes a campaign by ID
+	 * Deletes a campaign from IndexedDB and removes its stub from context.Campaigns.
+	 * Clears context.ActiveCampaign if it was the deleted campaign.
 	 */
-	delete(params: { campaignId: string }, context: Context): void {
+	async delete(params: { campaignId: string }, context: Context): Promise<void> {
 		const index = context.Campaigns.findIndex(
 			(c) => c.Id === params.campaignId
 		);
@@ -192,37 +205,63 @@ export const CampaignActions = {
 			return;
 		}
 
+		await IndexedDBUtilities.removeCampaign(params.campaignId);
 		context.Campaigns.splice(index, 1);
+
+		if (context.ActiveCampaign?.Id === params.campaignId) {
+			context.ActiveCampaign = undefined;
+		}
+
 		ContextActions.save(context);
 	},
 
 	/**
-	 * Edits campaign properties (name, room code, settings)
+	 * Edits campaign properties. Updates the stub in context.Campaigns and
+	 * the full Campaign in IndexedDB (via ActiveCampaign if loaded, or IDB directly).
 	 */
-	edit(
+	async edit(
 		params: { campaignId: string; updates: Partial<Campaign> },
 		context: Context
-	): void {
-		const campaign = context.Campaigns.find((c) => c.Id === params.campaignId);
-
-		if (!campaign) {
-			console.warn(`Campaign not found: ${params.campaignId}`);
+	): Promise<void> {
+		// Update the stub (only stub-level fields are relevant here)
+		const stub = context.Campaigns.find((c) => c.Id === params.campaignId);
+		if (!stub) {
+			console.warn(`Campaign stub not found: ${params.campaignId}`);
 			return;
 		}
 
-		Object.assign(campaign, params.updates);
+		if (params.updates.Name !== undefined) stub.Name = params.updates.Name;
+		if (params.updates.RoomCode !== undefined) stub.RoomCode = params.updates.RoomCode;
+
+		// Update the full campaign
+		if (context.ActiveCampaign?.Id === params.campaignId) {
+			Object.assign(context.ActiveCampaign, params.updates);
+			await IndexedDBUtilities.saveCampaign(context.ActiveCampaign);
+		} else {
+			// Campaign isn't currently active — load, patch, save back
+			const campaign = await IndexedDBUtilities.loadCampaign(params.campaignId);
+			if (campaign) {
+				Object.assign(campaign, params.updates);
+				await IndexedDBUtilities.saveCampaign(campaign);
+			}
+		}
+
 		ContextActions.save(context);
 	},
 
 	/**
-	 * Downloads a campaign as a JSON file with all image data included
+	 * Downloads a campaign as a JSON file with all image data included.
+	 * Uses context.ActiveCampaign if it matches, otherwise loads from IndexedDB.
 	 */
 	async download(
 		params: { campaignId: string },
 		context: Context,
 		onProgress?: (progress: ExportProgress) => void
 	): Promise<void> {
-		const campaign = context.Campaigns.find((c) => c.Id === params.campaignId);
+		let campaign: Campaign | null =
+			context.ActiveCampaign?.Id === params.campaignId
+				? context.ActiveCampaign
+				: await IndexedDBUtilities.loadCampaign(params.campaignId);
 
 		if (!campaign) {
 			console.warn(`Campaign not found: ${params.campaignId}`);
@@ -236,7 +275,6 @@ export const CampaignActions = {
 				status: "Starting export...",
 			});
 
-			// Collect all image data from IndexedDB
 			const imageData: Record<string, { base64: string; mimeType: string }> = {};
 
 			for (let i = 0; i < campaign.Images.length; i++) {
@@ -252,10 +290,7 @@ export const CampaignActions = {
 				if (cached) {
 					const blob = cached.data as Blob;
 					const base64 = await blobToBase64(blob);
-					imageData[image.Id] = {
-						base64,
-						mimeType: image.MimeType,
-					};
+					imageData[image.Id] = { base64, mimeType: image.MimeType };
 				}
 			}
 
@@ -265,24 +300,19 @@ export const CampaignActions = {
 				status: "Finalizing export...",
 			});
 
-			// Create export data structure
 			const exportData: CampaignExportData = {
 				version: APP_VERSION,
 				campaign,
 				imageData,
 			};
 
-			// Download as JSON file
 			const json = JSON.stringify(exportData, null, 2);
 			const blob = new Blob([json], { type: "application/json" });
 			const url = URL.createObjectURL(blob);
 
 			const link = document.createElement("a");
 			link.href = url;
-			link.download = `${campaign.Name.replace(
-				/[^a-z0-9]/gi,
-				"_"
-			)}_${Date.now()}.json`;
+			link.download = `${campaign.Name.replace(/[^a-z0-9]/gi, "_")}_${Date.now()}.json`;
 			document.body.appendChild(link);
 			link.click();
 			document.body.removeChild(link);
@@ -295,8 +325,7 @@ export const CampaignActions = {
 			});
 		} catch (error) {
 			throw new Error(
-				`Failed to export campaign: ${error instanceof Error ? error.message : "Unknown error"
-				}`
+				`Failed to export campaign: ${error instanceof Error ? error.message : "Unknown error"}`
 			);
 		}
 	},
@@ -307,54 +336,41 @@ export const CampaignActions = {
 		onProgress?: (progress: ExportProgress) => void
 	): Promise<Campaign> {
 		try {
-			onProgress?.({
-				current: 0,
-				total: 1,
-				status: "Reading file...",
-			});
+			onProgress?.({ current: 0, total: 1, status: "Reading file..." });
 
 			const text = await params.file.text();
 			const data = JSON.parse(text);
 
 			let campaign: Campaign;
 			let imageData: Record<string, { base64: string; mimeType: string }> = {};
-			let dataVersion: VersionString = "1.0.0"; // baseline for really old exports
+			let dataVersion: VersionString = "1.0.0";
 
-			// New-style exports: { version, campaign, imageData }
-			if (
-				data &&
-				typeof data === "object" &&
-				"campaign" in data &&
-				"imageData" in data
-			) {
+			if (data && typeof data === "object" && "campaign" in data && "imageData" in data) {
 				campaign = (data.campaign as Campaign) ?? ({} as Campaign);
 				imageData =
-					(data.imageData as Record<string, { base64: string; mimeType: string }>) ||
-					{};
-
+					(data.imageData as Record<string, { base64: string; mimeType: string }>) || {};
 				if (typeof data.version === "string") {
 					dataVersion = data.version as VersionString;
 				}
 			} else {
-				// Old-style exports (pre-container) – assume it's just the Campaign object
 				campaign = data as Campaign;
-				// If you ever had a campaign-level "version" field, you could read it here.
 			}
 
-			// --- Run schema migrations on this imported campaign ---
-
-			// Use a scratch Context so we can reuse the same migration system
-			const tempContext: Context = {
+			// Run sync schema migrations on the imported campaign using a scratch Context.
+			// The IDB migration chain is NOT run here — we handle IDB persistence manually below.
+			const tempContext = {
 				User: structuredClone(context.User),
-				Campaigns: [structuredClone(campaign)],
-				AppSettings: structuredClone(context.AppSettings as any),
+				// Cast: tempContext.Campaigns is Campaign[] (pre-1.6.0 shape) for migration purposes
+				Campaigns: [structuredClone(campaign)] as unknown as CampaignInfo[],
+				AppSettings: structuredClone(context.AppSettings as Record<string, string>),
 				version: dataVersion,
-			};
+			} as Context;
 
 			const migratedContext = runMigrations(tempContext, APP_VERSION);
-			campaign = migratedContext.Campaigns[0];
+			// Extract the migrated campaign from the scratch context
+			campaign = (migratedContext.Campaigns as unknown as Campaign[])[0];
 
-			// Generate new ID to avoid conflicts
+			// Generate a new ID to avoid conflicts
 			campaign.Id = crypto.randomUUID();
 
 			// Ensure room code is unique
@@ -365,7 +381,7 @@ export const CampaignActions = {
 
 			// Import images to IndexedDB
 			const imageIds = Object.keys(imageData);
-			const totalSteps = imageIds.length + 1; // +1 for final save
+			const totalSteps = imageIds.length + 1;
 
 			for (let i = 0; i < imageIds.length; i++) {
 				const imageId = imageIds[i];
@@ -381,27 +397,21 @@ export const CampaignActions = {
 				await IndexedDBUtilities.save(imageId, blob);
 			}
 
-			onProgress?.({
-				current: imageIds.length,
-				total: totalSteps,
-				status: "Saving campaign...",
-			});
+			onProgress?.({ current: imageIds.length, total: totalSteps, status: "Saving campaign..." });
 
-			context.Campaigns.push(campaign);
+			// Save campaign to IDB and add stub to context
+			await IndexedDBUtilities.saveCampaign(campaign);
+			context.Campaigns.push(toStub(campaign));
+			context.ActiveCampaign = campaign;
 			ContextActions.save(context);
 
-			onProgress?.({
-				current: totalSteps,
-				total: totalSteps,
-				status: "Import complete!",
-			});
+			onProgress?.({ current: totalSteps, total: totalSteps, status: "Import complete!" });
 
 			return campaign;
 		} catch (error) {
 			throw new Error(
-				`Failed to import campaign: ${error instanceof Error ? error.message : "Invalid JSON"
-				}`
+				`Failed to import campaign: ${error instanceof Error ? error.message : "Invalid JSON"}`
 			);
 		}
-	}
+	},
 };

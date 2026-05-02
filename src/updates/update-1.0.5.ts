@@ -1,6 +1,7 @@
 // src/updates/update-1.0.5.ts
 
 import type { Context } from "../domains/Context/Context";
+import type { Campaign } from "../domains/Campaign/Campaign";
 import type { VersionString } from "../version";
 import type { VersionedMigration } from "./types";
 
@@ -18,7 +19,8 @@ export const migration_1_0_5: VersionedMigration = {
 	 *   This reduces state sync patches from ~1000 to 1-2 per log entry
 	 */
 	update(context: Context): Context {
-		for (const campaign of context.Campaigns) {
+		const campaigns = context.Campaigns as unknown as Campaign[];
+		for (const campaign of campaigns) {
 			if (typeof (campaign as any).LogHead !== "number") {
 				// Set LogHead to current length mod MAX_LOG_SIZE
 				// This ensures new entries continue from where the log left off
@@ -37,7 +39,8 @@ export const migration_1_0_5: VersionedMigration = {
 	 * - Reorder Log array to be chronological (since ring buffer may have wrapped)
 	 */
 	reset(context: Context): Context {
-		for (const campaign of context.Campaigns) {
+		const campaigns = context.Campaigns as unknown as Campaign[];
+		for (const campaign of campaigns) {
 			const logHead = (campaign as any).LogHead;
 			
 			// If LogHead exists and log is full, reconstruct chronological order

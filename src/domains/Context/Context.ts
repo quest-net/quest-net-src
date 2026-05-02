@@ -1,11 +1,15 @@
-import { Campaign } from "../Campaign/Campaign";
+import { Campaign, CampaignInfo } from "../Campaign/Campaign";
 import { User } from "../User/User";
 
 export interface Context {
 	// User data
 	User: User;
-	// List of Campaigns
-	Campaigns: Campaign[];
+	// Lightweight campaign metadata — full Campaign objects live in IndexedDB.
+	// Persisted to localStorage. Never contains full Campaign data after v1.6.0.
+	Campaigns: CampaignInfo[];
+	// The currently loaded campaign. Runtime-only — never written to localStorage.
+	// Populated by CampaignView when navigating to a campaign URL.
+	ActiveCampaign?: Campaign;
 	// App Preferences
 	AppSettings: Record<string, string>;
 	// version

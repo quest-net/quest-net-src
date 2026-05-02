@@ -56,4 +56,19 @@ export class LocalStorageUtilities {
 	static clear(): void {
 		localStorage.clear();
 	}
+
+	/**
+	 * Returns all keys currently stored in localStorage.
+	 */
+	static listKeys(): string[] {
+		return Object.keys(localStorage);
+	}
+
+	/**
+	 * Returns all localStorage keys that start with the given prefix.
+	 * Used by migrations to locate legacy entries (e.g. "campaign_<roomCode>").
+	 */
+	static listKeysWithPrefix(prefix: string): string[] {
+		return Object.keys(localStorage).filter((k) => k.startsWith(prefix));
+	}
 }

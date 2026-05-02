@@ -4,6 +4,7 @@ import { Context } from "../../domains/Context/Context";
 import { canPerformAction, ACTION_REGISTRY } from "./ActionRegistry";
 import type { Campaign } from "../../domains/Campaign/Campaign";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { ContextActions } from "../../domains/Context/ContextActions";
 import { StateSync } from "../StateSync";
 import { ImageService } from "../ImageService";
 import { Room } from "../../domains/Room/Room";
@@ -120,26 +121,32 @@ export class ActionService {
 		if (this.context.User.Role === "player") {
 			// Players listen for state updates and apply them to context
 			this.stateSync.onUpdate((campaign) => {
-
-				// Find existing campaign by ID (which is the room code for players)
-				const index = this.context.Campaigns.findIndex(
-					(c) => c.Id === campaign.Id
-				);
-
 				// ISOLATION: We clone the campaign so that the UI can mutate it optimistically
 				// without polluting the StateSync's internal baseline.
 				const isolatedCampaign = structuredClone(campaign);
 
+				this.context.ActiveCampaign = isolatedCampaign;
+
+				// Keep only lightweight metadata in Context.Campaigns. The full
+				// player-cached campaign is persisted via ContextActions.save().
+				const info = {
+					Id: isolatedCampaign.Id,
+					Name: isolatedCampaign.Name,
+					RoomCode: isolatedCampaign.RoomCode,
+					CreatedAt: isolatedCampaign.CreatedAt,
+				};
+				const index = this.context.Campaigns.findIndex((c) => c.Id === info.Id);
 				if (index !== -1) {
-					this.context.Campaigns[index] = isolatedCampaign;
+					this.context.Campaigns[index] = info;
 				} else {
-					this.context.Campaigns.push(isolatedCampaign);
+					this.context.Campaigns.push(info);
 				}
 				// If a one-time callback is registered, execute and clear it.
 				if (this.onFirstUpdateCallback) {
 					this.onFirstUpdateCallback();
 					this.onFirstUpdateCallback = undefined; // Ensure it only fires once
 				}
+				ContextActions.save(this.context);
 				triggerContextUpdate();
 			});
 		}
