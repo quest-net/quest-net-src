@@ -5,6 +5,7 @@ import { getUrlIdentifier } from "../../utils/UrlParser";
 import { ContextActions } from "../Context/ContextActions";
 import { CampaignSettingActions } from "../CampaignSetting/CampaignSettingActions";
 import { TerrainActions } from "../Terrain/TerrainActions";
+import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 import { APP_VERSION, type VersionString } from "../../version";
 import { runMigrations } from "../../updates/migrator";
@@ -47,6 +48,8 @@ function generateRoomCode(): string {
  * Creates a blank campaign structure
  */
 function createBlankCampaign(name: string, roomCode?: string): Campaign {
+	const testVoxelTerrain = VoxelTerrainActions.createTest();
+
 	return {
 		Id: crypto.randomUUID(),
 		Name: name,
@@ -58,6 +61,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 		StatusTemplates: [],
 		EntityTemplates: [],
 		Terrains: [TerrainActions.createDefault(), TerrainActions.createHills()],
+		VoxelTerrains: [testVoxelTerrain],
 		Audios: [],
 		Images: [],
 		Scenarios: [],
@@ -76,6 +80,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 				FocusImageId: "",
 			},
 			TerrainId: "DEFAULT_TERRAIN",
+			VoxelTerrainId: testVoxelTerrain.Id,
 			CalendarDay: 0,
 			RemainingShortRests: 2,
 		},

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { useQuestContext } from "../Context/ContextProvider";
-import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
+import { loadImageBlob } from "./ImageLoading";
 
 interface ImageDisplayProps extends React.ImgHTMLAttributes<HTMLImageElement> {
 	imageId: string | undefined;
@@ -34,52 +34,22 @@ export function ImageDisplay({ imageId, alt, ...props }: ImageDisplayProps) {
 			setIsLoading(true);
 
 			try {
-				// STEP 1: Try IndexedDB first (works offline for everyone)
-				const cached = await IndexedDBUtilities.load(imageId);
+				const blob = await loadImageBlob(imageId, {
+					isDM,
+					imageService: (actionService as any)?.imageService,
+				});
 
-				if (cached && isMounted) {
-					const blob = cached.data as Blob;
-					objectUrl = URL.createObjectURL(blob);
-					setSrc(objectUrl);
+				if (!isMounted) return;
+
+				if (!blob) {
+					setError(isDM ? "Image not found in IndexedDB" : "Image not found");
 					setIsLoading(false);
 					return;
 				}
 
-				// STEP 2: If not cached and we're a player, request from DM
-				if (!cached && !isDM) {
-					if (!actionService) {
-						setError("Not connected");
-						setIsLoading(false);
-						return;
-					}
-
-					const imageService = (actionService as any).imageService;
-					if (!imageService) {
-						setError("Image service not available");
-						setIsLoading(false);
-						return;
-					}
-
-					// Request from DM (this will cache it in IndexedDB)
-					const blob = await imageService.getImage(imageId);
-
-					if (!blob) {
-						setError("Image not found");
-						setIsLoading(false);
-						return;
-					}
-
-					if (isMounted) {
-						objectUrl = URL.createObjectURL(blob);
-						setSrc(objectUrl);
-						setIsLoading(false);
-					}
-					return;
-				}
-
-				// STEP 3: Image not found (shouldn't happen for DM)
-				if (!cached && isDM) {
-					setError("Image not found in IndexedDB");
+				if (isMounted) {
+					objectUrl = URL.createObjectURL(blob);
+					setSrc(objectUrl);
 					setIsLoading(false);
 				}
 			} catch (err) {
@@ -100,7 +70,7 @@ export function ImageDisplay({ imageId, alt, ...props }: ImageDisplayProps) {
 				URL.revokeObjectURL(objectUrl);
 			}
 		};
-	}, [imageId, isDM]);
+	}, [imageId, isDM, actionService]);
 
 	// No imageId provided
 	if (!imageId) {

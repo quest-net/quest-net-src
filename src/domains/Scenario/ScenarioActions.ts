@@ -5,7 +5,7 @@ import { Scenario, EntityPlacement } from "./Scenario";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { EntityActions } from "../Entity/EntityActions";
-import { TerrainActions } from "../Terrain/TerrainActions";
+import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 
 /**
  * Scenario action handlers
@@ -40,7 +40,7 @@ export const ScenarioActions = {
         const scenario: Scenario = {
             Id: crypto.randomUUID(),
             Name: params.name,
-            TerrainId: gs.TerrainId,
+            TerrainId: gs.VoxelTerrainId,
             Scene: { ...gs.Scene },
             AudioPlaylist: [...gs.Audio],
             EntityPlacements: entityPlacements,
@@ -98,11 +98,11 @@ export const ScenarioActions = {
 
         // 1. Set terrain (skip if deleted, validateActors handles positions)
         // We do this FIRST so that validating entity spawns/character moves checks against the NEW terrain
-        const terrainExists = campaign.Terrains.some(
+        const terrainExists = campaign.VoxelTerrains.some(
             (t) => t.Id === scenario.TerrainId
         );
         if (terrainExists) {
-            TerrainActions.setActive({ terrainId: scenario.TerrainId }, context);
+            VoxelTerrainActions.setActive({ terrainId: scenario.TerrainId }, context);
         }
 
         // 2. Clear existing entities

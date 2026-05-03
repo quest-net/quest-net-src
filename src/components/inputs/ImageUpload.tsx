@@ -85,7 +85,7 @@ export function ImageUpload({
 
 		try {
 			// Compress the image
-			const { blob, width, height, mimeType } =
+			const { blob, width, height, mimeType, cutout } =
 				await ImageActions.compressImage(file);
 
 			// Verify size after compression
@@ -108,6 +108,7 @@ export function ImageUpload({
 					MimeType: mimeType,
 					Width: width,
 					Height: height,
+					Cutout: cutout || undefined, // Only persist when true to keep state minimal
 					UploadedBy: undefined,
 				};
 
@@ -181,7 +182,7 @@ export function ImageUpload({
 
 				try {
 					// Compress the image
-					const { blob, width, height, mimeType } =
+					const { blob, width, height, mimeType, cutout } =
 						await ImageActions.compressImage(file);
 
 					// Verify size after compression
@@ -200,6 +201,7 @@ export function ImageUpload({
 						MimeType: mimeType,
 						Width: width,
 						Height: height,
+						Cutout: cutout || undefined,
 						UploadedBy: undefined,
 					};
 

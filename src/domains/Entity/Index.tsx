@@ -26,7 +26,6 @@ export function EntityIndex() {
 
 		actionService.execute("entity:spawn", {
 			entityId: entityId,
-			position: { x: 0, y: 0, h: 0 },
 		});
 	};
 

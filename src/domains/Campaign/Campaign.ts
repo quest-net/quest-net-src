@@ -9,6 +9,7 @@ import { GameState } from "../GameState/GameState";
 import { Entity } from "../Entity/Entity";
 import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
 import { Terrain } from "../Terrain/Terrain";
+import { VoxelTerrain } from "../VoxelTerrain/VoxelTerrain";
 import { Scenario } from "../Scenario/Scenario";
 
 export interface Campaign {
@@ -23,6 +24,7 @@ export interface Campaign {
 	StatusTemplates: Status[];
 	EntityTemplates: Entity[];
 	Terrains: Terrain[];
+	VoxelTerrains: VoxelTerrain[];
 	Audios: Audio[];
 	Images: Image[];
 	Scenarios: Scenario[];

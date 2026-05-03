@@ -8,6 +8,9 @@ import { ActorActions } from "../Actor/ActorActions";
 import { Position } from "../Actor/Actor";
 import { TerrainActions } from "../Terrain/TerrainActions";
 import { createDefaultStatSlots, createDefaultActionSlots, createDefaultAttributeSlots } from "../../utils/ActorResolvers";
+import { getActiveVoxelSpawnPosition, getActiveVoxelTerrain } from "../../utils/VoxelTerrainUtils";
+import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
+import { isVoxelMoveInAllowedRange } from "../../utils/VoxelMovementUtilities";
 
 /**
  * Character action handlers
@@ -83,11 +86,15 @@ export const CharacterActions = {
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
+		const voxelSpawnPosition = getActiveVoxelSpawnPosition(
+			campaign,
+			params.character.CanFly
+		);
 
 		const character: Character = {
 			...params.character,
 			Notes: params.character.Notes || [],
-			Position: { x: 0, y: 0, h: 0 }, // Set to origin
+			Position: voxelSpawnPosition ?? { x: 0, y: 0, h: 0 },
 			// Ensure stats are fully healed upon creation
 			Stats: params.character.Stats.map((stat) => ({
 				...stat,
@@ -110,8 +117,9 @@ export const CharacterActions = {
 			context
 		);
 
-		// Validate actors after spawning
-		TerrainActions.validateActors(context);
+		if (!voxelSpawnPosition) {
+			TerrainActions.validateActors(context);
+		}
 	},
 
 	/**
@@ -140,15 +148,18 @@ export const CharacterActions = {
 			console.warn(`Character already spawned: ${params.characterId}`);
 			return;
 		}
-
 		// MOVE: Remove from roster
 		const [character] = campaign.CharacterRoster.splice(rosterIndex, 1);
+		const voxelSpawnPosition = getActiveVoxelSpawnPosition(
+			campaign,
+			character.CanFly
+		);
 
-		// Set position to origin if not provided
+		// Set position from the active voxel terrain if not provided.
 		if (params.position) {
 			character.Position = params.position;
 		} else {
-			character.Position = { x: 0, y: 0, h: 0 };
+			character.Position = voxelSpawnPosition ?? { x: 0, y: 0, h: 0 };
 		}
 
 		// Add to GameState
@@ -166,8 +177,9 @@ export const CharacterActions = {
 			context
 		);
 
-		// Validate actors after spawning
-		TerrainActions.validateActors(context);
+		if (!voxelSpawnPosition) {
+			TerrainActions.validateActors(context);
+		}
 	},
 
 	/**
@@ -262,16 +274,66 @@ export const CharacterActions = {
 		params: { characterId: string; position: Position },
 		context: Context
 	): void {
-		// Validation: Players can only move their own characters
-		if (context.User.Role === "player") {
-			const campaign = CampaignActions.getActiveCampaign(context);
-			const character = campaign.GameState.Characters.find(
-				(c) => c.Id === params.characterId
-			);
+		const campaign = CampaignActions.getActiveCampaign(context);
+		const character = campaign.GameState.Characters.find(
+			(c) => c.Id === params.characterId
+		);
 
-			if (!character) {
-				console.warn(`Character not found in GameState: ${params.characterId}`);
+		if (!character) {
+			console.warn(`Character not found in GameState: ${params.characterId}`);
+			return;
+		}
+
+		if (
+			!Number.isFinite(params.position.x) ||
+			!Number.isFinite(params.position.y) ||
+			!Number.isFinite(params.position.h)
+		) {
+			console.warn(`Invalid character move position: ${params.characterId}`);
+			return;
+		}
+
+		if (context.User.Role === "player") {
+			if (
+				context.User.SelectedCharacters?.[campaign.RoomCode] !==
+				params.characterId
+			) {
+				console.warn(
+					`Player ${context.User.Id} cannot move character: ${params.characterId}`
+				);
 				return;
+			}
+
+			const restrictMovement =
+				campaign.Settings.MovementSettings?.restrictPlayerMovementToRange ??
+				false;
+			const voxelTerrain = getActiveVoxelTerrain(campaign);
+			if (restrictMovement) {
+				if (!voxelTerrain) {
+					console.warn("Cannot validate restricted movement without voxel terrain");
+					return;
+				}
+
+				const targetX = Math.round(params.position.x);
+				const targetY = Math.round(params.position.y);
+				const canMove = isVoxelMoveInAllowedRange(
+					voxelTerrain,
+					character.Position,
+					character.TurnStartPosition,
+					character.MoveSpeed,
+					character.CanFly ?? false,
+					campaign.Settings.MovementSettings,
+					campaign.GameState.CombatState?.isActive ?? false,
+					targetX,
+					targetY
+				);
+
+				if (!canMove) {
+					console.warn(
+						`Player ${context.User.Id} cannot move character ${params.characterId} to (${targetX}, ${targetY})`
+					);
+					return;
+				}
 			}
 		}
 
@@ -282,7 +344,11 @@ export const CharacterActions = {
 		);
 
 		// Validate actors after moving
-		TerrainActions.validateActors(context);
+		if (getActiveVoxelTerrain(campaign)) {
+			VoxelTerrainActions.validateActors(context);
+		} else {
+			TerrainActions.validateActors(context);
+		}
 	},
 
 	/**

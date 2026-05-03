@@ -6,7 +6,7 @@ import { CharacterActions } from "../../domains/Character/CharacterActions";
 import { CampaignSettingActions } from "../../domains/CampaignSetting/CampaignSettingActions";
 import { LogActions } from "../../domains/Log/LogActions";
 import { ImageActions } from "../../domains/Image/ImageActions";
-import { TerrainActions } from "../../domains/Terrain/TerrainActions";
+import { VoxelTerrainActions } from "../../domains/VoxelTerrain/VoxelTerrainActions";
 import { ItemActions } from "../../domains/Item/ItemActions";
 import { EntityActions } from "../../domains/Entity/EntityActions";
 import { CalendarActions } from "../../domains/Calendar/CalendarActions";
@@ -383,23 +383,23 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 
 	"terrain:create": {
 		roles: ["dm"],
-		handler: TerrainActions.create,
+		handler: VoxelTerrainActions.create,
 	},
 	"terrain:edit": {
 		roles: ["dm"],
-		handler: TerrainActions.edit,
+		handler: VoxelTerrainActions.edit,
 	},
 	"terrain:delete": {
 		roles: ["dm"],
-		handler: TerrainActions.delete,
+		handler: VoxelTerrainActions.delete,
 	},
 	"terrain:setActive": {
 		roles: ["dm"],
-		handler: TerrainActions.setActive,
+		handler: VoxelTerrainActions.setActive,
 	},
 	"terrain:bulkEditTags": {
 		roles: ["dm"],
-		handler: TerrainActions.bulkEditTags,
+		handler: VoxelTerrainActions.bulkEditTags,
 	},
 
 	// ============================================================================

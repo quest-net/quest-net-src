@@ -2,9 +2,8 @@
 // Terrain generation utilities - all functions are additive/subtractive
 // They modify existing heightmaps rather than replacing them
 
-import { MAX_HEIGHT } from "../domains/Terrain/Terrain";
-
 type HeightMap = number[][];
+const DEFAULT_MAX_HEIGHT = 16;
 
 const clamp = (v: number, min: number, max: number) =>
 	Math.max(min, Math.min(max, v));
@@ -26,7 +25,8 @@ function applyGaussianBump(
 	radius: number,
 	peakHeight: number,
 	width: number,
-	length: number
+	length: number,
+	maxHeight: number
 ): void {
 	const sigma2 = (radius * 0.5) ** 2;
 	const r2 = radius * radius;
@@ -43,7 +43,7 @@ function applyGaussianBump(
 				heightMap[y][x] = clamp(
 					Math.round(heightMap[y][x] + peakHeight * falloff),
 					0,
-					MAX_HEIGHT
+					maxHeight
 				);
 			}
 		}
@@ -57,7 +57,8 @@ function applyGaussianBump(
 export function applyRandomHills(
 	heightMap: HeightMap,
 	width: number,
-	length: number
+	length: number,
+	maxHeight: number = DEFAULT_MAX_HEIGHT
 ): HeightMap {
 	const result = cloneHeightMap(heightMap);
 
@@ -72,7 +73,7 @@ export function applyRandomHills(
 		const radius = minRadius + Math.random() * (maxRadius - minRadius);
 		const peak = 3 + Math.random() * 5; // 3-8 height addition
 
-		applyGaussianBump(result, cx, cy, radius, peak, width, length);
+		applyGaussianBump(result, cx, cy, radius, peak, width, length, maxHeight);
 	}
 
 	return result;
@@ -85,7 +86,8 @@ export function applyRandomHills(
 export function applyRandomTrees(
 	heightMap: HeightMap,
 	width: number,
-	length: number
+	length: number,
+	maxHeight: number = DEFAULT_MAX_HEIGHT
 ): HeightMap {
 	const result = cloneHeightMap(heightMap);
 
@@ -98,7 +100,7 @@ export function applyRandomTrees(
 		const treeHeight = 6 + Math.floor(Math.random() * 2); // 2-5 height
 		const isCluster = Math.random() < 0.3; // 30% chance for 2x2 cluster
 
-		result[y][x] = clamp(result[y][x] + treeHeight, 0, MAX_HEIGHT);
+		result[y][x] = clamp(result[y][x] + treeHeight, 0, maxHeight);
 
 		if (isCluster) {
 			// Add adjacent tiles for cluster
@@ -115,7 +117,7 @@ export function applyRandomTrees(
 					result[ny][nx] = clamp(
 						result[ny][nx] + clusterHeight,
 						0,
-						MAX_HEIGHT
+						maxHeight
 					);
 				}
 			}
@@ -132,7 +134,8 @@ export function applyRandomTrees(
 export function applyRandomIslands(
 	heightMap: HeightMap,
 	width: number,
-	length: number
+	length: number,
+	maxHeight: number = DEFAULT_MAX_HEIGHT
 ): HeightMap {
 	const result = cloneHeightMap(heightMap);
 
@@ -165,13 +168,13 @@ export function applyRandomIslands(
 					result[y][x] = clamp(
 						Math.round(result[y][x] + plateauHeight),
 						0,
-						MAX_HEIGHT
+						maxHeight
 					);
 				} else if (dist < effectiveRadius) {
 					// Edge - gradual falloff
 					const edgeFactor = 1 - (dist - effectiveRadius * 0.6) / (effectiveRadius * 0.4);
 					const edgeHeight = Math.round(plateauHeight * edgeFactor);
-					result[y][x] = clamp(result[y][x] + edgeHeight, 0, MAX_HEIGHT);
+					result[y][x] = clamp(result[y][x] + edgeHeight, 0, maxHeight);
 				}
 			}
 		}
@@ -187,7 +190,8 @@ export function applyRandomIslands(
 export function applyRandomValley(
 	heightMap: HeightMap,
 	width: number,
-	length: number
+	length: number,
+	maxHeight: number = DEFAULT_MAX_HEIGHT
 ): HeightMap {
 	const result = cloneHeightMap(heightMap);
 
@@ -253,7 +257,7 @@ export function applyRandomValley(
 			if (minDist < valleyWidth) {
 				const factor = 1 - minDist / valleyWidth;
 				const carveDepth = Math.round(valleyDepth * factor * factor);
-				result[y][x] = clamp(result[y][x] - carveDepth, 0, MAX_HEIGHT);
+				result[y][x] = clamp(result[y][x] - carveDepth, 0, maxHeight);
 			}
 		}
 	}

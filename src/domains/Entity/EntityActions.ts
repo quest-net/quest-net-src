@@ -8,6 +8,8 @@ import { ActorActions } from "../Actor/ActorActions";
 import { Position } from "../Actor/Actor";
 import { TerrainActions } from "../Terrain/TerrainActions";
 import { createDefaultStatSlots, createDefaultActionSlots, createDefaultAttributeSlots } from "../../utils/ActorResolvers";
+import { getActiveVoxelSpawnPosition, getActiveVoxelTerrain } from "../../utils/VoxelTerrainUtils";
+import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 
 /**
  * Entity action handlers
@@ -155,6 +157,10 @@ export const EntityActions = {
 			...structuredClone(template),
 			Id: crypto.randomUUID(), // New ID for the instance
 		};
+		const voxelSpawnPosition = getActiveVoxelSpawnPosition(
+			campaign,
+			instance.CanFly
+		);
 
 		// Set the name with appropriate letter suffix
 		if (existingCount === 0) {
@@ -165,11 +171,11 @@ export const EntityActions = {
 			instance.Name = `${baseName} [${EntityActions.getLetterSuffix(existingCount)}]`;
 		}
 
-		// Set position to origin if not provided
+		// Set position from the active voxel terrain if not provided.
 		if (params.position) {
 			instance.Position = params.position;
 		} else {
-			instance.Position = { x: 0, y: 0, h: 0 };
+			instance.Position = voxelSpawnPosition ?? { x: 0, y: 0, h: 0 };
 		}
 
 		// Add to GameState
@@ -187,8 +193,9 @@ export const EntityActions = {
 			context
 		);
 
-		// Validate actors after spawning
-		TerrainActions.validateActors(context);
+		if (!voxelSpawnPosition) {
+			TerrainActions.validateActors(context);
+		}
 	},
 
 	/**
@@ -284,7 +291,12 @@ export const EntityActions = {
 		);
 
 		// Validate actors after moving
-		TerrainActions.validateActors(context);
+		const campaign = CampaignActions.getActiveCampaign(context);
+		if (getActiveVoxelTerrain(campaign)) {
+			VoxelTerrainActions.validateActors(context);
+		} else {
+			TerrainActions.validateActors(context);
+		}
 	},
 
 	/**

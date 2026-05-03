@@ -39,6 +39,7 @@ export const PingActions = {
 		// screenToTile() should already discard clicks outside the grid, so
 		// this is just a safety net.
 		const terrain =
+			campaign.VoxelTerrains?.find((t) => t.Id === campaign.GameState.VoxelTerrainId) ||
 			campaign.Terrains.find((t) => t.Id === campaign.GameState.TerrainId) ||
 			campaign.Terrains.find((t) => t.Id === "DEFAULT_TERRAIN");
 		if (terrain) {

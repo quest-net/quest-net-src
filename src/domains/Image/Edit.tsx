@@ -27,6 +27,7 @@ export function ImageEdit({ image, onClose }: ImageEditProps) {
 			updates: {
 				Name: data.Name,
 				Tags: data.Tags,
+				Cutout: data.Cutout || undefined,
 			},
 		});
 	};
@@ -127,6 +128,32 @@ function ImageForm({ data, onChange }: ImageFormProps) {
 						</span>
 					</div>
 				</div>
+			</FormSection>
+
+			{/* Display Options */}
+			<FormSection
+				title="Display"
+				description="Controls how this image renders on the 3D map"
+			>
+				<label className="flex items-start gap-3 cursor-pointer">
+					<input
+						type="checkbox"
+						className="checkbox checkbox-primary mt-1"
+						checked={!!data.Cutout}
+						onChange={(e) =>
+							handleFieldChange("Cutout", e.target.checked || undefined)
+						}
+					/>
+					<div className="flex-1">
+						<div className="font-medium">Cutout (transparent background)</div>
+						<div className="text-xs opacity-70">
+							When enabled, actor tokens using this image render frameless and
+							fit-to-contain so a transparent character image shows through
+							cleanly. Auto-detected at upload from the image's alpha channel;
+							you can override it here.
+						</div>
+					</div>
+				</label>
 			</FormSection>
 
 			{/* Tags */}

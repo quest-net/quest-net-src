@@ -26,7 +26,6 @@ export function CharacterIndex() {
 
 		actionService.execute("character:spawn", {
 			characterId: characterId,
-			position: { x: 0, y: 0, h: 0 },
 		});
 	};
 

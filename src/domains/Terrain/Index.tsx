@@ -1,46 +1,11 @@
-import { useQuestContext } from "../Context/ContextProvider";
-import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
-import { TerrainEdit } from "./Edit";
-import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
 import { useState } from "react";
-import { Terrain } from "./Terrain";
-import { TERRAIN_PALETTE, getTerrainColorByIndex } from "../../utils/TerrainPaletteUtils";
+import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
+import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { replacePathTag } from "../../utils/FolderUtils";
-
-/** Calculates the most common fixed terrain color. */
-function getMostCommonTerrainColor(terrain: Terrain): string {
-	// Count occurrences of each color index
-	const colorCounts: number[] = new Array(TERRAIN_PALETTE.length).fill(0);
-
-	for (let y = 0; y < terrain.Length; y++) {
-		for (let x = 0; x < terrain.Width; x++) {
-			const colorIndex = terrain.ColorMap[y][x] ?? 0;
-			if (colorIndex >= 0 && colorIndex < colorCounts.length) {
-				colorCounts[colorIndex]++;
-			}
-		}
-	}
-
-	// Find the most common color index
-	let mostCommonIndex = 0;
-	let maxCount = 0;
-
-	for (let i = 0; i < colorCounts.length; i++) {
-		if (colorCounts[i] > maxCount) {
-			maxCount = colorCounts[i];
-			mostCommonIndex = i;
-		}
-	}
-
-	const color = getTerrainColorByIndex(mostCommonIndex);
-	const r = parseInt(color.slice(1, 3), 16);
-	const g = parseInt(color.slice(3, 5), 16);
-	const b = parseInt(color.slice(5, 7), 16);
-	const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-
-	return luminance > 0.86 ? "black" : color;
-}
+import { getMostCommonVoxelTerrainColor } from "../../utils/VoxelTerrainEditorUtils";
+import { CampaignActions } from "../Campaign/CampaignActions";
+import { useQuestContext } from "../Context/ContextProvider";
+import { TerrainEdit } from "./Edit";
 
 export function TerrainIndex() {
 	const context = useQuestContext();
@@ -66,22 +31,19 @@ export function TerrainIndex() {
 		if (!actionService) return;
 
 		actionService.execute("terrain:setActive", {
-			terrainId: terrainId,
+			terrainId,
 		});
 	};
 
-	const items: IndexViewItem[] = campaign.Terrains.map((terrain) => {
-		const isActive = campaign.GameState.TerrainId === terrain.Id;
-		const isDefault = terrain.Id === "DEFAULT_TERRAIN";
+	const items: IndexViewItem[] = campaign.VoxelTerrains.map((terrain) => {
+		const isActive = campaign.GameState.VoxelTerrainId === terrain.Id;
 
 		return {
 			id: terrain.Id,
 			label: terrain.Name,
-			details: `${terrain.Width}×${terrain.Length}${isActive ? " • Active" : ""
-				}${isDefault ? " • Default" : ""}`,
-			// Use terrain icon with the most common color from the terrain
+			details: `${terrain.Width}x${terrain.Length}${isActive ? " - Active" : ""}`,
 			icon: "icon-[mdi--terrain]",
-			iconColor: getMostCommonTerrainColor(terrain),
+			iconColor: getMostCommonVoxelTerrainColor(terrain),
 			tags: terrain.Tags || [],
 			action: isActive
 				? undefined
@@ -108,19 +70,17 @@ export function TerrainIndex() {
 			editFormFullWidth
 			renderEditForm={(item, { currentPath, closeDrawer }) => {
 				const terrain = item
-					? campaign.Terrains.find((t) => t.Id === item.id)
+					? campaign.VoxelTerrains.find((t) => t.Id === item.id)
 					: undefined;
-
+				const isActive = terrain?.Id === campaign.GameState.VoxelTerrainId;
 				const initialTags =
 					currentPath.length > 0 ? replacePathTag([], currentPath) : undefined;
-				// Check if trying to edit default terrain
-				const isDefault = terrain?.Id === "DEFAULT_TERRAIN";
 
 				return (
 					<TerrainEdit
 						key={item?.id || `create-${createCounter}`}
 						terrain={terrain}
-						isDefault={isDefault}
+						isDeleteProtected={isActive}
 						initialTags={initialTags}
 						onClose={() => closeDrawer?.()}
 					/>

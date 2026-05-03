@@ -7,7 +7,35 @@ import { LogActions } from "../Log/LogActions";
 
 const MAX_IMAGE_SIZE = 1024 * 1024; // 1 MB
 const MAX_DIMENSION = 2048; // Max width or height
-const JPEG_QUALITY = 0.85; // Fixed quality for JPEG compression
+// Quality for lossy WebP compression. WebP-lossy at 0.85 is comparable to or
+// smaller than JPEG at the same quality and additionally preserves alpha,
+// which is required for transparent (cutout) actor token PNGs.
+const WEBP_QUALITY = 0.85;
+// Pixels with alpha at or above this threshold count as opaque. Set just
+// below 255 to absorb any quantization the source encoder may have applied
+// to nominally-opaque pixels.
+const ALPHA_OPAQUE_THRESHOLD = 250;
+
+/**
+ * Returns true if any pixel in the canvas has alpha below the opaque
+ * threshold. Used at upload time to set the per-image Cutout flag, which
+ * tells the renderer to skip the framed/clipped path for the actor token.
+ */
+function canvasHasAlpha(
+	ctx: CanvasRenderingContext2D,
+	width: number,
+	height: number
+): boolean {
+	if (width === 0 || height === 0) return false;
+	const { data } = ctx.getImageData(0, 0, width, height);
+	// data is RGBA; alpha is every fourth byte starting at index 3.
+	for (let i = 3; i < data.length; i += 4) {
+		if (data[i] < ALPHA_OPAQUE_THRESHOLD) {
+			return true;
+		}
+	}
+	return false;
+}
 
 /**
  * Image action handlers and utilities
@@ -165,33 +193,43 @@ export const ImageActions = {
 	// ============================================================================
 
 	/**
-	 * Compresses and converts an image file
-	 * GIFs remain GIFs (with animation), everything else becomes JPEG
-	 * This is a utility function, not an action
+	 * Compresses and converts an image file.
+	 * GIFs remain GIFs (with animation). Everything else becomes WebP, which
+	 * is smaller-or-equal to JPEG at the same quality and additionally
+	 * preserves alpha -- required for transparent (cutout) actor portraits.
+	 * The result includes a `cutout` flag derived from a one-time alpha scan,
+	 * so the renderer can skip the framed/clipped path for transparent images.
+	 * This is a utility function, not an action.
 	 */
 	async compressImage(file: File): Promise<{
 		blob: Blob;
 		width: number;
 		height: number;
 		mimeType: string;
+		cutout: boolean;
 	}> {
 		const isGif = file.type === "image/gif";
 
 		if (isGif) {
-			return this.processGif(file);
-		} else {
-			return this.compressToJpeg(file);
+			const gif = await this.processGif(file);
+			// Animated GIFs decoded into a single canvas frame would lose their
+			// animation, so we trust source MIME for cutout detection here:
+			// only PNG-source can have alpha that round-trips through GIF.
+			return { ...gif, cutout: false };
 		}
+		return this.compressToWebP(file);
 	},
 
 	/**
-	 * Compresses to JPEG (or converts other formats to JPEG)
+	 * Compresses to WebP. Output preserves alpha (the `image/webp` encoder
+	 * keeps alpha at all quality levels), so cutout PNGs round-trip cleanly.
 	 */
-	async compressToJpeg(file: File): Promise<{
+	async compressToWebP(file: File): Promise<{
 		blob: Blob;
 		width: number;
 		height: number;
 		mimeType: string;
+		cutout: boolean;
 	}> {
 		return new Promise((resolve, reject) => {
 			const img = new Image();
@@ -203,7 +241,10 @@ export const ImageActions = {
 
 			img.onload = () => {
 				// Calculate new dimensions
-				let { width, height } = this.calculateDimensions(img.width, img.height);
+				const { width, height } = this.calculateDimensions(
+					img.width,
+					img.height
+				);
 
 				// Create canvas
 				const canvas = document.createElement("canvas");
@@ -211,8 +252,11 @@ export const ImageActions = {
 				canvas.height = height;
 				const ctx = canvas.getContext("2d")!;
 
-				// Draw and compress
+				// Draw, then scan for alpha BEFORE encoding so the source
+				// transparency informs the cutout flag regardless of whether
+				// the lossy encoder later quantizes alpha edges.
 				ctx.drawImage(img, 0, 0, width, height);
+				const cutout = canvasHasAlpha(ctx, width, height);
 
 				canvas.toBlob(
 					(blob) => {
@@ -220,10 +264,10 @@ export const ImageActions = {
 							reject(new Error("Failed to compress image"));
 							return;
 						}
-						resolve({ blob, width, height, mimeType: "image/jpeg" });
+						resolve({ blob, width, height, mimeType: "image/webp", cutout });
 					},
-					"image/jpeg",
-					JPEG_QUALITY
+					"image/webp",
+					WEBP_QUALITY
 				);
 			};
 

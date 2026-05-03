@@ -7,7 +7,7 @@ export interface Scenario {
     Id: string;
     Name: string;
 
-    // Terrain to load
+    // Voxel terrain to load. Kept as TerrainId for save compatibility.
     TerrainId: string;
 
     // Scene images

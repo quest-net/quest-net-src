@@ -34,6 +34,11 @@ export function useAutoReconnect(
 	const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const attemptCountRef = useRef(0);
 	const onReconnectRef = useRef(onReconnect);
+	// Latches once we have ever observed a peer in this room. We don't want to
+	// auto-reconnect a session that has never had a peer (e.g., a DM testing
+	// alone) -- that just churns leave/rejoin every reconnectDelayMs and
+	// rebuilds ActionService for no reason.
+	const hasEverHadPeersRef = useRef(false);
 
 	// Update the ref when the callback changes
 	useEffect(() => {
@@ -60,52 +65,73 @@ export function useAutoReconnect(
 			const peers = room.getPeers();
 			const peerCount = Object.keys(peers).length;
 
-			if (peerCount === 0) {
-				// Start tracking when we first noticed 0 peers
-				if (zeroPeersSinceRef.current === null) {
-					zeroPeersSinceRef.current = Date.now();
-				}
-
-				const timeSinceZeroPeers = Date.now() - zeroPeersSinceRef.current;
-
-				// If we've had 0 peers for longer than reconnectDelayMs and haven't exceeded max attempts
-				if (
-					timeSinceZeroPeers >= reconnectDelayMs &&
-					!reconnectTimeoutRef.current &&
-					attemptCountRef.current < maxAttempts
-				) {
-					attemptCountRef.current++;
-
-					setState({
-						isReconnecting: true,
-						attemptCount: attemptCountRef.current,
-						lastAttemptTime: Date.now(),
-					});
-
-					// Schedule the actual reconnect
-					reconnectTimeoutRef.current = setTimeout(() => {
-						onReconnectRef.current();
-						reconnectTimeoutRef.current = null;
-
-						setState((prev) => ({
-							...prev,
-							isReconnecting: false,
-						}));
-
-						// Reset the zero peers timer to give the new connection time to establish
-						zeroPeersSinceRef.current = Date.now();
-					}, 500);
-				}
-			} else {
-				// We have peers! Reset everything
+			if (peerCount > 0) {
+				// We have peers! Latch the "ever connected" flag and reset state.
+				hasEverHadPeersRef.current = true;
 				zeroPeersSinceRef.current = null;
 				attemptCountRef.current = 0;
 
-				setState({
-					isReconnecting: false,
-					attemptCount: 0,
-					lastAttemptTime: null,
+				setState((prev) => {
+					if (
+						!prev.isReconnecting &&
+						prev.attemptCount === 0 &&
+						prev.lastAttemptTime === null
+					) {
+						// Avoid handing React a fresh object every tick -- otherwise
+						// CampaignView re-renders every checkInterval and ripples
+						// through to children that read context refs.
+						return prev;
+					}
+					return {
+						isReconnecting: false,
+						attemptCount: 0,
+						lastAttemptTime: null,
+					};
 				});
+				return;
+			}
+
+			// peerCount === 0. Don't try to reconnect a session that has never
+			// observed a peer -- there's nothing to recover, and rejoining would
+			// just churn ActionService instances.
+			if (!hasEverHadPeersRef.current) {
+				return;
+			}
+
+			// Start tracking when we first noticed 0 peers
+			if (zeroPeersSinceRef.current === null) {
+				zeroPeersSinceRef.current = Date.now();
+			}
+
+			const timeSinceZeroPeers = Date.now() - zeroPeersSinceRef.current;
+
+			// If we've had 0 peers for longer than reconnectDelayMs and haven't exceeded max attempts
+			if (
+				timeSinceZeroPeers >= reconnectDelayMs &&
+				!reconnectTimeoutRef.current &&
+				attemptCountRef.current < maxAttempts
+			) {
+				attemptCountRef.current++;
+
+				setState({
+					isReconnecting: true,
+					attemptCount: attemptCountRef.current,
+					lastAttemptTime: Date.now(),
+				});
+
+				// Schedule the actual reconnect
+				reconnectTimeoutRef.current = setTimeout(() => {
+					onReconnectRef.current();
+					reconnectTimeoutRef.current = null;
+
+					setState((prev) => ({
+						...prev,
+						isReconnecting: false,
+					}));
+
+					// Reset the zero peers timer to give the new connection time to establish
+					zeroPeersSinceRef.current = Date.now();
+				}, 500);
 			}
 		};
 

@@ -16,14 +16,18 @@ import { useFormReadOnly } from "../Form/Form";
 import {
 	applyRandomHills,
 	applyRandomTrees,
-	applyRandomIslands,
-	applyRandomValley,
 	applyFlatten,
 	applySmooth,
 } from "../../utils/TerrainUtils";
 
 type Tool = "paint" | "eyedropper" | "raise" | "lower" | "set";
 type BrushShape = "square" | "round";
+type TerrainEditorValue = {
+	width: number;
+	length: number;
+	heightMap: number[][];
+	colorMap: number[][];
+};
 
 const TOOL_OPTIONS: Array<{
 	value: Tool;
@@ -78,15 +82,12 @@ const BRUSH_OPTIONS: Array<{ size: number; shape: BrushShape }> = [
 export interface TerrainEditorProps {
 	width: number;
 	length: number;
+	maxHeight?: number;
 	heightMap: number[][];
 	colorMap: number[][];
 	readOnly?: boolean;
-	onChange(next: {
-		width: number;
-		length: number;
-		heightMap: number[][];
-		colorMap: number[][];
-	}): void;
+	onChange(next: TerrainEditorValue): void;
+	onCommit?: (next: TerrainEditorValue) => void;
 }
 
 // ============================================================================
@@ -173,6 +174,43 @@ function getBrushPreviewCells(size: number, shape: BrushShape): boolean[] {
 	});
 }
 
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+	const normalized = hex.replace("#", "");
+	return {
+		r: parseInt(normalized.slice(0, 2), 16),
+		g: parseInt(normalized.slice(2, 4), 16),
+		b: parseInt(normalized.slice(4, 6), 16),
+	};
+}
+
+function channelToHex(value: number): string {
+	return clamp(Math.round(value), 0, 255).toString(16).padStart(2, "0");
+}
+
+function adjustHexBrightness(hex: string, brightnessPercent: number): string {
+	const { r, g, b } = hexToRgb(hex);
+	const multiplier = brightnessPercent / 100;
+	return `#${channelToHex(r * multiplier)}${channelToHex(g * multiplier)}${channelToHex(b * multiplier)}`;
+}
+
+function getReadableTextStyle(backgroundHex: string): {
+	color: string;
+	textShadow: string;
+} {
+	const { r, g, b } = hexToRgb(backgroundHex);
+	const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+	const isDark = luminance < 0.48;
+	return isDark
+		? {
+			color: "rgba(255,255,255,0.95)",
+			textShadow: "0 0 2px rgba(0,0,0,0.85)",
+		}
+		: {
+			color: "rgba(0,0,0,0.9)",
+			textShadow: "0 0 2px rgba(255,255,255,0.55)",
+		};
+}
+
 interface HistorySnapshot {
 	heightMap: number[][];
 	colorMap: number[][];
@@ -185,10 +223,12 @@ interface HistorySnapshot {
 export function TerrainEditor({
 	width,
 	length,
+	maxHeight = 16,
 	heightMap,
 	colorMap,
 	readOnly,
 	onChange,
+	onCommit,
 }: TerrainEditorProps) {
 	const formReadOnly = useFormReadOnly();
 	const isReadOnly = readOnly ?? formReadOnly;
@@ -201,6 +241,11 @@ export function TerrainEditor({
 		DEFAULT_TERRAIN_COLOR_INDEX
 	);
 	const [targetHeight, setTargetHeight] = useState<number>(8);
+	const clampedMaxHeight = Math.max(1, Math.floor(maxHeight) || 1);
+	const paletteLevels = TERRAIN_PALETTE_FAMILIES[0]?.colors.length ?? 5;
+	const middlePaletteLevel = Math.floor(paletteLevels / 2);
+	const selectedFamilyIndex = Math.floor(selectedColorIndex / paletteLevels);
+	const selectedLevelIndex = selectedColorIndex % paletteLevels;
 
 	// Display options
 	const [showHeights, setShowHeights] = useState(false);
@@ -211,6 +256,10 @@ export function TerrainEditor({
 	// Flatten confirmation state
 	const [flattenConfirm, setFlattenConfirm] = useState(false);
 	const isColorTool = tool === "paint" || tool === "eyedropper";
+
+	useEffect(() => {
+		setTargetHeight((prev) => clamp(prev, 0, clampedMaxHeight));
+	}, [clampedMaxHeight]);
 
 	// ========================================================================
 	// UNDO / REDO
@@ -250,7 +299,13 @@ export function TerrainEditor({
 			heightMap: snapshot.heightMap,
 			colorMap: snapshot.colorMap,
 		});
-	}, [undoStack, heightMap, colorMap, width, length, onChange, isReadOnly]);
+		onCommit?.({
+			width,
+			length,
+			heightMap: snapshot.heightMap,
+			colorMap: snapshot.colorMap,
+		});
+	}, [undoStack, heightMap, colorMap, width, length, onChange, onCommit, isReadOnly]);
 
 	const redo = useCallback(() => {
 		if (redoStack.length === 0 || isReadOnly) return;
@@ -271,7 +326,13 @@ export function TerrainEditor({
 			heightMap: snapshot.heightMap,
 			colorMap: snapshot.colorMap,
 		});
-	}, [redoStack, heightMap, colorMap, width, length, onChange, isReadOnly]);
+		onCommit?.({
+			width,
+			length,
+			heightMap: snapshot.heightMap,
+			colorMap: snapshot.colorMap,
+		});
+	}, [redoStack, heightMap, colorMap, width, length, onChange, onCommit, isReadOnly]);
 
 	useEffect(() => {
 		const handleKeyDown = (e: KeyboardEvent) => {
@@ -418,18 +479,32 @@ export function TerrainEditor({
 	}, [onChange, width, length]);
 
 	const endStroke = useCallback(() => {
+		const finalHeightMap = workHeightsRef.current;
+		const finalColorMap = workColorsRef.current;
+		const didChange = hasChangedRef.current;
+
 		isPointerDownRef.current = false;
-		touchedRef.current.clear();
-		workHeightsRef.current = null;
-		workColorsRef.current = null;
 		if (rafRef.current != null) {
 			cancelAnimationFrame(rafRef.current);
 			rafRef.current = null;
 		}
-		if (!hasChangedRef.current) {
+		if (didChange && finalHeightMap && finalColorMap) {
+			const next = {
+				width,
+				length,
+				heightMap: finalHeightMap,
+				colorMap: finalColorMap,
+			};
+			onChange(next);
+			onCommit?.(next);
+		}
+		touchedRef.current.clear();
+		workHeightsRef.current = null;
+		workColorsRef.current = null;
+		if (!didChange) {
 			setUndoStack((prev) => prev.slice(0, -1));
 		}
-	}, []);
+	}, [length, onChange, onCommit, width]);
 
 	const applyAt = useCallback(
 		(gx: number, gy: number) => {
@@ -446,22 +521,23 @@ export function TerrainEditor({
 					workHeightsRef.current![y][x] = clamp(
 						workHeightsRef.current![y][x] + 1,
 						0,
-						16
+						clampedMaxHeight
 					);
 				} else if (tool === "lower") {
 					workHeightsRef.current![y][x] = clamp(
 						workHeightsRef.current![y][x] - 1,
 						0,
-						16
+						clampedMaxHeight
 					);
 				} else if (tool === "set") {
-					workHeightsRef.current![y][x] = clamp(targetHeight, 0, 16);
+					workHeightsRef.current![y][x] = clamp(targetHeight, 0, clampedMaxHeight);
 				}
 			});
 
+			hasChangedRef.current = true;
 			scheduleCommit();
 		},
-		[brushSize, brushShape, width, length, selectedColorIndex, tool, targetHeight, scheduleCommit]
+		[brushSize, brushShape, width, length, selectedColorIndex, tool, targetHeight, clampedMaxHeight, scheduleCommit]
 	);
 
 	// ========================================================================
@@ -560,7 +636,7 @@ export function TerrainEditor({
 	// PRESET HANDLERS
 	// ========================================================================
 	const handlePreset = useCallback(
-		(preset: "hills" | "trees" | "islands" | "valley" | "smooth") => {
+		(preset: "hills" | "trees" | "smooth") => {
 			if (isReadOnly) return;
 
 			pushToHistory();
@@ -569,16 +645,10 @@ export function TerrainEditor({
 
 			switch (preset) {
 				case "hills":
-					newHeightMap = applyRandomHills(heightMap, width, length);
+					newHeightMap = applyRandomHills(heightMap, width, length, clampedMaxHeight);
 					break;
 				case "trees":
-					newHeightMap = applyRandomTrees(heightMap, width, length);
-					break;
-				case "islands":
-					newHeightMap = applyRandomIslands(heightMap, width, length);
-					break;
-				case "valley":
-					newHeightMap = applyRandomValley(heightMap, width, length);
+					newHeightMap = applyRandomTrees(heightMap, width, length, clampedMaxHeight);
 					break;
 				case "smooth":
 					newHeightMap = applySmooth(heightMap, width, length, 1);
@@ -587,14 +657,16 @@ export function TerrainEditor({
 					return;
 			}
 
-			onChange({
+			const next = {
 				width,
 				length,
 				heightMap: newHeightMap,
 				colorMap,
-			});
+			};
+			onChange(next);
+			onCommit?.(next);
 		},
-		[isReadOnly, heightMap, colorMap, width, length, onChange, pushToHistory]
+		[isReadOnly, heightMap, colorMap, width, length, clampedMaxHeight, onChange, onCommit, pushToHistory]
 	);
 
 	const handleFlatten = useCallback(() => {
@@ -608,14 +680,16 @@ export function TerrainEditor({
 
 		pushToHistory();
 		const newHeightMap = applyFlatten(heightMap, width, length);
-		onChange({
+		const next = {
 			width,
 			length,
 			heightMap: newHeightMap,
 			colorMap,
-		});
+		};
+		onChange(next);
+		onCommit?.(next);
 		setFlattenConfirm(false);
-	}, [isReadOnly, flattenConfirm, heightMap, colorMap, width, length, onChange, pushToHistory]);
+	}, [isReadOnly, flattenConfirm, heightMap, colorMap, width, length, onChange, onCommit, pushToHistory]);
 
 	// ========================================================================
 	// FILL ALL
@@ -625,12 +699,16 @@ export function TerrainEditor({
 		pushToHistory();
 		if (tool === "set") {
 			const nextHeights = heightMap.map((row) =>
-				row.map(() => clamp(targetHeight, 0, 16))
+				row.map(() => clamp(targetHeight, 0, clampedMaxHeight))
 			);
-			onChange({ width, length, heightMap: nextHeights, colorMap });
+			const next = { width, length, heightMap: nextHeights, colorMap };
+			onChange(next);
+			onCommit?.(next);
 		} else {
 			const nextColors = colorMap.map((row) => row.map(() => selectedColorIndex));
-			onChange({ width, length, heightMap, colorMap: nextColors });
+			const next = { width, length, heightMap, colorMap: nextColors };
+			onChange(next);
+			onCommit?.(next);
 		}
 	}, [
 		isReadOnly,
@@ -638,8 +716,10 @@ export function TerrainEditor({
 		heightMap,
 		colorMap,
 		targetHeight,
+		clampedMaxHeight,
 		selectedColorIndex,
 		onChange,
+		onCommit,
 		width,
 		length,
 		pushToHistory,
@@ -783,11 +863,11 @@ export function TerrainEditor({
 							<input
 								type="number"
 								min={0}
-								max={16}
+								max={clampedMaxHeight}
 								step={1}
 								value={targetHeight}
 								onChange={(e) =>
-									setTargetHeight(clamp(Number(e.target.value) || 0, 0, 16))
+									setTargetHeight(clamp(Number(e.target.value) || 0, 0, clampedMaxHeight))
 								}
 								className="input input-sm input-bordered w-16 text-center"
 								disabled={isReadOnly}
@@ -816,27 +896,64 @@ export function TerrainEditor({
 					aria-disabled={!isColorTool}
 				>
 					<span className="text-sm font-medium opacity-70">Color</span>
-					<div className="grid grid-cols-[repeat(13,1.75rem)] gap-1">
-						{Array.from({ length: 5 }, (_, levelIndex) =>
-							TERRAIN_PALETTE_FAMILIES.map((family, familyIndex) => {
-								const idx = getTerrainPaletteIndex(familyIndex, levelIndex);
-								return (
+					<div className="flex flex-wrap items-center gap-1">
+						{TERRAIN_PALETTE_FAMILIES.map((family, familyIndex) => {
+							const displayLevel =
+								familyIndex === selectedFamilyIndex
+									? selectedLevelIndex
+									: middlePaletteLevel;
+							const displayIndex = getTerrainPaletteIndex(
+								familyIndex,
+								displayLevel
+							);
+							const isSelectedFamily = familyIndex === selectedFamilyIndex;
+
+							return (
+								<div
+									key={family.id}
+									className="group relative"
+								>
 									<button
-										key={idx}
 										type="button"
 										className={`h-7 w-7 rounded ${
-											selectedColorIndex === idx
+											isSelectedFamily
 												? "ring-2 ring-offset-2 ring-primary"
 												: "ring-1 ring-base-300"
 										}`}
-										style={{ backgroundColor: getTerrainColorByIndex(idx) }}
-										onClick={() => setSelectedColorIndex(idx)}
+										style={{ backgroundColor: getTerrainColorByIndex(displayIndex) }}
+										onClick={() => setSelectedColorIndex(displayIndex)}
 										disabled={isReadOnly || !isColorTool}
-										title={`${family.label} ${levelIndex + 1}`}
+										title={family.label}
 									/>
-								);
-							})
-						)}
+									{isColorTool && !isReadOnly && (
+										<div className="pointer-events-none absolute left-1/2 top-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 rounded-md border border-base-300 bg-base-100 p-1 opacity-0 shadow-lg transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+											{family.colors.map((_, levelIndex) => {
+												const idx = getTerrainPaletteIndex(
+													familyIndex,
+													levelIndex
+												);
+												return (
+													<button
+														key={idx}
+														type="button"
+														className={`h-6 w-6 rounded ${
+															selectedColorIndex === idx
+																? "ring-2 ring-primary"
+																: "ring-1 ring-base-300"
+														}`}
+														style={{
+															backgroundColor: getTerrainColorByIndex(idx),
+														}}
+														onClick={() => setSelectedColorIndex(idx)}
+														title={`${family.label} ${levelIndex + 1}`}
+													/>
+												);
+											})}
+										</div>
+									)}
+								</div>
+							);
+						})}
 					</div>
 					<button
 						type="button"
@@ -870,24 +987,6 @@ export function TerrainEditor({
 							title="Add random tree-like pillars"
 						>
 							<span className="icon-[mdi--pine-tree]" /> Trees
-						</button>
-						<button
-							type="button"
-							className="btn btn-sm"
-							onClick={() => handlePreset("islands")}
-							disabled={isReadOnly}
-							title="Add raised plateau islands"
-						>
-							<span className="icon-[mdi--island]" /> Islands
-						</button>
-						<button
-							type="button"
-							className="btn btn-sm"
-							onClick={() => handlePreset("valley")}
-							disabled={isReadOnly}
-							title="Carve a meandering valley (subtractive)"
-						>
-							<span className="icon-[game-icons--edge-crack]" /> Valley
 						</button>
 						<button
 							type="button"
@@ -931,9 +1030,10 @@ export function TerrainEditor({
 						Array.from({ length: width }, (_, x) => {
 							const colorIndex = colorMap[y][x] ?? DEFAULT_TERRAIN_COLOR_INDEX;
 							const color = getTerrainColorByIndex(colorIndex);
-							const h = clamp(heightMap[y][x] ?? 0, 0, 16);
-							const overlay = Math.round((h / 16 - 0.5) * 30);
-							const filter = `brightness(${100 + overlay * 2}%)`;
+							const h = clamp(heightMap[y][x] ?? 0, 0, clampedMaxHeight);
+							const overlay = Math.round((h / clampedMaxHeight - 0.5) * 30);
+							const adjustedColor = adjustHexBrightness(color, 100 + overlay * 2);
+							const heightTextStyle = getReadableTextStyle(adjustedColor);
 							const isHovered = hoveredTiles.has(`${x},${y}`);
 
 							return (
@@ -942,8 +1042,7 @@ export function TerrainEditor({
 									style={{
 										width: tilePx,
 										height: tilePx,
-										backgroundColor: color,
-										filter,
+										backgroundColor: adjustedColor,
 										borderRadius: 1,
 										position: "relative",
 										boxShadow: isHovered
@@ -961,8 +1060,8 @@ export function TerrainEditor({
 												justifyContent: "center",
 												fontSize: heightFontSize,
 												fontWeight: 600,
-												color: "rgba(0,0,0,0.9)",
-												textShadow: "0 0 2px rgba(0,0,0,0.2)",
+												color: heightTextStyle.color,
+												textShadow: heightTextStyle.textShadow,
 												pointerEvents: "none",
 											}}
 										>

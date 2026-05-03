@@ -11,8 +11,6 @@ import { triggerContextUpdate } from "../../domains/Context/ContextProvider";
 import { RoomActions } from "../../domains/Room/RoomActions";
 import { LogActions } from "../../domains/Log/LogActions";
 import { User } from "../../domains/User/User";
-import { calculateMovementRange } from "../../components/Map/MapUtilities";
-import type { Position } from "../../domains/Actor/Actor";
 import { CampaignLoadingService } from "../CampaignLoadingService";
 
 const PING_INTERVAL_MS = 3000;
@@ -300,13 +298,17 @@ export class ActionService {
 			return;
 		}
 
-		if (!this.canPlayerRequestAction(data?.actionKey, data?.params, requestingUser)) {
-			return;
-		}
-
 		try {
-			// Execute the domain action
-			this.runDomainAction(data.actionKey, data.params);
+			// Execute the domain action as the requesting player so
+			// domain-level player validations run in the same context as
+			// optimistic local execution.
+			const originalUser = this.context.User;
+			try {
+				this.context.User = requestingUser;
+				this.runDomainAction(data.actionKey, data.params);
+			} finally {
+				this.context.User = originalUser;
+			}
 		} catch (error) {
 			console.error("[ActionService] Error executing player request:", error);
 			// We continue to broadcast below to force a reset if needed
@@ -334,116 +336,6 @@ export class ActionService {
 			Role: "player",
 			SelectedCharacters: peerUser?.SelectedCharacters ?? {},
 		};
-	}
-
-	private canPlayerRequestAction(
-		actionKey: string,
-		params: any,
-		requestingUser: User
-	): boolean {
-		if (actionKey !== "character:move") return true;
-
-		const campaign = CampaignActions.getActiveCampaign(this.context);
-		const restrictMovement =
-			campaign.Settings.MovementSettings?.restrictPlayerMovementToRange ?? false;
-		if (!restrictMovement) return true;
-
-		const characterId = params?.characterId;
-		const position = params?.position as Position | undefined;
-		if (!characterId || !position) return false;
-
-		if (requestingUser.SelectedCharacters?.[campaign.RoomCode] !== characterId) {
-			return false;
-		}
-
-		const character = campaign.GameState.Characters.find(
-			(c) => c.Id === characterId
-		);
-		if (!character) return false;
-
-		if (
-			!Number.isFinite(position.x) ||
-			!Number.isFinite(position.y) ||
-			!Number.isFinite(position.h)
-		) {
-			return false;
-		}
-
-		const targetX = Math.round(position.x);
-		const targetY = Math.round(position.y);
-		return this.isPlayerMoveInAllowedRange(characterId, targetX, targetY);
-	}
-
-	private isPlayerMoveInAllowedRange(
-		characterId: string,
-		targetX: number,
-		targetY: number
-	): boolean {
-		const campaign = CampaignActions.getActiveCampaign(this.context);
-		const terrain = campaign.Terrains.find(
-			(t) => t.Id === campaign.GameState.TerrainId
-		);
-		if (!terrain) return false;
-
-		if (
-			targetX < 0 ||
-			targetY < 0 ||
-			targetX >= terrain.Width ||
-			targetY >= terrain.Length
-		) {
-			return false;
-		}
-
-		const character = campaign.GameState.Characters.find(
-			(c) => c.Id === characterId
-		);
-		if (!character) return false;
-
-		const { heightCostLookup, flyingIgnoresHeight } =
-			campaign.Settings.MovementSettings;
-		const moveSpeed = character.MoveSpeed ?? 5;
-		const canFly = character.CanFly ?? false;
-		const current = character.Position;
-
-		let budget = moveSpeed;
-		if (campaign.GameState.CombatState?.isActive) {
-			const turnStart = character.TurnStartPosition;
-			if (!turnStart) return false;
-
-			const { costs: startCosts } = calculateMovementRange(
-				turnStart.x,
-				turnStart.y,
-				turnStart.h,
-				moveSpeed,
-				canFly,
-				terrain.Width,
-				terrain.Length,
-				terrain.HeightMap,
-				heightCostLookup,
-				flyingIgnoresHeight
-			);
-
-			const spentCost = startCosts.get(`${current.x},${current.y}`);
-			if (spentCost === undefined) return false;
-
-			budget = moveSpeed - spentCost;
-			if (budget <= 0) return false;
-		}
-
-		const { tiles } = calculateMovementRange(
-			current.x,
-			current.y,
-			current.h,
-			budget,
-			canFly,
-			terrain.Width,
-			terrain.Length,
-			terrain.HeightMap,
-			heightCostLookup,
-			flyingIgnoresHeight
-		);
-
-		return tiles.some((tile) => tile.x === targetX && tile.y === targetY);
 	}
 
 	/**

@@ -7,7 +7,8 @@ Quest-Net is a real-time collaborative TTRPG (tabletop role-playing game) manage
 - **React 19** with **TypeScript** (strict mode) and **React Router** (HashRouter)
 - **Vite** for build/dev
 - **Tailwind CSS** + **DaisyUI** for styling
-- **Pixi.js** (`@pixi/react`) for the isometric WebGL map
+- **Pixi.js** (`@pixi/react`) for the isometric WebGL map (legacy — being replaced by 3DMap)
+- **Three.js** (`three@0.180`) for the new voxel-based 3D map (`3DMap.tsx`). Core imports: `import * as THREE from 'three'`. Addon imports (OrbitControls etc.) use `three/examples/jsm/`, **not** `three/addons/` — the `addons/` directory does not physically exist in the installed version even though it appears in the package exports map. Example: `import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'`. Use `MeshStandardMaterial` (not `MeshLambertMaterial`) for voxels — Lambert is legacy and unreliable with InstancedMesh vertex colors in r180. **Do not use Unicode box-drawing characters (e.g. `──`) in comments inside `3DMap.tsx`** — they cause the Write tool to truncate the file silently; use plain ASCII `--` instead.
 - **Trystero** for peer-to-peer networking (MQTT strategy, app ID `'quest-net'`)
 - **fast-json-patch** for delta state synchronization
 - **mathjs** for dice/formula evaluation

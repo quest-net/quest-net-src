@@ -11,6 +11,7 @@ export interface GameState {
 	Volume: number;
 	Scene: Scene;
 	TerrainId: string;
+	VoxelTerrainId: string;
 	CalendarDay: number;
 	RemainingShortRests: number;
 }

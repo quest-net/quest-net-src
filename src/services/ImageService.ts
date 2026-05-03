@@ -38,6 +38,7 @@ export class ImageService {
 			fileSize: number;
 			uploadId: string;
 			userId?: string;
+			cutout?: boolean;
 		}
 	) => void;
 	private sendImageCreated!: (
@@ -49,6 +50,7 @@ export class ImageService {
 			mimeType: string;
 			width: number;
 			height: number;
+			cutout?: boolean;
 		},
 		peerId: string
 	) => void;
@@ -112,6 +114,7 @@ export class ImageService {
 					MimeType: meta.mimeType,
 					Width: meta.width,
 					Height: meta.height,
+					Cutout: meta.cutout || undefined,
 				});
 			});
 		}
@@ -155,7 +158,7 @@ export class ImageService {
 		return new Promise(async (resolve, reject) => {
 			try {
 				// Process the image using ImageActions helper
-				const { blob, width, height, mimeType } =
+				const { blob, width, height, mimeType, cutout } =
 					await ImageActions.compressImage(file);
 
 				// Verify size
@@ -194,6 +197,7 @@ export class ImageService {
 					fileSize: blob.size,
 					uploadId,
 					userId,
+					cutout: cutout || undefined,
 				});
 
 			} catch (error) {
@@ -214,6 +218,7 @@ export class ImageService {
 			mimeType: string;
 			fileSize: number;
 			userId?: string;
+			cutout?: boolean;
 		},
 		uploadId: string,
 		peerId: string
@@ -230,6 +235,7 @@ export class ImageService {
 				MimeType: metadata.mimeType,
 				Width: metadata.width,
 				Height: metadata.height,
+				Cutout: metadata.cutout || undefined,
 				UploadedBy: metadata.userId,
 			};
 
@@ -248,6 +254,7 @@ export class ImageService {
 					mimeType: image.MimeType,
 					width: image.Width,
 					height: image.Height,
+					cutout: image.Cutout,
 				},
 				peerId
 			);
