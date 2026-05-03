@@ -11,7 +11,11 @@ import {
 	getAllActors,
 } from "../../utils/SlotSyncUtils";
 import { createItemEntity, createItemEntityFromTemplate, getItemDataFromEntity, isItemEntity } from "./ItemDropUtils";
-import { TerrainActions } from "../Terrain/TerrainActions";
+import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
+import {
+	getActiveVoxelSpawnPosition,
+	getActiveVoxelTerrain,
+} from "../../utils/VoxelTerrainUtils";
 
 /**
  * Item action handlers
@@ -699,6 +703,10 @@ export const ItemActions = {
 		// Remove item from actor
 		slots.splice(slotIndex, 1);
 
+		if (getActiveVoxelTerrain(campaign)) {
+			VoxelTerrainActions.validateActors(context);
+		}
+
 		LogActions.create(
 			{
 				action: "Item dropped",
@@ -788,7 +796,7 @@ export const ItemActions = {
 	 * Position must be provided explicitly.
 	 */
 	spawn(
-		params: { itemId: string; position: { x: number; y: number; h: number } },
+		params: { itemId: string; position?: { x: number; y: number; h: number } },
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
@@ -801,12 +809,14 @@ export const ItemActions = {
 
 		const entity = createItemEntityFromTemplate(
 			template,
-			params.position,
+			params.position ?? getActiveVoxelSpawnPosition(campaign) ?? { x: 0, y: 0, h: 0 },
 			campaign.Settings.StatDefinitions,
 			campaign.Settings.ActionDefinitions
 		);
 		campaign.GameState.Entities.push(entity);
-		TerrainActions.validateActors(context);
+		if (getActiveVoxelTerrain(campaign)) {
+			VoxelTerrainActions.validateActors(context);
+		}
 
 		LogActions.create(
 			{

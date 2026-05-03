@@ -8,8 +8,7 @@ export default function TerrainDisplay() {
   const campaign = CampaignActions.getActiveCampaign(context);
 
   const activeTerrain =
-    campaign.Terrains.find((t) => t.Id === campaign.GameState.TerrainId) ||
-    campaign.Terrains.find((t) => t.Id === "DEFAULT_TERRAIN");
+    campaign.VoxelTerrains.find((t) => t.Id === campaign.GameState.VoxelTerrainId)
 
   const name = activeTerrain?.Name ?? "Unknown Terrain";
 

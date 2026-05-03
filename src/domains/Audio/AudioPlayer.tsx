@@ -18,6 +18,7 @@ export function AudioPlayer() {
 	const context = useQuestContext();
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const playerRef = useRef<any>(null);
+	const isPlayerReadyRef = useRef(false);
 	const currentVideoIdsRef = useRef<string>("");
 	const playerContainerRef = useRef<HTMLDivElement>(null);
 	const checkIntervalRef = useRef<number | null>(null);
@@ -35,6 +36,12 @@ export function AudioPlayer() {
 
 	// Create a stable string representation for comparison
 	const youtubeIdsString = youtubeIds.join(',');
+	const finalVolumeRef = useRef(finalVolume);
+	const youtubeIdsRef = useRef(youtubeIds);
+	const youtubeIdsStringRef = useRef(youtubeIdsString);
+	finalVolumeRef.current = finalVolume;
+	youtubeIdsRef.current = youtubeIds;
+	youtubeIdsStringRef.current = youtubeIdsString;
 
 	const { currentTrackIndex, setCurrentTrackIndex } = useAudioState();
 
@@ -42,22 +49,18 @@ export function AudioPlayer() {
 	useEffect(() => {
 		if (window.YT && window.YT.Player) {
 			initializePlayer();
-			return;
-		}
-
-		// Check if script is already loading
-		if (document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+		} else if (document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+			// Check if script is already loading
 			window.onYouTubeIframeAPIReady = initializePlayer;
-			return;
+		} else {
+			// Load the script
+			const tag = document.createElement("script");
+			tag.src = "https://www.youtube.com/iframe_api";
+			const firstScriptTag = document.getElementsByTagName("script")[0];
+			firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+
+			window.onYouTubeIframeAPIReady = initializePlayer;
 		}
-
-		// Load the script
-		const tag = document.createElement("script");
-		tag.src = "https://www.youtube.com/iframe_api";
-		const firstScriptTag = document.getElementsByTagName("script")[0];
-		firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-
-		window.onYouTubeIframeAPIReady = initializePlayer;
 
 		// Cleanup
 		return () => {
@@ -68,6 +71,7 @@ export function AudioPlayer() {
 					console.warn("Error destroying player:", e);
 				}
 				playerRef.current = null;
+				isPlayerReadyRef.current = false;
 			}
 			if (checkIntervalRef.current) {
 				clearInterval(checkIntervalRef.current);
@@ -75,6 +79,23 @@ export function AudioPlayer() {
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
+
+	const getReadyPlayer = () => {
+		const player = playerRef.current;
+		if (!player || !isPlayerReadyRef.current) return null;
+		return player;
+	};
+
+	const setPlayerVolume = (volume = finalVolumeRef.current) => {
+		const player = getReadyPlayer();
+		if (!player || typeof player.setVolume !== "function") return;
+
+		try {
+			player.setVolume(volume);
+		} catch (e) {
+			console.warn("Error setting volume:", e);
+		}
+	};
 
 	const initializePlayer = () => {
 		if (!playerContainerRef.current || playerRef.current) return;
@@ -99,14 +120,20 @@ export function AudioPlayer() {
 		});
 	};
 
-	const onPlayerReady = () => {
+	const onPlayerReady = (event?: any) => {
+		if (event?.target) {
+			playerRef.current = event.target;
+		}
+		isPlayerReadyRef.current = true;
+		setPlayerVolume();
+
 		// Player is ready, load video(s) if we have any
-		if (youtubeIds.length > 0 && youtubeIdsString !== currentVideoIdsRef.current) {
-			loadAndPlayVideo(youtubeIds);
+		if (youtubeIdsRef.current.length > 0 && youtubeIdsStringRef.current !== currentVideoIdsRef.current) {
+			loadAndPlayVideo(youtubeIdsRef.current);
 		}
 		
 		// Start polling for track changes when playing a playlist
-		if (youtubeIds.length > 1) {
+		if (youtubeIdsRef.current.length > 1) {
 			startTrackPolling();
 		}
 	};
@@ -164,33 +191,34 @@ export function AudioPlayer() {
 	};
 
 	const loadAndPlayVideo = (videoIds: string[]) => {
-		if (!playerRef.current || videoIds.length === 0) return;
+		const player = getReadyPlayer();
+		if (!player || videoIds.length === 0) return;
 	  
 		try {
 		  setCurrentTrackIndex(0);
 	  
 		  if (videoIds.length === 1) {
 			// Single video must be loaded as a one-item playlist to loop
-			playerRef.current.loadPlaylist({
+			player.loadPlaylist({
 			  playlist: videoIds,
 			  index: 0,
 			  startSeconds: 0,
 			});
-			playerRef.current.setLoop(true);
+			player.setLoop(true);
 			// no need to poll for track changes in 1-item playlist
 			stopTrackPolling();
 		  } else {
 			// Regular playlist path
-			playerRef.current.loadPlaylist({
+			player.loadPlaylist({
 			  playlist: videoIds,
 			  index: 0,
 			  startSeconds: 0,
 			});
-			playerRef.current.setLoop(true);
+			player.setLoop(true);
 			startTrackPolling();
 		  }
 	  
-		  playerRef.current.setVolume(finalVolume);
+		  setPlayerVolume();
 		  currentVideoIdsRef.current = videoIds.join(",");
 		} catch (e) {
 		  console.error("Error loading video:", e);
@@ -199,14 +227,15 @@ export function AudioPlayer() {
 
 	// Handle video changes
 	useEffect(() => {
-		if (!playerRef.current) return;
+		const player = getReadyPlayer();
+		if (!player) return;
 
 		if (youtubeIds.length > 0 && youtubeIdsString !== currentVideoIdsRef.current) {
 			loadAndPlayVideo(youtubeIds);
 		} else if (youtubeIds.length === 0 && currentVideoIdsRef.current) {
 			// Stop playback
 			try {
-				playerRef.current.stopVideo();
+				player.stopVideo();
 				currentVideoIdsRef.current = "";
 				setCurrentTrackIndex(0);
 				stopTrackPolling();
@@ -219,13 +248,7 @@ export function AudioPlayer() {
 
 	// Handle volume changes
 	useEffect(() => {
-		if (!playerRef.current) return;
-
-		try {
-			playerRef.current.setVolume(finalVolume);
-		} catch (e) {
-			console.warn("Error setting volume:", e);
-		}
+		setPlayerVolume(finalVolume);
 	}, [finalVolume]);
 
 	// Cleanup polling on unmount

@@ -4,12 +4,11 @@ import { CampaignInfo } from "./CampaignInfo";
 import { getUrlIdentifier } from "../../utils/UrlParser";
 import { ContextActions } from "../Context/ContextActions";
 import { CampaignSettingActions } from "../CampaignSetting/CampaignSettingActions";
-import { TerrainActions } from "../Terrain/TerrainActions";
-import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 import { APP_VERSION, type VersionString } from "../../version";
 import { runMigrations } from "../../updates/migrator";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
+import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 
 
 /**
@@ -48,7 +47,7 @@ function generateRoomCode(): string {
  * Creates a blank campaign structure
  */
 function createBlankCampaign(name: string, roomCode?: string): Campaign {
-	const testVoxelTerrain = VoxelTerrainActions.createTest();
+	const defaultVoxelTerrain = VoxelTerrainActions.createDefault();
 
 	return {
 		Id: crypto.randomUUID(),
@@ -60,8 +59,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 		SkillTemplates: [],
 		StatusTemplates: [],
 		EntityTemplates: [],
-		Terrains: [TerrainActions.createDefault(), TerrainActions.createHills()],
-		VoxelTerrains: [testVoxelTerrain],
+		VoxelTerrains: [defaultVoxelTerrain],
 		Audios: [],
 		Images: [],
 		Scenarios: [],
@@ -80,7 +78,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 				FocusImageId: "",
 			},
 			TerrainId: "DEFAULT_TERRAIN",
-			VoxelTerrainId: testVoxelTerrain.Id,
+			VoxelTerrainId: defaultVoxelTerrain.Id,
 			CalendarDay: 0,
 			RemainingShortRests: 2,
 		},

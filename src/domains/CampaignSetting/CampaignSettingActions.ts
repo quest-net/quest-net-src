@@ -1,7 +1,7 @@
 import { Context } from "../Context/Context";
 import { CampaignSettings, RestoreRule } from "./CampaignSetting";
 import { CampaignActions } from "../Campaign/CampaignActions";
-import { MAX_HEIGHT } from "../Terrain/Terrain";
+import { MAX_HEIGHT } from "../VoxelTerrain/VoxelTerrain";
 import * as math from "mathjs";
 import { Campaign } from "../Campaign/Campaign";
 import { syncStatSlots, syncActionSlots, syncAttributeSlots } from "../../utils/ActorResolvers";

@@ -35,7 +35,6 @@ export function ItemIndex() {
 
 		actionService.execute("item:spawn", {
 			itemId,
-			position: { x: 0, y: 0, h: 0 },
 		});
 	};
 

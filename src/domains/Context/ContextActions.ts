@@ -56,6 +56,7 @@ export const ContextActions = {
 
 		try {
 			const migrated = runMigrations(stored, APP_VERSION);
+			const didMigrateContext = migrated.version !== stored.version;
 
 			if (!migrated.SecretModes) {
 				migrated.SecretModes = {};
@@ -102,8 +103,15 @@ export const ContextActions = {
 				migrated.Campaigns = newCampaigns;
 			}
 
+			const hasOutdatedCampaignInfo = migrated.Campaigns.some(
+				(c) => c.Version !== APP_VERSION
+			);
+			if (didMigrateContext || hasOutdatedCampaignInfo) {
+				await CampaignLoadingService.migrateStoredCampaigns(migrated);
+			}
+
 			// If migration changed version OR we reshaped, persist
-			if (migrated.version !== stored.version || didReshape) {
+			if (didMigrateContext || didReshape || hasOutdatedCampaignInfo) {
 				this.save(migrated);
 			}
 

@@ -150,6 +150,35 @@ export class CampaignLoadingService {
 	}
 
 	/**
+	 * Migrates every stored Campaign payload in IndexedDB to APP_VERSION.
+	 * Used by ContextActions.load() after the synchronous context migration has
+	 * advanced the lightweight localStorage record.
+	 */
+	static async migrateStoredCampaigns(context: Context): Promise<void> {
+		const ids = await this.listCampaignIds();
+
+		for (const id of ids) {
+			try {
+				const campaign = await this.loadCampaign(id, context);
+				if (!campaign) continue;
+
+				const index = context.Campaigns.findIndex((info) => info.Id === id);
+				if (index === -1) continue;
+
+				context.Campaigns[index] =
+					id === campaign.RoomCode
+						? this.buildPlayerInfo(campaign)
+						: this.buildInfo(campaign);
+			} catch (error) {
+				console.error(
+					`[CampaignLoadingService] Failed to migrate stored campaign: ${id}`,
+					error
+				);
+			}
+		}
+	}
+
+	/**
 	 * Builds a CampaignInfo metadata record from a full Campaign. Used when
 	 * importing, creating, or migrating from the legacy "all-campaigns-in-
 	 * localStorage" layout.

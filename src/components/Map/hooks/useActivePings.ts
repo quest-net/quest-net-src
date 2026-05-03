@@ -27,9 +27,9 @@ export interface UseActivePingsResult {
 	now: number;
 }
 
-// 16ms tick (~60fps) so the bouncing/pulsing animation reads smoothly.
-// We only run the timer while there are active pings, so idle maps stay cheap.
-const ANIMATION_TICK_MS = 16;
+// Visual ping animation is driven imperatively by Three.js. React only needs
+// to wake occasionally while pings are active so expired entries disappear.
+const EXPIRATION_TICK_MS = 250;
 // Idle poll: when no pings are active we still need to notice when a new
 // one arrives — but a new ping triggers a campaign.Log update, so React
 // will re-run the memo on its own. The timer below is purely for
@@ -94,7 +94,7 @@ export function useActivePings(): UseActivePingsResult {
 		if (!hasPings) return;
 		const handle = window.setInterval(() => {
 			setNow(Date.now());
-		}, ANIMATION_TICK_MS);
+		}, EXPIRATION_TICK_MS);
 		return () => window.clearInterval(handle);
 	}, [hasPings]);
 

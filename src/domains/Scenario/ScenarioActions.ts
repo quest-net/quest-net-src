@@ -6,6 +6,7 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { EntityActions } from "../Entity/EntityActions";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
+import { getActiveVoxelTerrain } from "../../utils/VoxelTerrainUtils";
 
 /**
  * Scenario action handlers
@@ -140,6 +141,10 @@ export const ScenarioActions = {
         campaign.GameState.Audio = scenario.AudioPlaylist.filter((id) =>
             campaign.Audios.some((a) => a.Id === id)
         );
+
+        if (getActiveVoxelTerrain(campaign)) {
+            VoxelTerrainActions.validateActors(context);
+        }
 
         LogActions.create(
             {

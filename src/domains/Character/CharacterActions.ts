@@ -6,7 +6,6 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { ActorActions } from "../Actor/ActorActions";
 import { Position } from "../Actor/Actor";
-import { TerrainActions } from "../Terrain/TerrainActions";
 import { createDefaultStatSlots, createDefaultActionSlots, createDefaultAttributeSlots } from "../../utils/ActorResolvers";
 import { getActiveVoxelSpawnPosition, getActiveVoxelTerrain } from "../../utils/VoxelTerrainUtils";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
@@ -117,8 +116,8 @@ export const CharacterActions = {
 			context
 		);
 
-		if (!voxelSpawnPosition) {
-			TerrainActions.validateActors(context);
+		if (getActiveVoxelTerrain(campaign)) {
+			VoxelTerrainActions.validateActors(context);
 		}
 	},
 
@@ -177,8 +176,8 @@ export const CharacterActions = {
 			context
 		);
 
-		if (!voxelSpawnPosition) {
-			TerrainActions.validateActors(context);
+		if (getActiveVoxelTerrain(campaign)) {
+			VoxelTerrainActions.validateActors(context);
 		}
 	},
 
@@ -346,8 +345,6 @@ export const CharacterActions = {
 		// Validate actors after moving
 		if (getActiveVoxelTerrain(campaign)) {
 			VoxelTerrainActions.validateActors(context);
-		} else {
-			TerrainActions.validateActors(context);
 		}
 	},
 

@@ -2,7 +2,7 @@
 import { useState, useMemo } from "react";
 import { useFormReadOnly } from "../Form/Form";
 import { validateAndBuildHeightCostLookup } from "../../domains/CampaignSetting/CampaignSettingActions";
-import { MAX_HEIGHT } from "../../domains/Terrain/Terrain";
+import { MAX_HEIGHT } from "../../domains/VoxelTerrain/VoxelTerrain";
 
 interface MovementSettingsEditorProps {
 	formula: string;
