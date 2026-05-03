@@ -1,6 +1,8 @@
 // utils/IndexedDBUtilities.ts
 const DB_NAME = "quest-net-db";
-const DB_VERSION = 1;
+// Keep this at 2 so browsers that opened the retired 1.6.0 build can still
+// open their existing quest-net-db. IndexedDB cannot open an existing v2 DB as v1.
+const DB_VERSION = 2;
 const STORE_NAME = "images";
 
 /**
@@ -176,4 +178,5 @@ export class IndexedDBUtilities {
 			};
 		});
 	}
+
 }
