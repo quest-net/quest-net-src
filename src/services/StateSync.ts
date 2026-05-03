@@ -3,6 +3,11 @@
 import { Campaign } from "../domains/Campaign/Campaign";
 import { Room } from "../domains/Room/Room";
 import { compare, applyPatch, Operation } from "fast-json-patch";
+import {
+	compressStateUpdateForTransport,
+	decompressStateUpdateIfNeeded,
+	STATE_UPDATE_DELTA_COMPRESSION_PATCH_THRESHOLD,
+} from "../utils/StateUpdateCompression";
 
 export interface StateUpdate {
 	type: "full" | "delta";
@@ -14,9 +19,14 @@ export interface StateUpdate {
 
 export class StateSync {
 	private room: Room;
-	private sendState!: (data: any, targetPeers?: string | string[] | null) => void;
+	private sendState!: (
+		data: any,
+		targetPeers?: string | string[] | null,
+		metadata?: any
+	) => void;
 	private onUpdateCallback?: (campaign: Campaign) => void;
 	private actionExecute: (actionKey: string, params: any) => void;
+	private sendQueue: Promise<void> = Promise.resolve();
 
 	// State tracking for differential updates
 	private lastBroadcastState: Campaign | null = null;
@@ -47,8 +57,8 @@ export class StateSync {
 
 		// Listen for incoming state updates
 		// Trystero's receive expects (data, peerId, metadata) but we only need data
-		receive((data: any) => {
-			this.handleIncomingState(data as StateUpdate);
+		receive((data: any, _peerId: string, metadata: any) => {
+			void this.handleIncomingStateTransport(data, metadata);
 		});
 	}
 
@@ -113,8 +123,7 @@ export class StateSync {
 			data: sanitized,
 		};
 
-
-		this.sendState(update);
+		this.queueStateSend(update);
 
 		// Store sanitized version for next comparison
 		this.lastBroadcastState = structuredClone(sanitized);
@@ -155,9 +164,24 @@ export class StateSync {
 			baseVersion: this.version,
 		};
 
-		this.sendState(update);
+		this.queueStateSend(update);
 
 		this.version++;
+	}
+
+	private queueStateSend(update: StateUpdate): void {
+		this.sendQueue = this.sendQueue
+			.catch((error) => {
+				console.error("[StateSync] State send queue error:", error);
+			})
+			.then(async () => {
+				const transportUpdate = await compressStateUpdateForTransport(update, {
+					compressFullUpdates: true,
+					deltaPatchThreshold:
+						STATE_UPDATE_DELTA_COMPRESSION_PATCH_THRESHOLD,
+				});
+				this.sendState(transportUpdate.data, null, transportUpdate.metadata);
+			});
 	}
 
 	/**
@@ -170,6 +194,22 @@ export class StateSync {
 	/**
 	 * Handles incoming state updates from DM
 	 */
+	private async handleIncomingStateTransport(
+		data: unknown,
+		metadata?: unknown
+	): Promise<void> {
+		try {
+			const update = await decompressStateUpdateIfNeeded<StateUpdate>(
+				data as StateUpdate | ArrayBuffer,
+				metadata
+			);
+			this.handleIncomingState(update);
+		} catch (error) {
+			console.error("[StateSync] Error reading state update:", error);
+			// On error, we'll wait for the next full state broadcast
+		}
+	}
+
 	private handleIncomingState(update: StateUpdate): void {
 		try {
 			switch (update.type) {
