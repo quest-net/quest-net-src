@@ -328,9 +328,12 @@ export function CampaignIndex() {
 					</div>
 
 					{/* Right Column - Campaign List */}
-					<div className="card bg-base-100 shadow-xl border-2 border-base-300">
-						<div className="card-body">
-							<div className="flex items-center justify-between mb-4">
+					<div
+						className="card overflow-hidden bg-base-100 shadow-xl border-2 border-base-300"
+						style={{ height: "min(36.2rem, calc(100vh - 8rem))" }}
+					>
+						<div className="card-body min-h-0 max-h-full overflow-hidden flex flex-col">
+							<div className="flex shrink-0 flex-wrap items-center justify-between gap-3 mb-4">
 								<h2 className="card-title text-2xl">
 									Your Campaigns ({context.Campaigns.length})
 								</h2>
@@ -356,7 +359,7 @@ export function CampaignIndex() {
 							</div>
 
 							{importProgress && (
-								<div className="space-y-2 mb-4 p-4 bg-base-200 rounded-lg border border-base-300">
+								<div className="shrink-0 space-y-2 mb-4 p-4 bg-base-200 rounded-lg border border-base-300">
 									<div className="flex justify-between text-sm">
 										<span>{importProgress.status}</span>
 										<span className="font-mono">
@@ -371,7 +374,7 @@ export function CampaignIndex() {
 								</div>
 							)}
 
-							<div className="overflow-auto max-h-[calc(100vh-16rem)] space-y-4">
+							<div className="min-h-0 flex-1 overflow-y-auto space-y-4 pr-1">
 								{context.Campaigns.length === 0 ? (
 									<div className="text-center py-12 opacity-60">
 										<div className="text-4xl mb-4">🎲</div>
