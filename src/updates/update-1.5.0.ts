@@ -1,4 +1,3 @@
-import { Context } from "../domains/Context/Context";
 import { TERRAIN_PALETTE_LEVELS } from "../utils/TerrainPaletteUtils";
 import { VersionedMigration } from "./types";
 
@@ -98,11 +97,11 @@ function fixedIndexToLegacyIndex(fixedIndex: number): number {
 export const migration_1_5_0: VersionedMigration = {
 	version: "1.5.0",
 
-	update: (context: Context): Context => {
+	update: (context: any): any => {
 		for (const campaign of context.Campaigns ?? []) {
 			for (const terrain of campaign.Terrains ?? []) {
-				terrain.ColorMap = terrain.ColorMap.map((row) =>
-					row.map((index) => LEGACY_INDEX_TO_FIXED[index] ?? DEFAULT_FIXED_INDEX)
+				terrain.ColorMap = terrain.ColorMap.map((row: any) =>
+					row.map((index: any) => LEGACY_INDEX_TO_FIXED[index] ?? DEFAULT_FIXED_INDEX)
 				);
 				delete (terrain as { Palette?: string[] }).Palette;
 			}
@@ -111,11 +110,11 @@ export const migration_1_5_0: VersionedMigration = {
 		return { ...context, version: "1.5.0" };
 	},
 
-	reset: (context: Context): Context => {
+	reset: (context: any): any => {
 		for (const campaign of context.Campaigns ?? []) {
 			for (const terrain of campaign.Terrains ?? []) {
-				terrain.ColorMap = terrain.ColorMap.map((row) =>
-					row.map((index) => fixedIndexToLegacyIndex(index))
+				terrain.ColorMap = terrain.ColorMap.map((row: any) =>
+					row.map((index: any) => fixedIndexToLegacyIndex(index))
 				);
 			}
 		}

@@ -1,4 +1,3 @@
-import { Context } from "../domains/Context/Context";
 import { VersionedMigration } from "./types";
 
 /**
@@ -17,8 +16,8 @@ import { VersionedMigration } from "./types";
 export const migration_1_2_0: VersionedMigration = {
 	version: "1.2.0",
 
-	update: (context: Context): Context => {
-		const updatedCampaigns = context.Campaigns.map((campaign) => {
+	update: (context: any): any => {
+		const updatedCampaigns = context.Campaigns.map((campaign: any) => {
 			// --- Migrate Status Templates ---
 			const updatedStatusTemplates = (campaign.StatusTemplates || []).map(
 				(status: any) => {
@@ -77,8 +76,8 @@ export const migration_1_2_0: VersionedMigration = {
 		};
 	},
 
-	reset: (context: Context): Context => {
-		const downgradedCampaigns = context.Campaigns.map((campaign) => {
+	reset: (context: any): any => {
+		const downgradedCampaigns = context.Campaigns.map((campaign: any) => {
 			// --- Downgrade Status Templates ---
 			const downgradedStatusTemplates = (campaign.StatusTemplates || []).map(
 				(status: any) => {

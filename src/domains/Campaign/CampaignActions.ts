@@ -1,12 +1,14 @@
 import { Context } from "../Context/Context";
 import { Campaign } from "./Campaign";
-import { getUrlIdentifier, isGUID } from "../../utils/UrlParser";
+import { CampaignInfo } from "./CampaignInfo";
+import { getUrlIdentifier } from "../../utils/UrlParser";
 import { ContextActions } from "../Context/ContextActions";
 import { CampaignSettingActions } from "../CampaignSetting/CampaignSettingActions";
 import { TerrainActions } from "../Terrain/TerrainActions";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 import { APP_VERSION, type VersionString } from "../../version";
 import { runMigrations } from "../../updates/migrator";
+import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 
 
 /**
@@ -126,63 +128,151 @@ export interface ExportProgress {
 }
 
 export const CampaignActions = {
+	/**
+	 * Returns the lightweight CampaignInfo metadata matching the URL
+	 * identifier — DM secret GUID or player room code. Use this for
+	 * existence checks and list rendering; for the live campaign payload,
+	 * use getActiveCampaign.
+	 */
 	findCampaignByIdentifier(
 		identifier: string | undefined,
 		context: Context
-	): Campaign | undefined {
+	): CampaignInfo | undefined {
 		if (!identifier) {
 			return undefined;
 		}
-		if (isGUID(identifier)) {
-			// DM mode: search by Campaign.Id (the secret GUID)
-			return context.Campaigns.find((c) => c.Id === identifier);
-		} else {
-			// Player mode: search by Campaign.RoomCode (the public identifier)
-			return context.Campaigns.find((c) => c.RoomCode === identifier);
-		}
+		// CampaignInfo.Id is the DM's secret GUID for DM entries and the
+		// RoomCode for player entries (mirroring StateSync's sanitization),
+		// so a single Id lookup works for both paths.
+		return context.Campaigns.find((c) => c.Id === identifier);
 	},
 
+	/**
+	 * Returns the currently unpacked Campaign payload. Throws if no campaign
+	 * is active — callers should only invoke this after CampaignView has
+	 * unpacked the active campaign for the URL.
+	 */
 	getActiveCampaign(context: Context): Campaign {
-		const identifier = getUrlIdentifier();
+		if (context.ActiveCampaign) {
+			return context.ActiveCampaign;
+		}
 
+		const identifier = getUrlIdentifier();
 		if (!identifier) {
 			throw new Error("No campaign identifier in URL");
 		}
-
-		let campaign: Campaign | undefined;
-
-		if (isGUID(identifier)) {
-			campaign = context.Campaigns.find((c) => c.Id === identifier);
-		} else {
-			campaign = context.Campaigns.find((c) => c.RoomCode === identifier);
-		}
-
-		if (!campaign) {
-			throw new Error(`Campaign not found for identifier: ${identifier}`);
-		}
-
-		return campaign;
+		throw new Error(
+			`No active campaign for identifier: ${identifier}. ` +
+			`The campaign may not be unpacked yet.`
+		);
 	},
 
 	/**
-	 * Creates a new campaign and adds it to context
+	 * Pack the currently active campaign back into IndexedDB and clear
+	 * context.ActiveCampaign. Safe to call when nothing is active. Refreshes
+	 * the matching CampaignInfo metadata at the same time.
 	 */
-	create(
+	async packActive(context: Context): Promise<void> {
+		const active = context.ActiveCampaign;
+		if (!active) return;
+
+		try {
+			await CampaignLoadingService.saveCampaign(active);
+		} catch (e) {
+			console.error("[CampaignActions] Failed to pack active campaign:", e);
+		}
+
+		// Refresh CampaignInfo metadata (last activity, character count, name)
+		const isPlayerEntry =
+			!!context.Campaigns.find((c) => c.Id === active.RoomCode);
+		const refreshedInfo = isPlayerEntry
+			? CampaignLoadingService.buildPlayerInfo(active)
+			: CampaignLoadingService.buildInfo(active);
+
+		const idx = context.Campaigns.findIndex((c) => c.Id === refreshedInfo.Id);
+		if (idx !== -1) {
+			context.Campaigns[idx] = refreshedInfo;
+		} else {
+			context.Campaigns.push(refreshedInfo);
+		}
+
+		context.ActiveCampaign = null;
+	},
+
+	/**
+	 * Unpack a stored campaign by its identifier (DM GUID or player
+	 * RoomCode) into context.ActiveCampaign. Returns the loaded Campaign or
+	 * null if no payload exists in IndexedDB for that id.
+	 *
+	 * Caller is responsible for packing the previous active campaign first.
+	 */
+	async unpackById(
+		identifier: string,
+		context: Context
+	): Promise<Campaign | null> {
+		const loaded = await CampaignLoadingService.loadCampaign(
+			identifier,
+			context
+		);
+		if (!loaded) return null;
+
+		context.ActiveCampaign = loaded;
+		return loaded;
+	},
+
+	/**
+	 * Switches the active campaign: packs whatever is currently active (if
+	 * different) and unpacks the requested one. Returns the now-active
+	 * Campaign or null if nothing was found in IndexedDB.
+	 */
+	async switchActive(
+		identifier: string,
+		context: Context
+	): Promise<Campaign | null> {
+		const currentActive = context.ActiveCampaign;
+
+		// Already unpacked the right one — nothing to do.
+		if (
+			currentActive &&
+			(currentActive.Id === identifier ||
+				currentActive.RoomCode === identifier)
+		) {
+			return currentActive;
+		}
+
+		// Pack the previously active campaign back to IndexedDB.
+		if (currentActive) {
+			await this.packActive(context);
+		}
+
+		return await this.unpackById(identifier, context);
+	},
+
+	/**
+	 * Creates a new campaign, persists it to IndexedDB, and adds a
+	 * CampaignInfo to context.Campaigns. The new campaign is left packed —
+	 * it gets unpacked when the user navigates to its URL.
+	 */
+	async create(
 		params: { name: string; roomCode?: string },
 		context: Context
-	): Campaign {
+	): Promise<CampaignInfo> {
 		const campaign = createBlankCampaign(params.name, params.roomCode);
 
-		context.Campaigns.push(campaign);
+		await CampaignLoadingService.saveCampaign(campaign);
+
+		const info = CampaignLoadingService.buildInfo(campaign);
+		context.Campaigns.push(info);
 		ContextActions.save(context);
 
-		return campaign;
+		return info;
 	},
 
 	/**
-	 * Deletes a campaign by ID
+	 * Deletes a campaign by ID — removes both the CampaignInfo entry and the
+	 * stored payload in IndexedDB. Clears ActiveCampaign if it matches.
 	 */
-	delete(params: { campaignId: string }, context: Context): void {
+	async delete(params: { campaignId: string }, context: Context): Promise<void> {
 		const index = context.Campaigns.findIndex(
 			(c) => c.Id === params.campaignId
 		);
@@ -193,24 +283,73 @@ export const CampaignActions = {
 		}
 
 		context.Campaigns.splice(index, 1);
+
+		if (
+			context.ActiveCampaign &&
+			(context.ActiveCampaign.Id === params.campaignId ||
+				context.ActiveCampaign.RoomCode === params.campaignId)
+		) {
+			context.ActiveCampaign = null;
+		}
+
+		try {
+			await CampaignLoadingService.deleteCampaign(params.campaignId);
+		} catch (e) {
+			console.error("[CampaignActions] Failed to delete campaign payload:", e);
+		}
+
 		ContextActions.save(context);
 	},
 
 	/**
-	 * Edits campaign properties (name, room code, settings)
+	 * Edits campaign metadata (name, room code, settings). If the campaign
+	 * is currently active, updates the live payload; otherwise loads the
+	 * stored payload, applies the patch, and saves it back. Always refreshes
+	 * the CampaignInfo metadata.
 	 */
-	edit(
+	async edit(
 		params: { campaignId: string; updates: Partial<Campaign> },
 		context: Context
-	): void {
-		const campaign = context.Campaigns.find((c) => c.Id === params.campaignId);
+	): Promise<void> {
+		const info = context.Campaigns.find((c) => c.Id === params.campaignId);
 
-		if (!campaign) {
+		if (!info) {
 			console.warn(`Campaign not found: ${params.campaignId}`);
 			return;
 		}
 
-		Object.assign(campaign, params.updates);
+		let campaign: Campaign | null = null;
+
+		if (
+			context.ActiveCampaign &&
+			(context.ActiveCampaign.Id === params.campaignId ||
+				context.ActiveCampaign.RoomCode === params.campaignId)
+		) {
+			campaign = context.ActiveCampaign;
+			Object.assign(campaign, params.updates);
+		} else {
+			campaign = await CampaignLoadingService.loadCampaign(
+				params.campaignId,
+				context
+			);
+			if (!campaign) {
+				console.warn(
+					`Campaign payload missing in IndexedDB: ${params.campaignId}`
+				);
+				return;
+			}
+			Object.assign(campaign, params.updates);
+			await CampaignLoadingService.saveCampaign(campaign);
+		}
+
+		// Sync metadata fields that the user might have edited (Name,
+		// RoomCode) so the campaigns list stays accurate.
+		info.Name = campaign.Name;
+		info.RoomCode = campaign.RoomCode;
+		info.CharacterCount =
+			(campaign.CharacterRoster?.length ?? 0) +
+			(campaign.GameState?.Characters?.length ?? 0);
+
 		ContextActions.save(context);
 	},
 
@@ -222,10 +361,32 @@ export const CampaignActions = {
 		context: Context,
 		onProgress?: (progress: ExportProgress) => void
 	): Promise<void> {
-		const campaign = context.Campaigns.find((c) => c.Id === params.campaignId);
+		const info = context.Campaigns.find((c) => c.Id === params.campaignId);
+
+		if (!info) {
+			console.warn(`Campaign not found: ${params.campaignId}`);
+			return;
+		}
+
+		// Prefer the live ActiveCampaign if it matches; otherwise pull from IDB.
+		let campaign: Campaign | null = null;
+		if (
+			context.ActiveCampaign &&
+			(context.ActiveCampaign.Id === params.campaignId ||
+				context.ActiveCampaign.RoomCode === params.campaignId)
+		) {
+			campaign = context.ActiveCampaign;
+		} else {
+			campaign = await CampaignLoadingService.loadCampaign(
+				params.campaignId,
+				context
+			);
+		}
 
 		if (!campaign) {
-			console.warn(`Campaign not found: ${params.campaignId}`);
+			console.warn(
+				`Campaign payload missing in IndexedDB: ${params.campaignId}`
+			);
 			return;
 		}
 
@@ -305,7 +466,7 @@ export const CampaignActions = {
 		params: { file: File },
 		context: Context,
 		onProgress?: (progress: ExportProgress) => void
-	): Promise<Campaign> {
+	): Promise<CampaignInfo> {
 		try {
 			onProgress?.({
 				current: 0,
@@ -338,26 +499,27 @@ export const CampaignActions = {
 			} else {
 				// Old-style exports (pre-container) – assume it's just the Campaign object
 				campaign = data as Campaign;
-				// If you ever had a campaign-level "version" field, you could read it here.
 			}
 
 			// --- Run schema migrations on this imported campaign ---
-
-			// Use a scratch Context so we can reuse the same migration system
-			const tempContext: Context = {
+			//
+			// We feed it through a scratch Context so we can reuse the same
+			// migration system, then pull the migrated Campaign back out.
+			const tempContext = {
 				User: structuredClone(context.User),
-				Campaigns: [structuredClone(campaign)],
+				Campaigns: [structuredClone(campaign)] as unknown as Campaign[],
+				ActiveCampaign: null,
 				AppSettings: structuredClone(context.AppSettings as any),
 				version: dataVersion,
-			};
+			} as unknown as Context;
 
 			const migratedContext = runMigrations(tempContext, APP_VERSION);
-			campaign = migratedContext.Campaigns[0];
+			campaign = (migratedContext.Campaigns as unknown as Campaign[])[0];
 
 			// Generate new ID to avoid conflicts
 			campaign.Id = crypto.randomUUID();
 
-			// Ensure room code is unique
+			// Ensure room code is unique against existing CampaignInfos
 			const existingRoomCodes = context.Campaigns.map((c) => c.RoomCode);
 			if (existingRoomCodes.includes(campaign.RoomCode)) {
 				campaign.RoomCode = generateRoomCode();
@@ -387,7 +549,11 @@ export const CampaignActions = {
 				status: "Saving campaign...",
 			});
 
-			context.Campaigns.push(campaign);
+			// Persist the full Campaign payload to IndexedDB and add a
+			// CampaignInfo to the in-memory list.
+			await CampaignLoadingService.saveCampaign(campaign);
+			const info = CampaignLoadingService.buildInfo(campaign);
+			context.Campaigns.push(info);
 			ContextActions.save(context);
 
 			onProgress?.({
@@ -396,7 +562,7 @@ export const CampaignActions = {
 				status: "Import complete!",
 			});
 
-			return campaign;
+			return info;
 		} catch (error) {
 			throw new Error(
 				`Failed to import campaign: ${error instanceof Error ? error.message : "Invalid JSON"

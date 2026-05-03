@@ -1,6 +1,5 @@
 // src/updates/update-1.0.5.ts
 
-import type { Context } from "../domains/Context/Context";
 import type { VersionString } from "../version";
 import type { VersionedMigration } from "./types";
 
@@ -17,7 +16,7 @@ export const migration_1_0_5: VersionedMigration = {
 	 * - Add Campaign.LogHead for ring buffer log management
 	 *   This reduces state sync patches from ~1000 to 1-2 per log entry
 	 */
-	update(context: Context): Context {
+	update(context: any): any {
 		for (const campaign of context.Campaigns) {
 			if (typeof (campaign as any).LogHead !== "number") {
 				// Set LogHead to current length mod MAX_LOG_SIZE
@@ -36,7 +35,7 @@ export const migration_1_0_5: VersionedMigration = {
 	 * - Remove Campaign.LogHead
 	 * - Reorder Log array to be chronological (since ring buffer may have wrapped)
 	 */
-	reset(context: Context): Context {
+	reset(context: any): any {
 		for (const campaign of context.Campaigns) {
 			const logHead = (campaign as any).LogHead;
 			

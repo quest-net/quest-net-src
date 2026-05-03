@@ -1,9 +1,8 @@
 // domains/Campaign/DMView.tsx
 
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useQuestContext } from "../Context/ContextProvider";
-import { CampaignActions } from "./CampaignActions";
 import { ImpersonationPicker } from "../../components/inputs/ImpersonationPicker";
 import { SecretModeToggle } from "../../components/inputs/SecretModeToggle";
 import { CharacterIndex } from "../Character/Index";
@@ -51,7 +50,6 @@ const menuItems: { id: TabView; label: string; icon: string }[] = [
 ];
 
 export function DMView() {
-	const { identifier } = useParams<{ identifier: string }>();
 	const context = useQuestContext();
 	const navigate = useNavigate();
 	const [activeTab, setActiveTab] = useState<TabView>("main");
@@ -59,10 +57,10 @@ export function DMView() {
 	// Call usePeerTracking once at the view level
 	const { peers, connectionStatus } = usePeerTracking();
 
-	const campaign = CampaignActions.findCampaignByIdentifier(
-		identifier!,
-		context
-	);
+	// CampaignView guarantees ActiveCampaign matches the URL by the time we
+	// render — so we read directly from there rather than re-resolving by
+	// identifier.
+	const campaign = context.ActiveCampaign;
 
 	if (!campaign) {
 		return null;

@@ -1,12 +1,11 @@
 import { CampaignSettingActions } from "../domains/CampaignSetting/CampaignSettingActions";
-import { Context } from "../domains/Context/Context";
 import { VersionedMigration } from "./types";
 
 export const migration_1_1_0: VersionedMigration = {
     version: "1.1.0",
-    update: (context: Context): Context => {
+    update: (context: any): any => {
         // Initialize ActionDefinitions if they don't exist
-        const updatedCampaigns = context.Campaigns.map(campaign => {
+        const updatedCampaigns = context.Campaigns.map((campaign: any) => {
             let settings = campaign.Settings;
 
             if (!settings.ActionDefinitions) {
@@ -66,9 +65,9 @@ export const migration_1_1_0: VersionedMigration = {
             version: "1.1.0",
         };
     },
-    reset: (context: Context): Context => {
+    reset: (context: any): any => {
         // Downgrade: remove ActionDefinitions and Actions arrays
-        const downgradedCampaigns = context.Campaigns.map(campaign => {
+        const downgradedCampaigns = context.Campaigns.map((campaign: any) => {
             // Remove ActionDefinitions
             const { ActionDefinitions, ...restSettings } = campaign.Settings;
 

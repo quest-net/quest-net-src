@@ -1,4 +1,3 @@
-import { Context } from "../domains/Context/Context";
 import { VersionedMigration } from "./types";
 
 /**
@@ -9,7 +8,7 @@ import { VersionedMigration } from "./types";
 export const migration_1_5_1: VersionedMigration = {
 	version: "1.5.1",
 
-	update: (context: Context): Context => {
+	update: (context: any): any => {
 		for (const campaign of context.Campaigns ?? []) {
 			if (!campaign.Settings.MovementSettings) continue;
 			campaign.Settings.MovementSettings.restrictPlayerMovementToRange ??= false;
@@ -18,7 +17,7 @@ export const migration_1_5_1: VersionedMigration = {
 		return { ...context, version: "1.5.1" };
 	},
 
-	reset: (context: Context): Context => {
+	reset: (context: any): any => {
 		for (const campaign of context.Campaigns ?? []) {
 			if (!campaign.Settings.MovementSettings) continue;
 			delete (campaign.Settings.MovementSettings as {

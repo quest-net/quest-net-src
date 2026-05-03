@@ -13,6 +13,7 @@ import { LogActions } from "../../domains/Log/LogActions";
 import { User } from "../../domains/User/User";
 import { calculateMovementRange } from "../../components/Map/MapUtilities";
 import type { Position } from "../../domains/Actor/Actor";
+import { CampaignLoadingService } from "../CampaignLoadingService";
 
 const PING_INTERVAL_MS = 3000;
 
@@ -118,29 +119,47 @@ export class ActionService {
 
 	private setupStateSync() {
 		if (this.context.User.Role === "player") {
-			// Players listen for state updates and apply them to context
+			// Players listen for state updates and apply them to context.
+			// State arrives sanitized by the DM, so campaign.Id has been
+			// replaced with the public RoomCode — that's the key we use to
+			// match against the player's CampaignInfo entries.
 			this.stateSync.onUpdate((campaign) => {
-
-				// Find existing campaign by ID (which is the room code for players)
-				const index = this.context.Campaigns.findIndex(
-					(c) => c.Id === campaign.Id
-				);
-
-				// ISOLATION: We clone the campaign so that the UI can mutate it optimistically
-				// without polluting the StateSync's internal baseline.
+				// ISOLATION: clone so the UI can mutate optimistically without
+				// polluting StateSync's internal baseline.
 				const isolatedCampaign = structuredClone(campaign);
+				const refreshedInfo =
+					CampaignLoadingService.buildPlayerInfo(isolatedCampaign);
 
-				if (index !== -1) {
-					this.context.Campaigns[index] = isolatedCampaign;
-				} else {
-					this.context.Campaigns.push(isolatedCampaign);
-				}
-				// If a one-time callback is registered, execute and clear it.
-				if (this.onFirstUpdateCallback) {
-					this.onFirstUpdateCallback();
-					this.onFirstUpdateCallback = undefined; // Ensure it only fires once
-				}
-				triggerContextUpdate();
+				// Use the mutator form of triggerContextUpdate so that
+				// reassigning the top-level ActiveCampaign field lands on the
+				// live React state rather than the stale context object we
+				// captured at construction. Inner-array mutations (Campaigns
+				// upsert) are visible everywhere via shallow-spread, but
+				// they're cleaner inside the same mutator.
+				const applyUpdate = () => {
+					if (this.onFirstUpdateCallback) {
+						this.onFirstUpdateCallback();
+						this.onFirstUpdateCallback = undefined;
+					}
+				};
+
+				triggerContextUpdate((ctx) => {
+					ctx.ActiveCampaign = isolatedCampaign;
+
+					const idx = ctx.Campaigns.findIndex(
+						(c) => c.Id === refreshedInfo.Id
+					);
+					if (idx !== -1) {
+						ctx.Campaigns[idx] = refreshedInfo;
+					} else {
+						ctx.Campaigns.push(refreshedInfo);
+					}
+				});
+
+				// Resolve the first-update promise after the React update has
+				// been queued so CampaignView's setState({ status: "ready" })
+				// batches with our setContext.
+				applyUpdate();
 			});
 		}
 	}

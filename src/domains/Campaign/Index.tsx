@@ -23,7 +23,7 @@ export function CampaignIndex() {
 	const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
 	const [editRoomCode, setEditRoomCode] = useState("");
 
-	const handleCreateCampaign = () => {
+	const handleCreateCampaign = async () => {
 		if (!campaignName.trim()) {
 			alert("Please enter a campaign name");
 			return;
@@ -47,10 +47,10 @@ export function CampaignIndex() {
 			}
 		}
 
-		// Domain action mutates context
-		const campaign = CampaignActions.create({ 
-			name: campaignName, 
-			roomCode: roomCode || undefined 
+		// Domain action persists to IndexedDB and adds CampaignInfo to context
+		const info = await CampaignActions.create({
+			name: campaignName,
+			roomCode: roomCode || undefined,
 		}, context);
 
 		// Manually trigger update
@@ -60,7 +60,7 @@ export function CampaignIndex() {
 		setCustomRoomCode("");
 
 		// Navigate to the new campaign as DM (using campaign ID)
-		navigate(`/${campaign.Id}`);
+		navigate(`/${info.Id}`);
 	};
 
 	const handleJoinCampaign = () => {
@@ -73,13 +73,13 @@ export function CampaignIndex() {
 		navigate(`/${joinRoomCode.toLowerCase()}`);
 	};
 
-	const handleDeleteCampaign = (campaignId: string, campaignName: string) => {
+	const handleDeleteCampaign = async (campaignId: string, campaignName: string) => {
 		if (!window.confirm(`Delete campaign "${campaignName}"?`)) {
 			return;
 		}
 
-		// Domain action mutates context
-		CampaignActions.delete({ campaignId }, context);
+		// Domain action removes CampaignInfo + IndexedDB payload
+		await CampaignActions.delete({ campaignId }, context);
 
 		// Manually trigger update
 		triggerContextUpdate();
@@ -90,7 +90,7 @@ export function CampaignIndex() {
 		setEditRoomCode(currentRoomCode);
 	};
 
-	const handleSaveRoomCode = (campaignId: string) => {
+	const handleSaveRoomCode = async (campaignId: string) => {
 		const roomCode = editRoomCode.trim().toLowerCase();
 
 		// Validation
@@ -113,14 +113,14 @@ export function CampaignIndex() {
 		const existingRoomCodes = context.Campaigns
 			.filter(c => c.Id !== campaignId)
 			.map(c => c.RoomCode);
-		
+
 		if (existingRoomCodes.includes(roomCode)) {
 			alert("This room code is already in use by another campaign");
 			return;
 		}
 
-		// Save
-		CampaignActions.edit(
+		// Save (awaited because it may need to load from IndexedDB)
+		await CampaignActions.edit(
 			{ campaignId, updates: { RoomCode: roomCode } },
 			context
 		);
@@ -378,43 +378,45 @@ export function CampaignIndex() {
 										<p>No campaigns yet. Create one to get started!</p>
 									</div>
 								) : (
-									context.Campaigns.map((campaign) => (
+									// Most-recent activity first so the campaign you were
+									// just playing surfaces at the top.
+									[...context.Campaigns]
+										.sort((a, b) => b.LastActivity - a.LastActivity)
+										.map((info) => (
 										<div
-											key={campaign.Id}
+											key={info.Id}
 											className="card bg-base-200 border-2 border-base-300 hover:border-primary cursor-pointer transition-all hover:shadow-lg"
-											onClick={() => navigate(`/${campaign.Id}`)}
+											onClick={() => navigate(`/${info.Id}`)}
 										>
 											<div className="card-body p-4">
-												<h3 className="text-xl font-bold">{campaign.Name}</h3>
-												
+												<h3 className="text-xl font-bold">{info.Name}</h3>
+
 												<div className="flex flex-wrap gap-2 text-sm">
 													<div className="badge badge-outline gap-1">
 														<span className="icon-[mdi--key] w-3 h-3" />
-														{campaign.RoomCode}
+														{info.RoomCode}
 													</div>
 													<div className="badge badge-outline gap-1">
 														<span className="icon-[mdi--account-group] w-3 h-3" />
-														{campaign.CharacterRoster.length + campaign.GameState.Characters.length} characters
+														{info.CharacterCount} characters
 													</div>
 												</div>
 
 												<div className="text-xs opacity-60 mt-2">
-													Last activity: {campaign.Log.length > 0
-														? new Date(
-																campaign.Log[campaign.Log.length - 1].Timestamp
-														  ).toLocaleString()
+													Last activity: {info.LastActivity > info.CreatedAt
+														? new Date(info.LastActivity).toLocaleString()
 														: "Never"}
 												</div>
 
 												<div className="card-actions justify-end mt-2">
-													{isGUID(campaign.Id) && (
+													{isGUID(info.Id) && (
 														<div className="tooltip tooltip-bottom" data-tip="Start in secret mode to prepare without broadcasting updates">
 															<button
 																onClick={(e) => {
 																	e.stopPropagation();
 																	if (!context.SecretModes) context.SecretModes = {};
-																	context.SecretModes[campaign.Id] = true;
-																	navigate(`/${campaign.Id}`);
+																	context.SecretModes[info.Id] = true;
+																	navigate(`/${info.Id}`);
 																}}
 																className="btn btn-neutral btn-sm gap-1"
 															>
@@ -426,7 +428,7 @@ export function CampaignIndex() {
 													<button
 														onClick={(e) => {
 															e.stopPropagation();
-															handleEditRoomCodeClick(campaign.Id, campaign.RoomCode);
+															handleEditRoomCodeClick(info.Id, info.RoomCode);
 														}}
 														className="btn btn-neutral btn-sm gap-1"
 													>
@@ -436,7 +438,7 @@ export function CampaignIndex() {
 													<button
 														onClick={(e) => {
 															e.stopPropagation();
-															handleDeleteCampaign(campaign.Id, campaign.Name);
+															handleDeleteCampaign(info.Id, info.Name);
 														}}
 														className="btn btn-error btn-sm gap-1"
 													>

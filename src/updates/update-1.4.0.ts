@@ -1,4 +1,3 @@
-import { Context } from "../domains/Context/Context";
 import { VersionedMigration } from "./types";
 
 /**
@@ -13,7 +12,7 @@ import { VersionedMigration } from "./types";
 export const migration_1_4_0: VersionedMigration = {
   version: "1.4.0",
 
-  update: (context: Context): Context => {
+  update: (context: any): any => {
     const settings = context.AppSettings;
 
     // Move legacy flat imageApiKey → JSON map under imageApiKeys
@@ -30,7 +29,7 @@ export const migration_1_4_0: VersionedMigration = {
     return { ...context, version: "1.4.0" };
   },
 
-  reset: (context: Context): Context => {
+  reset: (context: any): any => {
     const settings = context.AppSettings;
 
     // Move imageApiKeys['google-gemini-flash'] back to flat imageApiKey

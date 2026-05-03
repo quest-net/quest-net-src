@@ -1,11 +1,10 @@
 // domains/Campaign/PlayerView.tsx - Updated
 
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import {
 	useQuestContext,
 	triggerContextUpdate,
 } from "../Context/ContextProvider";
-import { CampaignActions } from "./CampaignActions";
 import { UserActions } from "../User/UserActions";
 import { LogAlerts } from "../Log/LogAlerts";
 import { PeerStatus } from "../Room/PeerStatus";
@@ -16,17 +15,15 @@ import { AudioPlayer } from "../Audio/AudioPlayer";
 import { AudioStateProvider } from "../Audio/AudioContext";
 
 export function PlayerView() {
-	const { identifier } = useParams<{ identifier: string }>();
 	const context = useQuestContext();
 	const navigate = useNavigate();
 
 	// Single source of truth for peer data - call hook once at view level
 	const { peers, connectionStatus } = usePeerTracking();
 
-	const campaign = CampaignActions.findCampaignByIdentifier(
-		identifier!,
-		context
-	);
+	// CampaignView guarantees ActiveCampaign matches the URL by the time we
+	// render — read directly from there.
+	const campaign = context.ActiveCampaign;
 
 	if (!campaign) {
 		return null;

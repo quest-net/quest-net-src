@@ -17,7 +17,6 @@ import { ActionService } from "../../services/Actions/ActionService";
 import { isGUID } from "../../utils/UrlParser";
 import { DMView } from "./DMView";
 import { PlayerView } from "./PlayerView";
-import { Campaign } from "./Campaign";
 import type { User } from "../User/User";
 
 type ViewStatus = "loading" | "ready" | "waiting-for-dm" | "error";
@@ -75,65 +74,82 @@ export function CampaignView() {
 		async function initialize() {
 			try {
 				// =====================================================================
-				// STEP 1: Find or wait for campaign
+				// STEP 1: Pack/Unpack switch — bring the right campaign into Active
 				// =====================================================================
-				let campaign = CampaignActions.findCampaignByIdentifier(
+				//
+				// We only "pack" (write back to IndexedDB) the previously active
+				// campaign if it's different from the one we're about to load,
+				// matching the user's mental model: an actively played campaign
+				// stays unpacked, and we only swap when the URL truly changes.
+				let info = CampaignActions.findCampaignByIdentifier(
 					identifier,
 					context
 				);
 
-				if (isDM) {
-					// DM mode: Campaign must exist
-					if (!campaign) {
-						setState({
-							status: "error",
-							errorMessage: `Campaign not found. ID: ${identifier}`,
-						});
-						return;
-					}
+				const alreadyActive =
+					context.ActiveCampaign &&
+					(context.ActiveCampaign.Id === identifier ||
+						context.ActiveCampaign.RoomCode === identifier);
 
-					// Set user role if not already set
-					if (context.User.Role !== "dm") {
-						ContextActions.setUserRole({ role: "dm" }, context);
-						triggerContextUpdate();
-					}
-
-				} else {
-					// Player mode: Campaign might not exist yet
-					if (!campaign) {
-
-						// Check if we have a saved version from a previous session
-						// Players save received campaigns as: campaign_${roomCode}
-						const savedCampaign = localStorage.getItem(
-							`campaign_${identifier}`
+				if (!alreadyActive) {
+					if (isDM) {
+						// DM mode: payload must already exist in IndexedDB.
+						if (!info) {
+							setState({
+								status: "error",
+								errorMessage: `Campaign not found. ID: ${identifier}`,
+							});
+							return;
+						}
+						const loaded = await CampaignActions.switchActive(
+							identifier!,
+							context
 						);
-						if (savedCampaign) {
-							try {
-								campaign = JSON.parse(savedCampaign) as Campaign;
-								context.Campaigns.push(campaign);
-								triggerContextUpdate();
-
-							} catch (error) {
-								console.error(
-									"[CampaignView] Failed to parse saved campaign:",
-									error
-								);
-							}
+						if (!loaded) {
+							setState({
+								status: "error",
+								errorMessage: `Campaign payload missing in storage. ID: ${identifier}`,
+							});
+							return;
+						}
+					} else {
+						// Player mode: campaign may not exist yet (haven't joined this
+						// room before). If we have CampaignInfo for it, unpack from
+						// IndexedDB; otherwise, we'll wait for the DM's first state
+						// broadcast and ActionService will create the entry.
+						if (info) {
+							await CampaignActions.switchActive(identifier!, context);
+						} else if (context.ActiveCampaign) {
+							// No info — but if some other campaign is currently
+							// unpacked, pack it away before we wait for the DM.
+							await CampaignActions.packActive(context);
 						}
 					}
+					// Persist the reshape (active campaign + metadata refresh).
+					ContextActions.save(context);
+					triggerContextUpdate();
+				}
 
-					// Set user role if not already set
-					if (context.User.Role !== "player") {
-						ContextActions.setUserRole({ role: "player" }, context);
-						triggerContextUpdate();
-					}
+				// Refresh info reference now that the active campaign has been
+				// swapped in (packActive may have refreshed metadata too).
+				info = CampaignActions.findCampaignByIdentifier(identifier, context);
 
+				// Set user role if not already set.
+				if (isDM && context.User.Role !== "dm") {
+					ContextActions.setUserRole({ role: "dm" }, context);
+					triggerContextUpdate();
+				} else if (!isDM && context.User.Role !== "player") {
+					ContextActions.setUserRole({ role: "player" }, context);
+					triggerContextUpdate();
 				}
 
 				// =====================================================================
 				// STEP 2: Join room
 				// =====================================================================
-				const roomCode = isDM ? campaign?.RoomCode || identifier : identifier;
+				const activeCampaign = context.ActiveCampaign;
+				const roomCode = isDM
+					? activeCampaign?.RoomCode || identifier
+					: identifier;
 
 				// Build joinRoom callbacks BEFORE constructing the room.
 				// The handshake closure references `service` (declared above as
@@ -166,7 +182,6 @@ export function CampaignView() {
 						// them.
 						setState((cur) => {
 							if (cur.status !== "waiting-for-dm") return cur;
-							// details.error is typed as string in trystero 0.24
 							const message = details.error || "unknown";
 							return {
 								status: "error",
@@ -176,7 +191,7 @@ export function CampaignView() {
 					},
 				};
 
-				room = RoomActions.join(roomCode, callbacks);
+				room = RoomActions.join(roomCode!, callbacks);
 				console.log(`[CampaignView] Joined room: ${roomCode}`);
 
 				// =====================================================================
@@ -188,7 +203,7 @@ export function CampaignView() {
 				// =====================================================================
 				// STEP 4: Handle initial state for players without campaign
 				// =====================================================================
-				if (!isDM && !campaign) {
+				if (!isDM && !context.ActiveCampaign) {
 					setState({ status: "waiting-for-dm" });
 
 					// This promise resolves when the onFirstUpdate callback is called

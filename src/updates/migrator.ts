@@ -14,6 +14,7 @@ import { migration_1_3_0 } from "./update-1.3.0";
 import { migration_1_4_0 } from "./update-1.4.0";
 import { migration_1_5_0 } from "./update-1.5.0";
 import { migration_1_5_1 } from "./update-1.5.1";
+import { migration_1_7_0 } from "./update-1.7.0";
 // etc.
 
 const MIGRATIONS: VersionedMigration[] = [
@@ -27,6 +28,7 @@ const MIGRATIONS: VersionedMigration[] = [
   migration_1_4_0,
   migration_1_5_0,
   migration_1_5_1,
+  migration_1_7_0,
   // ...
 ];
 

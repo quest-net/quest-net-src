@@ -1,4 +1,3 @@
-import { Context } from "../domains/Context/Context";
 import { VersionedMigration } from "./types";
 
 type TerrainType =
@@ -54,11 +53,11 @@ function indexToTerrainType(index: number): TerrainType {
 
 export const migration_1_0_6: VersionedMigration = {
     version: "1.0.6",
-    update: (context: Context): Context => {
+    update: (context: any): any => {
         // Migrate all terrains in all campaigns from string ColorMap to number ColorMap
-        const updatedCampaigns = context.Campaigns.map(campaign => ({
+        const updatedCampaigns = context.Campaigns.map((campaign: any) => ({
             ...campaign,
-            Terrains: campaign.Terrains.map(terrain => {
+            Terrains: campaign.Terrains.map((terrain: any) => {
                 const legacyTerrain = terrain as unknown as LegacyTerrain;
 
                 // Check if already migrated (ColorMap contains numbers)
@@ -70,8 +69,8 @@ export const migration_1_0_6: VersionedMigration = {
                 }
 
                 // Convert string ColorMap to numeric indices
-                const newColorMap: number[][] = legacyTerrain.ColorMap?.map(row =>
-                    row.map(cell => terrainTypeToIndex(cell))
+                const newColorMap: number[][] = legacyTerrain.ColorMap?.map((row: any) =>
+                    row.map((cell: any) => terrainTypeToIndex(cell))
                 ) ?? [];
 
                 return {
@@ -87,11 +86,11 @@ export const migration_1_0_6: VersionedMigration = {
             version: "1.0.6",
         };
     },
-    reset: (context: Context): Context => {
+    reset: (context: any): any => {
         // Downgrade: convert numeric ColorMap back to string ColorMap
-        const downgradedCampaigns = context.Campaigns.map(campaign => ({
+        const downgradedCampaigns = context.Campaigns.map((campaign: any) => ({
             ...campaign,
-            Terrains: campaign.Terrains.map(terrain => {
+            Terrains: campaign.Terrains.map((terrain: any) => {
                 const numericTerrain = terrain;
 
                 // Check if already downgraded (ColorMap contains strings)
@@ -103,8 +102,8 @@ export const migration_1_0_6: VersionedMigration = {
                 }
 
                 // Convert numeric ColorMap back to string
-                const legacyColorMap: TerrainType[][] = numericTerrain.ColorMap?.map(row =>
-                    row.map(cell => indexToTerrainType(cell as number))
+                const legacyColorMap: TerrainType[][] = numericTerrain.ColorMap?.map((row: any) =>
+                    row.map((cell: any) => indexToTerrainType(cell as number))
                 ) ?? [];
 
                 return {

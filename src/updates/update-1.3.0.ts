@@ -1,4 +1,3 @@
-import { Context } from "../domains/Context/Context";
 import { VersionedMigration } from "./types";
 
 /**
@@ -29,7 +28,7 @@ import { VersionedMigration } from "./types";
 export const migration_1_3_0: VersionedMigration = {
 	version: "1.3.0",
 
-	update: (context: Context): Context => {
+	update: (context: any): any => {
 		const updatedCampaigns = context.Campaigns.map((campaign: any) => {
 			const settings = campaign.Settings ?? {};
 
@@ -158,7 +157,7 @@ export const migration_1_3_0: VersionedMigration = {
 		};
 	},
 
-	reset: (context: Context): Context => {
+	reset: (context: any): any => {
 		const downgradedCampaigns = context.Campaigns.map((campaign: any) => {
 			const settings = campaign.Settings ?? {};
 

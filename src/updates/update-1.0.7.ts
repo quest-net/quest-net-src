@@ -1,11 +1,10 @@
-import { Context } from "../domains/Context/Context";
 import { VersionedMigration } from "./types";
 
 export const migration_1_0_7: VersionedMigration = {
     version: "1.0.7",
-    update: (context: Context): Context => {
+    update: (context: any): any => {
         // Add Scenarios array to all campaigns that don't have it
-        const updatedCampaigns = context.Campaigns.map(campaign => {
+        const updatedCampaigns = context.Campaigns.map((campaign: any) => {
             // Check if campaign already has Scenarios array
             if ((campaign as any).Scenarios !== undefined) {
                 return campaign;
@@ -23,9 +22,9 @@ export const migration_1_0_7: VersionedMigration = {
             version: "1.0.7",
         };
     },
-    reset: (context: Context): Context => {
+    reset: (context: any): any => {
         // Downgrade: remove Scenarios from campaigns
-        const downgradedCampaigns = context.Campaigns.map(campaign => {
+        const downgradedCampaigns = context.Campaigns.map((campaign: any) => {
             const { Scenarios, ...rest } = campaign as any;
             return rest;
         });

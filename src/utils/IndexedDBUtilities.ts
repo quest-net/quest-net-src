@@ -1,9 +1,12 @@
 // utils/IndexedDBUtilities.ts
 const DB_NAME = "quest-net-db";
-// Keep this at 2 so browsers that opened the retired 1.6.0 build can still
-// open their existing quest-net-db. IndexedDB cannot open an existing v2 DB as v1.
-const DB_VERSION = 2;
+// Bumped to 3 to add the "campaigns" object store. IndexedDB cannot open a
+// later version DB as an earlier one, so older builds with v2 will still see
+// their original "images" store after this upgrade — we just add another
+// store alongside it.
+const DB_VERSION = 3;
 const STORE_NAME = "images";
+export const CAMPAIGNS_STORE_NAME = "campaigns";
 
 /**
  * Generic utilities for IndexedDB operations
@@ -11,6 +14,16 @@ const STORE_NAME = "images";
  */
 export class IndexedDBUtilities {
 	private static db: IDBDatabase | null = null;
+	private static dbPromise: Promise<IDBDatabase> | null = null;
+
+	/**
+	 * Initializes the IndexedDB database. Exposed so other services (e.g.
+	 * CampaignLoadingService) can share the same DB instance instead of
+	 * racing each other to upgrade it.
+	 */
+	static async getDB(): Promise<IDBDatabase> {
+		return this.initDB();
+	}
 
 	/**
 	 * Initializes the IndexedDB database
@@ -19,12 +32,16 @@ export class IndexedDBUtilities {
 		if (this.db) {
 			return this.db;
 		}
+		if (this.dbPromise) {
+			return this.dbPromise;
+		}
 
-		return new Promise((resolve, reject) => {
+		this.dbPromise = new Promise((resolve, reject) => {
 			const request = indexedDB.open(DB_NAME, DB_VERSION);
 
 			request.onerror = () => {
 				console.error("[IndexedDB] Failed to open database");
+				this.dbPromise = null;
 				reject(request.error);
 			};
 
@@ -40,8 +57,14 @@ export class IndexedDBUtilities {
 				if (!db.objectStoreNames.contains(STORE_NAME)) {
 					db.createObjectStore(STORE_NAME, { keyPath: "id" });
 				}
+
+				// Create object store for full Campaign payloads
+				if (!db.objectStoreNames.contains(CAMPAIGNS_STORE_NAME)) {
+					db.createObjectStore(CAMPAIGNS_STORE_NAME, { keyPath: "Id" });
+				}
 			};
 		});
+		return this.dbPromise;
 	}
 
 	/**

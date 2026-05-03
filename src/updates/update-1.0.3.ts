@@ -1,6 +1,5 @@
 // src/updates/update-1.0.3.ts
 
-import type { Context } from "../domains/Context/Context";
 import type { VersionString } from "../version";
 import type { VersionedMigration } from "./types";
 
@@ -18,7 +17,7 @@ export const migration_1_0_3: VersionedMigration = {
 	 * - Add Campaign.CreatedAt if missing (set to "now")
 	 * - Ensure AppSettings contains defaults for new image-generation options
 	 */
-	update(context: Context): Context {
+	update(context: any): any {
 		const now = Date.now();
 
 		// Campaign.CreatedAt
@@ -51,7 +50,7 @@ export const migration_1_0_3: VersionedMigration = {
 	 * - Remove Campaign.CreatedAt
 	 * - Remove 1.0.3-only AppSettings fields so the shape matches old code
 	 */
-	reset(context: Context): Context {
+	reset(context: any): any {
 		for (const campaign of context.Campaigns) {
 			if ("CreatedAt" in campaign) {
 				delete (campaign as any).CreatedAt;
