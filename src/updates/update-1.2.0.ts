@@ -1,5 +1,4 @@
 import { Context } from "../domains/Context/Context";
-import type { Campaign } from "../domains/Campaign/Campaign";
 import { VersionedMigration } from "./types";
 
 /**
@@ -19,8 +18,7 @@ export const migration_1_2_0: VersionedMigration = {
 	version: "1.2.0",
 
 	update: (context: Context): Context => {
-		const campaigns = context.Campaigns as unknown as Campaign[];
-		const updatedCampaigns = campaigns.map((campaign) => {
+		const updatedCampaigns = context.Campaigns.map((campaign) => {
 			// --- Migrate Status Templates ---
 			const updatedStatusTemplates = (campaign.StatusTemplates || []).map(
 				(status: any) => {
@@ -74,14 +72,13 @@ export const migration_1_2_0: VersionedMigration = {
 
 		return {
 			...context,
-			Campaigns: updatedCampaigns as unknown as Context["Campaigns"],
+			Campaigns: updatedCampaigns,
 			version: "1.2.0",
 		};
 	},
 
 	reset: (context: Context): Context => {
-		const campaigns = context.Campaigns as unknown as Campaign[];
-		const downgradedCampaigns = campaigns.map((campaign) => {
+		const downgradedCampaigns = context.Campaigns.map((campaign) => {
 			// --- Downgrade Status Templates ---
 			const downgradedStatusTemplates = (campaign.StatusTemplates || []).map(
 				(status: any) => {
@@ -155,7 +152,7 @@ export const migration_1_2_0: VersionedMigration = {
 
 		return {
 			...context,
-			Campaigns: downgradedCampaigns as unknown as Context["Campaigns"],
+			Campaigns: downgradedCampaigns,
 			version: "1.1.2",
 		};
 	},

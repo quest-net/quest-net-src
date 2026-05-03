@@ -1,5 +1,4 @@
 import { Context } from "../domains/Context/Context";
-import type { Campaign } from "../domains/Campaign/Campaign";
 import { VersionedMigration } from "./types";
 
 type TerrainType =
@@ -57,8 +56,7 @@ export const migration_1_0_6: VersionedMigration = {
     version: "1.0.6",
     update: (context: Context): Context => {
         // Migrate all terrains in all campaigns from string ColorMap to number ColorMap
-        const campaigns = context.Campaigns as unknown as Campaign[];
-        const updatedCampaigns = campaigns.map(campaign => ({
+        const updatedCampaigns = context.Campaigns.map(campaign => ({
             ...campaign,
             Terrains: campaign.Terrains.map(terrain => {
                 const legacyTerrain = terrain as unknown as LegacyTerrain;
@@ -85,14 +83,13 @@ export const migration_1_0_6: VersionedMigration = {
 
         return {
             ...context,
-            Campaigns: updatedCampaigns as unknown as Context["Campaigns"],
+            Campaigns: updatedCampaigns,
             version: "1.0.6",
         };
     },
     reset: (context: Context): Context => {
         // Downgrade: convert numeric ColorMap back to string ColorMap
-        const campaigns = context.Campaigns as unknown as Campaign[];
-        const downgradedCampaigns = campaigns.map(campaign => ({
+        const downgradedCampaigns = context.Campaigns.map(campaign => ({
             ...campaign,
             Terrains: campaign.Terrains.map(terrain => {
                 const numericTerrain = terrain;
@@ -119,7 +116,7 @@ export const migration_1_0_6: VersionedMigration = {
 
         return {
             ...context,
-            Campaigns: downgradedCampaigns as unknown as Context["Campaigns"],
+            Campaigns: downgradedCampaigns,
             version: "1.0.5",
         };
     },

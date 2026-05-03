@@ -23,7 +23,7 @@ export function CampaignIndex() {
 	const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
 	const [editRoomCode, setEditRoomCode] = useState("");
 
-	const handleCreateCampaign = async () => {
+	const handleCreateCampaign = () => {
 		if (!campaignName.trim()) {
 			alert("Please enter a campaign name");
 			return;
@@ -48,7 +48,7 @@ export function CampaignIndex() {
 		}
 
 		// Domain action mutates context
-		const campaign = await CampaignActions.create({
+		const campaign = CampaignActions.create({ 
 			name: campaignName, 
 			roomCode: roomCode || undefined 
 		}, context);
@@ -73,13 +73,13 @@ export function CampaignIndex() {
 		navigate(`/${joinRoomCode.toLowerCase()}`);
 	};
 
-	const handleDeleteCampaign = async (campaignId: string, campaignName: string) => {
+	const handleDeleteCampaign = (campaignId: string, campaignName: string) => {
 		if (!window.confirm(`Delete campaign "${campaignName}"?`)) {
 			return;
 		}
 
 		// Domain action mutates context
-		await CampaignActions.delete({ campaignId }, context);
+		CampaignActions.delete({ campaignId }, context);
 
 		// Manually trigger update
 		triggerContextUpdate();
@@ -90,7 +90,7 @@ export function CampaignIndex() {
 		setEditRoomCode(currentRoomCode);
 	};
 
-	const handleSaveRoomCode = async (campaignId: string) => {
+	const handleSaveRoomCode = (campaignId: string) => {
 		const roomCode = editRoomCode.trim().toLowerCase();
 
 		// Validation
@@ -120,7 +120,7 @@ export function CampaignIndex() {
 		}
 
 		// Save
-		await CampaignActions.edit(
+		CampaignActions.edit(
 			{ campaignId, updates: { RoomCode: roomCode } },
 			context
 		);
@@ -394,12 +394,16 @@ export function CampaignIndex() {
 													</div>
 													<div className="badge badge-outline gap-1">
 														<span className="icon-[mdi--account-group] w-3 h-3" />
-														{isGUID(campaign.Id) ? "DM campaign" : "Player cache"}
+														{campaign.CharacterRoster.length + campaign.GameState.Characters.length} characters
 													</div>
 												</div>
 
 												<div className="text-xs opacity-60 mt-2">
-													Created: {new Date(campaign.CreatedAt).toLocaleString()}
+													Last activity: {campaign.Log.length > 0
+														? new Date(
+																campaign.Log[campaign.Log.length - 1].Timestamp
+														  ).toLocaleString()
+														: "Never"}
 												</div>
 
 												<div className="card-actions justify-end mt-2">

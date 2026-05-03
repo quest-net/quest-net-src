@@ -1,14 +1,12 @@
 import { CampaignSettingActions } from "../domains/CampaignSetting/CampaignSettingActions";
 import { Context } from "../domains/Context/Context";
-import type { Campaign } from "../domains/Campaign/Campaign";
 import { VersionedMigration } from "./types";
 
 export const migration_1_1_0: VersionedMigration = {
     version: "1.1.0",
     update: (context: Context): Context => {
         // Initialize ActionDefinitions if they don't exist
-        const campaigns = context.Campaigns as unknown as Campaign[];
-        const updatedCampaigns = campaigns.map(campaign => {
+        const updatedCampaigns = context.Campaigns.map(campaign => {
             let settings = campaign.Settings;
 
             if (!settings.ActionDefinitions) {
@@ -64,14 +62,13 @@ export const migration_1_1_0: VersionedMigration = {
 
         return {
             ...context,
-            Campaigns: updatedCampaigns as unknown as Context["Campaigns"],
+            Campaigns: updatedCampaigns,
             version: "1.1.0",
         };
     },
     reset: (context: Context): Context => {
         // Downgrade: remove ActionDefinitions and Actions arrays
-        const campaigns = context.Campaigns as unknown as Campaign[];
-        const downgradedCampaigns = campaigns.map(campaign => {
+        const downgradedCampaigns = context.Campaigns.map(campaign => {
             // Remove ActionDefinitions
             const { ActionDefinitions, ...restSettings } = campaign.Settings;
 
@@ -108,7 +105,7 @@ export const migration_1_1_0: VersionedMigration = {
 
         return {
             ...context,
-            Campaigns: downgradedCampaigns as unknown as Context["Campaigns"],
+            Campaigns: downgradedCampaigns,
             version: "1.0.7", // Assuming previous version was 1.0.7
         };
     },

@@ -17,7 +17,7 @@ import { ActionService } from "../../services/Actions/ActionService";
 import { isGUID } from "../../utils/UrlParser";
 import { DMView } from "./DMView";
 import { PlayerView } from "./PlayerView";
-import { Campaign, CampaignInfo } from "./Campaign";
+import { Campaign } from "./Campaign";
 import type { User } from "../User/User";
 
 type ViewStatus = "loading" | "ready" | "waiting-for-dm" | "error";
@@ -40,16 +40,23 @@ export function CampaignView() {
 
 	useAutoReconnect(
 		{
-			enabled: state.status === "ready",
+			enabled: state.status === "ready", // Only auto-reconnect when we're supposed to be connected
+			// Trystero 0.22+ pauses relay reconnects when the browser is offline
+			// and resumes when it comes back, so the previous 5s/3s tuning was
+			// over-aggressive. Loosen to give the library time to recover before
+			// we leave-and-rejoin the room ourselves.
 			checkIntervalMs: 10000,
 			reconnectDelayMs: 8000,
+			// maxAttempts is Infinity by default - unlimited retries!
 		},
 		() => {
+			// Increment the trigger to force useEffect to re-run
 			setReconnectTrigger((prev) => prev + 1);
 		}
 	);
 
 	useEffect(() => {
+		// Validate identifier
 		if (!identifier) {
 			setState({
 				status: "error",
@@ -60,43 +67,24 @@ export function CampaignView() {
 
 		const isDM = isGUID(identifier);
 
+		// Setup variables that need cleanup
 		let room: ReturnType<typeof RoomActions.join> | null = null;
 		let service: ActionService | null = null;
-		let isSubscribed = true;
+		let isSubscribed = true; // For handling async state updates after unmount
 
 		async function initialize() {
 			try {
 				// =====================================================================
-				// STEP 1: Resolve ActiveCampaign from IDB if not already loaded
+				// STEP 1: Find or wait for campaign
 				// =====================================================================
-				let campaign: Campaign | undefined =
-					CampaignActions.findCampaignByIdentifier(identifier, context);
-
-				if (!campaign) {
-					// Try loading from IndexedDB (covers both DM and player-cached campaigns)
-					const loaded = await ContextActions.loadActiveCampaign(identifier!, context);
-
-					if (loaded) {
-						campaign = loaded;
-
-						// Ensure a stub exists in context.Campaigns for the index
-						if (!context.Campaigns.find((s) => s.Id === loaded.Id)) {
-							const stub: CampaignInfo = {
-								Id: loaded.Id,
-								Name: loaded.Name,
-								RoomCode: loaded.RoomCode,
-								CreatedAt: loaded.CreatedAt,
-							};
-							context.Campaigns.push(stub);
-						}
-
-						triggerContextUpdate();
-					}
-				}
+				let campaign = CampaignActions.findCampaignByIdentifier(
+					identifier,
+					context
+				);
 
 				if (isDM) {
+					// DM mode: Campaign must exist
 					if (!campaign) {
-						if (!isSubscribed) return;
 						setState({
 							status: "error",
 							errorMessage: `Campaign not found. ID: ${identifier}`,
@@ -104,24 +92,58 @@ export function CampaignView() {
 						return;
 					}
 
+					// Set user role if not already set
 					if (context.User.Role !== "dm") {
 						ContextActions.setUserRole({ role: "dm" }, context);
 						triggerContextUpdate();
 					}
+
 				} else {
+					// Player mode: Campaign might not exist yet
+					if (!campaign) {
+
+						// Check if we have a saved version from a previous session
+						// Players save received campaigns as: campaign_${roomCode}
+						const savedCampaign = localStorage.getItem(
+							`campaign_${identifier}`
+						);
+						if (savedCampaign) {
+							try {
+								campaign = JSON.parse(savedCampaign) as Campaign;
+								context.Campaigns.push(campaign);
+								triggerContextUpdate();
+
+							} catch (error) {
+								console.error(
+									"[CampaignView] Failed to parse saved campaign:",
+									error
+								);
+							}
+						}
+					}
+
+					// Set user role if not already set
 					if (context.User.Role !== "player") {
 						ContextActions.setUserRole({ role: "player" }, context);
 						triggerContextUpdate();
 					}
+
 				}
 
 				// =====================================================================
 				// STEP 2: Join room
 				// =====================================================================
-				const roomCode = isDM ? campaign?.RoomCode || identifier! : identifier!;
+				const roomCode = isDM ? campaign?.RoomCode || identifier : identifier;
 
+				// Build joinRoom callbacks BEFORE constructing the room.
+				// The handshake closure references `service` (declared above as
+				// `let service`); by the time a peer actually connects and the
+				// handshake fires, `service` will already have been assigned.
 				const callbacks: RoomCallbacks = {
 					onPeerHandshake: async (peerId, send, receive, isInitiator) => {
+						// Symmetrical User exchange. `isInitiator` is set
+						// deterministically by Trystero to avoid deadlocks: the
+						// initiator sends first, the other side receives first.
 						const myUser = context.User;
 						let theirUser: User;
 						if (isInitiator) {
@@ -138,8 +160,13 @@ export function CampaignView() {
 					onJoinError: (details) => {
 						console.error("[CampaignView] onJoinError:", details);
 						if (!isSubscribed) return;
+						// Only convert to a hard error while we're still waiting
+						// for the DM to admit us. After we're "ready", peer-level
+						// join failures are transient and useAutoReconnect handles
+						// them.
 						setState((cur) => {
 							if (cur.status !== "waiting-for-dm") return cur;
+							// details.error is typed as string in trystero 0.24
 							const message = details.error || "unknown";
 							return {
 								status: "error",
@@ -159,24 +186,31 @@ export function CampaignView() {
 				setActionService(service);
 
 				// =====================================================================
-				// STEP 4: Handle players with no cached campaign yet
+				// STEP 4: Handle initial state for players without campaign
 				// =====================================================================
 				if (!isDM && !campaign) {
 					setState({ status: "waiting-for-dm" });
 
+					// This promise resolves when the onFirstUpdate callback is called
 					const firstUpdatePromise = new Promise<void>((resolve) => {
 						service?.onFirstUpdate(() => {
-							if (isSubscribed) resolve();
+							if (isSubscribed) {
+								resolve();
+							}
 						});
 					});
 
+					// This promise rejects after a timeout
 					const timeoutPromise = new Promise<void>(
 						(_, reject) =>
 							setTimeout(() => {
-								if (isSubscribed) reject(new Error("Timeout waiting for DM."));
-							}, 15000)
+								if (isSubscribed) {
+									reject(new Error("Timeout waiting for DM."));
+								}
+							}, 15000) // 15-second timeout
 					);
 
+					// Race the two promises
 					Promise.race([firstUpdatePromise, timeoutPromise])
 						.then(() => {
 							setState({ status: "ready" });
@@ -190,7 +224,10 @@ export function CampaignView() {
 							});
 						});
 				} else {
-					setState({ status: "ready" });
+					// Campaign exists, ready to render
+					setState({
+						status: "ready",
+					});
 				}
 			} catch (error) {
 				console.error("[CampaignView] Initialization error:", error);
@@ -206,10 +243,20 @@ export function CampaignView() {
 
 		initialize();
 
+		// =====================================================================
+		// CLEANUP
+		// =====================================================================
 		return () => {
 			isSubscribed = false;
-			if (room) RoomActions.leave(room);
-			if (service) service.cleanup();
+
+			if (room) {
+				RoomActions.leave(room);
+			}
+
+			if (service) {
+				service.cleanup();
+			}
+
 			setActionService(null);
 		};
 		// eslint-disable-next-line
@@ -261,6 +308,8 @@ export function CampaignView() {
 		);
 	}
 
+	// State is 'ready' with a campaign
 	const isDM = isGUID(identifier!);
+
 	return isDM ? <DMView /> : <PlayerView />;
 }
