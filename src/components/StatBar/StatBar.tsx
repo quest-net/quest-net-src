@@ -50,32 +50,16 @@ export function StatBar({
 	const displayValue: number = isDragging && localValue !== null ? localValue : localCurrent;
 	const percentage = (displayValue / localMax) * 100;
 
-	// Unset stat: render nothing. (Hooks above must stay unconditional.)
-	if (stat.Current === null) return null;
-
-	const calculateValueFromPosition = (clientX: number): number => {
-		if (!barRef.current) return displayValue;
-
-		const rect = barRef.current.getBoundingClientRect();
-		const clickX = clientX - rect.left;
-		const clickPercentage = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
-		const newValue = Math.round((clickPercentage / 100) * localMax);
-
-		return Math.max(0, Math.min(localMax, newValue));
-	};
-
-	const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-		const newValue = calculateValueFromPosition(e.clientX);
-		setLocalValue(newValue);
-		setIsDragging(true);
-	};
-
 	useEffect(() => {
 		if (!isDragging) return;
 
 		const handleMouseMove = (e: MouseEvent) => {
-			const newValue = calculateValueFromPosition(e.clientX);
-			setLocalValue(newValue);
+			if (!barRef.current) return;
+			const rect = barRef.current.getBoundingClientRect();
+			const clickX = e.clientX - rect.left;
+			const clickPercentage = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
+			const newValue = Math.round((clickPercentage / 100) * localMax);
+			setLocalValue(Math.max(0, Math.min(localMax, newValue)));
 		};
 
 		const handleMouseUp = () => {
@@ -96,6 +80,26 @@ export function StatBar({
 			document.removeEventListener("mouseup", handleMouseUp);
 		};
 	}, [isDragging, localValue, actualCurrent, localMax, onCurrentChange]);
+
+	// Unset stat: render nothing. All hooks must run above this point.
+	if (stat.Current === null) return null;
+
+	const calculateValueFromPosition = (clientX: number): number => {
+		if (!barRef.current) return displayValue;
+
+		const rect = barRef.current.getBoundingClientRect();
+		const clickX = clientX - rect.left;
+		const clickPercentage = Math.max(0, Math.min(100, (clickX / rect.width) * 100));
+		const newValue = Math.round((clickPercentage / 100) * localMax);
+
+		return Math.max(0, Math.min(localMax, newValue));
+	};
+
+	const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+		const newValue = calculateValueFromPosition(e.clientX);
+		setLocalValue(newValue);
+		setIsDragging(true);
+	};
 
 	const handleCurrentChange = (value: number) => {
 		const clamped = Math.max(0, Math.min(localMax, value));
