@@ -1,6 +1,6 @@
 // src/components/Dice/DiceRoller.tsx
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
@@ -73,21 +73,66 @@ interface PreviewDie {
 	durationMs: number;
 }
 
-interface Particle {
-	id: string;
-	x: number;
-	y: number;
-	vx: number;
-	vy: number;
-	life: number;
-	maxLife: number;
-	color: string;
-	size: number;
-	type: "confetti" | "dark";
-}
-
 function uid() {
 	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+const CRIT_SPARK_COLORS = [
+	"#fbbf24",
+	"#f59e0b",
+	"#ef4444",
+	"#ec4899",
+	"#8b5cf6",
+	"#3b82f6",
+	"#22c55e",
+];
+
+const FUMBLE_SPARK_COLORS = ["#7f1d1d", "#991b1b", "#b91c1c", "#1f2937"];
+
+const CRIT_SPARKS = Array.from({ length: 18 }, (_, i) => ({
+	angle: i * 20,
+	delay: (i % 6) * 70,
+	distance: 44 + (i % 3) * 9,
+	size: 4 + (i % 4),
+	color: CRIT_SPARK_COLORS[i % CRIT_SPARK_COLORS.length],
+}));
+
+const FUMBLE_SPARKS = Array.from({ length: 14 }, (_, i) => ({
+	angle: i * 25.7 + (i % 2) * 8,
+	delay: (i % 5) * 85,
+	distance: 34 + (i % 4) * 7,
+	size: 3 + (i % 3),
+	color: FUMBLE_SPARK_COLORS[i % FUMBLE_SPARK_COLORS.length],
+}));
+
+function DieEffectBurst({ tone }: { tone: "crit" | "fumble" }) {
+	const sparks = tone === "crit" ? CRIT_SPARKS : FUMBLE_SPARKS;
+
+	return (
+		<div className={`dice-effect-burst dice-effect-burst-${tone}`} aria-hidden="true">
+			<span className="dice-effect-ring dice-effect-ring-primary" />
+			<span className="dice-effect-ring dice-effect-ring-secondary" />
+			{sparks.map((spark, index) => (
+				<span
+					key={`${tone}-${index}`}
+					className="dice-effect-spark-path"
+					style={{
+						"--spark-angle": `${spark.angle}deg`,
+						"--spark-delay": `${spark.delay}ms`,
+					} as CSSProperties}
+				>
+					<span
+						className="dice-effect-spark"
+						style={{
+							"--spark-color": spark.color,
+							"--spark-distance": `${spark.distance}px`,
+							"--spark-size": `${spark.size}px`,
+						} as CSSProperties}
+					/>
+				</span>
+			))}
+		</div>
+	);
 }
 /**
  * Converts polygon points to a rounded path
@@ -214,7 +259,7 @@ function DieShape({
 		startColor = "#ef4444";
 		endColor = "#dc2626";
 	} else {
-		// Normal die colors - slate to indigo range
+		// Normal die colors - unknown dice use the d4 slate palette
 		startColor = config?.color.includes("slate")
 			? "#64748b"
 			: config?.color.includes("rose")
@@ -229,7 +274,7 @@ function DieShape({
 								? "#8b5cf6"
 								: config?.color.includes("indigo")
 									? "#6366f1"
-									: "#6b7280";
+									: "#64748b";
 		endColor = config?.color.includes("slate")
 			? "#475569"
 			: config?.color.includes("rose")
@@ -244,7 +289,7 @@ function DieShape({
 								? "#7c3aed"
 								: config?.color.includes("indigo")
 									? "#4f46e5"
-									: "#4b5563";
+									: "#475569";
 	}
 
 	const renderShape = () => {
@@ -333,14 +378,14 @@ function DieShape({
 						)}
 					/>
 				);
-			default:
-				return null;
+			default: // Unknown dice use a generic rounded token
+				return <rect x="17" y="17" width="66" height="66" rx="14" />;
 		}
 	};
 
 	// Simplified text positioning - always center
 	const textY = "58";
-	const textSize = sides === 100 ? "text-xl" : "text-2xl";
+	const textSize = sides >= 100 ? "text-xl" : "text-2xl";
 
 	return (
 		<svg viewBox="0 0 100 100" className={className}>
@@ -392,16 +437,11 @@ export function DiceRoller() {
 	const [rolling, setRolling] = useState(false);
 	const [result, setResult] = useState<DiceRollResult | null>(null);
 	const [previewDice, setPreviewDice] = useState<PreviewDie[]>([]);
-	const [particles, setParticles] = useState<Particle[]>([]);
 	const [rainbowPhase, setRainbowPhase] = useState(0);
 	const [hasCrit, setHasCrit] = useState(false);
 
-	const [, setHasFumble] = useState(false);
-
 	const debounceRef = useRef<number | null>(null);
 	const tickRef = useRef<number | null>(null);
-	const particleTickRef = useRef<number | null>(null);
-	const confettiSpawnRef = useRef<number | null>(null);
 	const rainbowTickRef = useRef<number | null>(null);
 
 	const { canRoll, error } = useMemo(() => {
@@ -446,26 +486,6 @@ export function DiceRoller() {
 		} catch { }
 	};
 
-	// Continuous confetti spawner
-	const startContinuousConfetti = () => {
-		if (confettiSpawnRef.current) return; // Already spawning
-
-		// Spawn initial burst
-		spawnParticles("confetti", 40);
-
-		// Keep spawning every 200ms
-		confettiSpawnRef.current = window.setInterval(() => {
-			spawnParticles("confetti", 15);
-		}, 400);
-	};
-
-	const stopContinuousConfetti = () => {
-		if (confettiSpawnRef.current) {
-			window.clearInterval(confettiSpawnRef.current);
-			confettiSpawnRef.current = null;
-		}
-	};
-
 	// Rainbow animation for d20/d100 crits
 	const startRainbowAnimation = () => {
 		if (rainbowTickRef.current) return;
@@ -481,130 +501,6 @@ export function DiceRoller() {
 			rainbowTickRef.current = null;
 		}
 		setRainbowPhase(0);
-	};
-
-	const spawnParticles = (type: "confetti" | "dark", count: number = 30) => {
-		const newParticles: Particle[] = [];
-		for (let i = 0; i < count; i++) {
-			const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
-
-			// MUCH MUCH smaller speeds - these are per-frame at 60fps!
-			const speed =
-				type === "confetti"
-					? 0.1 + Math.random() * 0.2 // confetti: 0.1-0.3 per frame
-					: 0.05 + Math.random() * 0.15; // fumble: 0.05-0.2 per frame
-
-			newParticles.push({
-				id: uid(),
-				x: 50,
-				y: 60,
-				vx: Math.cos(angle) * speed,
-				vy: Math.sin(angle) * speed - (type === "confetti" ? 0.8 : 0.1), // Gentle upward start
-				life: 1,
-				maxLife: 1,
-				color:
-					type === "confetti"
-						? [
-							"#fbbf24",
-							"#f59e0b",
-							"#ef4444",
-							"#ec4899",
-							"#8b5cf6",
-							"#3b82f6",
-						][Math.floor(Math.random() * 6)]
-						: ["#1f2937", "#374151", "#4b5563"][Math.floor(Math.random() * 3)],
-				size: 4 + Math.random() * 4,
-				type,
-			});
-		}
-		setParticles((prev) => [...prev, ...newParticles]);
-
-		if (!particleTickRef.current) {
-			const animateParticles = () => {
-				setParticles((prev) => {
-					const updated = prev
-						.map((p) => ({
-							...p,
-							x: p.x + p.vx,
-							y: p.y + p.vy,
-							vy: p.vy + 0.015, // Very gentle gravity per frame
-							life: p.life - 0.008, // Slower fade - lasts ~125 frames / ~2 seconds
-						}))
-						.filter((p) => p.life > 0);
-
-					if (updated.length === 0) {
-						particleTickRef.current = null;
-						return [];
-					} else {
-						particleTickRef.current = requestAnimationFrame(animateParticles);
-						return updated;
-					}
-				});
-			};
-			particleTickRef.current = requestAnimationFrame(animateParticles);
-		}
-	};
-
-	// Unique fumble effect: shaking/crumbling particles from the die
-	// Replace the startFumbleEffect function with this:
-	const startFumbleEffect = () => {
-		let shakeCount = 0;
-		const shakeInterval = window.setInterval(() => {
-			if (shakeCount >= 6) {
-				clearInterval(shakeInterval);
-				// Use spawnParticles instead of manually adding particles
-				// This ensures the animation loop starts
-				const fumbleParticles: Particle[] = [];
-				for (let i = 0; i < 30; i++) {
-					const angle = Math.random() * Math.PI * 2;
-					const speed = 0.5 + Math.random() * 2;
-					fumbleParticles.push({
-						id: uid(),
-						x: 50,
-						y: 60,
-						vx: Math.cos(angle) * speed,
-						vy: Math.sin(angle) * speed + Math.random() * 2, // Fall down
-						life: 1,
-						maxLife: 1,
-						color: ["#7f1d1d", "#991b1b", "#b91c1c", "#1f2937"][
-							Math.floor(Math.random() * 4)
-						],
-						size: 2 + Math.random() * 3,
-						type: "dark",
-					});
-				}
-
-				setParticles((prev) => [...prev, ...fumbleParticles]);
-
-				// CRITICAL: Start the animation loop if not already running
-				if (!particleTickRef.current) {
-					const animateParticles = () => {
-						setParticles((prev) => {
-							const updated = prev
-								.map((p) => ({
-									...p,
-									x: p.x + p.vx,
-									y: p.y + p.vy,
-									vy: p.vy + 0.2, // gravity
-									life: p.life - 0.02,
-								}))
-								.filter((p) => p.life > 0);
-
-							if (updated.length === 0) {
-								particleTickRef.current = null;
-								return [];
-							} else {
-								particleTickRef.current =
-									requestAnimationFrame(animateParticles);
-								return updated;
-							}
-						});
-					};
-					particleTickRef.current = requestAnimationFrame(animateParticles);
-				}
-			}
-			shakeCount++;
-		}, 80);
 	};
 
 	const startAnimation = (roll: DiceRollResult, onComplete?: () => void) => {
@@ -663,26 +559,12 @@ export function DiceRoller() {
 					const critCheck = next.some(
 						(d) => d.kept && (d.sides === 20 || d.sides === 100) && d.isMax
 					);
-					const fumbleCheck = next.some(
-						(d) => d.kept && (d.sides === 20 || d.sides === 100) && d.isMin
-					);
 
 					setHasCrit(critCheck);
-					setHasFumble(fumbleCheck);
 
 					// IMPORTANT: Call onComplete callback BEFORE effects
 					if (onComplete) {
 						onComplete();
-					}
-
-					// Trigger effects with delay after roll settles
-					if (critCheck) {
-						setTimeout(() => {
-							startContinuousConfetti();
-							startRainbowAnimation();
-						}, 300);
-					} else if (fumbleCheck) {
-						setTimeout(() => startFumbleEffect(), 300);
 					}
 				}
 				return next;
@@ -694,11 +576,8 @@ export function DiceRoller() {
 		if (!canRoll) return;
 
 		// Clear previous effects
-		stopContinuousConfetti();
 		stopRainbowAnimation();
 		setHasCrit(false);
-		setHasFumble(false);
-		setParticles([]);
 
 		const seed = Date.now() & 0xfffffff;
 		const r = rollDiceFormula(formula, { seed });
@@ -759,13 +638,26 @@ export function DiceRoller() {
 	}, [formula, autoRoll]);
 
 	useEffect(() => {
+		const syncRainbowAnimation = () => {
+			if (hasCrit && isOpen && !document.hidden) {
+				startRainbowAnimation();
+			} else {
+				stopRainbowAnimation();
+			}
+		};
+
+		syncRainbowAnimation();
+		document.addEventListener("visibilitychange", syncRainbowAnimation);
+		return () => {
+			document.removeEventListener("visibilitychange", syncRainbowAnimation);
+			stopRainbowAnimation();
+		};
+	}, [hasCrit, isOpen]);
+
+	useEffect(() => {
 		return () => {
 			if (tickRef.current) window.clearInterval(tickRef.current);
 			if (debounceRef.current) window.clearTimeout(debounceRef.current);
-			if (particleTickRef.current)
-				window.clearInterval(particleTickRef.current);
-			if (confettiSpawnRef.current)
-				window.clearInterval(confettiSpawnRef.current);
 			if (rainbowTickRef.current) window.clearInterval(rainbowTickRef.current);
 		};
 	}, []);
@@ -898,28 +790,8 @@ export function DiceRoller() {
 								</div>
 							)}
 						</div>
-						{/* Dice Preview with Particles - Increased height and padding */}
+						{/* Dice Preview */}
 						<div className="relative min-h-40 bg-base-300 rounded-xl p-4 overflow-hidden flex flex-col">
-							{/* Particle layer */}
-							<div className="absolute inset-0 pointer-events-none">
-								{particles.map((p) => (
-									<div
-										key={p.id}
-										className="absolute rounded-full transition-opacity"
-										style={{
-											left: `${p.x}%`,
-											top: `${p.y}%`,
-											width: `${p.size}px`,
-											height: `${p.size}px`,
-											backgroundColor: p.color,
-											opacity: p.life,
-											transform: `translate(-50%, -50%) rotate(${p.life * 360
-												}deg)`,
-										}}
-									/>
-								))}
-							</div>
-
 							{/* Dice grid */}
 							{previewDice.length === 0 ? (
 								<div className="flex items-center justify-center h-32 text-sm opacity-50">
@@ -942,7 +814,7 @@ export function DiceRoller() {
 													} ${!d.kept ? "opacity-40 grayscale" : ""}`}
 												title={`${d.kept ? "Kept" : "Dropped"} - d${d.sides}: ${d.finalValue
 													}`}
-											>
+												>
 												<div
 													className={`relative ${!d.spinning && isFumble && isSpecialDie
 														? "animate-[shake_0.5s_ease-in-out]"
@@ -951,6 +823,12 @@ export function DiceRoller() {
 															: ""
 														}`}
 												>
+													{!d.spinning && isSpecialDie && isCrit && (
+														<DieEffectBurst tone="crit" />
+													)}
+													{!d.spinning && isSpecialDie && isFumble && (
+														<DieEffectBurst tone="fumble" />
+													)}
 													<DieShape
 														sides={d.sides}
 														value={d.displayValue}
@@ -959,7 +837,7 @@ export function DiceRoller() {
 														rainbowPhase={
 															hasCrit && isSpecialDie ? rainbowPhase : undefined
 														}
-														className={`w-20 h-20 ${!d.spinning && isCrit && isSpecialDie
+														className={`relative z-10 w-20 h-20 ${!d.spinning && isCrit && isSpecialDie
 															? "drop-shadow-[0_0_20px_rgba(139,92,246,0.8)]"
 															: !d.spinning && isCrit
 																? "drop-shadow-[0_0_16px_rgba(34,197,94,1)]"
@@ -972,12 +850,12 @@ export function DiceRoller() {
 															}`}
 													/>
 													{!d.spinning && isCrit && (
-														<div className="absolute -top-2 -right-2 bg-success text-success-content text-[10px] px-2 py-0.5 rounded-full font-bold shadow-lg animate-bounce">
+														<div className="absolute -top-2 -right-2 z-20 bg-success text-success-content text-[10px] px-2 py-0.5 rounded-full font-bold shadow-lg animate-bounce">
 															CRIT!
 														</div>
 													)}
 													{!d.spinning && isFumble && isSpecialDie && (
-														<div className="absolute -top-2 -right-2 bg-error text-error-content text-[10px] px-2 py-0.5 rounded-full font-bold shadow-lg">
+														<div className="absolute -top-2 -right-2 z-20 bg-error text-error-content text-[10px] px-2 py-0.5 rounded-full font-bold shadow-lg">
 															FAIL
 														</div>
 													)}
@@ -1027,6 +905,128 @@ export function DiceRoller() {
           0%, 100% { transform: translateX(0); }
           10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
           20%, 40%, 60%, 80% { transform: translateX(4px); }
+        }
+
+        .dice-effect-burst {
+          position: absolute;
+          inset: -28px;
+          pointer-events: none;
+          z-index: 0;
+        }
+
+        .dice-effect-ring {
+          position: absolute;
+          inset: 18px;
+          border-radius: 9999px;
+          opacity: 0;
+        }
+
+        .dice-effect-burst-crit .dice-effect-ring {
+          border: 2px solid rgba(251, 191, 36, 0.85);
+          box-shadow: 0 0 18px rgba(139, 92, 246, 0.55);
+          animation: dice-crit-ring 1400ms ease-out infinite;
+        }
+
+        .dice-effect-burst-fumble .dice-effect-ring {
+          border: 2px solid rgba(185, 28, 28, 0.75);
+          box-shadow: 0 0 16px rgba(127, 29, 29, 0.45);
+          animation: dice-fumble-ring 1200ms ease-out infinite;
+        }
+
+        .dice-effect-ring-secondary {
+          animation-delay: 260ms !important;
+        }
+
+        .dice-effect-spark-path {
+          position: absolute;
+          left: 50%;
+          top: 50%;
+          width: 0;
+          height: 0;
+          transform: rotate(var(--spark-angle));
+        }
+
+        .dice-effect-spark {
+          position: absolute;
+          width: var(--spark-size);
+          height: var(--spark-size);
+          border-radius: 9999px;
+          background: var(--spark-color);
+          box-shadow: 0 0 10px var(--spark-color);
+          opacity: 0;
+          animation-delay: var(--spark-delay);
+          animation-iteration-count: infinite;
+          animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .dice-effect-burst-crit .dice-effect-spark {
+          animation-name: dice-crit-spark;
+          animation-duration: 1100ms;
+        }
+
+        .dice-effect-burst-fumble .dice-effect-spark {
+          animation-name: dice-fumble-chip;
+          animation-duration: 1250ms;
+        }
+
+        @keyframes dice-crit-ring {
+          0% {
+            transform: scale(0.55);
+            opacity: 0;
+          }
+          20% {
+            opacity: 0.9;
+          }
+          100% {
+            transform: scale(1.45);
+            opacity: 0;
+          }
+        }
+
+        @keyframes dice-fumble-ring {
+          0% {
+            transform: scale(0.65);
+            opacity: 0;
+          }
+          25% {
+            opacity: 0.75;
+          }
+          100% {
+            transform: scale(1.25);
+            opacity: 0;
+          }
+        }
+
+        @keyframes dice-crit-spark {
+          0% {
+            transform: translateX(20px) scale(0.2);
+            opacity: 0;
+          }
+          18% {
+            opacity: 1;
+          }
+          75% {
+            transform: translateX(var(--spark-distance)) scale(1);
+            opacity: 0.9;
+          }
+          100% {
+            transform: translateX(calc(var(--spark-distance) + 8px)) scale(0.1);
+            opacity: 0;
+          }
+        }
+
+        @keyframes dice-fumble-chip {
+          0% {
+            transform: translateX(18px) translateY(0) rotate(0deg) scale(0.35);
+            opacity: 0;
+          }
+          18% {
+            opacity: 0.9;
+          }
+          100% {
+            transform: translateX(var(--spark-distance)) translateY(24px) rotate(170deg) scale(0.1);
+            opacity: 0;
+          }
         }
       `}</style>
 		</div>
