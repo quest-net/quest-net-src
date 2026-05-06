@@ -43,7 +43,6 @@ interface ThreeDActorLayerProps {
 	entities: Entity[];
 	cutoutImageIds: ReadonlySet<string>;
 	selectedActor: SelectedActor | null;
-	actorLayerSignature: string;
 	terrain: VoxelTerrain;
 	isDM: boolean;
 	imageService?: {
@@ -60,10 +59,6 @@ interface ThreeDActorLayerProps {
 	 * Called when a height drag commits a new h for the actor's current tile.
 	 */
 	onActorDragEnd?: (actor: SelectedActor, position: Position) => void;
-}
-
-interface ManagedResource {
-	dispose(): void;
 }
 
 interface ColorHandle {
@@ -102,6 +97,8 @@ interface ActorVisualHandles {
 	pickMesh: THREE.Mesh;
 	supportMode: "grounded" | "airborne";
 	actor: ActorTokenDescriptor;
+	actorTexture: THREE.Texture;
+	visualSignature: string;
 }
 
 interface ActorDragState {
@@ -193,6 +190,28 @@ function createDescriptorMap(
 	return map;
 }
 
+function createActorVisualSignature(actor: ActorTokenDescriptor, isDM: boolean): string {
+	return [
+		actor.kind,
+		actor.name,
+		actor.imageId ?? "",
+		actor.cutout ? "cutout" : "framed",
+		actor.size,
+		isDM ? "dm" : "player",
+	].join("|");
+}
+
+function setActorUserData(
+	object: THREE.Object3D,
+	actor: ActorTokenDescriptor
+): void {
+	object.userData = {
+		actorId: actor.id,
+		kind: actor.kind,
+		moveSpeed: actor.moveSpeed,
+	};
+}
+
 function getActorSupportMode(
 	actor: ActorTokenDescriptor,
 	terrain: VoxelTerrain
@@ -222,16 +241,6 @@ function applySelectionToAll(
 	for (const [key, handles] of handlesByKey) {
 		applySelection(handles, key === selectedKey);
 	}
-}
-
-function getMeshResources(mesh: THREE.Mesh): ManagedResource[] {
-	const resources: ManagedResource[] = [mesh.geometry];
-	if (Array.isArray(mesh.material)) {
-		resources.push(...mesh.material);
-	} else {
-		resources.push(mesh.material);
-	}
-	return resources;
 }
 
 function calculateShadowParams(heightDelta: number): {
@@ -334,11 +343,7 @@ function createStandeeMesh(
 	const mesh = new THREE.Mesh(geometry, material);
 	mesh.position.y = bottomOffset + height / 2;
 	mesh.renderOrder = ACTOR_TOKEN_RENDER_ORDER.NORMAL;
-	mesh.userData = {
-		actorId: actor.id,
-		kind: actor.kind,
-		moveSpeed: actor.moveSpeed,
-	};
+	setActorUserData(mesh, actor);
 	mesh.onBeforeRender = () => faceCameraAroundY(mesh, resources.camera, actorGroup);
 	return mesh;
 }
@@ -388,11 +393,7 @@ function createPickMesh(
 	const mesh = new THREE.Mesh(geometry, material);
 	mesh.position.y = bottomOffset + height / 2;
 	mesh.renderOrder = ACTOR_TOKEN_RENDER_ORDER.PICK;
-	mesh.userData = {
-		actorId: actor.id,
-		kind: actor.kind,
-		moveSpeed: actor.moveSpeed,
-	};
+	setActorUserData(mesh, actor);
 	mesh.onBeforeRender = () => faceCameraAroundY(mesh, resources.camera, actorGroup);
 	return mesh;
 }
@@ -625,6 +626,9 @@ function refreshSupportVisual(
 	setPlaneBottomOffset(visual.standee, actor, bottomOffset);
 	setPlaneBottomOffset(visual.selectionOverlay, actor, bottomOffset);
 	setPlaneBottomOffset(visual.pickMesh, actor, bottomOffset);
+	setActorUserData(visual.group, actor);
+	setActorUserData(visual.standee, actor);
+	setActorUserData(visual.pickMesh, actor);
 	visual.actor = actor;
 
 	if (nextHandles) applySelection(nextHandles, selected);
@@ -693,7 +697,6 @@ export function ThreeDActorLayer({
 	entities,
 	cutoutImageIds,
 	selectedActor,
-	actorLayerSignature,
 	terrain,
 	isDM,
 	imageService,
@@ -721,7 +724,11 @@ export function ThreeDActorLayer({
 	const moveAnimationRafRef = useRef(0);
 	const previousVisualPositionsRef = useRef<Map<string, THREE.Vector3>>(new Map());
 	const visualHandlesRef = useRef<Map<string, ActorVisualHandles>>(new Map());
+	const layerGroupRef = useRef<THREE.Group | null>(null);
 	const shadowTextureRef = useRef<THREE.Texture | null>(null);
+	const selectionTextureRef = useRef<THREE.Texture | null>(null);
+	const tokenBuildVersionsRef = useRef<Map<string, number>>(new Map());
+	const pendingVisualBuildsRef = useRef<Map<string, number>>(new Map());
 	const dragStateRef = useRef<ActorDragState | null>(null);
 	const flightGuideRef = useRef<THREE.Line | null>(null);
 	const descriptorsByKeyRef = useRef<Map<string, ActorTokenDescriptor>>(
@@ -839,27 +846,196 @@ export function ThreeDActorLayer({
 		flightGuideRef.current = guide;
 	};
 
+	const bumpTokenBuildVersion = (actorKey: string): number => {
+		const nextVersion = (tokenBuildVersionsRef.current.get(actorKey) ?? 0) + 1;
+		tokenBuildVersionsRef.current.set(actorKey, nextVersion);
+		return nextVersion;
+	};
+
+	const removePickTarget = (pickMesh: THREE.Mesh) => {
+		const pickTargets = resources.actorPickTargets;
+		const index = pickTargets.indexOf(pickMesh);
+		if (index >= 0) {
+			pickTargets.splice(index, 1);
+		}
+	};
+
+	const disposeActorVisual = (
+		actorKey: string,
+		options: { preservePosition?: boolean } = {}
+	) => {
+		bumpTokenBuildVersion(actorKey);
+		const visual = visualHandlesRef.current.get(actorKey);
+		if (!visual) return;
+
+		if (options.preservePosition) {
+			previousVisualPositionsRef.current.set(actorKey, visual.group.position.clone());
+		} else {
+			previousVisualPositionsRef.current.delete(actorKey);
+		}
+
+		if (dragStateRef.current?.actorKey === actorKey) {
+			dragStateRef.current = null;
+			resources.dragState.active = false;
+			clearFlightGuide();
+		}
+
+		layerGroupRef.current?.remove(visual.group);
+		removePickTarget(visual.pickMesh);
+		disposeObjectMeshes(visual.group);
+		visual.actorTexture.dispose();
+		visual.group.clear();
+		selectionHandlesRef.current.delete(actorKey);
+		actorGroupsRef.current.delete(actorKey);
+		targetPositionsRef.current.delete(actorKey);
+		visualHandlesRef.current.delete(actorKey);
+		moveAnimationsRef.current.delete(actorKey);
+		pendingVisualBuildsRef.current.delete(actorKey);
+	};
+
+	const createActorVisual = async (actorKey: string, actor: ActorTokenDescriptor) => {
+		if (visualHandlesRef.current.has(actorKey)) return;
+		if (pendingVisualBuildsRef.current.has(actorKey)) return;
+		const layerGroup = layerGroupRef.current;
+		const shadowTexture = shadowTextureRef.current;
+		const selectionTexture = selectionTextureRef.current;
+		if (!layerGroup || !shadowTexture || !selectionTexture) return;
+
+		const buildVersion = bumpTokenBuildVersion(actorKey);
+		pendingVisualBuildsRef.current.set(actorKey, buildVersion);
+		const visualSignature = createActorVisualSignature(actor, isDM);
+		const texture = await createActorTokenTexture(actor, {
+			isDM,
+			imageService: imageServiceRef.current,
+		});
+		if (pendingVisualBuildsRef.current.get(actorKey) === buildVersion) {
+			pendingVisualBuildsRef.current.delete(actorKey);
+		}
+		const latestActor = descriptorsByKeyRef.current.get(actorKey);
+		const latestSignature = latestActor
+			? createActorVisualSignature(latestActor, isDM)
+			: null;
+		if (
+			tokenBuildVersionsRef.current.get(actorKey) !== buildVersion ||
+			!latestActor ||
+			latestSignature !== visualSignature ||
+			visualHandlesRef.current.has(actorKey) ||
+			layerGroupRef.current !== layerGroup ||
+			shadowTextureRef.current !== shadowTexture ||
+			selectionTextureRef.current !== selectionTexture
+		) {
+			texture.dispose();
+			return;
+		}
+
+		const currentTerrain = terrainRef.current;
+		const targetPosition = getActorGroundPosition(latestActor, currentTerrain);
+		const previousVisualPosition = previousVisualPositionsRef.current.get(actorKey);
+		previousVisualPositionsRef.current.delete(actorKey);
+		const actorGroup = new THREE.Group();
+		actorGroup.position.copy(previousVisualPosition ?? targetPosition);
+		setActorUserData(actorGroup, latestActor);
+
+		const supportMode = getActorSupportMode(latestActor, currentTerrain);
+		const airborne = supportMode === "airborne";
+		const shadow = createShadowMesh(latestActor, currentTerrain, shadowTexture);
+		const standeeBottomOffset = getStandeeBottomOffset(latestActor, airborne);
+		const support = createSupportGroup(latestActor, airborne);
+		const standee = createStandeeMesh(
+			texture,
+			latestActor,
+			resources,
+			actorGroup,
+			standeeBottomOffset
+		);
+		const selectionOverlay = latestActor.cutout
+			? null
+			: createSelectionOverlayMesh(
+					selectionTexture,
+					latestActor,
+					resources,
+					actorGroup,
+					standeeBottomOffset
+			  );
+		const pickMesh = createPickMesh(
+			latestActor,
+			resources,
+			actorGroup,
+			standeeBottomOffset
+		);
+
+		actorGroup.add(shadow, support.group, standee, pickMesh);
+		if (selectionOverlay) {
+			actorGroup.add(selectionOverlay);
+		}
+		layerGroup.add(actorGroup);
+		resources.actorPickTargets.push(pickMesh);
+
+		const handles: SelectionHandles = {
+			overlay: selectionOverlay ?? undefined,
+			colors: support.colors,
+			haloOpacities: support.haloOpacities,
+		};
+		selectionHandlesRef.current.set(actorKey, handles);
+		actorGroupsRef.current.set(actorKey, actorGroup);
+		targetPositionsRef.current.set(actorKey, targetPosition.clone());
+		visualHandlesRef.current.set(actorKey, {
+			group: actorGroup,
+			shadow,
+			supportGroup: support.group,
+			standee,
+			selectionOverlay: selectionOverlay ?? undefined,
+			pickMesh,
+			supportMode,
+			actor: latestActor,
+			actorTexture: texture,
+			visualSignature,
+		});
+
+		if (
+			previousVisualPosition &&
+			previousVisualPosition.distanceToSquared(targetPosition) >
+				ACTOR_TOKEN_MOVEMENT_ANIMATION.POSITION_EPSILON
+		) {
+			moveAnimationsRef.current.set(actorKey, {
+				group: actorGroup,
+				from: previousVisualPosition.clone(),
+				to: targetPosition,
+				startedAt: performance.now(),
+				durationMs: getMovementAnimationDuration(
+					previousVisualPosition,
+					targetPosition
+				),
+			});
+			scheduleMoveAnimationTick();
+		}
+
+		const currentSelected = selectedActorRef.current;
+		const isSelected =
+			!!currentSelected &&
+			getActorKey(currentSelected.kind, currentSelected.id) === actorKey;
+		applySelection(handles, isSelected);
+	};
+
 	useEffect(() => {
-		let disposed = false;
 		const group = new THREE.Group();
-		const textures: THREE.Texture[] = [];
-		const managedResources: ManagedResource[] = [];
 		// Pick meshes are also published into resources.actorPickTargets so
 		// the movement layer can probe "is the cursor over an actor?" and
-		// suppress the tile hover behind the actor. The two arrays stay in
-		// sync (this effect owns both lifecycles).
-		const pickTargets: THREE.Object3D[] = [];
-		const sharedPickTargets = resources.actorPickTargets;
-		sharedPickTargets.length = 0;
+		// suppress the tile hover behind the actor. The actor layer owns the
+		// lifecycle of this shared array.
+		resources.actorPickTargets.length = 0;
 		const raycaster = new THREE.Raycaster();
 		const shadowTexture = createShadowTexture();
 		const selectionTexture = createSelectionOutlineTexture();
-		textures.push(shadowTexture, selectionTexture);
+		layerGroupRef.current = group;
 		shadowTextureRef.current = shadowTexture;
+		selectionTextureRef.current = selectionTexture;
 		const handlesByKey = selectionHandlesRef.current;
 		const actorGroupsByKey = actorGroupsRef.current;
 		const targetPositionsByKey = targetPositionsRef.current;
 		const visualHandlesByKey = visualHandlesRef.current;
+		tokenBuildVersionsRef.current.clear();
+		pendingVisualBuildsRef.current.clear();
 		handlesByKey.clear();
 		actorGroupsByKey.clear();
 		targetPositionsByKey.clear();
@@ -867,137 +1043,6 @@ export function ThreeDActorLayer({
 		moveAnimationsRef.current.clear();
 
 		resources.scene.add(group);
-
-		const descriptors = Array.from(descriptorsByKeyRef.current.values());
-
-		const addActorToken = async (actor: ActorTokenDescriptor) => {
-			const texture = await createActorTokenTexture(actor, {
-				isDM,
-				imageService: imageServiceRef.current,
-			});
-			if (disposed) {
-				texture.dispose();
-				return;
-			}
-
-			textures.push(texture);
-			const actorGroup = new THREE.Group();
-			const key = getActorKey(actor.kind, actor.id);
-			const latestActor = descriptorsByKeyRef.current.get(key) ?? actor;
-			const currentTerrain = terrainRef.current;
-			const targetPosition = getActorGroundPosition(latestActor, currentTerrain);
-			const previousVisualPosition = previousVisualPositionsRef.current.get(key);
-			previousVisualPositionsRef.current.delete(key);
-			actorGroup.position.copy(previousVisualPosition ?? targetPosition);
-			actorGroup.userData = {
-				actorId: actor.id,
-				kind: actor.kind,
-				moveSpeed: actor.moveSpeed,
-			};
-
-			const supportMode = getActorSupportMode(actor, currentTerrain);
-			const airborne = supportMode === "airborne";
-			const shadow = createShadowMesh(actor, currentTerrain, shadowTexture);
-			const standeeBottomOffset = getStandeeBottomOffset(actor, airborne);
-			const support = createSupportGroup(actor, airborne);
-
-			const standee = createStandeeMesh(
-				texture,
-				actor,
-				resources,
-				actorGroup,
-				standeeBottomOffset
-			);
-			// Cutout actors render frameless -- a square selection frame around a
-			// transparent figure would defeat the purpose. Selection still flips
-			// the base/halo color for a visible signal.
-			const selectionOverlay = actor.cutout
-				? null
-				: createSelectionOverlayMesh(
-						selectionTexture,
-						actor,
-						resources,
-						actorGroup,
-						standeeBottomOffset
-				  );
-			const pickMesh = createPickMesh(
-				actor,
-				resources,
-				actorGroup,
-				standeeBottomOffset
-			);
-
-			// Note: when present, selectionOverlay.material.map is the SHARED
-			// selectionTexture; disposing the material does not dispose its
-			// texture, so the shared texture is safely disposed once via the
-			// `textures` array.
-			managedResources.push(
-				...getMeshResources(shadow),
-				...support.group.children.flatMap((child) => {
-					return child instanceof THREE.Mesh ? getMeshResources(child) : [];
-				}),
-				...getMeshResources(standee),
-				...(selectionOverlay ? getMeshResources(selectionOverlay) : []),
-				...getMeshResources(pickMesh)
-			);
-			pickTargets.push(pickMesh);
-			sharedPickTargets.push(pickMesh);
-
-			actorGroup.add(shadow, support.group, standee, pickMesh);
-			if (selectionOverlay) {
-				actorGroup.add(selectionOverlay);
-			}
-			group.add(actorGroup);
-
-			const handles: SelectionHandles = {
-				overlay: selectionOverlay ?? undefined,
-				colors: support.colors,
-				haloOpacities: support.haloOpacities,
-			};
-			handlesByKey.set(key, handles);
-			actorGroupsByKey.set(key, actorGroup);
-			targetPositionsByKey.set(key, targetPosition.clone());
-			visualHandlesByKey.set(key, {
-				group: actorGroup,
-				shadow,
-				supportGroup: support.group,
-				standee,
-				selectionOverlay: selectionOverlay ?? undefined,
-				pickMesh,
-				supportMode,
-				actor,
-			});
-
-			if (
-				previousVisualPosition &&
-				previousVisualPosition.distanceToSquared(targetPosition) >
-					ACTOR_TOKEN_MOVEMENT_ANIMATION.POSITION_EPSILON
-			) {
-				moveAnimationsRef.current.set(key, {
-					group: actorGroup,
-					from: previousVisualPosition.clone(),
-					to: targetPosition,
-					startedAt: performance.now(),
-					durationMs: getMovementAnimationDuration(
-						previousVisualPosition,
-						targetPosition
-					),
-				});
-				scheduleMoveAnimationTick();
-			}
-
-			// Apply current selection state to the freshly-built token. The
-			// separate selection effect below handles subsequent toggles.
-			const currentSelected = selectedActorRef.current;
-			const isSelected =
-				!!currentSelected &&
-				getActorKey(currentSelected.kind, currentSelected.id) === key;
-			applySelection(handles, isSelected);
-		};
-
-		for (const actor of descriptors) {
-			void addActorToken(actor);
-		}
 
 		// ---------- Actor height drag ----------
 		// Terrain clicks own x/z movement. Dragging an actor is only a
@@ -1018,7 +1063,7 @@ export function ThreeDActorLayer({
 
 			// Precise pick first: raycast against the (1.25x) pick meshes.
 			// Eat hits that are clearly behind terrain.
-			const actorHits = raycaster.intersectObjects(pickTargets, true);
+			const actorHits = raycaster.intersectObjects(resources.actorPickTargets, true);
 			const occlusionHit = raycaster.intersectObjects(
 				resources.occlusionTargets,
 				true
@@ -1049,7 +1094,7 @@ export function ThreeDActorLayer({
 				actor: ActorTokenDescriptor;
 				distance: number;
 			} | null = null;
-			for (const pickMesh of pickTargets) {
+			for (const pickMesh of resources.actorPickTargets) {
 				const { actorId, kind } = pickMesh.userData ?? {};
 				if (!actorId || !kind) continue;
 				const key = getActorKey(kind, actorId);
@@ -1292,7 +1337,6 @@ export function ThreeDActorLayer({
 		window.addEventListener("pointerup", finishActorDrag, true);
 		window.addEventListener("pointercancel", cancelActorDrag, true);
 		return () => {
-			disposed = true;
 			resources.domElement.removeEventListener("pointerdown", handlePointerDown, true);
 			window.removeEventListener("pointermove", handlePointerMove, true);
 			window.removeEventListener("pointerup", finishActorDrag, true);
@@ -1309,33 +1353,39 @@ export function ThreeDActorLayer({
 			clearFlightGuide();
 			const previousVisualPositions = previousVisualPositionsRef.current;
 			previousVisualPositions.clear();
-			for (const [key, actorGroup] of actorGroupsByKey) {
-				previousVisualPositions.set(key, actorGroup.position.clone());
+			for (const [key, visual] of visualHandlesByKey) {
+				previousVisualPositions.set(key, visual.group.position.clone());
+				bumpTokenBuildVersion(key);
+				disposeObjectMeshes(visual.group);
+				visual.actorTexture.dispose();
+				visual.group.clear();
 			}
 			resources.scene.remove(group);
-			disposeObjectMeshes(group);
 			group.clear();
 			handlesByKey.clear();
 			actorGroupsByKey.clear();
 			targetPositionsByKey.clear();
 			visualHandlesByKey.clear();
 			shadowTextureRef.current = null;
-			sharedPickTargets.length = 0;
+			selectionTextureRef.current = null;
+			layerGroupRef.current = null;
+			resources.actorPickTargets.length = 0;
 			moveAnimationsRef.current.clear();
-			for (const resource of managedResources) {
-				resource.dispose();
-			}
-			for (const texture of textures) {
-				texture.dispose();
-			}
+			pendingVisualBuildsRef.current.clear();
+			shadowTexture.dispose();
+			selectionTexture.dispose();
 		};
 		// Intentionally NOT including imageService, onActorClick, or
 		// selectedActor: those flow through refs so a reconnect or selection
 		// change doesn't tear down every token and re-fetch its texture.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [resources, actorLayerSignature, isDM]);
+	}, [resources]);
 
 	useEffect(() => {
+		if (!layerGroupRef.current || !shadowTextureRef.current || !selectionTextureRef.current) {
+			return;
+		}
+
 		const now = performance.now();
 		const liveKeys = new Set(descriptorsByKeyRef.current.keys());
 		const selectedKey = selectedActorRef.current
@@ -1343,12 +1393,30 @@ export function ThreeDActorLayer({
 			: null;
 		const shadowTexture = shadowTextureRef.current;
 
+		for (const key of Array.from(visualHandlesRef.current.keys())) {
+			if (!liveKeys.has(key)) {
+				disposeActorVisual(key);
+			}
+		}
+
 		for (const [key, actor] of descriptorsByKeyRef.current) {
+			const visualSignature = createActorVisualSignature(actor, isDM);
+			const visual = visualHandlesRef.current.get(key);
+			if (visual && visual.visualSignature !== visualSignature) {
+				disposeActorVisual(key, { preservePosition: true });
+				void createActorVisual(key, actor);
+				continue;
+			}
+
+			if (!visual) {
+				void createActorVisual(key, actor);
+				continue;
+			}
+
 			const actorGroup = actorGroupsRef.current.get(key);
 			if (!actorGroup) continue;
-			const visual = visualHandlesRef.current.get(key);
 
-			if (visual && shadowTexture) {
+			if (shadowTexture) {
 				const nextHandles = refreshSupportVisual(
 					visual,
 					actor,
@@ -1381,13 +1449,7 @@ export function ThreeDActorLayer({
 			});
 			scheduleMoveAnimationTick();
 		}
-
-		for (const key of Array.from(targetPositionsRef.current.keys())) {
-			if (liveKeys.has(key)) continue;
-			targetPositionsRef.current.delete(key);
-			moveAnimationsRef.current.delete(key);
-		}
-	}, [characters, entities, cutoutImageIds, terrain]);
+	}, [characters, entities, cutoutImageIds, terrain, isDM]);
 
 	useEffect(() => {
 		return () => {

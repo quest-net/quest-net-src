@@ -220,48 +220,6 @@ function createTerrainSignature(terrain?: VoxelTerrain | null): string {
 	].join(":");
 }
 
-// NOTE: selection state is intentionally excluded -- selection is applied
-// imperatively inside ThreeDActorLayer so toggling selection no longer
-// destroys & rebuilds every token (and re-fetches every portrait). Cutout
-// state IS included: flipping an image between framed/cutout requires
-// regenerating the texture (different clip + frame) and the geometry stack
-// (selection overlay is suppressed for cutout tokens).
-function createActorLayerSignature(
-	characters: Character[],
-	entities: Entity[],
-	cutoutImageIds: ReadonlySet<string>
-): string {
-	const cutoutFlag = (imageId?: string) =>
-		imageId && cutoutImageIds.has(imageId) ? "1" : "0";
-
-	const actorParts = [
-		...characters.map((character) =>
-			[
-				"c",
-				character.Id,
-				character.Name,
-				character.Image ?? "",
-				cutoutFlag(character.Image),
-				character.Size ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.SIZE,
-				character.MoveSpeed ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.MOVE_SPEED,
-			].join(",")
-		),
-		...entities.map((entity) =>
-			[
-				"e",
-				entity.Id,
-				entity.Name,
-				entity.Image ?? "",
-				cutoutFlag(entity.Image),
-				entity.Size ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.SIZE,
-				entity.MoveSpeed ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.MOVE_SPEED,
-			].join(",")
-		),
-	];
-
-	return actorParts.join("|");
-}
-
 function findSelectedActor(
 	selectedActor: { id: string; kind: "character" | "entity" } | null,
 	characters: Character[],
@@ -334,10 +292,6 @@ export default function ThreeDMap({
 		return ids;
 	}, [campaign]);
 	const terrainSignature = useMemo(() => createTerrainSignature(terrain), [terrain]);
-	const actorLayerSignature = useMemo(
-		() => createActorLayerSignature(characters, entities, cutoutImageIds),
-		[characters, entities, cutoutImageIds]
-	);
 	// Memo deps read primitives from Position/TurnStartPosition rather than the
 	// actor reference. Move actions replace Position with a new object but
 	// keep the actor reference stable, which previously left this BFS stale --
@@ -731,7 +685,6 @@ export default function ThreeDMap({
 						entities={entities}
 						cutoutImageIds={cutoutImageIds}
 						selectedActor={selectedActor}
-						actorLayerSignature={actorLayerSignature}
 						terrain={terrain}
 						isDM={isDM}
 						imageService={imageService}
