@@ -14,6 +14,7 @@ import { User } from "../../domains/User/User";
 import { CampaignLoadingService } from "../CampaignLoadingService";
 
 const PING_INTERVAL_MS = 3000;
+const PEER_RECONCILE_INTERVAL_MS = 2000;
 
 export class ActionService {
 	private context: Context;
@@ -26,13 +27,16 @@ export class ActionService {
 	// Trystero channel functions
 	private sendActionRequest!: (data: any) => void;
 	private sendUserUpdate!: (data: any, peerId?: string) => void;
+	private sendUserRequest!: (data: any, peerId?: string) => void;
 
-	// Peer state — populated via the joinRoom handshake (initial sync) and
-	// the `userUpdate` action (runtime updates). Owned here so all consumers
-	// (hooks, components) read the same source of truth.
+	// Peer state is split into transport presence and app-level metadata.
+	// `connectedPeerIds` mirrors Trystero's active peer map. `peerUsers` is
+	// optional display metadata populated by handshake/userUpdate traffic.
+	public connectedPeerIds: Set<string> = new Set();
 	public peerUsers: Map<string, User> = new Map();
 	public peerPings: Map<string, number> = new Map();
 	private pingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
+	private peerReconcileInterval?: ReturnType<typeof setInterval>;
 	private lastBroadcastUserJson = "";
 
 	constructor(context: Context, room: Room) {
@@ -60,21 +64,28 @@ export class ActionService {
 
 	/**
 	 * Records a peer's User payload (called from the room handshake).
-	 * Starts the ping cadence for that peer and triggers a re-render.
+	 * Handshake runs before Trystero marks the peer active, so transport
+	 * presence is reconciled separately through onPeerJoin/getPeers().
 	 */
 	recordPeerUser(peerId: string, user: User) {
-		this.peerUsers.set(peerId, user);
-		this.startPinging(peerId);
-		triggerContextUpdate();
+		const didChangeUser = this.setPeerUser(peerId, user);
+		const didChangeConnection = this.isPeerActive(peerId)
+			? this.addConnectedPeer(peerId)
+			: false;
+
+		if (didChangeUser || didChangeConnection) {
+			triggerContextUpdate();
+		}
 	}
 
 	/**
-	 * Drops a peer's User payload and stops pinging them.
+	 * Drops all local state for a peer that is no longer transport-active.
 	 */
-	private forgetPeerUser(peerId: string) {
-		const had = this.peerUsers.delete(peerId);
+	private forgetPeer(peerId: string) {
+		const hadConnection = this.connectedPeerIds.delete(peerId);
+		const hadUser = this.peerUsers.delete(peerId);
 		this.stopPinging(peerId);
-		if (had) {
+		if (hadConnection || hadUser) {
 			triggerContextUpdate();
 		}
 	}
@@ -84,9 +95,13 @@ export class ActionService {
 	 * last broadcast. Safe to call from multiple components — only the
 	 * actual changes are sent.
 	 */
-	broadcastSelf(): void {
+	broadcastSelf(peerId?: string): void {
 		if (!this.sendUserUpdate) return;
 		const json = JSON.stringify(this.context.User);
+		if (peerId) {
+			this.sendUserUpdate(this.context.User, peerId);
+			return;
+		}
 		if (json === this.lastBroadcastUserJson) return;
 		this.lastBroadcastUserJson = json;
 		this.sendUserUpdate(this.context.User);
@@ -109,9 +124,21 @@ export class ActionService {
 		this.sendUserUpdate = sendUserUpdate;
 		getUserUpdate((data, peerId) => {
 			if (data && typeof data === "object") {
-				this.peerUsers.set(peerId, data as unknown as User);
-				triggerContextUpdate();
+				const didChangeUser = this.setPeerUser(peerId, data as unknown as User);
+				const didChangeConnection = this.isPeerActive(peerId)
+					? this.addConnectedPeer(peerId)
+					: false;
+
+				if (didChangeUser || didChangeConnection) {
+					triggerContextUpdate();
+				}
 			}
+		});
+
+		const [sendUserRequest, getUserRequest] = this.room.makeAction("userReq");
+		this.sendUserRequest = sendUserRequest;
+		getUserRequest((_data, peerId) => {
+			this.broadcastSelf(peerId);
 		});
 	}
 
@@ -163,7 +190,9 @@ export class ActionService {
 	}
 
 	private setupPeerHandlers() {
-		this.room.onPeerJoin(() => {
+		this.room.onPeerJoin((peerId) => {
+			const didChangeConnection = this.addConnectedPeer(peerId);
+
 			if (this.context.User.Role === "dm") {
 				const campaign = CampaignActions.getActiveCampaign(this.context);
 				const isSecret = this.context.SecretModes?.[campaign.Id];
@@ -172,11 +201,79 @@ export class ActionService {
 					this.stateSync.broadcastFull(campaign);
 				}
 			}
+
+			if (didChangeConnection) {
+				triggerContextUpdate();
+			}
 		});
 
 		this.room.onPeerLeave((peerId) => {
-			this.forgetPeerUser(peerId);
+			this.forgetPeer(peerId);
 		});
+
+		this.peerReconcileInterval = setInterval(
+			() => this.reconcilePeerConnections(),
+			PEER_RECONCILE_INTERVAL_MS
+		);
+		this.reconcilePeerConnections();
+	}
+
+	private setPeerUser(peerId: string, user: User): boolean {
+		const previous = this.peerUsers.get(peerId);
+		this.peerUsers.set(peerId, user);
+		return JSON.stringify(previous) !== JSON.stringify(user);
+	}
+
+	private isPeerActive(peerId: string): boolean {
+		return Object.prototype.hasOwnProperty.call(this.room.getPeers(), peerId);
+	}
+
+	private addConnectedPeer(peerId: string): boolean {
+		const wasConnected = this.connectedPeerIds.has(peerId);
+		this.connectedPeerIds.add(peerId);
+
+		if (!this.pingIntervals.has(peerId)) {
+			this.startPinging(peerId);
+		}
+
+		if (!wasConnected) {
+			this.broadcastSelf(peerId);
+		}
+		if (!this.peerUsers.has(peerId)) {
+			this.requestPeerUser(peerId);
+		}
+
+		return !wasConnected;
+	}
+
+	private requestPeerUser(peerId: string) {
+		if (!this.sendUserRequest) return;
+		this.sendUserRequest({ userId: this.context.User.Id }, peerId);
+	}
+
+	private reconcilePeerConnections() {
+		const activePeerIds = new Set(Object.keys(this.room.getPeers()));
+		let didChange = false;
+
+		for (const peerId of activePeerIds) {
+			didChange = this.addConnectedPeer(peerId) || didChange;
+			if (!this.peerUsers.has(peerId)) {
+				this.requestPeerUser(peerId);
+			}
+		}
+
+		for (const peerId of Array.from(this.connectedPeerIds)) {
+			if (!activePeerIds.has(peerId)) {
+				this.connectedPeerIds.delete(peerId);
+				this.peerUsers.delete(peerId);
+				this.stopPinging(peerId);
+				didChange = true;
+			}
+		}
+
+		if (didChange) {
+			triggerContextUpdate();
+		}
 	}
 
 	private startPinging(peerId: string) {
@@ -370,10 +467,15 @@ export class ActionService {
 
 	cleanup(): void {
 		console.log("[ActionService] Cleaning up...");
+		if (this.peerReconcileInterval) {
+			clearInterval(this.peerReconcileInterval);
+			this.peerReconcileInterval = undefined;
+		}
 		this.pingIntervals.forEach(clearInterval);
 		this.pingIntervals.clear();
 		this.peerPings.clear();
 		this.peerUsers.clear();
+		this.connectedPeerIds.clear();
 		if (this.room) {
 			RoomActions.leave(this.room);
 		}

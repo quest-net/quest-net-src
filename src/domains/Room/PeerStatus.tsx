@@ -47,7 +47,7 @@ export function PeerStatus({ connectionStatus, peers }: PeerStatusProps) {
 
 		// IMPORTANT: Always use RoomCode as the key, since players use RoomCode
 		// (their sanitized campaigns have Id = RoomCode)
-		const selectedCharId = peer.user.SelectedCharacters[campaign.RoomCode];
+		const selectedCharId = peer.user?.SelectedCharacters[campaign.RoomCode];
 		if (!selectedCharId) return null;
 
 		const character = campaign.GameState.Characters.find(
@@ -94,7 +94,8 @@ export function PeerStatus({ connectionStatus, peers }: PeerStatusProps) {
 						) : (
 							<div className="space-y-2">
 								{peers.map((peer) => {
-									const isHost = peer.user.Role === "dm";
+									const isHost = peer.user?.Role === "dm";
+									const displayName = peer.user?.Name ?? "Identifying peer";
 									const characterName = getCharacterName(peer.peerId);
 
 									return (
@@ -105,7 +106,7 @@ export function PeerStatus({ connectionStatus, peers }: PeerStatusProps) {
 											<div className="flex justify-between items-start mb-2">
 												<div className="flex-1 min-w-0">
 													<p className="font-semibold truncate">
-														{peer.user.Name}
+														{displayName}
 													</p>
 													<p className="text-xs opacity-60 truncate font-mono">
 														{peer.peerId}
@@ -127,7 +128,14 @@ export function PeerStatus({ connectionStatus, peers }: PeerStatusProps) {
 
 											{/* Character Selection Display */}
 											<div className="mt-2 pt-2 border-t border-base-300">
-												{isHost ? (
+												{!peer.user ? (
+													<div className="flex items-center gap-2 opacity-50">
+														<span className="icon-[mdi--account-question] w-4 h-4"></span>
+														<span className="text-sm italic">
+															Loading peer details
+														</span>
+													</div>
+												) : isHost ? (
 													<div className="flex items-center gap-2">
 														<span className="icon-[mdi--shield-crown] w-4 h-4 opacity-60"></span>
 														<span className="text-sm">

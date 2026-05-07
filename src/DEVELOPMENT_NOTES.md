@@ -25,10 +25,12 @@
 - **Initial peer state**: `User` payloads are exchanged via `onPeerHandshake`
   (passed to `joinRoom` callbacks in `CampaignView`). Peers are NOT visible
   to `getPeers()`, `onPeerJoin`, or any action receiver until their handshake
-  succeeds, so `ActionService.peerUsers` is guaranteed populated for every
-  active peer.
+  succeeds. Runtime presence is therefore tracked from Trystero's active peer
+  map (`ActionService.connectedPeerIds`), while `ActionService.peerUsers`
+  remains optional display metadata.
 - **Runtime user updates**: After handshake, character selection changes
   flow through the small `userUpdate` action (`ActionService.broadcastSelf`).
+  Missing metadata is repaired with the `userReq` action.
 - **Initial campaign state**: DM auto-broadcasts the full campaign on
   `onPeerJoin` so newly admitted players catch up immediately.
 

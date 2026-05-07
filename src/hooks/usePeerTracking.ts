@@ -7,7 +7,7 @@ import { CampaignActions } from "../domains/Campaign/CampaignActions";
 
 export interface PeerInfo {
 	peerId: string;
-	user: User;
+	user: User | null;
 	ping: number | null;
 }
 
@@ -44,11 +44,12 @@ export function usePeerTracking(): PeerTrackingData {
 
 	const peerUsersMap = actionService?.peerUsers ?? new Map<string, User>();
 	const peerPingsMap = actionService?.peerPings ?? new Map<string, number>();
+	const connectedPeerIds = actionService?.connectedPeerIds ?? new Set<string>();
 
-	const peers: PeerInfo[] = Array.from(peerUsersMap.entries()).map(
-		([peerId, user]) => ({
+	const peers: PeerInfo[] = Array.from(connectedPeerIds).map(
+		(peerId) => ({
 			peerId,
-			user,
+			user: peerUsersMap.get(peerId) ?? null,
 			ping: peerPingsMap.get(peerId) ?? null,
 		})
 	);

@@ -26,7 +26,7 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 	// Collect all character IDs selected by peers for this campaign
 	const selectedByPeers = new Set<string>();
 	peers.forEach((peer) => {
-		const selectedCharId = peer.user.SelectedCharacters[campaign.RoomCode];
+		const selectedCharId = peer.user?.SelectedCharacters[campaign.RoomCode];
 		if (selectedCharId) {
 			selectedByPeers.add(selectedCharId);
 		}
