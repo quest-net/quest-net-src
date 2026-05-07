@@ -74,3 +74,20 @@ export function findFirstTerrainHit(
 	}
 	return null;
 }
+
+/**
+ * Terrain picking only needs the nearest face. `three-mesh-bvh` can answer
+ * that directly when firstHitOnly is set, avoiding a full sorted hit list.
+ */
+export function intersectFirstTerrainHit(
+	raycaster: THREE.Raycaster,
+	targets: THREE.Object3D[]
+): THREE.Intersection<THREE.Object3D> | null {
+	const previousFirstHitOnly = raycaster.firstHitOnly;
+	raycaster.firstHitOnly = true;
+	try {
+		return findFirstTerrainHit(raycaster.intersectObjects(targets, true));
+	} finally {
+		raycaster.firstHitOnly = previousFirstHitOnly;
+	}
+}

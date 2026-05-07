@@ -14,8 +14,8 @@ import type { HoveredTile, SelectedActor } from "../MapStateProvider";
 import { THREE_D_MOVEMENT_HIGHLIGHT } from "../threeDMapConstants";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import {
-	findFirstTerrainHit,
 	getHitWorldNormal,
+	intersectFirstTerrainHit,
 	worldPointToVoxelTile,
 } from "./movement3DHelpers";
 
@@ -78,9 +78,7 @@ function getTileFromPointerEvent(
 	);
 	const closestActorDistance = actorHits[0]?.distance ?? Infinity;
 
-	const terrainHit = findFirstTerrainHit(
-		raycaster.intersectObjects(resources.occlusionTargets, true)
-	);
+	const terrainHit = intersectFirstTerrainHit(raycaster, resources.occlusionTargets);
 	if (!terrainHit) return null;
 
 	if (closestActorDistance + ACTOR_OCCLUSION_EPSILON < terrainHit.distance) {

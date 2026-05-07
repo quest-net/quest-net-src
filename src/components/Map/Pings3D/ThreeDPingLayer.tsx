@@ -7,8 +7,8 @@ import type { ActivePing } from "../hooks/useActivePings";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import { terrainHeightToWorldY } from "../Actors3D/actorTokenPlacement";
 import {
-	findFirstTerrainHit,
 	getHitWorldNormal,
+	intersectFirstTerrainHit,
 	worldPointToVoxelTile,
 } from "../Movement3D/movement3DHelpers";
 import {
@@ -201,9 +201,7 @@ function getPingTileFromPointer(
 	pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 	raycaster.setFromCamera(pointer, resources.camera);
 
-	const terrainHit = findFirstTerrainHit(
-		raycaster.intersectObjects(resources.occlusionTargets, true)
-	);
+	const terrainHit = intersectFirstTerrainHit(raycaster, resources.occlusionTargets);
 	if (!terrainHit) return null;
 
 	const worldNormal = getHitWorldNormal(terrainHit);

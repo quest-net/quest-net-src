@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { MeshBVH } from 'three-mesh-bvh';
 import type { Voxel, VoxelTerrain } from '../domains/VoxelTerrain/VoxelTerrain';
 import {
 	getVoxelSize,
@@ -77,7 +78,9 @@ export function createVoxelTerrainGeometry(
 	geometry.setAttribute('tileCoord', new THREE.Float32BufferAttribute(tileCoords, 2));
 	geometry.setAttribute('highlightStrength', new THREE.Float32BufferAttribute(highlightStrengths, 1));
 	geometry.setIndex(indices);
+	geometry.computeBoundingBox();
 	geometry.computeBoundingSphere();
+	geometry.boundsTree = new MeshBVH(geometry);
 
 	return geometry;
 }

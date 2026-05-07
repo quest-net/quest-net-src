@@ -36,6 +36,7 @@ import {
 	getStandeeBottomOffset,
 	isActorAirborne,
 } from "./actorTokenPlacement";
+import { intersectFirstTerrainHit } from "../Movement3D/movement3DHelpers";
 
 interface ThreeDActorLayerProps {
 	resources: ThreeDSceneResources;
@@ -1064,10 +1065,7 @@ export function ThreeDActorLayer({
 			// Precise pick first: raycast against the (1.25x) pick meshes.
 			// Eat hits that are clearly behind terrain.
 			const actorHits = raycaster.intersectObjects(resources.actorPickTargets, true);
-			const occlusionHit = raycaster.intersectObjects(
-				resources.occlusionTargets,
-				true
-			)[0];
+			const occlusionHit = intersectFirstTerrainHit(raycaster, resources.occlusionTargets);
 			for (const hit of actorHits) {
 				if (
 					occlusionHit &&

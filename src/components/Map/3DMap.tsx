@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { acceleratedRaycast } from 'three-mesh-bvh';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
 import type { Character } from '../../domains/Character/Character';
@@ -75,6 +76,13 @@ interface TerrainRenderResources {
 	geometry: THREE.BufferGeometry;
 	material: THREE.MeshStandardMaterial;
 	movementHighlight: ReturnType<typeof createMovementHighlightTexture>;
+}
+
+function disposeTerrainResources(resources: TerrainRenderResources): void {
+	resources.geometry.boundsTree = undefined;
+	resources.geometry.dispose();
+	resources.material.dispose();
+	resources.movementHighlight.texture.dispose();
 }
 
 function deterministicSurfaceVariation(x: number, z: number): number {
@@ -579,9 +587,7 @@ export default function ThreeDMap({
 			const terrainResources = terrainResourcesRef.current;
 			if (terrainResources) {
 				scene.remove(terrainResources.mesh);
-				terrainResources.geometry.dispose();
-				terrainResources.material.dispose();
-				terrainResources.movementHighlight.texture.dispose();
+				disposeTerrainResources(terrainResources);
 				terrainResourcesRef.current = null;
 			} else {
 				resources.movementHighlight.texture.dispose();
@@ -611,9 +617,7 @@ export default function ThreeDMap({
 		const previousTerrainResources = terrainResourcesRef.current;
 		if (previousTerrainResources) {
 			resources.scene.remove(previousTerrainResources.mesh);
-			previousTerrainResources.geometry.dispose();
-			previousTerrainResources.material.dispose();
-			previousTerrainResources.movementHighlight.texture.dispose();
+			disposeTerrainResources(previousTerrainResources);
 			terrainResourcesRef.current = null;
 		} else {
 			resources.movementHighlight.texture.dispose();
@@ -697,6 +701,7 @@ export default function ThreeDMap({
 		const movementHighlight = createMovementHighlightTexture(W, L);
 		installMovementHighlightShader(material, movementHighlight);
 		const mesh = new THREE.Mesh(geometry, material);
+		mesh.raycast = acceleratedRaycast;
 		mesh.castShadow = true;
 		mesh.receiveShadow = true;
 		resources.scene.add(mesh);
