@@ -1,6 +1,8 @@
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { Context } from "../Context/Context";
 import { LogActions } from "../Log/LogActions";
+import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
+import { getActiveVoxelTerrain } from "../../utils/VoxelTerrainUtils";
 import { Actor, Position } from "./Actor";
 
 /**
@@ -77,8 +79,10 @@ export const ActorActions = {
 
 		// Try to find in roster/templates first, then in gamestate
 		let actor = roster.find((a) => a.Id === params.actorId);
+		let isSpawnedActor = false;
 		if (!actor) {
 			actor = gameState.find((a) => a.Id === params.actorId);
+			isSpawnedActor = !!actor;
 		}
 
 		if (!actor) {
@@ -86,7 +90,18 @@ export const ActorActions = {
 			return;
 		}
 
+		const previousCanFly = actor.CanFly;
+
 		Object.assign(actor, params.updates);
+
+		if (
+			isSpawnedActor &&
+			"CanFly" in params.updates &&
+			previousCanFly !== actor.CanFly &&
+			getActiveVoxelTerrain(campaign)
+		) {
+			VoxelTerrainActions.validateActors(context);
+		}
 
 		LogActions.create(
 			{

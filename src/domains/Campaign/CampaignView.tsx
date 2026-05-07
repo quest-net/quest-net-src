@@ -18,6 +18,7 @@ import { isGUID } from "../../utils/UrlParser";
 import { DMView } from "./DMView";
 import { PlayerView } from "./PlayerView";
 import type { User } from "../User/User";
+import { UserActions } from "../User/UserActions";
 
 type ViewStatus = "loading" | "ready" | "waiting-for-dm" | "error";
 
@@ -141,6 +142,29 @@ export function CampaignView() {
 				} else if (!isDM && context.User.Role !== "player") {
 					ContextActions.setUserRole({ role: "player" }, context);
 					triggerContextUpdate();
+				}
+
+				if (isDM) {
+					const activeCampaign = context.ActiveCampaign;
+					const hasSelectedCharacter = activeCampaign
+						? !!(
+							context.User.SelectedCharacters[activeCampaign.Id] ||
+							context.User.SelectedCharacters[activeCampaign.RoomCode]
+						)
+						: undefined;
+
+					if (activeCampaign && hasSelectedCharacter) {
+						UserActions.clearSelectedCharacter(
+							{ campaignId: activeCampaign.Id },
+							context
+						);
+						UserActions.clearSelectedCharacter(
+							{ campaignId: activeCampaign.RoomCode },
+							context
+						);
+						ContextActions.save(context);
+						triggerContextUpdate();
+					}
 				}
 
 				// =====================================================================

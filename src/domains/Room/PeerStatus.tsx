@@ -94,6 +94,7 @@ export function PeerStatus({ connectionStatus, peers }: PeerStatusProps) {
 						) : (
 							<div className="space-y-2">
 								{peers.map((peer) => {
+									const isHost = peer.user.Role === "dm";
 									const characterName = getCharacterName(peer.peerId);
 
 									return (
@@ -126,7 +127,14 @@ export function PeerStatus({ connectionStatus, peers }: PeerStatusProps) {
 
 											{/* Character Selection Display */}
 											<div className="mt-2 pt-2 border-t border-base-300">
-												{characterName ? (
+												{isHost ? (
+													<div className="flex items-center gap-2">
+														<span className="icon-[mdi--shield-crown] w-4 h-4 opacity-60"></span>
+														<span className="text-sm">
+															<span className="font-semibold">Host</span>
+														</span>
+													</div>
+												) : characterName ? (
 													<div className="flex items-center gap-2">
 														<span className="icon-[mdi--account] w-4 h-4 opacity-60"></span>
 														<span className="text-sm">

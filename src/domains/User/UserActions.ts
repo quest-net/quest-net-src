@@ -62,12 +62,21 @@ export const UserActions = {
 		params: { campaignId: string; characterId: string | null },
 		context: Context
 	): void {
+		if (context.User.Role === "dm") {
+			delete context.User.SelectedCharacters[params.campaignId];
+			return;
+		}
+
 		if (params.characterId) {
 			context.User.SelectedCharacters[params.campaignId] = params.characterId;
 		} else {
 			// null characterId means unselect
 			delete context.User.SelectedCharacters[params.campaignId];
 		}
+	},
+
+	clearSelectedCharacter(params: { campaignId: string }, context: Context): void {
+		delete context.User.SelectedCharacters[params.campaignId];
 	},
 
 	/**

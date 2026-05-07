@@ -165,5 +165,15 @@ export const ContextActions = {
 	 */
 	setUserRole(params: { role: "dm" | "player" }, context: Context): void {
 		context.User.Role = params.role;
+		if (params.role === "dm" && context.ActiveCampaign) {
+			UserActions.clearSelectedCharacter(
+				{ campaignId: context.ActiveCampaign.Id },
+				context
+			);
+			UserActions.clearSelectedCharacter(
+				{ campaignId: context.ActiveCampaign.RoomCode },
+				context
+			);
+		}
 	},
 };
