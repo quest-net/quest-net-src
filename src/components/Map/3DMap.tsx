@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import Stats from 'three/examples/jsm/libs/stats.module.js';
 import type { Character } from '../../domains/Character/Character';
 import type { Entity } from '../../domains/Entity/Entity';
 import { useQuestContext } from '../../domains/Context/ContextProvider';
@@ -99,8 +100,8 @@ function getShadowCameraBounds(width: number, length: number, maxElevation: numb
 	const depth = Math.max(
 		THREE_D_MAP_SHADOW.MIN_CAMERA_DEPTH,
 		Math.max(width, length) * THREE_D_MAP_SHADOW.CAMERA_DEPTH_EXTENT_MULTIPLIER +
-			maxElevation * THREE_D_MAP_SHADOW.CAMERA_DEPTH_ELEVATION_MULTIPLIER +
-			THREE_D_MAP_SHADOW.CAMERA_DEPTH_PADDING
+		maxElevation * THREE_D_MAP_SHADOW.CAMERA_DEPTH_ELEVATION_MULTIPLIER +
+		THREE_D_MAP_SHADOW.CAMERA_DEPTH_PADDING
 	);
 
 	return {
@@ -118,8 +119,8 @@ function getPanLimitRadius(width: number, length: number, maxElevation: number):
 	return Math.max(
 		THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS,
 		footprintRadius +
-			maxElevation * THREE_D_MAP_CONTROLS.PAN_LIMIT_ELEVATION_SCALE +
-			THREE_D_MAP_CONTROLS.PAN_LIMIT_PADDING
+		maxElevation * THREE_D_MAP_CONTROLS.PAN_LIMIT_ELEVATION_SCALE +
+		THREE_D_MAP_CONTROLS.PAN_LIMIT_PADDING
 	);
 }
 
@@ -243,6 +244,8 @@ export default function ThreeDMap({
 	const cameraStateRef = useRef<ThreeDMapCameraState | null>(null);
 	const sceneResourcesRef = useRef<ThreeDSceneResources | null>(null);
 	const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const statsRef = useRef<any>(null);
 	const controlsRef = useRef<OrbitControls | null>(null);
 	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
 	const terrainResourcesRef = useRef<TerrainRenderResources | null>(null);
@@ -355,6 +358,19 @@ export default function ThreeDMap({
 		selectedActorCanFly,
 	]);
 
+	// Backtick (`) shortcut to toggle the Stats.js overlay
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === '`' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+				const stats = statsRef.current;
+				if (!stats) return;
+				stats.dom.style.display = stats.dom.style.display === 'none' ? 'block' : 'none';
+			}
+		};
+		window.addEventListener('keydown', onKey);
+		return () => window.removeEventListener('keydown', onKey);
+	}, []);
+
 	const handleActorClick = useCallback(
 		(actor: { id: string; kind: "character" | "entity"; moveSpeed: number }) => {
 			toggleActorSelection(actor);
@@ -451,6 +467,15 @@ export default function ThreeDMap({
 		container.appendChild(renderer.domElement);
 		rendererRef.current = renderer;
 
+		const stats = new Stats();
+		stats.showPanel(0); // 0: FPS, 1: ms/frame, 2: MB -- click to cycle
+		stats.dom.style.position = 'absolute';
+		stats.dom.style.top = '0px';
+		stats.dom.style.left = '0px';
+		stats.dom.style.display = 'none';
+		container.appendChild(stats.dom);
+		statsRef.current = stats;
+
 		const scene = new THREE.Scene();
 		scene.background = null;
 
@@ -517,7 +542,9 @@ export default function ThreeDMap({
 				callback(now);
 			}
 			controls.update();
+			stats.begin();
 			renderer.render(scene, camera);
+			stats.end();
 		};
 		animate();
 
@@ -567,6 +594,10 @@ export default function ThreeDMap({
 			if (renderer.domElement.parentElement === container) {
 				container.removeChild(renderer.domElement);
 			}
+			if (statsRef.current?.dom?.parentElement === container) {
+				container.removeChild(statsRef.current.dom);
+			}
+			statsRef.current = null;
 		};
 	}, []);
 
@@ -675,7 +706,7 @@ export default function ThreeDMap({
 	}, [terrainSignature]);
 
 	return (
-		<>
+		<div className="relative w-full h-full">
 			<div ref={containerRef} className="w-full h-full" />
 			{sceneResources && terrain && getVoxelCount(terrain.Voxels) > 0 && (
 				<>
@@ -725,6 +756,6 @@ export default function ThreeDMap({
 					/>
 				</>
 			)}
-		</>
+		</div>
 	);
 }
