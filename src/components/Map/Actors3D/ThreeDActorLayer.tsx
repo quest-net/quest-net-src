@@ -7,7 +7,7 @@ import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import {
 	getMaxVoxelSurfaceHeight,
 	getVoxelRulesSurfaceHeight,
-	getVoxelSurfaceHeight,
+	getVoxelTerrainSurfaceData,
 } from "../../../utils/VoxelTerrainUtils";
 import type { SelectedActor } from "../MapStateProvider";
 import type { ActorTokenDescriptor, ThreeDSceneResources } from "./actorTokenTypes";
@@ -33,6 +33,7 @@ import {
 import {
 	getActorBaseHeight,
 	getActorGroundPosition,
+	getActorSupportHeight,
 	getStandeeBottomOffset,
 	isActorAirborne,
 } from "./actorTokenPlacement";
@@ -504,11 +505,7 @@ function createShadowMesh(
 	texture: THREE.Texture
 ): THREE.Mesh {
 	const { width } = getActorTokenWorldSize(actor.size);
-	const surfaceHeight = getVoxelSurfaceHeight(
-		terrain,
-		actor.position.x,
-		actor.position.y
-	);
+	const surfaceHeight = getActorSupportHeight(actor, terrain);
 	const baseHeight = getActorBaseHeight(actor, terrain);
 	const heightDelta = baseHeight - surfaceHeight;
 	const airborne = heightDelta > ACTOR_TOKEN_PLACEMENT.AIRBORNE_THRESHOLD;
@@ -640,11 +637,13 @@ function getActorHeightRange(actor: ActorTokenDescriptor, terrain: VoxelTerrain)
 	min: number;
 	max: number;
 } {
-	const min = getVoxelRulesSurfaceHeight(
-		terrain,
-		actor.position.x,
-		actor.position.y
-	);
+	const surfaces =
+		getVoxelTerrainSurfaceData(terrain).allSurfaces.get(
+			`${actor.position.x},${actor.position.y}`
+		) ?? [];
+	const min =
+		surfaces[0] ??
+		getVoxelRulesSurfaceHeight(terrain, actor.position.x, actor.position.y);
 	const max = Math.ceil(Math.max(terrain.Height, getMaxVoxelSurfaceHeight(terrain)));
 	return { min, max: Math.max(min, max) };
 }
@@ -656,11 +655,7 @@ function createFlightGuide(
 ): THREE.Line {
 	const offsetX = (terrain.Width - 1) / 2;
 	const offsetZ = (terrain.Length - 1) / 2;
-	const surfaceHeight = getVoxelSurfaceHeight(
-		terrain,
-		actor.position.x,
-		actor.position.y
-	);
+	const surfaceHeight = getActorSupportHeight(actor, terrain);
 	const x = actor.position.x - offsetX;
 	const z = actor.position.y - offsetZ;
 	const y0 =

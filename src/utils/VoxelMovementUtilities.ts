@@ -5,8 +5,6 @@ import type { MovementSettings } from "../domains/CampaignSetting/CampaignSettin
 import type { VoxelTerrain } from "../domains/VoxelTerrain/VoxelTerrain";
 import { isItemEntity } from "../domains/Item/ItemDropUtils";
 import {
-	getVoxelRulesSurfaceHeight,
-	getVoxelRulesSurfaceHeightFromData,
 	getVoxelTerrainSurfaceData,
 	type VoxelTerrainSurfaceData,
 } from "./VoxelTerrainUtils";
@@ -93,12 +91,8 @@ class PriorityQueue<T> {
 	}
 }
 
-export function getVoxelTileKey(x: number, y: number): string {
-	return `${x},${y}`;
-}
-
-export function getVoxelPositionKey(position: Position): string {
-	return `${position.x},${position.y},${position.h}`;
+export function getVoxelTileHeightKey(x: number, y: number, h: number): string {
+	return `${x},${y},${h}`;
 }
 
 export function normalizeVoxelPosition(position: Position): Position {
@@ -117,36 +111,16 @@ export function isVoxelTileInBounds(
 	return x >= 0 && x < terrain.Width && y >= 0 && y < terrain.Length;
 }
 
-export function calculateVoxelTargetHeight(
-	terrain: VoxelTerrain,
-	tileX: number,
-	tileY: number,
-	currentHeight: number,
-	canFly: boolean
-): number {
-	const tileHeight = getVoxelRulesSurfaceHeight(terrain, tileX, tileY);
-
-	if (canFly) {
-		return Math.max(tileHeight, Math.round(currentHeight));
-	}
-
-	return tileHeight;
-}
-
-function calculateVoxelTargetHeightFromSurfaceData(
+/**
+ * Returns all walkable surface heights at tactical tile (tileX, tileY) from
+ * pre-computed surface data.  An empty array means the column has no voxels.
+ */
+function getSurfacesAtTile(
 	surfaceData: VoxelTerrainSurfaceData,
 	tileX: number,
-	tileY: number,
-	currentHeight: number,
-	canFly: boolean
-): number {
-	const tileHeight = getVoxelRulesSurfaceHeightFromData(surfaceData, tileX, tileY);
-
-	if (canFly) {
-		return Math.max(tileHeight, Math.round(currentHeight));
-	}
-
-	return tileHeight;
+	tileY: number
+): number[] {
+	return surfaceData.allSurfaces.get(`${tileX},${tileY}`) ?? [];
 }
 
 export function isVoxelTileOccupiedAtHeight(
@@ -220,6 +194,8 @@ export function calculateVoxelMovementRange(
 ): VoxelMovementRangeResult {
 	const start = normalizeVoxelPosition(from);
 	const budget = getMoveSpeedBudget(moveSpeed);
+	// costs and bestTiles are now keyed by (x,y,h) so multiple heights per
+	// column are tracked independently.
 	const costs = new Map<string, number>();
 	const bestTiles = new Map<string, VoxelMovementTile>();
 
@@ -230,7 +206,7 @@ export function calculateVoxelMovementRange(
 	const surfaceData = getVoxelTerrainSurfaceData(terrain);
 
 	const addBestTile = (x: number, y: number, h: number, cost: number) => {
-		const key = getVoxelTileKey(x, y);
+		const key = getVoxelTileHeightKey(x, y, h);
 		const existing = bestTiles.get(key);
 		if (!existing || cost < existing.cost) {
 			bestTiles.set(key, { x, y, h, cost });
@@ -276,54 +252,69 @@ export function calculateVoxelMovementRange(
 
 			if (!isVoxelTileInBounds(terrain, nx, ny)) continue;
 
-			const targetH = calculateVoxelTargetHeightFromSurfaceData(
-				surfaceData,
-				nx,
-				ny,
-				current.h,
-				canFly
-			);
+			// All walkable surface heights at the neighbour tile.
+			const surfaceList = getSurfacesAtTile(surfaceData, nx, ny);
 
-			let stepCost = 1;
-			let newClimbUsed = current.climbUsed;
-			const heightDiff = targetH - current.h;
-
-			if (heightDiff > 0) {
-				if (canFly && movementSettings.flyingIgnoresHeight) {
-					const remainingFreeClimb = budget - current.climbUsed;
-
-					if (heightDiff <= remainingFreeClimb) {
-						newClimbUsed = current.climbUsed + heightDiff;
-					} else {
-						const freeUsed = Math.max(0, remainingFreeClimb);
-						const paidClimb = heightDiff - freeUsed;
-						newClimbUsed = current.climbUsed + freeUsed;
-						stepCost += getHeightCost(
-							paidClimb,
-							movementSettings.heightCostLookup
-						);
-					}
-				} else {
-					stepCost += getHeightCost(
-						heightDiff,
-						movementSettings.heightCostLookup
-					);
+			// Candidate destination heights: all surfaces the actor can stand on.
+			// Flying actors also retain the option of hovering at their current
+			// altitude (the old max(surface, current.h) path) so they can glide
+			// over terrain without being forced onto every surface below them.
+			const candidateHeights: number[] = surfaceList.slice();
+			if (canFly && surfaceList.length > 0) {
+				const maxSurface = surfaceList[surfaceList.length - 1]; // already sorted
+				const flyingAlt = Math.max(maxSurface, current.h);
+				if (!candidateHeights.includes(flyingAlt)) {
+					candidateHeights.push(flyingAlt);
+				}
+			} else if (canFly && surfaceList.length === 0) {
+				// Empty tile - flying actor can cross at current altitude.
+				candidateHeights.push(current.h);
+				if (current.h !== 0) {
+					candidateHeights.push(0);
 				}
 			}
 
-			const newCost = currentCost + stepCost;
-			if (newCost > budget) continue;
+			for (const targetH of candidateHeights) {
+				let stepCost = 1;
+				let newClimbUsed = current.climbUsed;
+				const heightDiff = targetH - current.h;
 
-			const nextKey = nodeKey(nx, ny, targetH, newClimbUsed);
-			const existingCost = nodeCosts.get(nextKey);
-			if (existingCost !== undefined && existingCost <= newCost) continue;
+				if (heightDiff > 0) {
+					if (canFly && movementSettings.flyingIgnoresHeight) {
+						const remainingFreeClimb = budget - current.climbUsed;
+						if (heightDiff <= remainingFreeClimb) {
+							newClimbUsed = current.climbUsed + heightDiff;
+						} else {
+							const freeUsed = Math.max(0, remainingFreeClimb);
+							const paidClimb = heightDiff - freeUsed;
+							newClimbUsed = current.climbUsed + freeUsed;
+							stepCost += getHeightCost(
+								paidClimb,
+								movementSettings.heightCostLookup
+							);
+						}
+					} else {
+						stepCost += getHeightCost(
+							heightDiff,
+							movementSettings.heightCostLookup
+						);
+					}
+				}
 
-			nodeCosts.set(nextKey, newCost);
-			queue.enqueue(
-				{ x: nx, y: ny, h: targetH, climbUsed: newClimbUsed },
-				newCost
-			);
-			addBestTile(nx, ny, targetH, newCost);
+				const newCost = currentCost + stepCost;
+				if (newCost > budget) continue;
+
+				const nextKey = nodeKey(nx, ny, targetH, newClimbUsed);
+				const existingCost = nodeCosts.get(nextKey);
+				if (existingCost !== undefined && existingCost <= newCost) continue;
+
+				nodeCosts.set(nextKey, newCost);
+				queue.enqueue(
+					{ x: nx, y: ny, h: targetH, climbUsed: newClimbUsed },
+					newCost
+				);
+				addBestTile(nx, ny, targetH, newCost);
+			}
 		}
 	}
 
@@ -352,7 +343,7 @@ export function calculateVoxelRemainingMovementRange(
 		movementSettings
 	);
 	const spentCost = startRange.costs.get(
-		getVoxelTileKey(normalizedCurrent.x, normalizedCurrent.y)
+		getVoxelTileHeightKey(normalizedCurrent.x, normalizedCurrent.y, normalizedCurrent.h)
 	);
 
 	if (spentCost === undefined) return null;
@@ -366,7 +357,10 @@ export function calculateVoxelRemainingMovementRange(
 					cost: 0,
 				},
 			],
-			costs: new Map([[getVoxelTileKey(normalizedCurrent.x, normalizedCurrent.y), 0]]),
+			costs: new Map([[
+				getVoxelTileHeightKey(normalizedCurrent.x, normalizedCurrent.y, normalizedCurrent.h),
+				0,
+			]]),
 		};
 	}
 
@@ -391,7 +385,8 @@ export function isVoxelMoveInAllowedRange(
 	>,
 	isCombatActive: boolean,
 	targetX: number,
-	targetY: number
+	targetY: number,
+	targetH?: number
 ): boolean {
 	if (!isVoxelTileInBounds(terrain, targetX, targetY)) return false;
 
@@ -400,6 +395,7 @@ export function isVoxelMoveInAllowedRange(
 	if (isCombatActive) {
 		if (!turnStart) return false;
 
+		const normalizedCurrent = normalizeVoxelPosition(current);
 		const { costs: startCosts } = calculateVoxelMovementRange(
 			terrain,
 			turnStart,
@@ -407,9 +403,8 @@ export function isVoxelMoveInAllowedRange(
 			canFly,
 			movementSettings
 		);
-		const normalizedCurrent = normalizeVoxelPosition(current);
 		const spentCost = startCosts.get(
-			getVoxelTileKey(normalizedCurrent.x, normalizedCurrent.y)
+			getVoxelTileHeightKey(normalizedCurrent.x, normalizedCurrent.y, normalizedCurrent.h)
 		);
 		if (spentCost === undefined) return false;
 
@@ -425,5 +420,10 @@ export function isVoxelMoveInAllowedRange(
 		movementSettings
 	);
 
+	if (targetH !== undefined) {
+		return tiles.some(
+			(tile) => tile.x === targetX && tile.y === targetY && tile.h === targetH
+		);
+	}
 	return tiles.some((tile) => tile.x === targetX && tile.y === targetY);
 }

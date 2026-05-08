@@ -4,6 +4,7 @@ import type { Voxel, VoxelTerrain } from '../domains/VoxelTerrain/VoxelTerrain';
 import {
 	getVoxelSize,
 	getVoxelTerrainResolution,
+	voxelTopToRulesHeight,
 } from './VoxelTerrainUtils';
 import { VOXEL_FACE_DEFINITIONS } from './VoxelTerrainGeometryConstants';
 import { decodeVoxels } from './VoxelDataUtils';
@@ -22,6 +23,7 @@ export function createVoxelTerrainGeometry(
 	const normals: number[] = [];
 	const colors: number[] = [];
 	const tileCoords: number[] = [];
+	const tileHeights: number[] = [];
 	const highlightStrengths: number[] = [];
 	const indices: number[] = [];
 	const voxelSize = getVoxelSize(terrain);
@@ -37,6 +39,8 @@ export function createVoxelTerrainGeometry(
 	for (const voxel of voxels) {
 		const tileX = Math.floor(voxel.x / resolution);
 		const tileY = Math.floor(voxel.z / resolution);
+		// Tactical height an actor would be at if standing on the top of this voxel.
+		const tileH = voxelTopToRulesHeight(voxel.y, resolution);
 		const centerX = voxel.x / resolution - terrain.Width / 2 + halfVoxelSize;
 		const centerY = (voxel.y + 0.5) / resolution - 0.5;
 		const centerZ = voxel.z / resolution - terrain.Length / 2 + halfVoxelSize;
@@ -57,6 +61,7 @@ export function createVoxelTerrainGeometry(
 				normals.push(...face.normal);
 				colors.push(color.r, color.g, color.b);
 				tileCoords.push(tileX, tileY);
+				tileHeights.push(tileH);
 				highlightStrengths.push(face.normal[1] > 0.5 ? 1 : 0.28);
 			}
 
@@ -76,6 +81,7 @@ export function createVoxelTerrainGeometry(
 	geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
 	geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 	geometry.setAttribute('tileCoord', new THREE.Float32BufferAttribute(tileCoords, 2));
+	geometry.setAttribute('tileHeight', new THREE.Float32BufferAttribute(tileHeights, 1));
 	geometry.setAttribute('highlightStrength', new THREE.Float32BufferAttribute(highlightStrengths, 1));
 	geometry.setIndex(indices);
 	geometry.computeBoundingBox();

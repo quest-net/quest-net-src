@@ -5,11 +5,21 @@ import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import { getActiveVoxelTerrain } from "../../utils/VoxelTerrainUtils";
 import { Actor, Position } from "./Actor";
 
+function isValidPosition(position: Position): boolean {
+	return (
+		Number.isFinite(position.x) &&
+		Number.isFinite(position.y) &&
+		Number.isFinite(position.h)
+	);
+}
+
 /**
  * Shared actor logic for both Characters and Entities
  * Domain-specific spawn/remove logic belongs in CharacterActions/EntityActions
  */
 export const ActorActions = {
+	isValidPosition,
+
 	/**
 	 * Moves an actor to a new position (works for both Characters and Entities)
 	 */
@@ -30,21 +40,18 @@ export const ActorActions = {
 			return;
 		}
 
-		// Permission check for players moving characters
-		if (context.User.Role === "player" && type === "character") {
-			// Add ownership validation here when you implement it
-			// For now, you might check Character.OwnerId === context.User.Id
+		if (!isValidPosition(params.position)) {
+			console.warn(`Invalid ${type} move position: ${params.actorId}`);
+			return;
 		}
 
-		const oldPosition = actor.Position;
-		actor.Position = params.position;
+		const oldPosition = { ...actor.Position };
+		actor.Position = { ...params.position };
 
 		LogActions.create(
 			{
 				action: `${type} moved`,
-				details: oldPosition
-					? `${actor.Name} moved from (${oldPosition.x}, ${oldPosition.y}) to (${params.position.x}, ${params.position.y})`
-					: `${actor.Name} moved to (${params.position.x}, ${params.position.y})`,
+				details: `${actor.Name} moved from (${oldPosition.x}, ${oldPosition.y}, h=${oldPosition.h}) to (${params.position.x}, ${params.position.y}, h=${params.position.h})`,
 				category: "movement",
 				level: "verbose",
 				visibility: ["all"],
@@ -52,6 +59,10 @@ export const ActorActions = {
 			},
 			context
 		);
+
+		if (getActiveVoxelTerrain(campaign)) {
+			VoxelTerrainActions.validateActors(context);
+		}
 	},
 
 	/**

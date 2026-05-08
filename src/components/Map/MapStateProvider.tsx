@@ -10,6 +10,8 @@ export interface SelectedActor {
 export interface HoveredTile {
   x: number;
   y: number;
+  /** Tactical height of the hovered surface. */
+  h: number;
 }
 
 interface MapState {

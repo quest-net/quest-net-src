@@ -4,6 +4,8 @@ import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 export interface PickedVoxelTile {
 	x: number;
 	y: number;
+	/** Tactical height of the surface that was hit. */
+	h: number;
 }
 
 // Small inset along the inverse face normal so a hit exactly on a tile
@@ -12,7 +14,8 @@ export interface PickedVoxelTile {
 const TILE_PICK_INSET = 1e-3;
 
 /**
- * Map a terrain raycast hit point to the tactical tile that owns the face.
+ * Map a terrain raycast hit point to the tactical tile that owns the face,
+ * including the exact tactical height (h) of the hit surface.
  *
  * When the hit is on a side face, the world point lies on the boundary
  * between two tactical tiles. Naive Math.round biases the result toward
@@ -20,11 +23,18 @@ const TILE_PICK_INSET = 1e-3;
  * the "click on a wall picks the tile behind it" bug. We bias the lookup
  * by stepping a tiny amount along the inverse face normal so the rounded
  * coordinate lands inside the cube whose face was hit.
+ *
+ * The tactical height is read from the tileHeight vertex attribute stored
+ * on the terrain geometry.  This allows the caller to distinguish between
+ * two surfaces in the same (x,y) column -- e.g. ground under a staircase
+ * vs. the top of the staircase.
  */
 export function worldPointToVoxelTile(
 	terrain: VoxelTerrain,
 	point: THREE.Vector3,
-	worldNormal?: THREE.Vector3 | null
+	worldNormal?: THREE.Vector3 | null,
+	hitFace?: THREE.Face | null,
+	hitObject?: THREE.Object3D | null
 ): PickedVoxelTile | null {
 	const offsetX = (terrain.Width - 1) / 2;
 	const offsetZ = (terrain.Length - 1) / 2;
@@ -41,7 +51,19 @@ export function worldPointToVoxelTile(
 		return null;
 	}
 
-	return { x, y };
+	// Read the pre-computed tileHeight attribute from the hit face's geometry.
+	// This is floor((voxelY + 1) / resolution) stored per vertex in
+	// VoxelTerrainGeometryUtils.  Using Math.round guards against float
+	// precision drift since the values are whole tactical-unit integers.
+	let h = 0;
+	if (hitFace && hitObject instanceof THREE.Mesh) {
+		const attr = hitObject.geometry.attributes['tileHeight'] as THREE.BufferAttribute | undefined;
+		if (attr) {
+			h = Math.round(attr.getX(hitFace.a));
+		}
+	}
+
+	return { x, y, h };
 }
 
 const _hitNormalMatrix = new THREE.Matrix3();

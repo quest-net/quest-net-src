@@ -283,11 +283,7 @@ export const CharacterActions = {
 			return;
 		}
 
-		if (
-			!Number.isFinite(params.position.x) ||
-			!Number.isFinite(params.position.y) ||
-			!Number.isFinite(params.position.h)
-		) {
+		if (!ActorActions.isValidPosition(params.position)) {
 			console.warn(`Invalid character move position: ${params.characterId}`);
 			return;
 		}
@@ -315,6 +311,7 @@ export const CharacterActions = {
 
 				const targetX = Math.round(params.position.x);
 				const targetY = Math.round(params.position.y);
+				const targetH = Math.round(params.position.h);
 				const canMove = isVoxelMoveInAllowedRange(
 					voxelTerrain,
 					character.Position,
@@ -324,12 +321,13 @@ export const CharacterActions = {
 					campaign.Settings.MovementSettings,
 					campaign.GameState.CombatState?.isActive ?? false,
 					targetX,
-					targetY
+					targetY,
+					targetH
 				);
 
 				if (!canMove) {
 					console.warn(
-						`Player ${context.User.Id} cannot move character ${params.characterId} to (${targetX}, ${targetY})`
+						`Player ${context.User.Id} cannot move character ${params.characterId} to (${targetX}, ${targetY}, h=${targetH})`
 					);
 					return;
 				}
@@ -341,11 +339,6 @@ export const CharacterActions = {
 			{ actorId: params.characterId, position: params.position },
 			context
 		);
-
-		// Validate actors after moving
-		if (getActiveVoxelTerrain(campaign)) {
-			VoxelTerrainActions.validateActors(context);
-		}
 	},
 
 	/**

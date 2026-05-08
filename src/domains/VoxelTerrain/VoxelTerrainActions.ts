@@ -9,6 +9,8 @@ import {
 	getActiveVoxelTerrain,
 	getMaxVoxelSurfaceHeight,
 	getVoxelRulesSurfaceHeight,
+	getVoxelTerrainSurfaceData,
+	type VoxelTerrainSurfaceData,
 } from "../../utils/VoxelTerrainUtils";
 import { createFlatVoxelTerrain } from "../../utils/VoxelTerrainEditorUtils";
 import type { VoxelTerrain } from "./VoxelTerrain";
@@ -46,6 +48,52 @@ function findTileFromCenter<T>(
 	}
 
 	return null;
+}
+
+function getSurfaceHeights(
+	surfaceData: VoxelTerrainSurfaceData,
+	x: number,
+	y: number
+): number[] {
+	return surfaceData.allSurfaces.get(`${x},${y}`) ?? [];
+}
+
+function getClosestHeight(heights: number[], target: number): number {
+	let closest = heights[0];
+	let minDiff = Math.abs(target - closest);
+
+	for (const height of heights) {
+		const diff = Math.abs(target - height);
+		if (diff < minDiff) {
+			minDiff = diff;
+			closest = height;
+		}
+	}
+
+	return closest;
+}
+
+function getAdjustedActorHeight(
+	actor: Actor,
+	terrain: VoxelTerrain,
+	surfaceData: VoxelTerrainSurfaceData
+): number {
+	const surfaces = getSurfaceHeights(
+		surfaceData,
+		actor.Position.x,
+		actor.Position.y
+	);
+	if (surfaces.includes(actor.Position.h)) return actor.Position.h;
+
+	if (actor.CanFly) {
+		return actor.Position.h;
+	}
+
+	if (surfaces.length === 0) {
+		return getVoxelRulesSurfaceHeight(terrain, actor.Position.x, actor.Position.y);
+	}
+
+	return getClosestHeight(surfaces, actor.Position.h);
 }
 
 export const VoxelTerrainActions = {
@@ -241,6 +289,7 @@ export const VoxelTerrainActions = {
 		context: Context
 	): void {
 		const toRemove: string[] = [];
+		const surfaceData = getVoxelTerrainSurfaceData(terrain);
 
 		for (const actor of actors) {
 			actor.Position.x = Math.round(actor.Position.x);
@@ -260,9 +309,27 @@ export const VoxelTerrainActions = {
 				continue;
 			}
 
-			VoxelTerrainActions.adjustHeight(actor, terrain);
+			const isItem = isItemEntity(actor);
+			if (
+				!isItem &&
+				!actor.CanFly &&
+				getSurfaceHeights(surfaceData, actor.Position.x, actor.Position.y).length === 0
+			) {
+				const validPosition = VoxelTerrainActions.findValidPosition(actor, terrain, occupiedTiles);
+				if (validPosition) {
+					actor.Position = validPosition;
+					occupiedTiles.add(
+						`${validPosition.x},${validPosition.y},${validPosition.h}`
+					);
+				} else {
+					toRemove.push(actor.Id);
+				}
+				continue;
+			}
 
-			if (isItemEntity(actor)) {
+			VoxelTerrainActions.adjustHeight(actor, terrain, surfaceData);
+
+			if (isItem) {
 				continue;
 			}
 
@@ -306,18 +373,12 @@ export const VoxelTerrainActions = {
 		return x >= 0 && x < terrain.Width && y >= 0 && y < terrain.Length;
 	},
 
-	adjustHeight(actor: Actor, terrain: VoxelTerrain): void {
-		const terrainHeight = getVoxelRulesSurfaceHeight(
-			terrain,
-			actor.Position.x,
-			actor.Position.y
-		);
-
-		if (actor.CanFly) {
-			actor.Position.h = Math.max(actor.Position.h, terrainHeight);
-		} else {
-			actor.Position.h = terrainHeight;
-		}
+	adjustHeight(
+		actor: Actor,
+		terrain: VoxelTerrain,
+		surfaceData = getVoxelTerrainSurfaceData(terrain)
+	): void {
+		actor.Position.h = getAdjustedActorHeight(actor, terrain, surfaceData);
 	},
 
 	findValidPosition(
@@ -326,18 +387,29 @@ export const VoxelTerrainActions = {
 		occupiedTiles: Set<string>
 	): { x: number; y: number; h: number } | null {
 		const maxHeight = Math.ceil(Math.max(terrain.Height, getMaxVoxelSurfaceHeight(terrain)));
+		const surfaceData = getVoxelTerrainSurfaceData(terrain);
 		const isPositionAvailable = (x: number, y: number, h: number): boolean =>
 			VoxelTerrainActions.isInBounds(x, y, terrain) && !occupiedTiles.has(`${x},${y},${h}`);
 
 		const findAvailableHeight = (x: number, y: number): number | null => {
 			if (!VoxelTerrainActions.isInBounds(x, y, terrain)) return null;
 
-			const terrainHeight = getVoxelRulesSurfaceHeight(terrain, x, y);
 			if (!actor.CanFly) {
-				return isPositionAvailable(x, y, terrainHeight) ? terrainHeight : null;
+				const surfaces = getSurfaceHeights(surfaceData, x, y);
+				if (surfaces.length === 0) {
+					return null;
+				}
+				for (const h of surfaces) {
+					if (isPositionAvailable(x, y, h)) return h;
+				}
+				return null;
 			}
 
-			for (let h = terrainHeight; h <= maxHeight; h++) {
+			const preferredH = Math.max(0, Math.min(maxHeight, actor.Position.h));
+			for (let h = preferredH; h <= maxHeight; h++) {
+				if (isPositionAvailable(x, y, h)) return h;
+			}
+			for (let h = preferredH - 1; h >= 0; h--) {
 				if (isPositionAvailable(x, y, h)) return h;
 			}
 			return null;
@@ -349,7 +421,7 @@ export const VoxelTerrainActions = {
 		}
 
 		return findTileFromCenter(terrain, (x, y) => {
-				const h = findAvailableHeight(x, y);
+			const h = findAvailableHeight(x, y);
 			return h === null ? null : { x, y, h };
 		});
 	},

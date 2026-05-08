@@ -1,27 +1,52 @@
 import * as THREE from "three";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { getVoxelSurfaceHeight } from "../../../utils/VoxelTerrainUtils";
+import {
+	getVoxelRulesSurfaceHeight,
+	getVoxelTerrainSurfaceData,
+} from "../../../utils/VoxelTerrainUtils";
 import {
 	ACTOR_TOKEN_BASE,
 	ACTOR_TOKEN_PLACEMENT,
 } from "./actorTokenConstants";
 import type { ActorTokenDescriptor } from "./actorTokenTypes";
 
+export function getActorSupportHeight(actor: ActorTokenDescriptor, terrain: VoxelTerrain): number {
+	const h = actor.position.h ?? 0;
+	const surfaceData = getVoxelTerrainSurfaceData(terrain);
+	const key = `${actor.position.x},${actor.position.y}`;
+	const surfaces = surfaceData.allSurfaces.get(key) ?? [];
+	const exactSurfaces = surfaceData.allSurfaceHeights.get(key) ?? [];
+
+	let exactHeightAtRulesHeight: number | undefined;
+	for (const surfaceHeight of exactSurfaces) {
+		if (Math.floor(surfaceHeight) === h) {
+			exactHeightAtRulesHeight = surfaceHeight;
+		}
+	}
+	if (exactHeightAtRulesHeight !== undefined) {
+		return exactHeightAtRulesHeight;
+	}
+
+	if (surfaces.length === 0) {
+		return getVoxelRulesSurfaceHeight(terrain, actor.position.x, actor.position.y);
+	}
+
+	let supportHeight: number | null = null;
+	for (const surface of surfaces) {
+		if (surface > h) break;
+		supportHeight = surface;
+	}
+	return supportHeight ?? h;
+}
+
 export function getActorBaseHeight(actor: ActorTokenDescriptor, terrain: VoxelTerrain): number {
-	const surfaceHeight = getVoxelSurfaceHeight(
-		terrain,
-		actor.position.x,
-		actor.position.y
-	);
-	return Math.max(actor.position.h ?? 0, surfaceHeight);
+	const h = Number(actor.position.h);
+	const supportHeight = getActorSupportHeight(actor, terrain);
+	return Number.isFinite(h) ? Math.max(h, supportHeight) : supportHeight;
 }
 
 export function getActorElevationDelta(actor: ActorTokenDescriptor, terrain: VoxelTerrain): number {
-	const surfaceHeight = getVoxelSurfaceHeight(
-		terrain,
-		actor.position.x,
-		actor.position.y
-	);
+	const surfaceHeight = getActorSupportHeight(actor, terrain);
 	return getActorBaseHeight(actor, terrain) - surfaceHeight;
 }
 

@@ -257,21 +257,6 @@ export const EntityActions = {
 	 * DM only - handled by ACTION_REGISTRY
 	 */
 	delete(params: { entityId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
-
-		// Safety check: Don't delete template if any instances are spawned
-		// Note: Instances have different IDs, so this checks the template ID
-		const hasSpawnedInstances = campaign.GameState.Entities.some(() => {
-			return false;
-		});
-
-		if (hasSpawnedInstances) {
-			console.warn(
-				`Cannot delete entity template with spawned instances: ${params.entityId}`
-			);
-			return;
-		}
-
 		ActorActions.deleteActor("entity", { actorId: params.entityId }, context);
 	},
 
@@ -288,12 +273,6 @@ export const EntityActions = {
 			{ actorId: params.entityId, position: params.position },
 			context
 		);
-
-		// Validate actors after moving
-		const campaign = CampaignActions.getActiveCampaign(context);
-		if (getActiveVoxelTerrain(campaign)) {
-			VoxelTerrainActions.validateActors(context);
-		}
 	},
 
 	/**

@@ -13,6 +13,7 @@ import type { Entity } from '../../domains/Entity/Entity';
 import { useQuestContext } from '../../domains/Context/ContextProvider';
 import { useActionService } from '../../services/Actions/ActionServiceProvider';
 import { CampaignActions } from '../../domains/Campaign/CampaignActions';
+import { AppSettingActions } from '../../domains/AppSetting/AppSettingActions';
 import { createVoxelTerrainGeometry } from '../../utils/VoxelTerrainGeometryUtils';
 import {
 	getMaxVoxelSurfaceHeight,
@@ -132,22 +133,29 @@ function getPanLimitRadius(width: number, length: number, maxElevation: number):
 	);
 }
 
-function createMovementHighlightTexture(width: number, length: number): {
-	texture: THREE.DataTexture;
+function createMovementHighlightTexture(width: number, heightLevels: number, length: number): {
+	texture: THREE.Data3DTexture;
 	data: Uint8Array;
 	width: number;
+	heightLevels: number;
 	length: number;
 } {
-	const data = new Uint8Array(width * length * 4);
-	const texture = new THREE.DataTexture(data, width, length, THREE.RGBAFormat);
+	// Layout: data[(tileZ * heightLevels * width + h * width + tileX) * 4]
+	// Sampled in the shader with texture(sampler3D, vec3(s, t, r)) where
+	// s = tileX/width, t = h/heightLevels, r = tileZ/length.
+	const data = new Uint8Array(width * heightLevels * length * 4);
+	const texture = new THREE.Data3DTexture(data, width, heightLevels, length);
+	texture.format = THREE.RGBAFormat;
+	texture.type = THREE.UnsignedByteType;
 	texture.magFilter = THREE.NearestFilter;
 	texture.minFilter = THREE.NearestFilter;
 	texture.wrapS = THREE.ClampToEdgeWrapping;
 	texture.wrapT = THREE.ClampToEdgeWrapping;
+	texture.wrapR = THREE.ClampToEdgeWrapping;
 	texture.generateMipmaps = false;
 	texture.needsUpdate = true;
 
-	return { texture, data, width, length };
+	return { texture, data, width, heightLevels, length };
 }
 
 function installMovementHighlightShader(
@@ -155,18 +163,22 @@ function installMovementHighlightShader(
 	highlight: ReturnType<typeof createMovementHighlightTexture>
 ): void {
 	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
+	const heightLevels = highlight.heightLevels;
 
 	material.onBeforeCompile = (shader) => {
 		shader.uniforms.movementHighlightMap = { value: highlight.texture };
 		shader.uniforms.movementHighlightSize = { value: highlightSize };
+		shader.uniforms.movementHighlightHeightLevels = { value: heightLevels };
 		shader.vertexShader = shader.vertexShader.replace(
 			"#include <common>",
 			[
 				"#include <common>",
 				"uniform vec2 movementHighlightSize;",
+				"uniform float movementHighlightHeightLevels;",
 				"attribute vec2 tileCoord;",
+				"attribute float tileHeight;",
 				"attribute float highlightStrength;",
-				"varying vec2 vMovementHighlightUv;",
+				"varying vec3 vMovementHighlightUvw;",
 				"varying float vMovementHighlightStrength;",
 				"varying vec3 vMovementWorldPosition;",
 			].join("\n")
@@ -175,7 +187,11 @@ function installMovementHighlightShader(
 			"#include <begin_vertex>",
 			[
 				"#include <begin_vertex>",
-				"vMovementHighlightUv = (tileCoord + vec2(0.5)) / movementHighlightSize;",
+				"vMovementHighlightUvw = vec3(",
+				"    (tileCoord.x + 0.5) / movementHighlightSize.x,",
+				"    (tileHeight + 0.5) / movementHighlightHeightLevels,",
+				"    (tileCoord.y + 0.5) / movementHighlightSize.y",
+				");",
 				"vMovementHighlightStrength = highlightStrength;",
 				"vMovementWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;",
 			].join("\n")
@@ -184,9 +200,9 @@ function installMovementHighlightShader(
 			"#include <common>",
 			[
 				"#include <common>",
-				"uniform sampler2D movementHighlightMap;",
+				"uniform highp sampler3D movementHighlightMap;",
 				"uniform vec2 movementHighlightSize;",
-				"varying vec2 vMovementHighlightUv;",
+				"varying vec3 vMovementHighlightUvw;",
 				"varying float vMovementHighlightStrength;",
 				"varying vec3 vMovementWorldPosition;",
 			].join("\n")
@@ -194,7 +210,7 @@ function installMovementHighlightShader(
 		shader.fragmentShader = shader.fragmentShader.replace(
 			"#include <dithering_fragment>",
 			[
-				"vec4 movementHighlight = texture2D(movementHighlightMap, vMovementHighlightUv);",
+				"vec4 movementHighlight = texture(movementHighlightMap, vMovementHighlightUvw);",
 				"if (movementHighlight.a > 0.0 && vMovementHighlightStrength > 0.0) {",
 				"	vec3 baseColor = gl_FragColor.rgb;",
 				"	float baseLuma = dot(baseColor, vec3(0.2126, 0.7152, 0.0722));",
@@ -293,6 +309,8 @@ export default function ThreeDMap({
 	const restrictMovementToRange =
 		context.User.Role === "player" &&
 		(campaign.Settings.MovementSettings?.restrictPlayerMovementToRange ?? false);
+	const preserveFlyingHeightOnTileMove =
+		AppSettingActions.getPreserveFlyingHeightOnTileMove(context);
 	// Resolve cutout image IDs from the active campaign once per render so
 	// descriptors and signatures can both consult the same source of truth.
 	const cutoutImageIds = useMemo(() => {
@@ -528,7 +546,7 @@ export default function ThreeDMap({
 		controls.update();
 		controlsRef.current = controls;
 
-		const movementHighlight = createMovementHighlightTexture(1, 1);
+		const movementHighlight = createMovementHighlightTexture(1, 1, 1);
 		const resources: ThreeDSceneResources = {
 			scene,
 			camera,
@@ -625,7 +643,7 @@ export default function ThreeDMap({
 		resources.occlusionTargets.length = 0;
 
 		if (!terrain || getVoxelCount(terrain.Voxels) === 0) {
-			resources.movementHighlight = createMovementHighlightTexture(1, 1);
+			resources.movementHighlight = createMovementHighlightTexture(1, 1, 1);
 			return;
 		}
 
@@ -698,7 +716,9 @@ export default function ThreeDMap({
 			metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
 			vertexColors: true,
 		});
-		const movementHighlight = createMovementHighlightTexture(W, L);
+		// tactical heights run 0 .. terrain.Height inclusive -- that is Height+1 levels.
+		const heightLevels = terrain.Height + 1;
+		const movementHighlight = createMovementHighlightTexture(W, heightLevels, L);
 		installMovementHighlightShader(material, movementHighlight);
 		const mesh = new THREE.Mesh(geometry, material);
 		mesh.raycast = acceleratedRaycast;
@@ -741,6 +761,7 @@ export default function ThreeDMap({
 						remainingMovementRange={remainingMovementRange}
 						hoveredTile={hoveredTile}
 						restrictMovementToRange={restrictMovementToRange}
+						preserveFlyingHeightOnTileMove={preserveFlyingHeightOnTileMove}
 						isCombatActive={isCombatActive}
 						onHoveredTileChange={updateHoveredTile}
 						onMoveSelectedActor={handleMoveSelectedActor}

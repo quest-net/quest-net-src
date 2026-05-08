@@ -27,9 +27,11 @@ export interface ThreeDSceneResources {
 	domElement: HTMLCanvasElement;
 	occlusionTargets: THREE.Object3D[];
 	movementHighlight: {
-		texture: THREE.DataTexture;
+		texture: THREE.Data3DTexture;
 		data: Uint8Array;
 		width: number;
+		/** Number of tactical height levels in the texture (terrain.Height + 1). */
+		heightLevels: number;
 		length: number;
 	};
 	/**

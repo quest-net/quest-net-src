@@ -23,6 +23,19 @@ export interface VoxelTerrainSurfaceData {
 		z: number;
 		color: number;
 	};
+	/**
+	 * All walkable surface heights per tactical tile column.
+	 * Key: "tileX,tileZ" (tactical coordinates).
+	 * Value: sorted ascending array of tactical heights (h values) at which
+	 * an actor could stand in that column.  A surface exists at a voxel whose
+	 * immediate neighbour above it (vy+1) is empty.
+	 */
+	allSurfaces: Map<string, number[]>;
+	/**
+	 * Exact physical top heights for every walkable surface per tactical tile
+	 * column. These preserve sub-tactical voxel steps for rendering.
+	 */
+	allSurfaceHeights: Map<string, number[]>;
 }
 
 interface VoxelTerrainSurfaceCacheEntry {
@@ -32,6 +45,10 @@ interface VoxelTerrainSurfaceCacheEntry {
 	resolution: number;
 	voxels: string;
 	data: VoxelTerrainSurfaceData;
+}
+
+function voxelOccupiedKey(x: number, y: number, z: number): number {
+	return x + y * 256 + z * 65536;
 }
 
 const surfaceDataCache = new WeakMap<VoxelTerrain, VoxelTerrainSurfaceCacheEntry>();
@@ -50,6 +67,14 @@ export function getVoxelTerrainResolution(terrain: VoxelTerrain): number {
 
 export function getVoxelSize(terrain: VoxelTerrain): number {
 	return 1 / getVoxelTerrainResolution(terrain);
+}
+
+export function voxelTopToTacticalHeight(voxelY: number, resolution: number): number {
+	return (voxelY + 1) / resolution;
+}
+
+export function voxelTopToRulesHeight(voxelY: number, resolution: number): number {
+	return Math.floor(voxelTopToTacticalHeight(voxelY, resolution));
 }
 
 export function getVoxelTerrainSurfaceData(terrain: VoxelTerrain): VoxelTerrainSurfaceData {
@@ -73,8 +98,15 @@ export function getVoxelTerrainSurfaceData(terrain: VoxelTerrain): VoxelTerrainS
 
 	let maxVoxelY = -1;
 	let firstVoxel: VoxelTerrainSurfaceData["firstVoxel"];
-	for (const voxel of decodeVoxels(terrain.Voxels)) {
+
+	// Store decoded voxels so we can do two passes (occupied set + surface finding).
+	const voxels = Array.from(decodeVoxels(terrain.Voxels));
+
+	// Pass 1: build occupied set and find per-column max voxel Y.
+	const occupied = new Set<number>();
+	for (const voxel of voxels) {
 		firstVoxel ??= voxel;
+		occupied.add(voxelOccupiedKey(voxel.x, voxel.y, voxel.z));
 		if (
 			voxel.x < 0 ||
 			voxel.z < 0 ||
@@ -83,7 +115,6 @@ export function getVoxelTerrainSurfaceData(terrain: VoxelTerrain): VoxelTerrainS
 		) {
 			continue;
 		}
-
 		const index = voxel.z * voxelWidth + voxel.x;
 		if (voxel.y > maxVoxelYs[index]) {
 			maxVoxelYs[index] = voxel.y;
@@ -95,7 +126,53 @@ export function getVoxelTerrainSurfaceData(terrain: VoxelTerrain): VoxelTerrainS
 
 	const surfaceHeights = new Float32Array(maxVoxelYs.length);
 	for (let i = 0; i < maxVoxelYs.length; i++) {
-		surfaceHeights[i] = (maxVoxelYs[i] + 1) / resolution;
+		surfaceHeights[i] = voxelTopToTacticalHeight(maxVoxelYs[i], resolution);
+	}
+
+	// Pass 2: find every voxel that is a top surface (nothing immediately above
+	// it in the same sub-column) and group by tactical tile.
+	const allSurfacesSets = new Map<string, Set<number>>();
+	const allSurfaceHeightsSets = new Map<string, Set<number>>();
+	for (const voxel of voxels) {
+		if (
+			voxel.x < 0 ||
+			voxel.z < 0 ||
+			voxel.x >= voxelWidth ||
+			voxel.z >= voxelLength
+		) {
+			continue;
+		}
+		// Skip if the voxel above this one is also solid (not a top surface).
+		if (occupied.has(voxelOccupiedKey(voxel.x, voxel.y + 1, voxel.z))) continue;
+
+		const tileX = Math.floor(voxel.x / resolution);
+		const tileZ = Math.floor(voxel.z / resolution);
+		const exactHeight = voxelTopToTacticalHeight(voxel.y, resolution);
+		const h = voxelTopToRulesHeight(voxel.y, resolution);
+		const key = `${tileX},${tileZ}`;
+		let set = allSurfacesSets.get(key);
+		if (!set) {
+			set = new Set<number>();
+			allSurfacesSets.set(key, set);
+		}
+		set.add(h);
+
+		let exactSet = allSurfaceHeightsSets.get(key);
+		if (!exactSet) {
+			exactSet = new Set<number>();
+			allSurfaceHeightsSets.set(key, exactSet);
+		}
+		exactSet.add(exactHeight);
+	}
+
+	// Convert sets to sorted arrays.
+	const allSurfaces = new Map<string, number[]>();
+	for (const [key, set] of allSurfacesSets) {
+		allSurfaces.set(key, Array.from(set).sort((a, b) => a - b));
+	}
+	const allSurfaceHeights = new Map<string, number[]>();
+	for (const [key, set] of allSurfaceHeightsSets) {
+		allSurfaceHeights.set(key, Array.from(set).sort((a, b) => a - b));
 	}
 
 	const data: VoxelTerrainSurfaceData = {
@@ -107,8 +184,10 @@ export function getVoxelTerrainSurfaceData(terrain: VoxelTerrain): VoxelTerrainS
 		voxelLength,
 		voxels: terrain.Voxels,
 		surfaceHeights,
-		maxSurfaceHeight: (maxVoxelY + 1) / resolution,
+		maxSurfaceHeight: voxelTopToTacticalHeight(maxVoxelY, resolution),
 		firstVoxel,
+		allSurfaces,
+		allSurfaceHeights,
 	};
 	surfaceDataCache.set(terrain, {
 		width: terrain.Width,

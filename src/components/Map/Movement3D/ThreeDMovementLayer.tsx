@@ -4,10 +4,10 @@ import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
 import { isItemEntity } from "../../../domains/Item/ItemDropUtils";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import { getVoxelTerrainSurfaceData } from "../../../utils/VoxelTerrainUtils";
 import {
-	calculateVoxelTargetHeight,
 	canOccupyVoxelTile,
-	getVoxelTileKey,
+	getVoxelTileHeightKey,
 	type VoxelMovementTile,
 } from "../../../utils/VoxelMovementUtilities";
 import type { HoveredTile, SelectedActor } from "../MapStateProvider";
@@ -28,6 +28,12 @@ const ACTOR_OCCLUSION_EPSILON = 0.001;
 // rotating the camera with left-button drag would also commit a tile move
 // when the user released, teleporting the selected actor.
 const CLICK_DRAG_THRESHOLD_PX = 5;
+const VIRTUAL_GROUND_WORLD_Y = -0.5;
+
+interface VirtualGroundHighlightTile {
+	x: number;
+	y: number;
+}
 
 interface ThreeDMovementLayerProps {
 	resources: ThreeDSceneResources;
@@ -41,15 +47,17 @@ interface ThreeDMovementLayerProps {
 	remainingMovementRange: VoxelMovementTile[] | null;
 	hoveredTile: HoveredTile | null;
 	restrictMovementToRange: boolean;
+	preserveFlyingHeightOnTileMove: boolean;
 	isCombatActive: boolean;
 	onHoveredTileChange: (tile: HoveredTile | null) => void;
 	onMoveSelectedActor: (position: { x: number; y: number; h: number }) => void;
 }
 
+// Keyed by (x,y,h) so multiple surfaces in the same column are independent.
 function toTileMap(tiles: VoxelMovementTile[]): Map<string, VoxelMovementTile> {
 	const map = new Map<string, VoxelMovementTile>();
 	for (const tile of tiles) {
-		map.set(getVoxelTileKey(tile.x, tile.y), tile);
+		map.set(getVoxelTileHeightKey(tile.x, tile.y, tile.h), tile);
 	}
 	return map;
 }
@@ -59,7 +67,8 @@ function getTileFromPointerEvent(
 	resources: ThreeDSceneResources,
 	terrain: VoxelTerrain,
 	raycaster: THREE.Raycaster,
-	pointer: THREE.Vector2
+	pointer: THREE.Vector2,
+	allowVirtualGroundTile: boolean
 ): HoveredTile | null {
 	const rect = resources.domElement.getBoundingClientRect();
 	pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -79,14 +88,119 @@ function getTileFromPointerEvent(
 	const closestActorDistance = actorHits[0]?.distance ?? Infinity;
 
 	const terrainHit = intersectFirstTerrainHit(raycaster, resources.occlusionTargets);
-	if (!terrainHit) return null;
 
-	if (closestActorDistance + ACTOR_OCCLUSION_EPSILON < terrainHit.distance) {
+	if (
+		terrainHit &&
+		closestActorDistance + ACTOR_OCCLUSION_EPSILON < terrainHit.distance
+	) {
 		return null;
 	}
 
-	const worldNormal = getHitWorldNormal(terrainHit);
-	return worldPointToVoxelTile(terrain, terrainHit.point, worldNormal);
+	if (terrainHit) {
+		const worldNormal = getHitWorldNormal(terrainHit);
+		// Pass the hit face and object so worldPointToVoxelTile can read the
+		// tileHeight attribute and return the exact (x, y, h) of the clicked face.
+		return worldPointToVoxelTile(
+			terrain,
+			terrainHit.point,
+			worldNormal,
+			terrainHit.face,
+			terrainHit.object
+		);
+	}
+
+	if (!allowVirtualGroundTile) return null;
+
+	const groundPoint = new THREE.Vector3();
+	const groundPlane = new THREE.Plane(
+		new THREE.Vector3(0, 1, 0),
+		-VIRTUAL_GROUND_WORLD_Y
+	);
+	if (!raycaster.ray.intersectPlane(groundPlane, groundPoint)) return null;
+	if (closestActorDistance + ACTOR_OCCLUSION_EPSILON < groundPoint.distanceTo(raycaster.ray.origin)) {
+		return null;
+	}
+
+	const offsetX = (terrain.Width - 1) / 2;
+	const offsetZ = (terrain.Length - 1) / 2;
+	const x = Math.round(groundPoint.x + offsetX);
+	const y = Math.round(groundPoint.z + offsetZ);
+	if (x < 0 || x >= terrain.Width || y < 0 || y >= terrain.Length) {
+		return null;
+	}
+	if (getVoxelTerrainSurfaceData(terrain).allSurfaces.get(`${x},${y}`)?.includes(0)) {
+		return null;
+	}
+
+	return { x, y, h: 0 };
+}
+
+function resolveMoveTargetHeight(
+	tile: HoveredTile,
+	actorObject: Character | Entity,
+	terrain: VoxelTerrain,
+	preserveFlyingHeightOnTileMove: boolean
+): number {
+	if (!preserveFlyingHeightOnTileMove || !actorObject.CanFly) {
+		return tile.h;
+	}
+
+	const originH = Math.round(actorObject.Position.h);
+	const surfaces =
+		getVoxelTerrainSurfaceData(terrain).allSurfaces.get(`${tile.x},${tile.y}`) ??
+		[];
+	const hasTerrainAtOrAboveOrigin = surfaces.some((surfaceH) => surfaceH >= originH);
+
+	return hasTerrainAtOrAboveOrigin ? tile.h : originH;
+}
+
+function isVirtualGroundHighlightTile(
+	tile: Pick<HoveredTile, "x" | "y" | "h">,
+	terrain: VoxelTerrain
+): boolean {
+	if (tile.h !== 0) return false;
+	return !(
+		getVoxelTerrainSurfaceData(terrain).allSurfaces.get(`${tile.x},${tile.y}`) ??
+		[]
+	).includes(0);
+}
+
+function createVirtualGroundHighlightMesh(
+	tiles: VirtualGroundHighlightTile[],
+	terrain: VoxelTerrain,
+	color: number,
+	opacity: number,
+	renderOrder: number
+): THREE.InstancedMesh | null {
+	if (tiles.length === 0) return null;
+
+	const geometry = new THREE.PlaneGeometry(
+		THREE_D_MOVEMENT_HIGHLIGHT.TILE_SIZE,
+		THREE_D_MOVEMENT_HIGHLIGHT.TILE_SIZE
+	);
+	geometry.rotateX(-Math.PI / 2);
+	const material = new THREE.MeshBasicMaterial({
+		color,
+		transparent: true,
+		opacity,
+		depthWrite: false,
+		side: THREE.DoubleSide,
+	});
+	const mesh = new THREE.InstancedMesh(geometry, material, tiles.length);
+	const matrix = new THREE.Matrix4();
+	const offsetX = (terrain.Width - 1) / 2;
+	const offsetZ = (terrain.Length - 1) / 2;
+	const y = VIRTUAL_GROUND_WORLD_Y + THREE_D_MOVEMENT_HIGHLIGHT.Y_OFFSET;
+
+	for (let index = 0; index < tiles.length; index++) {
+		const tile = tiles[index];
+		matrix.makeTranslation(tile.x - offsetX, y, tile.y - offsetZ);
+		mesh.setMatrixAt(index, matrix);
+	}
+
+	mesh.renderOrder = renderOrder;
+	mesh.instanceMatrix.needsUpdate = true;
+	return mesh;
 }
 
 export function ThreeDMovementLayer({
@@ -101,6 +215,7 @@ export function ThreeDMovementLayer({
 	remainingMovementRange,
 	hoveredTile,
 	restrictMovementToRange,
+	preserveFlyingHeightOnTileMove,
 	isCombatActive,
 	onHoveredTileChange,
 	onMoveSelectedActor,
@@ -121,6 +236,9 @@ export function ThreeDMovementLayer({
 	const selectedActorObjectRef = useRef(selectedActorObject);
 	const canControlSelectedRef = useRef(canControlSelected);
 	const restrictMovementToRangeRef = useRef(restrictMovementToRange);
+	const preserveFlyingHeightOnTileMoveRef = useRef(
+		preserveFlyingHeightOnTileMove
+	);
 	const isCombatActiveRef = useRef(isCombatActive);
 	const charactersRef = useRef(characters);
 	const entitiesRef = useRef(entities);
@@ -135,6 +253,7 @@ export function ThreeDMovementLayer({
 		selectedActorObjectRef.current = selectedActorObject;
 		canControlSelectedRef.current = canControlSelected;
 		restrictMovementToRangeRef.current = restrictMovementToRange;
+		preserveFlyingHeightOnTileMoveRef.current = preserveFlyingHeightOnTileMove;
 		isCombatActiveRef.current = isCombatActive;
 		charactersRef.current = characters;
 		entitiesRef.current = entities;
@@ -148,6 +267,7 @@ export function ThreeDMovementLayer({
 		selectedActorObject,
 		canControlSelected,
 		restrictMovementToRange,
+		preserveFlyingHeightOnTileMove,
 		isCombatActive,
 		characters,
 		entities,
@@ -156,18 +276,25 @@ export function ThreeDMovementLayer({
 	]);
 
 	useEffect(() => {
-		const { data, texture, width, length } = resources.movementHighlight;
+		const { data, texture, width, heightLevels, length } = resources.movementHighlight;
 
+		// Write a single RGBA pixel into the 3D highlight texture at (tileX, h, tileZ).
+		// Layout: data[(tileZ * heightLevels * width + h * width + tileX) * 4]
 		const setTileHighlight = (
-			x: number,
-			y: number,
+			tileX: number,
+			h: number,
+			tileZ: number,
 			color: number,
 			opacity: number
 		) => {
-			if (x < 0 || y < 0 || x >= width || y >= length) return;
-			const index = (y * width + x) * 4;
-			data[index] = (color >> 16) & 0xff;
-			data[index + 1] = (color >> 8) & 0xff;
+			if (
+				tileX < 0 || tileZ < 0 ||
+				tileX >= width || tileZ >= length ||
+				h < 0 || h >= heightLevels
+			) return;
+			const index = (tileZ * heightLevels * width + h * width + tileX) * 4;
+			data[index]     = (color >> 16) & 0xff;
+			data[index + 1] = (color >> 8)  & 0xff;
 			data[index + 2] = color & 0xff;
 			data[index + 3] = Math.round(
 				THREE.MathUtils.clamp(opacity, 0, 1) * 255
@@ -179,6 +306,7 @@ export function ThreeDMovementLayer({
 		for (const tile of movementRange) {
 			setTileHighlight(
 				tile.x,
+				tile.h,
 				tile.y,
 				THREE_D_MOVEMENT_HIGHLIGHT.FULL_RANGE_COLOR,
 				THREE_D_MOVEMENT_HIGHLIGHT.FULL_RANGE_OPACITY
@@ -189,6 +317,7 @@ export function ThreeDMovementLayer({
 			for (const tile of remainingMovementRange) {
 				setTileHighlight(
 					tile.x,
+					tile.h,
 					tile.y,
 					THREE_D_MOVEMENT_HIGHLIGHT.REMAINING_RANGE_COLOR,
 					THREE_D_MOVEMENT_HIGHLIGHT.REMAINING_RANGE_OPACITY
@@ -199,6 +328,7 @@ export function ThreeDMovementLayer({
 		if (hoveredTile) {
 			setTileHighlight(
 				hoveredTile.x,
+				hoveredTile.h,
 				hoveredTile.y,
 				THREE_D_MOVEMENT_HIGHLIGHT.HOVER_COLOR,
 				THREE_D_MOVEMENT_HIGHLIGHT.HOVER_OPACITY
@@ -214,14 +344,102 @@ export function ThreeDMovementLayer({
 	}, [resources, movementRange, remainingMovementRange, hoveredTile]);
 
 	useEffect(() => {
+		if (!selectedActorObject?.CanFly) return;
+
+		const fullRangeTiles: VirtualGroundHighlightTile[] = [];
+		const remainingRangeTiles: VirtualGroundHighlightTile[] = [];
+		const hoverTiles: VirtualGroundHighlightTile[] = [];
+		const addUnique = (
+			tiles: VirtualGroundHighlightTile[],
+			seen: Set<string>,
+			tile: Pick<HoveredTile, "x" | "y" | "h">
+		) => {
+			if (!isVirtualGroundHighlightTile(tile, terrain)) return;
+			const key = `${tile.x},${tile.y}`;
+			if (seen.has(key)) return;
+			seen.add(key);
+			tiles.push({ x: tile.x, y: tile.y });
+		};
+
+		const fullSeen = new Set<string>();
+		for (const tile of movementRange) {
+			addUnique(fullRangeTiles, fullSeen, tile);
+		}
+
+		const remainingSeen = new Set<string>();
+		if (remainingMovementRange) {
+			for (const tile of remainingMovementRange) {
+				addUnique(remainingRangeTiles, remainingSeen, tile);
+			}
+		}
+
+		if (hoveredTile) {
+			addUnique(hoverTiles, new Set<string>(), hoveredTile);
+		}
+
+		const group = new THREE.Group();
+		const fullMesh = createVirtualGroundHighlightMesh(
+			fullRangeTiles,
+			terrain,
+			THREE_D_MOVEMENT_HIGHLIGHT.FULL_RANGE_COLOR,
+			THREE_D_MOVEMENT_HIGHLIGHT.FULL_RANGE_OPACITY,
+			THREE_D_MOVEMENT_HIGHLIGHT.RENDER_ORDER
+		);
+		const remainingMesh = createVirtualGroundHighlightMesh(
+			remainingRangeTiles,
+			terrain,
+			THREE_D_MOVEMENT_HIGHLIGHT.REMAINING_RANGE_COLOR,
+			THREE_D_MOVEMENT_HIGHLIGHT.REMAINING_RANGE_OPACITY,
+			THREE_D_MOVEMENT_HIGHLIGHT.RENDER_ORDER + 1
+		);
+		const hoverMesh = createVirtualGroundHighlightMesh(
+			hoverTiles,
+			terrain,
+			THREE_D_MOVEMENT_HIGHLIGHT.HOVER_COLOR,
+			THREE_D_MOVEMENT_HIGHLIGHT.HOVER_OPACITY,
+			THREE_D_MOVEMENT_HIGHLIGHT.HOVER_RENDER_ORDER
+		);
+
+		if (fullMesh) group.add(fullMesh);
+		if (remainingMesh) group.add(remainingMesh);
+		if (hoverMesh) group.add(hoverMesh);
+		if (group.children.length === 0) return;
+
+		resources.scene.add(group);
+
+		return () => {
+			resources.scene.remove(group);
+			for (const child of group.children) {
+				if (!(child instanceof THREE.InstancedMesh)) continue;
+				child.geometry.dispose();
+				if (Array.isArray(child.material)) {
+					child.material.forEach((material) => material.dispose());
+				} else {
+					child.material.dispose();
+				}
+			}
+			group.clear();
+		};
+	}, [
+		resources,
+		terrain,
+		movementRange,
+		remainingMovementRange,
+		hoveredTile,
+		selectedActorObject?.CanFly,
+	]);
+
+	useEffect(() => {
 		const raycaster = new THREE.Raycaster();
 		const pointer = new THREE.Vector2();
 
+		// Look up the movement tile at the exact (x, y, h) position.
 		const getAllowedTile = (tile: HoveredTile): VoxelMovementTile | null => {
+			const key = getVoxelTileHeightKey(tile.x, tile.y, tile.h);
 			if (!restrictMovementToRangeRef.current) {
 				return (
-					remainingRangeMapRef.current?.get(getVoxelTileKey(tile.x, tile.y)) ??
-					movementRangeMapRef.current.get(getVoxelTileKey(tile.x, tile.y)) ??
+					remainingRangeMapRef.current?.get(key) ??
+					movementRangeMapRef.current.get(key) ??
 					null
 				);
 			}
@@ -229,7 +447,7 @@ export function ThreeDMovementLayer({
 			const allowedMap = isCombatActiveRef.current
 				? remainingRangeMapRef.current
 				: movementRangeMapRef.current;
-			return allowedMap?.get(getVoxelTileKey(tile.x, tile.y)) ?? null;
+			return allowedMap?.get(key) ?? null;
 		};
 
 		const getValidHoverTile = (event: PointerEvent): HoveredTile | null => {
@@ -242,20 +460,20 @@ export function ThreeDMovementLayer({
 				resources,
 				terrain,
 				raycaster,
-				pointer
+				pointer,
+				actorObject.CanFly ?? false
 			);
 			if (!tile) return null;
 
-			const allowedTile = getAllowedTile(tile);
-			if (restrictMovementToRangeRef.current && !allowedTile) return null;
-
-			const targetHeight = allowedTile?.h ?? calculateVoxelTargetHeight(
+			const targetHeight = resolveMoveTargetHeight(
+				tile,
+				actorObject,
 				terrain,
-				tile.x,
-				tile.y,
-				actorObject.Position.h,
-				actorObject.CanFly ?? false
+				preserveFlyingHeightOnTileMoveRef.current
 			);
+			const targetTile = { ...tile, h: targetHeight };
+			const allowedTile = getAllowedTile(targetTile);
+			if (restrictMovementToRangeRef.current && !allowedTile) return null;
 
 			const canOccupy =
 				isItemEntity(actorObject) ||
@@ -290,7 +508,8 @@ export function ThreeDMovementLayer({
 			const currentHover = hoveredTileRef.current;
 			if (
 				currentHover?.x === nextHover?.x &&
-				currentHover?.y === nextHover?.y
+				currentHover?.y === nextHover?.y &&
+				currentHover?.h === nextHover?.h
 			) {
 				return;
 			}
@@ -377,24 +596,21 @@ export function ThreeDMovementLayer({
 				hoveredTileRef.current;
 			if (!tile) return;
 
-			const allowedTile = getAllowedTile(tile);
+			const targetHeight = resolveMoveTargetHeight(
+				tile,
+				actorObject,
+				terrain,
+				preserveFlyingHeightOnTileMoveRef.current
+			);
+			const targetTile = { ...tile, h: targetHeight };
+			const allowedTile = getAllowedTile(targetTile);
 			if (restrictMovementToRangeRef.current && !allowedTile) return;
-
-			const targetHeight =
-				allowedTile?.h ??
-				calculateVoxelTargetHeight(
-					terrain,
-					tile.x,
-					tile.y,
-					actorObject.Position.h,
-					actorObject.CanFly ?? false
-				);
 
 			if (
 				!isItemEntity(actorObject) &&
 				!canOccupyVoxelTile(
 					terrain,
-					{ x: tile.x, y: tile.y, h: targetHeight },
+					{ x: targetTile.x, y: targetTile.y, h: targetHeight },
 					charactersRef.current,
 					entitiesRef.current,
 					actor.id
@@ -404,8 +620,8 @@ export function ThreeDMovementLayer({
 			}
 
 			onMoveSelectedActorRef.current({
-				x: tile.x,
-				y: tile.y,
+				x: targetTile.x,
+				y: targetTile.y,
 				h: targetHeight,
 			});
 		};

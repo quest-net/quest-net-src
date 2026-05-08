@@ -29,6 +29,13 @@ export function AppSettingEdit() {
     Math.round(AppSettingActions.getSfxVolume() * 100)
   );
 
+  const [
+    preserveFlyingHeightOnTileMove,
+    setPreserveFlyingHeightOnTileMove,
+  ] = useState<boolean>(
+    AppSettingActions.getPreserveFlyingHeightOnTileMove(context)
+  );
+
   // --- Image generation settings ---
   const [imageService, setImageService] = useState<string>(
     AppSettingActions.getImageService(context)
@@ -74,6 +81,10 @@ export function AppSettingEdit() {
     AppSettingActions.setTheme({ theme }, context);
     AppSettingActions.setPlayerVolume({ volume: volumePercent / 100 }, context);
     AppSettingActions.setSfxVolume({ volume: sfxVolumePercent / 100 });
+    AppSettingActions.setPreserveFlyingHeightOnTileMove(
+      { preserve: preserveFlyingHeightOnTileMove },
+      context
+    );
 
     // Image service selection
     AppSettingActions.setImageService({ providerId: imageService }, context);
@@ -209,6 +220,26 @@ export function AppSettingEdit() {
                 <p className="text-xs opacity-70">
                   Controls the volume of short sound effects like sticker
                   pops. Independent of music volume.
+                </p>
+              </div>
+
+              <div className="form-control">
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-primary"
+                    checked={preserveFlyingHeightOnTileMove}
+                    onChange={(e) =>
+                      setPreserveFlyingHeightOnTileMove(e.target.checked)
+                    }
+                  />
+                  <span className="label-text">
+                    Keep flying height when clicking lower terrain
+                  </span>
+                </label>
+                <p className="text-xs opacity-70">
+                  Flying actors stay at their current height unless the
+                  destination column has terrain at or above them.
                 </p>
               </div>
             </div>

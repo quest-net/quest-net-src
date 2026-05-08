@@ -33,6 +33,7 @@ export const AppSettingActions = {
     return {
       theme: "light",
       volume: 100,
+      preserveFlyingHeightOnTileMove: false,
     };
   },
 
@@ -67,6 +68,20 @@ export const AppSettingActions = {
     const theme = context.AppSettings.theme;
     if (theme === "light" || theme === "dark") return theme;
     return "light";
+  },
+
+  setPreserveFlyingHeightOnTileMove(
+    params: { preserve: boolean },
+    context: Context
+  ): void {
+    context.AppSettings.preserveFlyingHeightOnTileMove = params.preserve
+      ? "true"
+      : "false";
+    ContextActions.save(context);
+  },
+
+  getPreserveFlyingHeightOnTileMove(context: Context): boolean {
+    return context.AppSettings.preserveFlyingHeightOnTileMove === "true";
   },
 
   // ---------------------------------------------------------------------------
@@ -163,6 +178,8 @@ export const AppSettingActions = {
       theme: this.getTheme(context),
       volume: this.getPlayerVolume(context),
       sfxVolume: this.getSfxVolume(),
+      preserveFlyingHeightOnTileMove:
+        this.getPreserveFlyingHeightOnTileMove(context),
       imagePromptTemplate: this.getImagePromptTemplate(context),
       imageService: this.getImageService(context),
       imageApiKeys: getJson<Record<string, string>>(context, "imageApiKeys"),
