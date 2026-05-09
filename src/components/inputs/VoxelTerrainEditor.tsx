@@ -20,6 +20,13 @@ import {
 	terrainPaletteIndexToVoxelColor,
 } from "../../utils/VoxelTerrainEditorUtils";
 import { getVoxelTerrainResolution } from "../../utils/VoxelTerrainUtils";
+import {
+	buildTerrainFromVox,
+	getVoxResolutionOptions,
+	parseVoxFile,
+	type VoxParseResult,
+	type VoxResolutionOption,
+} from "../../utils/VoxImportUtils";
 import ThreeDMap from "../Map/3DMap";
 import { MapStateProvider } from "../Map/MapStateProvider";
 
@@ -90,6 +97,20 @@ interface EditorRenderState {
 	terrain: VoxelTerrain;
 	map: Map<number, number>;
 }
+
+// VOX import ----------------------------------------------------------------
+
+type VoxImportModal =
+	| { kind: "pick"; parsed: VoxParseResult; options: VoxResolutionOption[]; selected: number }
+	| { kind: "error"; message: string };
+
+const VOX_RESOLUTION_LABELS: Record<number, string> = {
+	1: "Basic",
+	2: "Detailed",
+	3: "Very Detailed",
+};
+
+// ---------------------------------------------------------------------------
 
 const UNDO_LIMIT = 50;
 const MIN_BRUSH_SIZE = 1;
@@ -973,6 +994,8 @@ export default function VoxelTerrainEditor({
 	const [showActors, setShowActors] = useState(true);
 	const [undoStack, setUndoStack] = useState<string[]>([]);
 	const [redoStack, setRedoStack] = useState<string[]>([]);
+	const [voxImportModal, setVoxImportModal] = useState<VoxImportModal | null>(null);
+	const voxFileInputRef = useRef<HTMLInputElement>(null);
 	const [renderState, setRenderState] = useState<EditorRenderState>(() => ({
 		terrain,
 		map: createVoxelMap(terrain.Voxels),
@@ -1739,7 +1762,66 @@ export default function VoxelTerrainEditor({
 		setBrushSize(clamp(Math.floor(value) || MIN_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE));
 	};
 
+	// VOX import handlers -----------------------------------------------------
+
+	const handleVoxImportClick = () => {
+		voxFileInputRef.current?.click();
+	};
+
+	const handleVoxFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+		e.target.value = ""; // allow re-selecting the same file
+
+		try {
+			const buffer = await file.arrayBuffer();
+			const parsed = parseVoxFile(buffer);
+			const options = getVoxResolutionOptions(parsed);
+			const validOptions = options.filter((o) => o.fits);
+
+			if (validOptions.length === 0) {
+				setVoxImportModal({
+					kind: "error",
+					message: `This file's dimensions (${parsed.voxWidth}×${parsed.voxLength}×${parsed.voxHeight} voxels) are too large to import at any resolution. Maximum terrain size is 64×64×64 tactical units.`,
+				});
+				return;
+			}
+
+			if (validOptions.length === 1) {
+				applyVoxImport(parsed, validOptions[0].resolution);
+				return;
+			}
+
+			setVoxImportModal({
+				kind: "pick",
+				parsed,
+				options,
+				selected: validOptions[0].resolution,
+			});
+		} catch (err) {
+			setVoxImportModal({
+				kind: "error",
+				message: err instanceof Error ? err.message : "Failed to parse .vox file.",
+			});
+		}
+	};
+
+	const applyVoxImport = useCallback(
+		(parsed: VoxParseResult, resolution: number) => {
+			const result = buildTerrainFromVox(parsed, resolution);
+			const nextTerrain = { ...terrainRef.current, ...result };
+			setUndoStack([]);
+			setRedoStack([]);
+			setVoxImportModal(null);
+			onChange(nextTerrain);
+		},
+		[onChange],
+	);
+
+	// -------------------------------------------------------------------------
+
 	return (
+		<>
 		<div className="border-2 rounded-lg bg-base-100 min-h-[38rem] h-[72dvh] flex overflow-hidden">
 			<div className="flex-1 min-w-0 flex flex-col">
 				<div className="min-h-16 shrink-0 border-b-2 bg-base-100 px-3 py-2 flex flex-wrap items-center justify-between gap-3">
@@ -1825,21 +1907,43 @@ export default function VoxelTerrainEditor({
 						</div>
 					</div>
 
-					<div className="join">
-						<button
-							type="button"
-							className={`btn btn-sm join-item ${activeView === "edit" ? "btn-neutral" : "btn-outline"}`}
-							onClick={() => setActiveView("edit")}
-						>
-							Edit
-						</button>
-						<button
-							type="button"
-							className={`btn btn-sm join-item ${activeView === "preview" ? "btn-neutral" : "btn-outline"}`}
-							onClick={() => setActiveView("preview")}
-						>
-							Preview
-						</button>
+					<div className="flex items-center gap-2">
+						{!readOnly && (
+							<>
+								<button
+									type="button"
+									className="btn btn-sm btn-outline"
+									onClick={handleVoxImportClick}
+									title="Import a MagicaVoxel .vox file"
+								>
+									<span className="icon-[mdi--cube-send] w-4 h-4" />
+									Import .vox
+								</button>
+								<input
+									ref={voxFileInputRef}
+									type="file"
+									accept=".vox"
+									className="hidden"
+									onChange={handleVoxFileChange}
+								/>
+							</>
+						)}
+						<div className="join">
+							<button
+								type="button"
+								className={`btn btn-sm join-item ${activeView === "edit" ? "btn-neutral" : "btn-outline"}`}
+								onClick={() => setActiveView("edit")}
+							>
+								Edit
+							</button>
+							<button
+								type="button"
+								className={`btn btn-sm join-item ${activeView === "preview" ? "btn-neutral" : "btn-outline"}`}
+								onClick={() => setActiveView("preview")}
+							>
+								Preview
+							</button>
+						</div>
 					</div>
 				</div>
 
@@ -1964,5 +2068,94 @@ export default function VoxelTerrainEditor({
 				</div>
 			</div>
 		</div>
+
+			{/* VOX import modal */}
+			{voxImportModal && (
+				<dialog className="modal modal-open">
+					<div className="modal-box max-w-md">
+						{voxImportModal.kind === "error" ? (
+							<>
+								<h3 className="font-bold text-lg mb-3">Import .vox — Error</h3>
+								<p className="text-sm text-error">{voxImportModal.message}</p>
+								<div className="modal-action">
+									<button
+										type="button"
+										className="btn"
+										onClick={() => setVoxImportModal(null)}
+									>
+										Close
+									</button>
+								</div>
+							</>
+						) : (
+							<>
+								<h3 className="font-bold text-lg mb-1">Import .vox</h3>
+								<p className="text-sm text-base-content/60 mb-4">
+									File dimensions:{" "}
+									<span className="font-medium text-base-content">
+										{voxImportModal.parsed.voxWidth}×{voxImportModal.parsed.voxLength}×{voxImportModal.parsed.voxHeight} voxels
+									</span>
+									. Choose a world scale:
+								</p>
+								<div className="flex flex-col gap-2">
+									{voxImportModal.options.map((opt) => (
+										<button
+											key={opt.resolution}
+											type="button"
+											disabled={!opt.fits}
+											onClick={() =>
+												setVoxImportModal({ ...voxImportModal, selected: opt.resolution })
+											}
+											className={[
+												"btn btn-sm w-full justify-between text-left normal-case",
+												!opt.fits
+													? "btn-disabled opacity-40"
+													: opt.resolution === voxImportModal.selected
+													? "btn-primary"
+													: "btn-outline",
+											].join(" ")}
+										>
+											<span className="font-semibold">
+												{VOX_RESOLUTION_LABELS[opt.resolution] ?? `Resolution ${opt.resolution}`}
+											</span>
+											<span className="text-xs opacity-75">
+												{opt.fits
+													? `${opt.tacticalWidth}×${opt.tacticalLength}×${opt.tacticalHeight} tiles`
+													: "Too large"}
+											</span>
+										</button>
+									))}
+								</div>
+								<p className="text-xs text-base-content/50 mt-3">
+									This will replace the current terrain. The previous state is saved to undo.
+								</p>
+								<div className="modal-action">
+									<button
+										type="button"
+										className="btn btn-ghost"
+										onClick={() => setVoxImportModal(null)}
+									>
+										Cancel
+									</button>
+									<button
+										type="button"
+										className="btn btn-primary"
+										onClick={() =>
+											applyVoxImport(voxImportModal.parsed, voxImportModal.selected)
+										}
+									>
+										Import
+									</button>
+								</div>
+							</>
+						)}
+					</div>
+					<div
+						className="modal-backdrop"
+						onClick={() => setVoxImportModal(null)}
+					/>
+				</dialog>
+			)}
+		</>
 	);
 }

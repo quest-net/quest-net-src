@@ -12,6 +12,7 @@ export const MAX_VOXEL_TERRAIN_LENGTH = 64;
 export const MAX_VOXEL_TERRAIN_HEIGHT = MAX_HEIGHT;
 export const MIN_VOXEL_TERRAIN_HEIGHT = 1;
 export const DEFAULT_VOXEL_TERRAIN_HEIGHT = 8;
+export const DEFAULT_VOXEL_TERRAIN_MAX_HEIGHT = 20;
 export const MIN_VOXEL_TERRAIN_RESOLUTION = 1;
 export const MAX_VOXEL_TERRAIN_RESOLUTION = 3;
 
@@ -176,7 +177,7 @@ export function createFlatVoxelTerrain(params: {
 		MAX_VOXEL_TERRAIN_HEIGHT
 	);
 	const maxHeight = clamp(
-		Math.floor(params.maxHeight ?? MAX_VOXEL_TERRAIN_HEIGHT),
+		Math.floor(params.maxHeight ?? DEFAULT_VOXEL_TERRAIN_MAX_HEIGHT),
 		MIN_VOXEL_TERRAIN_HEIGHT,
 		MAX_VOXEL_TERRAIN_HEIGHT
 	);
