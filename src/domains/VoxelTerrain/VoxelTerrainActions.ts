@@ -107,7 +107,7 @@ export const VoxelTerrainActions = {
 			width: 16,
 			length: 16,
 			height: 4,
-			maxHeight: 4,
+			maxHeight: 8,
 		});
 	},
 
