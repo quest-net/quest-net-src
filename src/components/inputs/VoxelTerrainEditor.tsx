@@ -1,14 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { acceleratedRaycast } from "three-mesh-bvh";
+import { acceleratedRaycast, MeshBVH } from "three-mesh-bvh";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { Voxel, VoxelTerrain } from "../../domains/VoxelTerrain/VoxelTerrain";
 import { VOXEL_FACE_DEFINITIONS } from "../../utils/VoxelTerrainGeometryConstants";
-import { createVoxelTerrainGeometry } from "../../utils/VoxelTerrainGeometryUtils";
 import {
 	decodeVoxels,
 	encodeVoxels,
-	getVoxelCount,
 } from "../../utils/VoxelDataUtils";
 import {
 	DEFAULT_TERRAIN_COLOR_INDEX,
@@ -52,6 +50,21 @@ interface PickInfo {
 	voxel: VoxelCoord;
 	normal: VoxelCoord;
 	ground: boolean;
+	plane: THREE.Plane;
+}
+
+interface LockedStrokePlane {
+	plane: THREE.Plane;
+	normal: VoxelCoord;
+	ground: boolean;
+}
+
+interface ActiveStroke {
+	pointerId: number;
+	startClientX: number;
+	startClientY: number;
+	dragStarted: boolean;
+	lockedPlane: LockedStrokePlane;
 }
 
 interface EditorSceneResources {
@@ -63,6 +76,12 @@ interface EditorSceneResources {
 	gridGroup: THREE.Group;
 	hoverGroup: THREE.Group;
 	terrainMesh: THREE.Mesh | null;
+	terrainMaterial: THREE.MeshStandardMaterial;
+}
+
+interface EditorRenderState {
+	terrain: VoxelTerrain;
+	map: Map<number, number>;
 }
 
 const UNDO_LIMIT = 50;
@@ -73,6 +92,8 @@ const GRID_LINE_OFFSET = 0.008;
 const HOVER_FACE_OFFSET = 0.014;
 const INITIAL_CAMERA_HALF_SIZE = 14;
 const CAMERA_DISTANCE_MULTIPLIER = 1.65;
+const STROKE_DRAG_THRESHOLD_PX = 5;
+const EDITOR_PIXEL_RATIO = 1;
 
 const TOOL_BUTTONS: Array<{
 	id: EditorTool;
@@ -109,18 +130,6 @@ function voxelKey(x: number, y: number, z: number): number {
 	return x + y * 256 + z * 65536;
 }
 
-function unpackVoxelKey(key: number): Voxel {
-	const color = key & 0xff;
-	const position = Math.floor(key / 256);
-
-	return {
-		x: position & 0xff,
-		y: (position >>> 8) & 0xff,
-		z: (position >>> 16) & 0xff,
-		color,
-	};
-}
-
 function unpackVoxelPositionKey(key: number): VoxelCoord {
 	return {
 		x: key & 0xff,
@@ -143,7 +152,7 @@ function voxelMapToEncoded(map: Map<number, number>): string {
 	const voxels: Voxel[] = [];
 
 	for (const [key, color] of map) {
-		const voxel = unpackVoxelKey(key * 256 + (color & 0xff));
+		const voxel = unpackVoxelPositionKey(key);
 		voxels.push({
 			x: voxel.x,
 			y: voxel.y,
@@ -164,6 +173,16 @@ function getTerrainBounds(terrain: VoxelTerrain): TerrainBounds {
 		resolvedLength: terrain.Length * resolution,
 		resolvedHeight: terrain.Height * resolution,
 	};
+}
+
+function getTerrainShapeSignature(terrain: VoxelTerrain): string {
+	return [
+		terrain.Id,
+		terrain.Width,
+		terrain.Length,
+		terrain.Height,
+		getVoxelTerrainResolution(terrain),
+	].join(":");
 }
 
 function isInBounds(coord: VoxelCoord, bounds: TerrainBounds): boolean {
@@ -337,12 +356,11 @@ function applyVoxelEdit(
 	granularity: EditGranularity,
 	brushSize: number,
 	colorIndex: number
-): { terrain: VoxelTerrain; changed: boolean; sampledColor: number | null } {
+): { changed: boolean; sampledColor: number | null } {
 	const coords =
 		tool === "sample"
 			? [pick.voxel]
 			: collectAffectedCoords(terrain, pick, tool, granularity, brushSize);
-	const nextMap = new Map(map);
 	let changed = false;
 	let sampledColor: number | null = null;
 
@@ -355,50 +373,109 @@ function applyVoxelEdit(
 			}
 		}
 
-		return { terrain, changed: false, sampledColor };
+		return { changed: false, sampledColor };
 	}
 
 	for (const coord of coords) {
 		const key = voxelKey(coord.x, coord.y, coord.z);
 
 		if (tool === "erase") {
-			if (nextMap.delete(key)) changed = true;
+			if (map.delete(key)) changed = true;
 			continue;
 		}
 
 		if (tool === "paint") {
-			if (nextMap.has(key) && nextMap.get(key) !== colorIndex) {
-				nextMap.set(key, colorIndex);
+			if (map.has(key) && map.get(key) !== colorIndex) {
+				map.set(key, colorIndex);
 				changed = true;
 			}
 			continue;
 		}
 
-		if (!nextMap.has(key)) {
-			nextMap.set(key, colorIndex);
+		if (!map.has(key)) {
+			map.set(key, colorIndex);
 			changed = true;
 		}
 	}
 
-	if (!changed) return { terrain, changed: false, sampledColor: null };
-
 	return {
-		terrain: {
-			...terrain,
-			Voxels: voxelMapToEncoded(nextMap),
-		},
 		changed,
 		sampledColor: null,
 	};
 }
 
-function createEditorTerrainColor(voxel: Voxel, isTopFace: boolean): THREE.Color {
-	const color = new THREE.Color(
-		terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(voxel.color))
-	);
+const editorTerrainColorCache = new Map<number, { top: THREE.Color; side: THREE.Color }>();
 
-	if (!isTopFace) color.multiplyScalar(0.78);
-	return color;
+function getEditorTerrainColor(colorIndex: number, isTopFace: boolean): THREE.Color {
+	const normalizedIndex = normalizeVoxelPaletteIndex(colorIndex);
+	let cached = editorTerrainColorCache.get(normalizedIndex);
+	if (!cached) {
+		const top = new THREE.Color(terrainPaletteIndexToVoxelColor(normalizedIndex));
+		cached = {
+			top,
+			side: top.clone().multiplyScalar(0.78),
+		};
+		editorTerrainColorCache.set(normalizedIndex, cached);
+	}
+
+	return isTopFace ? cached.top : cached.side;
+}
+
+function createEditorTerrainGeometry(
+	terrain: VoxelTerrain,
+	map: Map<number, number>
+): THREE.BufferGeometry {
+	const positions: number[] = [];
+	const normals: number[] = [];
+	const colors: number[] = [];
+	const indices: number[] = [];
+	const bounds = getTerrainBounds(terrain);
+	const voxelSize = 1 / bounds.resolution;
+	const halfVoxelSize = voxelSize / 2;
+
+	for (const [key, colorIndex] of map) {
+		const voxel = unpackVoxelPositionKey(key);
+		const centerX = voxel.x / bounds.resolution - terrain.Width / 2 + halfVoxelSize;
+		const centerY = (voxel.y + 0.5) / bounds.resolution - 0.5;
+		const centerZ = voxel.z / bounds.resolution - terrain.Length / 2 + halfVoxelSize;
+
+		for (const face of VOXEL_FACE_DEFINITIONS) {
+			const [dx, dy, dz] = face.neighborOffset;
+			if (map.has(voxelKey(voxel.x + dx, voxel.y + dy, voxel.z + dz))) continue;
+
+			const color = getEditorTerrainColor(colorIndex, face.normal[1] > 0.5);
+			const vertexIndex = positions.length / 3;
+			for (const [cx, cy, cz] of face.corners) {
+				positions.push(
+					centerX + cx * voxelSize,
+					centerY + cy * voxelSize,
+					centerZ + cz * voxelSize
+				);
+				normals.push(...face.normal);
+				colors.push(color.r, color.g, color.b);
+			}
+
+			indices.push(
+				vertexIndex,
+				vertexIndex + 1,
+				vertexIndex + 2,
+				vertexIndex,
+				vertexIndex + 2,
+				vertexIndex + 3
+			);
+		}
+	}
+
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+	geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+	geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+	geometry.setIndex(indices);
+	geometry.computeBoundingBox();
+	geometry.computeBoundingSphere();
+	geometry.boundsTree = new MeshBVH(geometry);
+
+	return geometry;
 }
 
 function disposeMaterial(material: THREE.Material | THREE.Material[]): void {
@@ -863,11 +940,16 @@ export default function VoxelTerrainEditor({
 	const brushSizeRef = useRef(1);
 	const selectedColorRef = useRef(DEFAULT_TERRAIN_COLOR_INDEX);
 	const readOnlyRef = useRef(readOnly);
-	const pointerDownRef = useRef(false);
+	const activeStrokeRef = useRef<ActiveStroke | null>(null);
 	const strokeStartedRef = useRef(false);
 	const strokeStartVoxelsRef = useRef<string | null>(null);
 	const lastEditKeyRef = useRef<string | null>(null);
 	const lastShapeSignatureRef = useRef<string | null>(null);
+	const pendingChangeFrameRef = useRef<number | null>(null);
+	const hasPendingVoxelChangeRef = useRef(false);
+	const editGenerationRef = useRef(0);
+	const emittedGenerationRef = useRef(0);
+	const lastEmittedVoxelsRef = useRef(terrain.Voxels);
 
 	const [activeView, setActiveView] = useState<EditorView>("edit");
 	const [tool, setTool] = useState<EditorTool>("place");
@@ -878,9 +960,16 @@ export default function VoxelTerrainEditor({
 	const [showVoxelGrid, setShowVoxelGrid] = useState(true);
 	const [undoStack, setUndoStack] = useState<string[]>([]);
 	const [redoStack, setRedoStack] = useState<string[]>([]);
+	const [renderState, setRenderState] = useState<EditorRenderState>(() => ({
+		terrain,
+		map: createVoxelMap(terrain.Voxels),
+	}));
+	const renderStateRef = useRef<EditorRenderState | null>(null);
+	if (renderStateRef.current === null) {
+		renderStateRef.current = renderState;
+	}
 
-	const voxelMap = useMemo(() => createVoxelMap(terrain.Voxels), [terrain.Voxels]);
-	const voxelCount = getVoxelCount(terrain.Voxels);
+	const voxelCount = renderState.map.size;
 	const selectedTool = TOOL_BUTTONS.find((button) => button.id === tool) ?? TOOL_BUTTONS[0];
 	const resolution = getVoxelTerrainResolution(terrain);
 	const tileDimensions = `${terrain.Width} x ${terrain.Length} x ${terrain.Height}`;
@@ -889,10 +978,51 @@ export default function VoxelTerrainEditor({
 	}`;
 	const brushModeLabel = granularity === "tactical" ? "Tile Brush" : "Voxel Brush";
 
+	const setEditorRenderState = useCallback((nextTerrain: VoxelTerrain, nextMap: Map<number, number>) => {
+		const nextState = {
+			terrain: nextTerrain,
+			map: new Map(nextMap),
+		};
+		renderStateRef.current = nextState;
+		setRenderState(nextState);
+	}, []);
+
 	useEffect(() => {
+		const incomingShapeSignature = getTerrainShapeSignature(terrain);
+		const currentShapeSignature = getTerrainShapeSignature(terrainRef.current);
+		const hasNewerLocalEdits = editGenerationRef.current > emittedGenerationRef.current;
+		const isStaleOwnEcho =
+			hasNewerLocalEdits &&
+			incomingShapeSignature === currentShapeSignature &&
+			terrain.Voxels === lastEmittedVoxelsRef.current;
+
+		if (isStaleOwnEcho) return;
+
+		const shapeChanged = incomingShapeSignature !== currentShapeSignature;
+		if (shapeChanged && pendingChangeFrameRef.current !== null) {
+			cancelAnimationFrame(pendingChangeFrameRef.current);
+			pendingChangeFrameRef.current = null;
+			hasPendingVoxelChangeRef.current = false;
+			emittedGenerationRef.current = editGenerationRef.current;
+		}
+
+		const rendered = renderStateRef.current;
+		if (
+			rendered &&
+			rendered.terrain.Voxels === terrain.Voxels &&
+			getTerrainShapeSignature(rendered.terrain) === incomingShapeSignature
+		) {
+			terrainRef.current = terrain;
+			lastEmittedVoxelsRef.current = terrain.Voxels;
+			return;
+		}
+
+		const nextMap = createVoxelMap(terrain.Voxels);
 		terrainRef.current = terrain;
-		voxelMapRef.current = voxelMap;
-	}, [terrain, voxelMap]);
+		voxelMapRef.current = nextMap;
+		lastEmittedVoxelsRef.current = terrain.Voxels;
+		setEditorRenderState(terrain, nextMap);
+	}, [terrain, setEditorRenderState]);
 
 	useEffect(() => {
 		toolRef.current = tool;
@@ -913,31 +1043,68 @@ export default function VoxelTerrainEditor({
 		setRedoStack([]);
 	}, []);
 
+	const flushPendingTerrainChange = useCallback(() => {
+		if (pendingChangeFrameRef.current !== null) {
+			cancelAnimationFrame(pendingChangeFrameRef.current);
+			pendingChangeFrameRef.current = null;
+		}
+		if (!hasPendingVoxelChangeRef.current) return;
+
+		hasPendingVoxelChangeRef.current = false;
+		const nextVoxels = voxelMapToEncoded(voxelMapRef.current);
+		const nextTerrain = { ...terrainRef.current, Voxels: nextVoxels };
+		terrainRef.current = nextTerrain;
+		lastEmittedVoxelsRef.current = nextVoxels;
+		emittedGenerationRef.current = editGenerationRef.current;
+		setEditorRenderState(nextTerrain, voxelMapRef.current);
+		onChange(nextTerrain);
+	}, [onChange, setEditorRenderState]);
+
+	const schedulePendingTerrainChange = useCallback(() => {
+		hasPendingVoxelChangeRef.current = true;
+		if (pendingChangeFrameRef.current !== null) return;
+
+		pendingChangeFrameRef.current = requestAnimationFrame(() => {
+			pendingChangeFrameRef.current = null;
+			flushPendingTerrainChange();
+		});
+	}, [flushPendingTerrainChange]);
+
 	const undo = useCallback(() => {
 		if (undoStack.length === 0) return;
+		flushPendingTerrainChange();
 		const currentTerrain = terrainRef.current;
 		const previousVoxels = undoStack[undoStack.length - 1];
 		const nextTerrain = { ...currentTerrain, Voxels: previousVoxels };
+		const nextMap = createVoxelMap(previousVoxels);
 
 		terrainRef.current = nextTerrain;
-		voxelMapRef.current = createVoxelMap(previousVoxels);
+		voxelMapRef.current = nextMap;
+		lastEmittedVoxelsRef.current = previousVoxels;
+		emittedGenerationRef.current = editGenerationRef.current;
+		setEditorRenderState(nextTerrain, nextMap);
 		setUndoStack((current) => current.slice(0, -1));
 		setRedoStack((current) => [currentTerrain.Voxels, ...current].slice(0, UNDO_LIMIT));
 		onChange(nextTerrain);
-	}, [onChange, undoStack]);
+	}, [flushPendingTerrainChange, onChange, setEditorRenderState, undoStack]);
 
 	const redo = useCallback(() => {
 		if (redoStack.length === 0) return;
+		flushPendingTerrainChange();
 		const currentTerrain = terrainRef.current;
 		const nextVoxels = redoStack[0];
 		const nextTerrain = { ...currentTerrain, Voxels: nextVoxels };
+		const nextMap = createVoxelMap(nextVoxels);
 
 		terrainRef.current = nextTerrain;
-		voxelMapRef.current = createVoxelMap(nextVoxels);
+		voxelMapRef.current = nextMap;
+		lastEmittedVoxelsRef.current = nextVoxels;
+		emittedGenerationRef.current = editGenerationRef.current;
+		setEditorRenderState(nextTerrain, nextMap);
 		setRedoStack((current) => current.slice(1));
 		setUndoStack((current) => [...current.slice(-(UNDO_LIMIT - 1)), currentTerrain.Voxels]);
 		onChange(nextTerrain);
-	}, [onChange, redoStack]);
+	}, [flushPendingTerrainChange, onChange, redoStack, setEditorRenderState]);
 
 	const getPickInfo = useCallback((event: PointerEvent): PickInfo | null => {
 		const resources = resourcesRef.current;
@@ -970,6 +1137,7 @@ export default function VoxelTerrainEditor({
 						voxel,
 						normal: normalToCoord(normal),
 						ground: false,
+						plane: new THREE.Plane().setFromNormalAndCoplanarPoint(normal, hit.point),
 					};
 				}
 			}
@@ -994,6 +1162,60 @@ export default function VoxelTerrainEditor({
 			voxel,
 			normal: { x: 0, y: 1, z: 0 },
 			ground: true,
+			plane: groundPlane.clone(),
+		};
+	}, []);
+
+	const getLockedPlanePickInfo = useCallback((
+		event: PointerEvent,
+		lockedPlane: LockedStrokePlane
+	): PickInfo | null => {
+		const resources = resourcesRef.current;
+		const currentTerrain = terrainRef.current;
+		if (!resources) return null;
+
+		const rect = resources.renderer.domElement.getBoundingClientRect();
+		const mouse = new THREE.Vector2(
+			((event.clientX - rect.left) / rect.width) * 2 - 1,
+			-((event.clientY - rect.top) / rect.height) * 2 + 1
+		);
+
+		resources.raycaster.setFromCamera(mouse, resources.camera);
+
+		const intersectionPoint = new THREE.Vector3();
+		if (!resources.raycaster.ray.intersectPlane(lockedPlane.plane, intersectionPoint)) {
+			return null;
+		}
+
+		const bounds = getTerrainBounds(currentTerrain);
+		const voxel = lockedPlane.ground
+			? {
+				x: Math.floor((intersectionPoint.x + currentTerrain.Width / 2) * bounds.resolution),
+				y: 0,
+				z: Math.floor((intersectionPoint.z + currentTerrain.Length / 2) * bounds.resolution),
+			}
+			: pointToVoxelCoord(
+				intersectionPoint
+					.clone()
+					.addScaledVector(
+						new THREE.Vector3(
+							lockedPlane.normal.x,
+							lockedPlane.normal.y,
+							lockedPlane.normal.z
+						).normalize(),
+						-PICK_EPSILON
+					),
+				currentTerrain,
+				bounds
+			);
+
+		if (!isInBounds(voxel, bounds)) return null;
+
+		return {
+			voxel,
+			normal: { ...lockedPlane.normal },
+			ground: lockedPlane.ground,
+			plane: lockedPlane.plane.clone(),
 		};
 	}, []);
 
@@ -1027,11 +1249,10 @@ export default function VoxelTerrainEditor({
 			strokeStartedRef.current = true;
 		}
 
-		terrainRef.current = result.terrain;
-		voxelMapRef.current = createVoxelMap(result.terrain.Voxels);
-		onChange(result.terrain);
+		editGenerationRef.current += 1;
+		schedulePendingTerrainChange();
 		return true;
-	}, [onChange, recordUndo]);
+	}, [recordUndo, schedulePendingTerrainChange]);
 
 	const getEditKey = useCallback((pick: PickInfo): string => {
 		return [
@@ -1051,8 +1272,12 @@ export default function VoxelTerrainEditor({
 		const container = containerRef.current;
 		if (!container) return;
 
-		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+		const renderer = new THREE.WebGLRenderer({
+			antialias: false,
+			alpha: true,
+			powerPreference: "high-performance",
+		});
+		renderer.setPixelRatio(EDITOR_PIXEL_RATIO);
 		renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
 		renderer.outputColorSpace = THREE.SRGBColorSpace;
 		renderer.domElement.style.touchAction = "none";
@@ -1097,6 +1322,12 @@ export default function VoxelTerrainEditor({
 		const hoverGroup = new THREE.Group();
 		scene.add(hoverGroup);
 
+		const terrainMaterial = new THREE.MeshStandardMaterial({
+			roughness: 0.78,
+			metalness: 0,
+			vertexColors: true,
+		});
+
 		const resources: EditorSceneResources = {
 			scene,
 			camera,
@@ -1106,6 +1337,7 @@ export default function VoxelTerrainEditor({
 			gridGroup,
 			hoverGroup,
 			terrainMesh: null,
+			terrainMaterial,
 		};
 		resourcesRef.current = resources;
 
@@ -1135,17 +1367,54 @@ export default function VoxelTerrainEditor({
 			);
 		};
 
+		const getPickForStroke = (
+			event: PointerEvent,
+			activeStroke: ActiveStroke | null
+		): PickInfo | null => {
+			if (activeStroke && !event.shiftKey) {
+				return getLockedPlanePickInfo(event, activeStroke.lockedPlane);
+			}
+
+			return getPickInfo(event);
+		};
+
+		const hasMovedPastDragThreshold = (
+			event: PointerEvent,
+			activeStroke: ActiveStroke
+		): boolean => {
+			const dx = event.clientX - activeStroke.startClientX;
+			const dy = event.clientY - activeStroke.startClientY;
+
+			return dx * dx + dy * dy >= STROKE_DRAG_THRESHOLD_PX ** 2;
+		};
+
+		const clearStrokeState = () => {
+			activeStrokeRef.current = null;
+			strokeStartedRef.current = false;
+			strokeStartVoxelsRef.current = null;
+			lastEditKeyRef.current = null;
+		};
+
 		const handlePointerMove = (event: PointerEvent) => {
-			const pick = getPickInfo(event);
+			const activeStroke =
+				activeStrokeRef.current?.pointerId === event.pointerId
+					? activeStrokeRef.current
+					: null;
+			const pick = getPickForStroke(event, activeStroke);
 			refreshHover(pick);
-			if (!pointerDownRef.current || !pick || toolRef.current === "sample") return;
+			if (!activeStroke || !pick || toolRef.current === "sample") return;
+
+			if (!activeStroke.dragStarted) {
+				if (!hasMovedPastDragThreshold(event, activeStroke)) return;
+				activeStroke.dragStarted = true;
+			}
 
 			const editKey = getEditKey(pick);
 			if (lastEditKeyRef.current === editKey) return;
 			lastEditKeyRef.current = editKey;
 
 			applyEdit(pick);
-			refreshHover(getPickInfo(event));
+			refreshHover(getPickForStroke(event, activeStroke));
 		};
 
 		const handlePointerDown = (event: PointerEvent) => {
@@ -1156,41 +1425,55 @@ export default function VoxelTerrainEditor({
 			if (event.button !== 0 || readOnlyRef.current) return;
 
 			event.preventDefault();
+			flushPendingTerrainChange();
+			const pick = getPickInfo(event);
+			if (!pick) return;
+
 			renderer.domElement.setPointerCapture(event.pointerId);
-			pointerDownRef.current = true;
+			const activeStroke: ActiveStroke = {
+				pointerId: event.pointerId,
+				startClientX: event.clientX,
+				startClientY: event.clientY,
+				dragStarted: false,
+				lockedPlane: {
+					plane: pick.plane.clone(),
+					normal: { ...pick.normal },
+					ground: pick.ground,
+				},
+			};
+			activeStrokeRef.current = activeStroke;
 			strokeStartedRef.current = false;
 			strokeStartVoxelsRef.current = terrainRef.current.Voxels;
 			lastEditKeyRef.current = null;
 
-			const pick = getPickInfo(event);
-			if (!pick) return;
-
 			const wasSampleTool = toolRef.current === "sample";
 			lastEditKeyRef.current = getEditKey(pick);
 			applyEdit(pick);
-			refreshHover(getPickInfo(event));
+			refreshHover(getPickForStroke(event, activeStroke));
 			if (wasSampleTool) {
 				renderer.domElement.releasePointerCapture(event.pointerId);
-				pointerDownRef.current = false;
-				strokeStartedRef.current = false;
-				strokeStartVoxelsRef.current = null;
-				lastEditKeyRef.current = null;
+				clearStrokeState();
 			}
 		};
 
 		const finishStroke = (event: PointerEvent) => {
+			if (
+				activeStrokeRef.current &&
+				activeStrokeRef.current.pointerId !== event.pointerId
+			) {
+				return;
+			}
+
 			if (renderer.domElement.hasPointerCapture(event.pointerId)) {
 				renderer.domElement.releasePointerCapture(event.pointerId);
 			}
 
-			pointerDownRef.current = false;
-			strokeStartedRef.current = false;
-			strokeStartVoxelsRef.current = null;
-			lastEditKeyRef.current = null;
+			flushPendingTerrainChange();
+			clearStrokeState();
 		};
 
 		const handlePointerLeave = () => {
-			if (!pointerDownRef.current) {
+			if (!activeStrokeRef.current) {
 				refreshHover(null);
 			}
 		};
@@ -1224,63 +1507,68 @@ export default function VoxelTerrainEditor({
 			if (resources.terrainMesh) {
 				resources.scene.remove(resources.terrainMesh);
 				resources.terrainMesh.geometry.dispose();
-				disposeMaterial(resources.terrainMesh.material);
 			}
+			terrainMaterial.dispose();
 			disposeObjectTree(gridGroup);
 			disposeObjectTree(hoverGroup);
 			renderer.dispose();
 			if (renderer.domElement.parentElement === container) {
 				container.removeChild(renderer.domElement);
 			}
+			if (pendingChangeFrameRef.current !== null) {
+				cancelAnimationFrame(pendingChangeFrameRef.current);
+				pendingChangeFrameRef.current = null;
+			}
+			activeStrokeRef.current = null;
 			resourcesRef.current = null;
 		};
-	}, [applyEdit, getEditKey, getPickInfo]);
+	}, [applyEdit, flushPendingTerrainChange, getEditKey, getLockedPlanePickInfo, getPickInfo]);
 
 	useEffect(() => {
 		const resources = resourcesRef.current;
 		const container = containerRef.current;
 		if (!resources || !container) return;
 
-		clearObjectGroup(resources.hoverGroup);
+		const terrain = renderState.terrain;
+		const map = renderState.map;
+		const shapeSignature = getTerrainShapeSignature(terrain);
+		const shapeChanged = lastShapeSignatureRef.current !== shapeSignature;
+
+		if (shapeChanged) {
+			clearObjectGroup(resources.hoverGroup);
+		}
 
 		if (resources.terrainMesh) {
 			resources.scene.remove(resources.terrainMesh);
 			resources.terrainMesh.geometry.dispose();
-			disposeMaterial(resources.terrainMesh.material);
 			resources.terrainMesh = null;
 		}
 
-		if (getVoxelCount(terrain.Voxels) > 0) {
-			const geometry = createVoxelTerrainGeometry(terrain, createEditorTerrainColor);
-			const material = new THREE.MeshStandardMaterial({
-				roughness: 0.78,
-				metalness: 0,
-				vertexColors: true,
-			});
-			const mesh = new THREE.Mesh(geometry, material);
+		if (map.size > 0) {
+			const geometry = createEditorTerrainGeometry(terrain, map);
+			const mesh = new THREE.Mesh(geometry, resources.terrainMaterial);
 			mesh.raycast = acceleratedRaycast;
 			resources.scene.add(mesh);
 			resources.terrainMesh = mesh;
 		}
 
-		const shapeSignature = [
-			terrain.Id,
-			terrain.Width,
-			terrain.Length,
-			terrain.Height,
-			getVoxelTerrainResolution(terrain),
-		].join(":");
-		if (lastShapeSignatureRef.current !== shapeSignature) {
+		if (shapeChanged) {
 			frameCamera(resources, terrain, container);
 			lastShapeSignatureRef.current = shapeSignature;
 		}
-	}, [terrain]);
+	}, [renderState]);
 
 	useEffect(() => {
-	const resources = resourcesRef.current;
-	if (!resources) return;
-	rebuildGrid(resources, terrain, voxelMap, showTacticalGrid, showVoxelGrid);
-}, [terrain, voxelMap, showTacticalGrid, showVoxelGrid]);
+		const resources = resourcesRef.current;
+		if (!resources) return;
+		rebuildGrid(
+			resources,
+			renderState.terrain,
+			renderState.map,
+			showTacticalGrid,
+			showVoxelGrid
+		);
+	}, [renderState, showTacticalGrid, showVoxelGrid]);
 
 	useEffect(() => {
 		const resources = resourcesRef.current;
@@ -1453,11 +1741,13 @@ export default function VoxelTerrainEditor({
 					<div className={activeView === "edit" ? "absolute inset-0" : "hidden"}>
 						<div ref={containerRef} className="absolute inset-0" />
 					</div>
-					<div className={activeView === "preview" ? "absolute inset-0" : "hidden"}>
-						<MapStateProvider>
-							<ThreeDMap terrain={terrain} />
-						</MapStateProvider>
-					</div>
+					{activeView === "preview" && (
+						<div className="absolute inset-0">
+							<MapStateProvider>
+								<ThreeDMap terrain={terrain} />
+							</MapStateProvider>
+						</div>
+					)}
 				</div>
 			</div>
 
