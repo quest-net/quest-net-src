@@ -62,11 +62,6 @@ function binarySearch(arr: Uint32Array, position: number): number {
 
 // --- Public API -------------------------------------------------------------
 
-/** Returns the canonical empty voxel set. */
-export function emptyVoxels(): string {
-	return "";
-}
-
 /**
  * Encodes an iterable of Voxels into a compact base64 string.
  * When two voxels share a position the last one wins.

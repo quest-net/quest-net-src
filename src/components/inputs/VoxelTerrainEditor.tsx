@@ -1,1639 +1,1553 @@
-import React, {
-	useCallback,
-	useEffect,
-	useMemo,
-	useRef,
-	useState,
-} from "react";
-import type { VoxelTerrain } from "../../domains/VoxelTerrain/VoxelTerrain";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as THREE from "three";
+import { acceleratedRaycast } from "three-mesh-bvh";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import type { Voxel, VoxelTerrain } from "../../domains/VoxelTerrain/VoxelTerrain";
+import { VOXEL_FACE_DEFINITIONS } from "../../utils/VoxelTerrainGeometryConstants";
+import { createVoxelTerrainGeometry } from "../../utils/VoxelTerrainGeometryUtils";
+import {
+	decodeVoxels,
+	encodeVoxels,
+	getVoxelCount,
+} from "../../utils/VoxelDataUtils";
 import {
 	DEFAULT_TERRAIN_COLOR_INDEX,
-	TERRAIN_PALETTE_FAMILIES,
 	getTerrainColorByIndex,
 	getTerrainPaletteIndex,
+	TERRAIN_PALETTE_FAMILIES,
+	TERRAIN_PALETTE_LEVELS,
 } from "../../utils/TerrainPaletteUtils";
 import {
-	type VoxelTerrainEditorMaps,
-	clampVoxelTerrainResolution,
-	editorMapsToVoxelTerrain,
-	voxelTerrainToEditorMaps,
+	normalizeVoxelPaletteIndex,
+	terrainPaletteIndexToVoxelColor,
 } from "../../utils/VoxelTerrainEditorUtils";
-import {
-	applyFlatten,
-	applyRandomHills,
-	applyRandomTrees,
-	applySmooth,
-} from "../../utils/TerrainUtils";
-import { decodeVoxels, encodeVoxels } from "../../utils/VoxelDataUtils";
-import HeightRangeInput, { type HeightSelection } from "./HeightRangeInput";
+import { getVoxelTerrainResolution } from "../../utils/VoxelTerrainUtils";
+import ThreeDMap from "../Map/3DMap";
+import { MapStateProvider } from "../Map/MapStateProvider";
 
-type EditorMode = "normal" | "sculpt";
-type NormalTool = "paint" | "eyedropper" | "raise" | "lower" | "set";
-type SculptTool = "paint" | "set" | "clear";
-type BrushShape = "square" | "round";
+type EditorView = "edit" | "preview";
+type EditorTool = "place" | "erase" | "paint" | "sample";
+type EditGranularity = "tactical" | "voxel";
 
 interface VoxelTerrainEditorProps {
 	terrain: VoxelTerrain;
+	onChange: (terrain: VoxelTerrain) => void;
 	readOnly?: boolean;
-	onChange(next: VoxelTerrain): void;
 }
 
-interface HistorySnapshot {
-	terrain: VoxelTerrain;
+interface VoxelCoord {
+	x: number;
+	y: number;
+	z: number;
 }
 
-const GRID_GAP = 1;
-const MAX_HISTORY = 50;
-const MIN_TILE_PX = 4;
-const MAX_TILE_PX = 24;
-const DETAIL_MIN_TILE_PX = 2;
-const DETAIL_MAX_TILE_PX = 48;
+interface TerrainBounds {
+	resolution: number;
+	resolvedWidth: number;
+	resolvedLength: number;
+	resolvedHeight: number;
+}
 
-const NORMAL_TOOL_OPTIONS: Array<{
-	value: NormalTool;
+interface PickInfo {
+	voxel: VoxelCoord;
+	normal: VoxelCoord;
+	ground: boolean;
+}
+
+interface EditorSceneResources {
+	scene: THREE.Scene;
+	camera: THREE.OrthographicCamera;
+	renderer: THREE.WebGLRenderer;
+	controls: OrbitControls;
+	raycaster: THREE.Raycaster;
+	gridGroup: THREE.Group;
+	hoverGroup: THREE.Group;
+	terrainMesh: THREE.Mesh | null;
+}
+
+const UNDO_LIMIT = 50;
+const MIN_BRUSH_SIZE = 1;
+const MAX_BRUSH_SIZE = 8;
+const PICK_EPSILON = 0.0001;
+const GRID_LINE_OFFSET = 0.008;
+const HOVER_FACE_OFFSET = 0.014;
+const INITIAL_CAMERA_HALF_SIZE = 14;
+const CAMERA_DISTANCE_MULTIPLIER = 1.65;
+
+const TOOL_BUTTONS: Array<{
+	id: EditorTool;
 	label: string;
 	icon: string;
-	title: string;
 }> = [
-	{ value: "paint", label: "Paint", icon: "icon-[mdi--brush]", title: "Paint color" },
 	{
-		value: "eyedropper",
-		label: "Pick",
-		icon: "icon-[mdi--eyedropper-variant]",
-		title: "Pick color from terrain",
+		id: "place",
+		label: "Place",
+		icon: "icon-[mdi--cube-outline]",
 	},
-	{ value: "raise", label: "Raise", icon: "icon-[mdi--arrow-up-bold]", title: "Raise terrain" },
-	{ value: "lower", label: "Lower", icon: "icon-[mdi--arrow-down-bold]", title: "Lower terrain" },
-	{ value: "set", label: "Set", icon: "icon-[mdi--ruler]", title: "Set fixed height" },
+	{
+		id: "erase",
+		label: "Erase",
+		icon: "icon-[mdi--eraser]",
+	},
+	{
+		id: "paint",
+		label: "Paint",
+		icon: "icon-[mdi--palette]",
+	},
+	{
+		id: "sample",
+		label: "Sample",
+		icon: "icon-[mdi--eyedropper]",
+	},
 ];
 
-const SCULPT_TOOL_OPTIONS: Array<{
-	value: SculptTool;
-	label: string;
-	icon: string;
-	title: string;
-}> = [
-	{ value: "paint", label: "Paint", icon: "icon-[mdi--brush]", title: "Paint existing voxels" },
-	{ value: "set", label: "Set", icon: "icon-[mdi--cube-outline]", title: "Set voxels" },
-	{ value: "clear", label: "Clear", icon: "icon-[mdi--eraser]", title: "Clear voxels" },
-];
-
-const BRUSH_OPTIONS: Array<{ size: number; shape: BrushShape }> = [
-	{ size: 1, shape: "square" },
-	{ size: 2, shape: "round" },
-	{ size: 2, shape: "square" },
-	{ size: 3, shape: "round" },
-	{ size: 3, shape: "square" },
-	{ size: 4, shape: "round" },
-	{ size: 4, shape: "square" },
-	{ size: 5, shape: "round" },
-	{ size: 5, shape: "square" },
-];
-
-const clamp = (value: number, min: number, max: number) =>
-	Math.max(min, Math.min(max, value));
-
-function cloneTerrain(terrain: VoxelTerrain): VoxelTerrain {
-	return { ...terrain, Tags: terrain.Tags ? [...terrain.Tags] : terrain.Tags };
+function clamp(value: number, min: number, max: number): number {
+	return Math.max(min, Math.min(max, value));
 }
 
-function isSameEditorTerrain(a: VoxelTerrain, b: VoxelTerrain): boolean {
-	return (
-		a.Id === b.Id &&
-		a.Width === b.Width &&
-		a.Length === b.Length &&
-		a.Height === b.Height &&
-		(a.Resolution ?? 1) === (b.Resolution ?? 1) &&
-		a.Voxels === b.Voxels
-	);
-}
-
-function clone2DNumber(arr: number[][]): number[][] {
-	return arr.map((row) => row.slice());
-}
-
-function getVoxelPositionKey(x: number, y: number, z: number): number {
+function voxelKey(x: number, y: number, z: number): number {
 	return x + y * 256 + z * 65536;
 }
 
-function cloneVoxelMap(encoded: string): Map<number, number> {
+function unpackVoxelKey(key: number): Voxel {
+	const color = key & 0xff;
+	const position = Math.floor(key / 256);
+
+	return {
+		x: position & 0xff,
+		y: (position >>> 8) & 0xff,
+		z: (position >>> 16) & 0xff,
+		color,
+	};
+}
+
+function unpackVoxelPositionKey(key: number): VoxelCoord {
+	return {
+		x: key & 0xff,
+		y: (key >>> 8) & 0xff,
+		z: (key >>> 16) & 0xff,
+	};
+}
+
+function createVoxelMap(encoded: string): Map<number, number> {
 	const map = new Map<number, number>();
+
 	for (const voxel of decodeVoxels(encoded)) {
-		map.set(getVoxelPositionKey(voxel.x, voxel.y, voxel.z), voxel.color);
+		map.set(voxelKey(voxel.x, voxel.y, voxel.z), normalizeVoxelPaletteIndex(voxel.color));
 	}
+
 	return map;
 }
 
-function encodeVoxelMap(map: Map<number, number>): string {
-	return encodeVoxels(
-		Array.from(map, ([position, color]) => ({
-			x: position & 0xff,
-			y: (position >>> 8) & 0xff,
-			z: (position >>> 16) & 0xff,
+function voxelMapToEncoded(map: Map<number, number>): string {
+	const voxels: Voxel[] = [];
+
+	for (const [key, color] of map) {
+		const voxel = unpackVoxelKey(key * 256 + (color & 0xff));
+		voxels.push({
+			x: voxel.x,
+			y: voxel.y,
+			z: voxel.z,
 			color,
-		}))
+		});
+	}
+
+	return encodeVoxels(voxels);
+}
+
+function getTerrainBounds(terrain: VoxelTerrain): TerrainBounds {
+	const resolution = getVoxelTerrainResolution(terrain);
+
+	return {
+		resolution,
+		resolvedWidth: terrain.Width * resolution,
+		resolvedLength: terrain.Length * resolution,
+		resolvedHeight: terrain.Height * resolution,
+	};
+}
+
+function isInBounds(coord: VoxelCoord, bounds: TerrainBounds): boolean {
+	return (
+		coord.x >= 0 &&
+		coord.x < bounds.resolvedWidth &&
+		coord.y >= 0 &&
+		coord.y < bounds.resolvedHeight &&
+		coord.z >= 0 &&
+		coord.z < bounds.resolvedLength
 	);
 }
 
-function getTileKey(x: number, y: number): string {
-	return `${x},${y}`;
-}
-
-function parseTileKey(key: string): { x: number; y: number } | null {
-	const [x, y] = key.split(",").map(Number);
-	if (!Number.isInteger(x) || !Number.isInteger(y)) return null;
-	return { x, y };
-}
-
-function applySquareBrush(
-	cx: number,
-	cy: number,
-	size: number,
-	width: number,
-	length: number,
-	fn: (x: number, y: number) => void
-) {
-	const r = Math.max(0, size - 1);
-	const x0 = clamp(cx - r, 0, width - 1);
-	const x1 = clamp(cx + r, 0, width - 1);
-	const y0 = clamp(cy - r, 0, length - 1);
-	const y1 = clamp(cy + r, 0, length - 1);
-
-	for (let y = y0; y <= y1; y++) {
-		for (let x = x0; x <= x1; x++) {
-			fn(x, y);
-		}
-	}
-}
-
-function isRoundBrushTile(cx: number, cy: number, x: number, y: number, size: number) {
-	const r = Math.max(0, size - 1);
-	const dx = x - cx;
-	const dy = y - cy;
-	return dx * dx + dy * dy <= r * r;
-}
-
-function applyBrush(
-	cx: number,
-	cy: number,
-	size: number,
-	shape: BrushShape,
-	width: number,
-	length: number,
-	fn: (x: number, y: number) => void
-) {
-	applySquareBrush(cx, cy, size, width, length, (x, y) => {
-		if (shape === "round" && !isRoundBrushTile(cx, cy, x, y, size)) return;
-		fn(x, y);
-	});
-}
-
-function getBrushTiles(
-	cx: number,
-	cy: number,
-	size: number,
-	shape: BrushShape,
-	width: number,
-	length: number
-): Set<string> {
-	const tiles = new Set<string>();
-	applyBrush(cx, cy, size, shape, width, length, (x, y) => {
-		tiles.add(getTileKey(x, y));
-	});
-	return tiles;
-}
-
-function getMirroredTileCoords(
-	x: number,
-	y: number,
-	width: number,
-	length: number,
-	mirrorHorizontal: boolean,
-	mirrorVertical: boolean
-): Array<{ x: number; y: number }> {
-	const coords = [{ x, y }];
-	if (mirrorHorizontal) coords.push({ x: width - 1 - x, y });
-	if (mirrorVertical) coords.push({ x, y: length - 1 - y });
-	if (mirrorHorizontal && mirrorVertical) {
-		coords.push({ x: width - 1 - x, y: length - 1 - y });
-	}
-
-	const seen = new Set<string>();
-	return coords.filter((coord) => {
-		const key = getTileKey(coord.x, coord.y);
-		if (seen.has(key)) return false;
-		seen.add(key);
-		return true;
-	});
-}
-
-function getTileKeySet(tiles: Array<{ x: number; y: number }>): Set<string> {
-	return new Set(tiles.map((tile) => getTileKey(tile.x, tile.y)));
-}
-
-function getAllTileCoords(width: number, length: number): Array<{ x: number; y: number }> {
-	const tiles: Array<{ x: number; y: number }> = [];
-	for (let y = 0; y < length; y++) {
-		for (let x = 0; x < width; x++) {
-			tiles.push({ x, y });
-		}
-	}
-	return tiles;
-}
-
-function isVoxelInAnyTile(
-	voxelX: number,
-	voxelZ: number,
-	resolution: number,
-	tileKeys: Set<string>
-): boolean {
-	return tileKeys.has(
-		getTileKey(Math.floor(voxelX / resolution), Math.floor(voxelZ / resolution))
-	);
-}
-
-function replaceVoxelTerrainColumns(
+function pointToVoxelCoord(
+	point: THREE.Vector3,
 	terrain: VoxelTerrain,
-	maps: VoxelTerrainEditorMaps,
-	tiles: Array<{ x: number; y: number }>
-): VoxelTerrain {
-	const resolution = clampVoxelTerrainResolution(terrain.Resolution);
-	const maxHeight = terrain.Height * resolution;
-	const tileKeys = getTileKeySet(tiles);
-	const voxels = Array.from(decodeVoxels(terrain.Voxels)).filter(
-		(voxel) => !isVoxelInAnyTile(voxel.x, voxel.z, resolution, tileKeys)
-	);
+	bounds: TerrainBounds
+): VoxelCoord {
+	return {
+		x: Math.floor((point.x + terrain.Width / 2) * bounds.resolution),
+		y: Math.floor((point.y + 0.5) * bounds.resolution),
+		z: Math.floor((point.z + terrain.Length / 2) * bounds.resolution),
+	};
+}
 
-	for (const tile of tiles) {
-		const height = clamp(Math.floor(maps.heightMap[tile.y]?.[tile.x] ?? 0), 0, maxHeight);
-		const color = maps.colorMap[tile.y]?.[tile.x] ?? DEFAULT_TERRAIN_COLOR_INDEX;
-		for (let subZ = 0; subZ < resolution; subZ++) {
-			for (let subX = 0; subX < resolution; subX++) {
-				for (let y = 0; y < height; y++) {
-					voxels.push({
-						x: tile.x * resolution + subX,
-						y,
-						z: tile.y * resolution + subZ,
-						color,
-					});
-				}
+function normalToCoord(normal: THREE.Vector3): VoxelCoord {
+	return {
+		x: Math.round(normal.x),
+		y: Math.round(normal.y),
+		z: Math.round(normal.z),
+	};
+}
+
+function getBrushOffsets(size: number): number[] {
+	const safeSize = clamp(Math.floor(size) || MIN_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE);
+	const start = -Math.floor((safeSize - 1) / 2);
+
+	return Array.from({ length: safeSize }, (_, index) => start + index);
+}
+
+function getPlaneBrushCoords(
+	origin: VoxelCoord,
+	normal: VoxelCoord,
+	brushSize: number
+): VoxelCoord[] {
+	const offsets = getBrushOffsets(brushSize);
+	const coords: VoxelCoord[] = [];
+
+	for (const a of offsets) {
+		for (const b of offsets) {
+			if (normal.y !== 0) {
+				coords.push({ x: origin.x + a, y: origin.y, z: origin.z + b });
+			} else if (normal.x !== 0) {
+				coords.push({ x: origin.x, y: origin.y + a, z: origin.z + b });
+			} else {
+				coords.push({ x: origin.x + a, y: origin.y + b, z: origin.z });
 			}
 		}
 	}
 
-	return { ...terrain, Voxels: encodeVoxels(voxels) };
+	return coords;
 }
 
-function recolorExistingVoxels(
-	terrain: VoxelTerrain,
-	tiles: Array<{ x: number; y: number }>,
-	color: number
-): VoxelTerrain {
-	const resolution = clampVoxelTerrainResolution(terrain.Resolution);
-	const tileKeys = getTileKeySet(tiles);
-	const voxels = Array.from(decodeVoxels(terrain.Voxels)).map((voxel) =>
-		isVoxelInAnyTile(voxel.x, voxel.z, resolution, tileKeys)
-			? { ...voxel, color }
-			: voxel
-	);
+function getTacticalBrushUnits(
+	origin: VoxelCoord,
+	normal: VoxelCoord,
+	brushSize: number,
+	terrain: VoxelTerrain
+): VoxelCoord[] {
+	const offsets = getBrushOffsets(brushSize);
+	const units: VoxelCoord[] = [];
 
-	return { ...terrain, Voxels: encodeVoxels(voxels) };
+	for (const a of offsets) {
+		for (const b of offsets) {
+			let unit: VoxelCoord;
+			if (normal.y !== 0) {
+				unit = { x: origin.x + a, y: origin.y, z: origin.z + b };
+			} else if (normal.x !== 0) {
+				unit = { x: origin.x, y: origin.y + a, z: origin.z + b };
+			} else {
+				unit = { x: origin.x + a, y: origin.y + b, z: origin.z };
+			}
+
+			if (
+				unit.x >= 0 &&
+				unit.x < terrain.Width &&
+				unit.y >= 0 &&
+				unit.y < terrain.Height &&
+				unit.z >= 0 &&
+				unit.z < terrain.Length
+			) {
+				units.push(unit);
+			}
+		}
+	}
+
+	return units;
 }
 
-function getBrushPreviewCells(size: number, shape: BrushShape): boolean[] {
-	const footprint = size * 2 - 1;
-	const center = size - 1;
-	return Array.from({ length: footprint * footprint }, (_, idx) => {
-		const x = idx % footprint;
-		const y = Math.floor(idx / footprint);
-		return shape === "square" || isRoundBrushTile(center, center, x, y, size);
-	});
-}
-
-function hexToRgb(hex: string): { r: number; g: number; b: number } {
-	const normalized = hex.replace("#", "");
+function getTacticalUnitFromVoxel(coord: VoxelCoord, bounds: TerrainBounds): VoxelCoord {
 	return {
-		r: parseInt(normalized.slice(0, 2), 16),
-		g: parseInt(normalized.slice(2, 4), 16),
-		b: parseInt(normalized.slice(4, 6), 16),
+		x: Math.floor(coord.x / bounds.resolution),
+		y: Math.floor(coord.y / bounds.resolution),
+		z: Math.floor(coord.z / bounds.resolution),
 	};
 }
 
-function channelToHex(value: number): string {
-	return clamp(Math.round(value), 0, 255).toString(16).padStart(2, "0");
-}
+function getTacticalBlockCoords(unit: VoxelCoord, bounds: TerrainBounds): VoxelCoord[] {
+	const coords: VoxelCoord[] = [];
+	const startX = unit.x * bounds.resolution;
+	const startY = unit.y * bounds.resolution;
+	const startZ = unit.z * bounds.resolution;
 
-function adjustHexBrightness(hex: string, brightnessPercent: number): string {
-	const { r, g, b } = hexToRgb(hex);
-	const multiplier = brightnessPercent / 100;
-	return `#${channelToHex(r * multiplier)}${channelToHex(g * multiplier)}${channelToHex(b * multiplier)}`;
-}
-
-function getReadableTextStyle(backgroundHex: string): {
-	color: string;
-	textShadow: string;
-} {
-	const { r, g, b } = hexToRgb(backgroundHex);
-	const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-	const isDark = luminance < 0.48;
-	return isDark
-		? { color: "rgba(255,255,255,0.95)", textShadow: "0 0 2px rgba(0,0,0,0.85)" }
-		: { color: "rgba(0,0,0,0.9)", textShadow: "0 0 2px rgba(255,255,255,0.55)" };
-}
-
-function getSelectedVoxelHeights(selection: HeightSelection, maxHeight: number): number[] {
-	const cappedMax = Math.max(1, Math.floor(maxHeight));
-	if (selection.mode === "single") {
-		return [clamp(Math.floor(selection.value), 0, cappedMax - 1)];
+	for (let z = startZ; z < startZ + bounds.resolution; z++) {
+		for (let y = startY; y < startY + bounds.resolution; y++) {
+			for (let x = startX; x < startX + bounds.resolution; x++) {
+				const coord = { x, y, z };
+				if (isInBounds(coord, bounds)) coords.push(coord);
+			}
+		}
 	}
 
-	const start = clamp(Math.floor(selection.start), 0, cappedMax - 1);
-	const end = clamp(Math.floor(selection.end), start + 1, cappedMax);
-	return Array.from({ length: end - start }, (_, index) => start + index);
+	return coords;
 }
 
-export function VoxelTerrainEditor({
-	terrain,
-	readOnly,
-	onChange,
-}: VoxelTerrainEditorProps) {
-	const [draftTerrain, setDraftTerrain] = useState<VoxelTerrain>(() => cloneTerrain(terrain));
-	const draftTerrainRef = useRef(draftTerrain);
-	const [maps, setMaps] = useState<VoxelTerrainEditorMaps>(() =>
-		voxelTerrainToEditorMaps(terrain)
-	);
-	const [mode, setMode] = useState<EditorMode>("normal");
-	const [detailMode, setDetailMode] = useState(false);
-	const [normalTool, setNormalTool] = useState<NormalTool>("paint");
-	const [sculptTool, setSculptTool] = useState<SculptTool>("set");
-	const [brushSize, setBrushSize] = useState(1);
-	const [brushShape, setBrushShape] = useState<BrushShape>("square");
-	const [selectedColorIndex, setSelectedColorIndex] = useState(DEFAULT_TERRAIN_COLOR_INDEX);
-	const [targetHeight, setTargetHeight] = useState(1);
-	const [showHeights, setShowHeights] = useState(false);
-	const [mirrorHorizontal, setMirrorHorizontal] = useState(false);
-	const [mirrorVertical, setMirrorVertical] = useState(false);
-	const [heightSelection, setHeightSelection] = useState<HeightSelection>(() => ({
-		mode: "range",
-		start: 0,
-		end: Math.max(1, clampVoxelTerrainResolution(terrain.Resolution)),
-	}));
-	const [hoverTile, setHoverTile] = useState<{ x: number; y: number } | null>(null);
-	const [flattenConfirm, setFlattenConfirm] = useState(false);
-	const [undoStack, setUndoStack] = useState<HistorySnapshot[]>([]);
-	const [redoStack, setRedoStack] = useState<HistorySnapshot[]>([]);
+function collectAffectedCoords(
+	terrain: VoxelTerrain,
+	pick: PickInfo,
+	tool: EditorTool,
+	granularity: EditGranularity,
+	brushSize: number
+): VoxelCoord[] {
+	const bounds = getTerrainBounds(terrain);
 
-	const resolution = clampVoxelTerrainResolution(draftTerrain.Resolution);
-	const clampedMaxHeight = Math.max(1, draftTerrain.Height * resolution);
-	const paletteLevels = TERRAIN_PALETTE_FAMILIES[0]?.colors.length ?? 5;
-	const middlePaletteLevel = Math.floor(paletteLevels / 2);
-	const selectedFamilyIndex = Math.floor(selectedColorIndex / paletteLevels);
-	const selectedLevelIndex = selectedColorIndex % paletteLevels;
-	const activeTool = mode === "normal" ? normalTool : sculptTool;
-	const isColorTool =
-		mode === "normal"
-			? normalTool === "paint" || normalTool === "eyedropper"
-			: sculptTool !== "clear";
+	if (granularity === "voxel") {
+		const origin =
+			tool === "place" && !pick.ground
+				? {
+					x: pick.voxel.x + pick.normal.x,
+					y: pick.voxel.y + pick.normal.y,
+					z: pick.voxel.z + pick.normal.z,
+				}
+				: pick.voxel;
+		const normal = pick.ground ? { x: 0, y: 1, z: 0 } : pick.normal;
+
+		return getPlaneBrushCoords(origin, normal, brushSize).filter((coord) =>
+			isInBounds(coord, bounds)
+		);
+	}
+
+	const baseUnit = getTacticalUnitFromVoxel(pick.voxel, bounds);
+	const origin =
+		tool === "place" && !pick.ground
+			? {
+				x: baseUnit.x + pick.normal.x,
+				y: baseUnit.y + pick.normal.y,
+				z: baseUnit.z + pick.normal.z,
+			}
+			: baseUnit;
+	const normal = pick.ground ? { x: 0, y: 1, z: 0 } : pick.normal;
+	const units = getTacticalBrushUnits(origin, normal, brushSize, terrain);
+
+	return units.flatMap((unit) => getTacticalBlockCoords(unit, bounds));
+}
+
+function applyVoxelEdit(
+	terrain: VoxelTerrain,
+	map: Map<number, number>,
+	pick: PickInfo,
+	tool: EditorTool,
+	granularity: EditGranularity,
+	brushSize: number,
+	colorIndex: number
+): { terrain: VoxelTerrain; changed: boolean; sampledColor: number | null } {
+	const coords =
+		tool === "sample"
+			? [pick.voxel]
+			: collectAffectedCoords(terrain, pick, tool, granularity, brushSize);
+	const nextMap = new Map(map);
+	let changed = false;
+	let sampledColor: number | null = null;
+
+	if (tool === "sample") {
+		for (const coord of coords) {
+			const color = map.get(voxelKey(coord.x, coord.y, coord.z));
+			if (color !== undefined) {
+				sampledColor = color;
+				break;
+			}
+		}
+
+		return { terrain, changed: false, sampledColor };
+	}
+
+	for (const coord of coords) {
+		const key = voxelKey(coord.x, coord.y, coord.z);
+
+		if (tool === "erase") {
+			if (nextMap.delete(key)) changed = true;
+			continue;
+		}
+
+		if (tool === "paint") {
+			if (nextMap.has(key) && nextMap.get(key) !== colorIndex) {
+				nextMap.set(key, colorIndex);
+				changed = true;
+			}
+			continue;
+		}
+
+		if (!nextMap.has(key)) {
+			nextMap.set(key, colorIndex);
+			changed = true;
+		}
+	}
+
+	if (!changed) return { terrain, changed: false, sampledColor: null };
+
+	return {
+		terrain: {
+			...terrain,
+			Voxels: voxelMapToEncoded(nextMap),
+		},
+		changed,
+		sampledColor: null,
+	};
+}
+
+function createEditorTerrainColor(voxel: Voxel, isTopFace: boolean): THREE.Color {
+	const color = new THREE.Color(
+		terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(voxel.color))
+	);
+
+	if (!isTopFace) color.multiplyScalar(0.78);
+	return color;
+}
+
+function disposeMaterial(material: THREE.Material | THREE.Material[]): void {
+	if (Array.isArray(material)) {
+		for (const entry of material) entry.dispose();
+		return;
+	}
+
+	material.dispose();
+}
+
+function disposeObjectTree(object: THREE.Object3D): void {
+	object.traverse((child) => {
+		const mesh = child as THREE.Mesh;
+		if (mesh.geometry) mesh.geometry.dispose();
+		if (mesh.material) disposeMaterial(mesh.material);
+	});
+}
+
+function clearObjectGroup(group: THREE.Group): void {
+	disposeObjectTree(group);
+	group.clear();
+}
+
+function createGridLineSegments(
+	points: number[],
+	color: number,
+	opacity: number
+): THREE.LineSegments {
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+
+	const material = new THREE.LineBasicMaterial({
+		color,
+		transparent: true,
+		opacity,
+		depthWrite: false,
+	});
+
+	return new THREE.LineSegments(geometry, material);
+}
+
+function createBoundsFrame(
+	terrain: VoxelTerrain,
+	color: number,
+	opacity: number
+): THREE.LineSegments {
+	const minX = -terrain.Width / 2;
+	const maxX = terrain.Width / 2;
+	const minY = -0.5;
+	const maxY = terrain.Height - 0.5;
+	const minZ = -terrain.Length / 2;
+	const maxZ = terrain.Length / 2;
+	const corners = [
+		[minX, minY, minZ],
+		[maxX, minY, minZ],
+		[maxX, minY, maxZ],
+		[minX, minY, maxZ],
+		[minX, maxY, minZ],
+		[maxX, maxY, minZ],
+		[maxX, maxY, maxZ],
+		[minX, maxY, maxZ],
+	];
+	const edges = [
+		[0, 1],
+		[1, 2],
+		[2, 3],
+		[3, 0],
+		[4, 5],
+		[5, 6],
+		[6, 7],
+		[7, 4],
+		[0, 4],
+		[1, 5],
+		[2, 6],
+		[3, 7],
+	];
+	const points: number[] = [];
+
+	for (const [a, b] of edges) {
+		points.push(...corners[a], ...corners[b]);
+	}
+
+	return createGridLineSegments(points, color, opacity);
+}
+
+function addTopRectangle(
+	points: number[],
+	minX: number,
+	maxX: number,
+	y: number,
+	minZ: number,
+	maxZ: number
+): void {
+	points.push(minX, y, minZ, maxX, y, minZ);
+	points.push(maxX, y, minZ, maxX, y, maxZ);
+	points.push(maxX, y, maxZ, minX, y, maxZ);
+	points.push(minX, y, maxZ, minX, y, minZ);
+}
+
+function createVoxelSurfaceGrid(
+	terrain: VoxelTerrain,
+	bounds: TerrainBounds,
+	map: Map<number, number>,
+	color: number,
+	opacity: number
+): THREE.LineSegments | null {
+	const points: number[] = [];
+
+	for (const key of map.keys()) {
+		const voxel = unpackVoxelPositionKey(key);
+		if (map.has(voxelKey(voxel.x, voxel.y + 1, voxel.z))) continue;
+
+		const minX = voxel.x / bounds.resolution - terrain.Width / 2;
+		const maxX = (voxel.x + 1) / bounds.resolution - terrain.Width / 2;
+		const y = (voxel.y + 1) / bounds.resolution - 0.5 + GRID_LINE_OFFSET;
+		const minZ = voxel.z / bounds.resolution - terrain.Length / 2;
+		const maxZ = (voxel.z + 1) / bounds.resolution - terrain.Length / 2;
+		addTopRectangle(points, minX, maxX, y, minZ, maxZ);
+	}
+
+	if (points.length === 0) return null;
+	return createGridLineSegments(points, color, opacity);
+}
+
+function createTacticalSurfaceGrid(
+	terrain: VoxelTerrain,
+	bounds: TerrainBounds,
+	map: Map<number, number>,
+	color: number,
+	opacity: number
+): THREE.LineSegments | null {
+	const points: number[] = [];
+
+	for (const key of map.keys()) {
+		const voxel = unpackVoxelPositionKey(key);
+		if (map.has(voxelKey(voxel.x, voxel.y + 1, voxel.z))) continue;
+
+		const minX = voxel.x / bounds.resolution - terrain.Width / 2;
+		const maxX = (voxel.x + 1) / bounds.resolution - terrain.Width / 2;
+		const y = (voxel.y + 1) / bounds.resolution - 0.5 + GRID_LINE_OFFSET * 2;
+		const minZ = voxel.z / bounds.resolution - terrain.Length / 2;
+		const maxZ = (voxel.z + 1) / bounds.resolution - terrain.Length / 2;
+
+		if (voxel.x % bounds.resolution === 0) {
+			points.push(minX, y, minZ, minX, y, maxZ);
+		}
+		if ((voxel.x + 1) % bounds.resolution === 0) {
+			points.push(maxX, y, minZ, maxX, y, maxZ);
+		}
+		if (voxel.z % bounds.resolution === 0) {
+			points.push(minX, y, minZ, maxX, y, minZ);
+		}
+		if ((voxel.z + 1) % bounds.resolution === 0) {
+			points.push(minX, y, maxZ, maxX, y, maxZ);
+		}
+	}
+
+	if (points.length === 0) return null;
+	return createGridLineSegments(points, color, opacity);
+}
+
+function rebuildGrid(
+	resources: EditorSceneResources,
+	terrain: VoxelTerrain,
+	map: Map<number, number>,
+	showTacticalGrid: boolean,
+	showVoxelGrid: boolean
+): void {
+	clearObjectGroup(resources.gridGroup);
+
+	const bounds = getTerrainBounds(terrain);
+
+	if (showVoxelGrid && bounds.resolution > 1) {
+		const voxelGrid = createVoxelSurfaceGrid(terrain, bounds, map, 0xf59e0b, 0.38);
+		if (voxelGrid) resources.gridGroup.add(voxelGrid);
+	}
+
+	if (showTacticalGrid) {
+		const tacticalGrid = createTacticalSurfaceGrid(terrain, bounds, map, 0x14b8a6, 0.68);
+		if (tacticalGrid) resources.gridGroup.add(tacticalGrid);
+	}
+
+	resources.gridGroup.add(createBoundsFrame(terrain, 0xe5e7eb, 0.32));
+}
+
+function getVoxelWorldCenter(
+	terrain: VoxelTerrain,
+	bounds: TerrainBounds,
+	voxel: VoxelCoord
+): THREE.Vector3 {
+	const voxelSize = 1 / bounds.resolution;
+	const halfVoxelSize = voxelSize / 2;
+
+	return new THREE.Vector3(
+		voxel.x / bounds.resolution - terrain.Width / 2 + halfVoxelSize,
+		(voxel.y + 0.5) / bounds.resolution - 0.5,
+		voxel.z / bounds.resolution - terrain.Length / 2 + halfVoxelSize
+	);
+}
+
+function getHoverColor(colorIndex: number): THREE.Color {
+	const color = new THREE.Color(
+		terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(colorIndex))
+	);
+	const luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+
+	if (luminance > 0.62) {
+		return color.multiplyScalar(0.48);
+	}
+
+	return color.lerp(new THREE.Color(0xffffff), 0.5);
+}
+
+function addVoxelFaceToGeometry(
+	positions: number[],
+	colors: number[],
+	indices: number[],
+	center: THREE.Vector3,
+	voxelSize: number,
+	face: (typeof VOXEL_FACE_DEFINITIONS)[number],
+	color: THREE.Color,
+	offset: number
+): void {
+	const vertexIndex = positions.length / 3;
+	const [nx, ny, nz] = face.normal;
+
+	for (const [cx, cy, cz] of face.corners) {
+		positions.push(
+			center.x + cx * voxelSize + nx * offset,
+			center.y + cy * voxelSize + ny * offset,
+			center.z + cz * voxelSize + nz * offset
+		);
+		colors.push(color.r, color.g, color.b);
+	}
+
+	indices.push(
+		vertexIndex,
+		vertexIndex + 1,
+		vertexIndex + 2,
+		vertexIndex,
+		vertexIndex + 2,
+		vertexIndex + 3
+	);
+}
+
+function createHoverSurfaceGeometry(
+	terrain: VoxelTerrain,
+	bounds: TerrainBounds,
+	map: Map<number, number>,
+	coords: VoxelCoord[]
+): THREE.BufferGeometry | null {
+	const positions: number[] = [];
+	const colors: number[] = [];
+	const indices: number[] = [];
+	const voxelSize = 1 / bounds.resolution;
+	const selectedKeys = new Set(coords.map((coord) => voxelKey(coord.x, coord.y, coord.z)));
+
+	for (const key of selectedKeys) {
+		const colorIndex = map.get(key);
+		if (colorIndex === undefined) continue;
+
+		const voxel = unpackVoxelPositionKey(key);
+		const center = getVoxelWorldCenter(terrain, bounds, voxel);
+		const color = getHoverColor(colorIndex);
+
+		for (const face of VOXEL_FACE_DEFINITIONS) {
+			const [dx, dy, dz] = face.neighborOffset;
+			if (map.has(voxelKey(voxel.x + dx, voxel.y + dy, voxel.z + dz))) continue;
+
+			addVoxelFaceToGeometry(
+				positions,
+				colors,
+				indices,
+				center,
+				voxelSize,
+				face,
+				color,
+				HOVER_FACE_OFFSET
+			);
+		}
+	}
+
+	if (positions.length === 0) return null;
+
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+	geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+	geometry.setIndex(indices);
+	geometry.computeBoundingSphere();
+
+	return geometry;
+}
+
+function createPlaceGhostGeometry(
+	terrain: VoxelTerrain,
+	bounds: TerrainBounds,
+	map: Map<number, number>,
+	coords: VoxelCoord[]
+): THREE.BufferGeometry | null {
+	const positions: number[] = [];
+	const colors: number[] = [];
+	const indices: number[] = [];
+	const voxelSize = 1 / bounds.resolution;
+	const ghostKeys = new Set<number>();
+
+	for (const coord of coords) {
+		const key = voxelKey(coord.x, coord.y, coord.z);
+		if (!isInBounds(coord, bounds) || map.has(key)) continue;
+		ghostKeys.add(key);
+	}
+
+	const occupiedOrGhost = new Set<number>(map.keys());
+	for (const key of ghostKeys) {
+		occupiedOrGhost.add(key);
+	}
+
+	const color = new THREE.Color(0xffffff);
+	for (const key of ghostKeys) {
+		const voxel = unpackVoxelPositionKey(key);
+		const center = getVoxelWorldCenter(terrain, bounds, voxel);
+
+		for (const face of VOXEL_FACE_DEFINITIONS) {
+			const [dx, dy, dz] = face.neighborOffset;
+			if (occupiedOrGhost.has(voxelKey(voxel.x + dx, voxel.y + dy, voxel.z + dz))) {
+				continue;
+			}
+
+			addVoxelFaceToGeometry(
+				positions,
+				colors,
+				indices,
+				center,
+				voxelSize,
+				face,
+				color,
+				0
+			);
+		}
+	}
+
+	if (positions.length === 0) return null;
+
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+	geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+	geometry.setIndex(indices);
+	geometry.computeBoundingSphere();
+
+	return geometry;
+}
+
+function updateHoverIndicator(
+	resources: EditorSceneResources,
+	terrain: VoxelTerrain,
+	map: Map<number, number>,
+	pick: PickInfo | null,
+	tool: EditorTool,
+	granularity: EditGranularity,
+	brushSize: number,
+	colorIndex: number
+): void {
+	clearObjectGroup(resources.hoverGroup);
+	if (!pick) return;
+
+	const bounds = getTerrainBounds(terrain);
+	const coords =
+		tool === "sample"
+			? [pick.voxel]
+			: collectAffectedCoords(terrain, pick, tool, granularity, brushSize);
+	const geometry =
+		tool === "place"
+			? createPlaceGhostGeometry(terrain, bounds, map, coords)
+			: createHoverSurfaceGeometry(terrain, bounds, map, coords);
+
+	if (!geometry) return;
+
+	const material =
+		tool === "place"
+			? new THREE.MeshBasicMaterial({
+				color: terrainPaletteIndexToVoxelColor(colorIndex),
+				transparent: true,
+				opacity: 0.38,
+				depthWrite: false,
+				vertexColors: false,
+			})
+			: new THREE.MeshBasicMaterial({
+				transparent: true,
+				opacity: 0.9,
+				depthWrite: false,
+				vertexColors: true,
+			});
+	const mesh = new THREE.Mesh(geometry, material);
+	mesh.renderOrder = 30;
+	resources.hoverGroup.add(mesh);
+}
+
+function resizeRenderer(resources: EditorSceneResources, container: HTMLDivElement): void {
+	const width = container.clientWidth || 1;
+	const height = container.clientHeight || 1;
+	const aspect = width / height;
+	const halfSize = resources.camera.top;
+
+	resources.camera.left = -halfSize * aspect;
+	resources.camera.right = halfSize * aspect;
+	resources.camera.updateProjectionMatrix();
+	resources.renderer.setSize(width, height);
+}
+
+function frameCamera(
+	resources: EditorSceneResources,
+	terrain: VoxelTerrain,
+	container: HTMLDivElement
+): void {
+	const halfSize = Math.max(
+		6,
+		((terrain.Width + terrain.Length) / Math.SQRT2 / 2) * 1.15,
+		terrain.Height * 0.9
+	);
+	const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
+	const camera = resources.camera;
+	const controls = resources.controls;
+	const terrainCenterY = Math.max(0, terrain.Height / 2 - 0.5);
+	const cameraDistance = halfSize * CAMERA_DISTANCE_MULTIPLIER;
+
+	camera.left = -halfSize * aspect;
+	camera.right = halfSize * aspect;
+	camera.top = halfSize;
+	camera.bottom = -halfSize;
+	camera.position.set(cameraDistance, cameraDistance, cameraDistance);
+	camera.zoom = 1;
+	camera.updateProjectionMatrix();
+	controls.target.set(0, terrainCenterY, 0);
+	controls.cursor.set(0, terrainCenterY, 0);
+	controls.maxTargetRadius = Math.max(8, Math.sqrt(terrain.Width ** 2 + terrain.Length ** 2));
+	controls.update();
+}
+
+function isTextInputTarget(target: EventTarget | null): boolean {
+	if (!(target instanceof HTMLElement)) return false;
+	const tagName = target.tagName.toLowerCase();
+
+	return (
+		tagName === "input" ||
+		tagName === "textarea" ||
+		tagName === "select" ||
+		target.isContentEditable
+	);
+}
+
+export default function VoxelTerrainEditor({
+	terrain,
+	onChange,
+	readOnly = false,
+}: VoxelTerrainEditorProps) {
+	const containerRef = useRef<HTMLDivElement>(null);
+	const resourcesRef = useRef<EditorSceneResources | null>(null);
+	const terrainRef = useRef(terrain);
+	const voxelMapRef = useRef(createVoxelMap(terrain.Voxels));
+	const toolRef = useRef<EditorTool>("place");
+	const granularityRef = useRef<EditGranularity>("tactical");
+	const brushSizeRef = useRef(1);
+	const selectedColorRef = useRef(DEFAULT_TERRAIN_COLOR_INDEX);
+	const readOnlyRef = useRef(readOnly);
+	const pointerDownRef = useRef(false);
+	const strokeStartedRef = useRef(false);
+	const strokeStartVoxelsRef = useRef<string | null>(null);
+	const lastEditKeyRef = useRef<string | null>(null);
+	const lastShapeSignatureRef = useRef<string | null>(null);
+
+	const [activeView, setActiveView] = useState<EditorView>("edit");
+	const [tool, setTool] = useState<EditorTool>("place");
+	const [granularity, setGranularity] = useState<EditGranularity>("tactical");
+	const [brushSize, setBrushSize] = useState(1);
+	const [selectedColorIndex, setSelectedColorIndex] = useState(DEFAULT_TERRAIN_COLOR_INDEX);
+	const [showTacticalGrid, setShowTacticalGrid] = useState(true);
+	const [showVoxelGrid, setShowVoxelGrid] = useState(true);
+	const [undoStack, setUndoStack] = useState<string[]>([]);
+	const [redoStack, setRedoStack] = useState<string[]>([]);
+
+	const voxelMap = useMemo(() => createVoxelMap(terrain.Voxels), [terrain.Voxels]);
+	const voxelCount = getVoxelCount(terrain.Voxels);
+	const selectedTool = TOOL_BUTTONS.find((button) => button.id === tool) ?? TOOL_BUTTONS[0];
+	const resolution = getVoxelTerrainResolution(terrain);
+	const tileDimensions = `${terrain.Width} x ${terrain.Length} x ${terrain.Height}`;
+	const voxelDimensions = `${terrain.Width * resolution} x ${terrain.Length * resolution} x ${
+		terrain.Height * resolution
+	}`;
+	const brushModeLabel = granularity === "tactical" ? "Tile Brush" : "Voxel Brush";
 
 	useEffect(() => {
-		const nextTerrain = cloneTerrain(terrain);
-		const isOwnCommit = isSameEditorTerrain(nextTerrain, draftTerrainRef.current);
-		draftTerrainRef.current = nextTerrain;
-		setDraftTerrain(nextTerrain);
-		setMaps(voxelTerrainToEditorMaps(nextTerrain));
-		if (!isOwnCommit) {
-			setUndoStack([]);
-			setRedoStack([]);
+		terrainRef.current = terrain;
+		voxelMapRef.current = voxelMap;
+	}, [terrain, voxelMap]);
+
+	useEffect(() => {
+		toolRef.current = tool;
+		granularityRef.current = granularity;
+		brushSizeRef.current = brushSize;
+		selectedColorRef.current = selectedColorIndex;
+		readOnlyRef.current = readOnly;
+	}, [tool, granularity, brushSize, selectedColorIndex, readOnly]);
+
+	useEffect(() => {
+		setUndoStack([]);
+		setRedoStack([]);
+		lastShapeSignatureRef.current = null;
+	}, [terrain.Id]);
+
+	const recordUndo = useCallback((voxels: string) => {
+		setUndoStack((current) => [...current.slice(-(UNDO_LIMIT - 1)), voxels]);
+		setRedoStack([]);
+	}, []);
+
+	const undo = useCallback(() => {
+		if (undoStack.length === 0) return;
+		const currentTerrain = terrainRef.current;
+		const previousVoxels = undoStack[undoStack.length - 1];
+		const nextTerrain = { ...currentTerrain, Voxels: previousVoxels };
+
+		terrainRef.current = nextTerrain;
+		voxelMapRef.current = createVoxelMap(previousVoxels);
+		setUndoStack((current) => current.slice(0, -1));
+		setRedoStack((current) => [currentTerrain.Voxels, ...current].slice(0, UNDO_LIMIT));
+		onChange(nextTerrain);
+	}, [onChange, undoStack]);
+
+	const redo = useCallback(() => {
+		if (redoStack.length === 0) return;
+		const currentTerrain = terrainRef.current;
+		const nextVoxels = redoStack[0];
+		const nextTerrain = { ...currentTerrain, Voxels: nextVoxels };
+
+		terrainRef.current = nextTerrain;
+		voxelMapRef.current = createVoxelMap(nextVoxels);
+		setRedoStack((current) => current.slice(1));
+		setUndoStack((current) => [...current.slice(-(UNDO_LIMIT - 1)), currentTerrain.Voxels]);
+		onChange(nextTerrain);
+	}, [onChange, redoStack]);
+
+	const getPickInfo = useCallback((event: PointerEvent): PickInfo | null => {
+		const resources = resourcesRef.current;
+		const currentTerrain = terrainRef.current;
+		const container = containerRef.current;
+		if (!resources || !container) return null;
+
+		const rect = resources.renderer.domElement.getBoundingClientRect();
+		const mouse = new THREE.Vector2(
+			((event.clientX - rect.left) / rect.width) * 2 - 1,
+			-((event.clientY - rect.top) / rect.height) * 2 + 1
+		);
+
+		resources.raycaster.setFromCamera(mouse, resources.camera);
+
+		if (resources.terrainMesh) {
+			const intersections = resources.raycaster.intersectObject(resources.terrainMesh, false);
+			const hit = intersections[0];
+
+			if (hit?.face) {
+				const normal = hit.face.normal.clone().normalize();
+				const insidePoint = hit.point
+					.clone()
+					.addScaledVector(normal, -PICK_EPSILON);
+				const bounds = getTerrainBounds(currentTerrain);
+				const voxel = pointToVoxelCoord(insidePoint, currentTerrain, bounds);
+
+				if (isInBounds(voxel, bounds)) {
+					return {
+						voxel,
+						normal: normalToCoord(normal),
+						ground: false,
+					};
+				}
+			}
+		}
+
+		const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.5);
+		const groundPoint = new THREE.Vector3();
+		if (!resources.raycaster.ray.intersectPlane(groundPlane, groundPoint)) {
+			return null;
+		}
+
+		const bounds = getTerrainBounds(currentTerrain);
+		const voxel = {
+			x: Math.floor((groundPoint.x + currentTerrain.Width / 2) * bounds.resolution),
+			y: 0,
+			z: Math.floor((groundPoint.z + currentTerrain.Length / 2) * bounds.resolution),
+		};
+
+		if (!isInBounds(voxel, bounds)) return null;
+
+		return {
+			voxel,
+			normal: { x: 0, y: 1, z: 0 },
+			ground: true,
+		};
+	}, []);
+
+	const applyEdit = useCallback((pick: PickInfo): boolean => {
+		if (readOnlyRef.current) return false;
+
+		const currentTerrain = terrainRef.current;
+		const currentMap = voxelMapRef.current;
+		const result = applyVoxelEdit(
+			currentTerrain,
+			currentMap,
+			pick,
+			toolRef.current,
+			granularityRef.current,
+			brushSizeRef.current,
+			selectedColorRef.current
+		);
+
+		if (result.sampledColor !== null) {
+			selectedColorRef.current = result.sampledColor;
+			setSelectedColorIndex(result.sampledColor);
+			toolRef.current = "paint";
+			setTool("paint");
+			return false;
+		}
+
+		if (!result.changed) return false;
+
+		if (!strokeStartedRef.current) {
+			recordUndo(strokeStartVoxelsRef.current ?? currentTerrain.Voxels);
+			strokeStartedRef.current = true;
+		}
+
+		terrainRef.current = result.terrain;
+		voxelMapRef.current = createVoxelMap(result.terrain.Voxels);
+		onChange(result.terrain);
+		return true;
+	}, [onChange, recordUndo]);
+
+	const getEditKey = useCallback((pick: PickInfo): string => {
+		return [
+			toolRef.current,
+			granularityRef.current,
+			brushSizeRef.current,
+			pick.voxel.x,
+			pick.voxel.y,
+			pick.voxel.z,
+			pick.normal.x,
+			pick.normal.y,
+			pick.normal.z,
+		].join(":");
+	}, []);
+
+	useEffect(() => {
+		const container = containerRef.current;
+		if (!container) return;
+
+		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+		renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+		renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
+		renderer.outputColorSpace = THREE.SRGBColorSpace;
+		renderer.domElement.style.touchAction = "none";
+		renderer.domElement.style.cursor = readOnlyRef.current ? "default" : "crosshair";
+		container.appendChild(renderer.domElement);
+
+		const scene = new THREE.Scene();
+		scene.background = null;
+
+		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
+		const camera = new THREE.OrthographicCamera(
+			-INITIAL_CAMERA_HALF_SIZE * aspect,
+			INITIAL_CAMERA_HALF_SIZE * aspect,
+			INITIAL_CAMERA_HALF_SIZE,
+			-INITIAL_CAMERA_HALF_SIZE,
+			-100,
+			1000
+		);
+		const initialDistance = INITIAL_CAMERA_HALF_SIZE * CAMERA_DISTANCE_MULTIPLIER;
+		camera.position.set(initialDistance, initialDistance, initialDistance);
+
+		const hemi = new THREE.HemisphereLight(0xffffff, 0x94a3b8, Math.PI * 0.75);
+		scene.add(hemi);
+
+		const directional = new THREE.DirectionalLight(0xffffff, Math.PI * 1.6);
+		directional.position.set(18, 32, 22);
+		scene.add(directional);
+
+		const controls = new OrbitControls(camera, renderer.domElement);
+		controls.enableDamping = true;
+		controls.dampingFactor = 0.08;
+		controls.minZoom = 0.4;
+		controls.maxZoom = 10;
+		controls.mouseButtons.LEFT = null as unknown as THREE.MOUSE;
+		controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
+		controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+		controls.update();
+
+		const gridGroup = new THREE.Group();
+		scene.add(gridGroup);
+
+		const hoverGroup = new THREE.Group();
+		scene.add(hoverGroup);
+
+		const resources: EditorSceneResources = {
+			scene,
+			camera,
+			renderer,
+			controls,
+			raycaster: new THREE.Raycaster(),
+			gridGroup,
+			hoverGroup,
+			terrainMesh: null,
+		};
+		resourcesRef.current = resources;
+
+		let rafId = 0;
+		const animate = () => {
+			rafId = requestAnimationFrame(animate);
+			controls.update();
+			renderer.render(scene, camera);
+		};
+		animate();
+
+		const resizeObserver = new ResizeObserver(() => {
+			resizeRenderer(resources, container);
+		});
+		resizeObserver.observe(container);
+
+		const refreshHover = (pick: PickInfo | null) => {
+			updateHoverIndicator(
+				resources,
+				terrainRef.current,
+				voxelMapRef.current,
+				pick,
+				toolRef.current,
+				granularityRef.current,
+				brushSizeRef.current,
+				selectedColorRef.current
+			);
+		};
+
+		const handlePointerMove = (event: PointerEvent) => {
+			const pick = getPickInfo(event);
+			refreshHover(pick);
+			if (!pointerDownRef.current || !pick || toolRef.current === "sample") return;
+
+			const editKey = getEditKey(pick);
+			if (lastEditKeyRef.current === editKey) return;
+			lastEditKeyRef.current = editKey;
+
+			applyEdit(pick);
+			refreshHover(getPickInfo(event));
+		};
+
+		const handlePointerDown = (event: PointerEvent) => {
+			if (event.button === 1) {
+				event.preventDefault();
+				return;
+			}
+			if (event.button !== 0 || readOnlyRef.current) return;
+
+			event.preventDefault();
+			renderer.domElement.setPointerCapture(event.pointerId);
+			pointerDownRef.current = true;
+			strokeStartedRef.current = false;
+			strokeStartVoxelsRef.current = terrainRef.current.Voxels;
+			lastEditKeyRef.current = null;
+
+			const pick = getPickInfo(event);
+			if (!pick) return;
+
+			const wasSampleTool = toolRef.current === "sample";
+			lastEditKeyRef.current = getEditKey(pick);
+			applyEdit(pick);
+			refreshHover(getPickInfo(event));
+			if (wasSampleTool) {
+				renderer.domElement.releasePointerCapture(event.pointerId);
+				pointerDownRef.current = false;
+				strokeStartedRef.current = false;
+				strokeStartVoxelsRef.current = null;
+				lastEditKeyRef.current = null;
+			}
+		};
+
+		const finishStroke = (event: PointerEvent) => {
+			if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+				renderer.domElement.releasePointerCapture(event.pointerId);
+			}
+
+			pointerDownRef.current = false;
+			strokeStartedRef.current = false;
+			strokeStartVoxelsRef.current = null;
+			lastEditKeyRef.current = null;
+		};
+
+		const handlePointerLeave = () => {
+			if (!pointerDownRef.current) {
+				refreshHover(null);
+			}
+		};
+
+		const preventContextMenu = (event: MouseEvent) => event.preventDefault();
+		const preventMiddleMouseScroll = (event: MouseEvent) => {
+			if (event.button === 1) event.preventDefault();
+		};
+
+		renderer.domElement.addEventListener("pointermove", handlePointerMove);
+		renderer.domElement.addEventListener("pointerdown", handlePointerDown, true);
+		renderer.domElement.addEventListener("pointerup", finishStroke);
+		renderer.domElement.addEventListener("pointercancel", finishStroke);
+		renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
+		renderer.domElement.addEventListener("mousedown", preventMiddleMouseScroll, true);
+		renderer.domElement.addEventListener("auxclick", preventMiddleMouseScroll);
+		renderer.domElement.addEventListener("contextmenu", preventContextMenu);
+
+		return () => {
+			cancelAnimationFrame(rafId);
+			resizeObserver.disconnect();
+			renderer.domElement.removeEventListener("pointermove", handlePointerMove);
+			renderer.domElement.removeEventListener("pointerdown", handlePointerDown, true);
+			renderer.domElement.removeEventListener("pointerup", finishStroke);
+			renderer.domElement.removeEventListener("pointercancel", finishStroke);
+			renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
+			renderer.domElement.removeEventListener("mousedown", preventMiddleMouseScroll, true);
+			renderer.domElement.removeEventListener("auxclick", preventMiddleMouseScroll);
+			renderer.domElement.removeEventListener("contextmenu", preventContextMenu);
+			controls.dispose();
+			if (resources.terrainMesh) {
+				resources.scene.remove(resources.terrainMesh);
+				resources.terrainMesh.geometry.dispose();
+				disposeMaterial(resources.terrainMesh.material);
+			}
+			disposeObjectTree(gridGroup);
+			disposeObjectTree(hoverGroup);
+			renderer.dispose();
+			if (renderer.domElement.parentElement === container) {
+				container.removeChild(renderer.domElement);
+			}
+			resourcesRef.current = null;
+		};
+	}, [applyEdit, getEditKey, getPickInfo]);
+
+	useEffect(() => {
+		const resources = resourcesRef.current;
+		const container = containerRef.current;
+		if (!resources || !container) return;
+
+		clearObjectGroup(resources.hoverGroup);
+
+		if (resources.terrainMesh) {
+			resources.scene.remove(resources.terrainMesh);
+			resources.terrainMesh.geometry.dispose();
+			disposeMaterial(resources.terrainMesh.material);
+			resources.terrainMesh = null;
+		}
+
+		if (getVoxelCount(terrain.Voxels) > 0) {
+			const geometry = createVoxelTerrainGeometry(terrain, createEditorTerrainColor);
+			const material = new THREE.MeshStandardMaterial({
+				roughness: 0.78,
+				metalness: 0,
+				vertexColors: true,
+			});
+			const mesh = new THREE.Mesh(geometry, material);
+			mesh.raycast = acceleratedRaycast;
+			resources.scene.add(mesh);
+			resources.terrainMesh = mesh;
+		}
+
+		const shapeSignature = [
+			terrain.Id,
+			terrain.Width,
+			terrain.Length,
+			terrain.Height,
+			getVoxelTerrainResolution(terrain),
+		].join(":");
+		if (lastShapeSignatureRef.current !== shapeSignature) {
+			frameCamera(resources, terrain, container);
+			lastShapeSignatureRef.current = shapeSignature;
 		}
 	}, [terrain]);
 
 	useEffect(() => {
-		setTargetHeight((prev) => clamp(prev, 0, clampedMaxHeight));
-		setHeightSelection((prev) => {
-			if (prev.mode === "single") {
-				return {
-					mode: "single",
-					value: clamp(prev.value, 0, clampedMaxHeight - 1),
-				};
-			}
-			const start = clamp(prev.start, 0, clampedMaxHeight - 1);
-			const end = clamp(prev.end, start + 1, clampedMaxHeight);
-			return { mode: "range", start, end };
-		});
-	}, [clampedMaxHeight]);
-
-	const commitDraftTerrain = useCallback(
-		(nextTerrain: VoxelTerrain, shouldNotify = true) => {
-			draftTerrainRef.current = nextTerrain;
-			setDraftTerrain(nextTerrain);
-			setMaps(voxelTerrainToEditorMaps(nextTerrain));
-			if (shouldNotify) onChange(nextTerrain);
-		},
-		[onChange]
-	);
-
-	const pushToHistory = useCallback(() => {
-		const snapshot = { terrain: cloneTerrain(draftTerrainRef.current) };
-		setUndoStack((prev) => {
-			const next = [...prev, snapshot];
-			if (next.length > MAX_HISTORY) next.shift();
-			return next;
-		});
-		setRedoStack([]);
-	}, []);
-
-	const restoreSnapshot = useCallback(
-		(snapshot: HistorySnapshot) => {
-			commitDraftTerrain(cloneTerrain(snapshot.terrain));
-		},
-		[commitDraftTerrain]
-	);
-
-	const undo = useCallback(() => {
-		if (undoStack.length === 0 || readOnly) return;
-		const nextUndo = [...undoStack];
-		const snapshot = nextUndo.pop()!;
-		setUndoStack(nextUndo);
-		setRedoStack((prev) => [...prev, { terrain: cloneTerrain(draftTerrainRef.current) }]);
-		restoreSnapshot(snapshot);
-	}, [readOnly, restoreSnapshot, undoStack]);
-
-	const redo = useCallback(() => {
-		if (redoStack.length === 0 || readOnly) return;
-		const nextRedo = [...redoStack];
-		const snapshot = nextRedo.pop()!;
-		setRedoStack(nextRedo);
-		setUndoStack((prev) => [...prev, { terrain: cloneTerrain(draftTerrainRef.current) }]);
-		restoreSnapshot(snapshot);
-	}, [readOnly, redoStack, restoreSnapshot]);
+	const resources = resourcesRef.current;
+	if (!resources) return;
+	rebuildGrid(resources, terrain, voxelMap, showTacticalGrid, showVoxelGrid);
+}, [terrain, voxelMap, showTacticalGrid, showVoxelGrid]);
 
 	useEffect(() => {
-		const handleKeyDown = (e: KeyboardEvent) => {
-			if (readOnly) return;
-			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
-				e.preventDefault();
-				if (e.shiftKey) redo();
+		const resources = resourcesRef.current;
+		const container = containerRef.current;
+		if (!resources || !container || activeView !== "edit") return;
+		resizeRenderer(resources, container);
+	}, [activeView]);
+
+	useEffect(() => {
+		const resources = resourcesRef.current;
+		if (!resources) return;
+		resources.renderer.domElement.style.cursor = readOnly ? "default" : "crosshair";
+	}, [readOnly]);
+
+	useEffect(() => {
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (isTextInputTarget(event.target)) return;
+
+			if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+				event.preventDefault();
+				if (event.shiftKey) redo();
 				else undo();
+				return;
+			}
+
+			if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") {
+				event.preventDefault();
+				redo();
+				return;
+			}
+
+			if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+			switch (event.key.toLowerCase()) {
+				case "p":
+				case "t":
+					setTool("place");
+					break;
+				case "r":
+					setTool("erase");
+					break;
+				case "g":
+					setTool("paint");
+					break;
+				case "i":
+					setTool("sample");
+					break;
+				case "1":
+					setGranularity("tactical");
+					break;
+				case "2":
+					setGranularity("voxel");
+					break;
 			}
 		};
 
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [readOnly, redo, undo]);
-
-	const containerRef = useRef<HTMLDivElement | null>(null);
-	const toolbarStackRef = useRef<HTMLDivElement | null>(null);
-	const gridContainerRef = useRef<HTMLDivElement | null>(null);
-	const footerRef = useRef<HTMLDivElement | null>(null);
-	const gridRef = useRef<HTMLDivElement | null>(null);
-	const [tilePx, setTilePx] = useState(16);
-	const [detailTilePx, setDetailTilePx] = useState(16);
-	const [toolbarHeight, setToolbarHeight] = useState(0);
-	const [footerHeight, setFooterHeight] = useState(0);
-
-	const width = draftTerrain.Width;
-	const length = draftTerrain.Length;
-
-	// In detail mode, the grid displays at voxel-subcell resolution
-	const displayCols = detailMode ? width * resolution : width;
-	const displayRows = detailMode ? length * resolution : length;
-	const minGridWidth = Math.max(0, width * MIN_TILE_PX + (width - 1) * GRID_GAP);
-	const minGridHeight = Math.max(0, length * MIN_TILE_PX + (length - 1) * GRID_GAP);
-	const editorMinHeight = toolbarHeight + footerHeight + minGridHeight + 12;
-
-	// Active tile pixel size: auto-fitted in normal mode, user-zoomed in detail mode
-	const activeTilePx = detailMode ? detailTilePx : tilePx;
-
-	useEffect(() => {
-		if (!toolbarStackRef.current) return;
-		const measureToolbar = () => {
-			const toolbarStack = toolbarStackRef.current;
-			if (!toolbarStack) return;
-			setToolbarHeight(toolbarStack.getBoundingClientRect().height);
-		};
-
-		measureToolbar();
-		const ro = new ResizeObserver(measureToolbar);
-		ro.observe(toolbarStackRef.current);
-		return () => ro.disconnect();
-	}, []);
-
-	useEffect(() => {
-		if (!footerRef.current) return;
-		const measureFooter = () => {
-			const footer = footerRef.current;
-			if (!footer) return;
-			setFooterHeight(footer.getBoundingClientRect().height);
-		};
-
-		measureFooter();
-		const ro = new ResizeObserver(measureFooter);
-		ro.observe(footerRef.current);
-		return () => ro.disconnect();
-	}, []);
-
-	// Auto-fit tile size in normal (non-detail) mode only
-	useEffect(() => {
-		if (detailMode) return;
-		if (!containerRef.current || !gridContainerRef.current) return;
-		const compute = () => {
-			const gridContainer = gridContainerRef.current;
-			if (!gridContainer) return;
-			const gridRect = gridContainer.getBoundingClientRect();
-			const availableW = gridRect.width;
-			const availableH = gridRect.height;
-			if (width <= 0 || length <= 0 || availableW <= 0 || availableH <= 0) return;
-
-			const gapTotalW = GRID_GAP * (width - 1);
-			const gapTotalH = GRID_GAP * (length - 1);
-			const maxTileW = (availableW - gapTotalW) / width;
-			const maxTileH = (availableH - gapTotalH) / length;
-			const px = clamp(
-				Math.floor(Math.min(maxTileW, maxTileH)),
-				MIN_TILE_PX,
-				MAX_TILE_PX
-			);
-			setTilePx((prev) => (px !== prev ? px : prev));
-		};
-
-		compute();
-		const ro = new ResizeObserver(compute);
-		ro.observe(containerRef.current);
-		return () => ro.disconnect();
-	}, [detailMode, footerHeight, length, toolbarHeight, width]);
-
-	const isPointerDownRef = useRef(false);
-	const touchedRef = useRef<Set<string>>(new Set());
-	const workHeightsRef = useRef<number[][] | null>(null);
-	const workColorsRef = useRef<number[][] | null>(null);
-	const workVoxelMapRef = useRef<Map<number, number> | null>(null);
-	const rafRef = useRef<number | null>(null);
-	const hasChangedRef = useRef(false);
-
-	const beginStroke = useCallback(() => {
-		touchedRef.current = new Set();
-		workHeightsRef.current = clone2DNumber(maps.heightMap);
-		workColorsRef.current = clone2DNumber(maps.colorMap);
-		// Detail+normal mode also operates on voxel data directly (per-column operations)
-		workVoxelMapRef.current =
-			mode === "sculpt" || (mode === "normal" && detailMode)
-				? cloneVoxelMap(draftTerrainRef.current.Voxels)
-				: null;
-		hasChangedRef.current = false;
-		pushToHistory();
-	}, [detailMode, maps.colorMap, maps.heightMap, mode, pushToHistory]);
-
-	const schedulePreview = useCallback(() => {
-		if (rafRef.current != null) return;
-		rafRef.current = requestAnimationFrame(() => {
-			rafRef.current = null;
-			// Sculpt and detail+normal both work from the voxel map
-			if (mode === "sculpt" || (mode === "normal" && detailMode)) {
-				if (!workVoxelMapRef.current) return;
-				const nextTerrain = {
-					...draftTerrainRef.current,
-					Voxels: encodeVoxelMap(workVoxelMapRef.current),
-				};
-				commitDraftTerrain(nextTerrain, false);
-				return;
-			}
-
-			if (!workHeightsRef.current || !workColorsRef.current) return;
-			setMaps({
-				heightMap: workHeightsRef.current,
-				colorMap: workColorsRef.current,
-			});
-		});
-	}, [commitDraftTerrain, detailMode, mode]);
-
-	const finishStroke = useCallback(() => {
-		const didChange = hasChangedRef.current;
-		const finalHeightMap = workHeightsRef.current;
-		const finalColorMap = workColorsRef.current;
-		const finalVoxelMap = workVoxelMapRef.current;
-
-		isPointerDownRef.current = false;
-		if (rafRef.current != null) {
-			cancelAnimationFrame(rafRef.current);
-			rafRef.current = null;
-		}
-
-		if (didChange) {
-			// Sculpt and detail+normal both commit via voxel map
-			if ((mode === "sculpt" || (mode === "normal" && detailMode)) && finalVoxelMap) {
-				commitDraftTerrain({
-					...draftTerrainRef.current,
-					Voxels: encodeVoxelMap(finalVoxelMap),
-				});
-			} else if (finalHeightMap && finalColorMap) {
-				const touchedTiles = Array.from(touchedRef.current)
-					.map(parseTileKey)
-					.filter((tile): tile is { x: number; y: number } => tile != null);
-				const nextMaps = {
-					heightMap: finalHeightMap,
-					colorMap: finalColorMap,
-				};
-				commitDraftTerrain(
-					normalTool === "paint"
-						? recolorExistingVoxels(
-								draftTerrainRef.current,
-								touchedTiles,
-								selectedColorIndex
-							)
-						: replaceVoxelTerrainColumns(
-								draftTerrainRef.current,
-								nextMaps,
-								touchedTiles
-							)
-				);
-			}
-		} else {
-			setUndoStack((prev) => prev.slice(0, -1));
-		}
-
-		touchedRef.current.clear();
-		workHeightsRef.current = null;
-		workColorsRef.current = null;
-		workVoxelMapRef.current = null;
-	}, [commitDraftTerrain, detailMode, mode, normalTool, selectedColorIndex]);
-
-	// Sculpt: apply to all subcells of a tile
-	const applySculptTile = useCallback(
-		(tileX: number, tileZ: number) => {
-			const voxelMap = workVoxelMapRef.current;
-			if (!voxelMap) return false;
-
-			let changed = false;
-			const heights = getSelectedVoxelHeights(heightSelection, clampedMaxHeight);
-			for (let subZ = 0; subZ < resolution; subZ++) {
-				for (let subX = 0; subX < resolution; subX++) {
-					const vx = tileX * resolution + subX;
-					const vz = tileZ * resolution + subZ;
-					for (const vy of heights) {
-						const key = getVoxelPositionKey(vx, vy, vz);
-						const existingColor = voxelMap.get(key);
-
-						if (sculptTool === "clear") {
-							if (existingColor == null) continue;
-							voxelMap.delete(key);
-							changed = true;
-						} else if (sculptTool === "set") {
-							if (existingColor === selectedColorIndex) continue;
-							voxelMap.set(key, selectedColorIndex);
-							changed = true;
-						} else if (existingColor != null && existingColor !== selectedColorIndex) {
-							voxelMap.set(key, selectedColorIndex);
-							changed = true;
-						}
-					}
-				}
-			}
-
-			return changed;
-		},
-		[clampedMaxHeight, heightSelection, resolution, sculptTool, selectedColorIndex]
-	);
-
-	// Sculpt in detail mode: apply to a single voxel column (vx, vz)
-	const applySculptVoxelColumn = useCallback(
-		(vx: number, vz: number) => {
-			const voxelMap = workVoxelMapRef.current;
-			if (!voxelMap) return false;
-
-			let changed = false;
-			const heights = getSelectedVoxelHeights(heightSelection, clampedMaxHeight);
-			for (const vy of heights) {
-				const key = getVoxelPositionKey(vx, vy, vz);
-				const existingColor = voxelMap.get(key);
-
-				if (sculptTool === "clear") {
-					if (existingColor == null) continue;
-					voxelMap.delete(key);
-					changed = true;
-				} else if (sculptTool === "set") {
-					if (existingColor === selectedColorIndex) continue;
-					voxelMap.set(key, selectedColorIndex);
-					changed = true;
-				} else if (existingColor != null && existingColor !== selectedColorIndex) {
-					voxelMap.set(key, selectedColorIndex);
-					changed = true;
-				}
-			}
-
-			return changed;
-		},
-		[clampedMaxHeight, heightSelection, sculptTool, selectedColorIndex]
-	);
-
-	// Detail+normal: operate on a single voxel column (vx, vz) as a whole unit.
-	// raise/lower adjust the column height; set assigns an exact height; paint recolors.
-	const applyDetailNormalColumn = useCallback(
-		(vx: number, vz: number) => {
-			const voxelMap = workVoxelMapRef.current;
-			if (!voxelMap) return false;
-
-			let changed = false;
-
-			if (normalTool === "paint") {
-				for (let y = 0; y < clampedMaxHeight; y++) {
-					const key = getVoxelPositionKey(vx, y, vz);
-					const existing = voxelMap.get(key);
-					if (existing != null && existing !== selectedColorIndex) {
-						voxelMap.set(key, selectedColorIndex);
-						changed = true;
-					}
-				}
-			} else if (normalTool === "raise") {
-				// Find current top voxel, add one above it using its color
-				let topY = -1;
-				let topColor = selectedColorIndex;
-				for (let y = 0; y < clampedMaxHeight; y++) {
-					const col = voxelMap.get(getVoxelPositionKey(vx, y, vz));
-					if (col != null) { topY = y; topColor = col; }
-				}
-				const nextY = topY + 1;
-				if (nextY < clampedMaxHeight) {
-					voxelMap.set(getVoxelPositionKey(vx, nextY, vz), topColor);
-					changed = true;
-				}
-			} else if (normalTool === "lower") {
-				// Remove the top voxel
-				let topY = -1;
-				for (let y = 0; y < clampedMaxHeight; y++) {
-					if (voxelMap.has(getVoxelPositionKey(vx, y, vz))) topY = y;
-				}
-				if (topY >= 0) {
-					voxelMap.delete(getVoxelPositionKey(vx, topY, vz));
-					changed = true;
-				}
-			} else if (normalTool === "set") {
-				const target = clamp(targetHeight, 0, clampedMaxHeight);
-				// Preserve topmost color for filling; fall back to selectedColorIndex
-				let fillColor = selectedColorIndex;
-				for (let y = 0; y < clampedMaxHeight; y++) {
-					const col = voxelMap.get(getVoxelPositionKey(vx, y, vz));
-					if (col != null) fillColor = col;
-				}
-				for (let y = 0; y < clampedMaxHeight; y++) {
-					const key = getVoxelPositionKey(vx, y, vz);
-					const has = voxelMap.has(key);
-					const want = y < target;
-					if (has && !want) { voxelMap.delete(key); changed = true; }
-					else if (!has && want) { voxelMap.set(key, fillColor); changed = true; }
-				}
-			}
-
-			return changed;
-		},
-		[clampedMaxHeight, normalTool, selectedColorIndex, targetHeight]
-	);
-
-	// applyAt receives display-grid coords.
-	// In detail mode the brush always operates at subcell resolution regardless of mode.
-	// For normal-mode ops the subcell coord is mapped to its parent tile, and the
-	// touchedRef deduplicates by tile key so the op is only applied once per tile.
-	const applyAt = useCallback(
-		(gx: number, gy: number) => {
-			if (!workHeightsRef.current || !workColorsRef.current) return;
-
-			// Brush always works in the display space (subcell in detail, tile otherwise)
-			const workWidth = detailMode ? width * resolution : width;
-			const workLength = detailMode ? length * resolution : length;
-
-			let changed = false;
-			applyBrush(gx, gy, brushSize, brushShape, workWidth, workLength, (bx, by) => {
-				for (const coord of getMirroredTileCoords(
-					bx,
-					by,
-					workWidth,
-					workLength,
-					mirrorHorizontal,
-					mirrorVertical
-				)) {
-					if (mode === "sculpt") {
-						// Sculpt: track subcell keys; each subcell painted once
-						const cellKey = getTileKey(coord.x, coord.y);
-						if (touchedRef.current.has(cellKey)) continue;
-						touchedRef.current.add(cellKey);
-						if (detailMode) {
-							changed = applySculptVoxelColumn(coord.x, coord.y) || changed;
-						} else {
-							changed = applySculptTile(coord.x, coord.y) || changed;
-						}
-						continue;
-					}
-
-					if (detailMode) {
-						// Detail+normal: each subcell is an independent column; deduplicate by subcell
-						const cellKey = getTileKey(coord.x, coord.y);
-						if (touchedRef.current.has(cellKey)) continue;
-						touchedRef.current.add(cellKey);
-						changed = applyDetailNormalColumn(coord.x, coord.y) || changed;
-						continue;
-					}
-
-					// Non-detail normal mode: tile-level heightmap operations
-					const tileKey = getTileKey(coord.x, coord.y);
-					if (touchedRef.current.has(tileKey)) continue;
-					touchedRef.current.add(tileKey);
-
-					if (normalTool === "paint") {
-						if (workColorsRef.current![coord.y][coord.x] === selectedColorIndex) continue;
-						workColorsRef.current![coord.y][coord.x] = selectedColorIndex;
-						changed = true;
-					} else if (normalTool === "raise") {
-						const next = clamp(workHeightsRef.current![coord.y][coord.x] + 1, 0, clampedMaxHeight);
-						if (next === workHeightsRef.current![coord.y][coord.x]) continue;
-						workHeightsRef.current![coord.y][coord.x] = next;
-						changed = true;
-					} else if (normalTool === "lower") {
-						const next = clamp(workHeightsRef.current![coord.y][coord.x] - 1, 0, clampedMaxHeight);
-						if (next === workHeightsRef.current![coord.y][coord.x]) continue;
-						workHeightsRef.current![coord.y][coord.x] = next;
-						changed = true;
-					} else if (normalTool === "set") {
-						const next = clamp(targetHeight, 0, clampedMaxHeight);
-						if (next === workHeightsRef.current![coord.y][coord.x]) continue;
-						workHeightsRef.current![coord.y][coord.x] = next;
-						changed = true;
-					}
-				}
-			});
-
-			if (!changed) return;
-			hasChangedRef.current = true;
-			schedulePreview();
-		},
-		[
-			applyDetailNormalColumn,
-			applySculptTile,
-			applySculptVoxelColumn,
-			brushShape,
-			brushSize,
-			clampedMaxHeight,
-			detailMode,
-			length,
-			mirrorHorizontal,
-			mirrorVertical,
-			mode,
-			normalTool,
-			resolution,
-			schedulePreview,
-			selectedColorIndex,
-			targetHeight,
-			width,
-		]
-	);
-
-
-
-	const eventToGridXY = useCallback(
-		(clientX: number, clientY: number) => {
-			const grid = gridRef.current;
-			if (!grid) return null;
-			const rect = grid.getBoundingClientRect();
-			const relX = clientX - rect.left;
-			const relY = clientY - rect.top;
-			const stepX = activeTilePx + GRID_GAP;
-			const stepY = activeTilePx + GRID_GAP;
-			if (stepX <= 0 || stepY <= 0 || relX < 0 || relY < 0) return null;
-			const x = Math.floor(relX / stepX);
-			const y = Math.floor(relY / stepY);
-			if (x >= displayCols || y >= displayRows) return null;
-			return { x, y };
-		},
-		[activeTilePx, displayCols, displayRows]
-	);
-
-	const pickColorAt = useCallback(
-		(gx: number, gy: number) => {
-			const picked = maps.colorMap[gy]?.[gx];
-			if (picked == null) return;
-			setSelectedColorIndex(picked);
-		},
-		[maps.colorMap]
-	);
-
-	const onGridPointerDown = useCallback(
-		(e: React.PointerEvent<HTMLDivElement>) => {
-			if (readOnly) return;
-			const pt = eventToGridXY(e.clientX, e.clientY);
-
-			if (
-				pt &&
-				mode === "normal" &&
-				(normalTool === "eyedropper" || (normalTool === "paint" && e.altKey))
-			) {
-				// Always pick from tile coords
-				const tx = detailMode ? Math.floor(pt.x / resolution) : pt.x;
-				const ty = detailMode ? Math.floor(pt.y / resolution) : pt.y;
-				pickColorAt(tx, ty);
-				if (normalTool === "eyedropper") setNormalTool("paint");
-				return;
-			}
-
-			isPointerDownRef.current = true;
-			beginStroke();
-			if (pt) applyAt(pt.x, pt.y);
-		},
-		[applyAt, beginStroke, detailMode, eventToGridXY, mode, normalTool, pickColorAt, readOnly, resolution]
-	);
-
-	const onGridPointerMove = useCallback(
-		(e: React.PointerEvent<HTMLDivElement>) => {
-			const pt = eventToGridXY(e.clientX, e.clientY);
-			setHoverTile(pt);
-			if (!isPointerDownRef.current || readOnly) return;
-			if (pt) applyAt(pt.x, pt.y);
-		},
-		[applyAt, eventToGridXY, readOnly]
-	);
-
-	const onGridPointerLeave = useCallback(() => {
-		setHoverTile(null);
-		if (!isPointerDownRef.current) return;
-		finishStroke();
-	}, [finishStroke]);
-
-	const onGridPointerUp = useCallback(() => {
-		if (!isPointerDownRef.current) return;
-		finishStroke();
-	}, [finishStroke]);
-
-	// Mouse wheel zooms in detail mode
-	const onGridContainerWheel = useCallback(
-		(e: React.WheelEvent<HTMLDivElement>) => {
-			if (!detailMode) return;
-			// Don't prevent default here -- let scroll happen naturally
-			// Only update zoom if ctrl/meta held (pinch-to-zoom gesture or ctrl+scroll)
-			if (!e.ctrlKey && !e.metaKey) return;
-			e.preventDefault();
-			const delta = e.deltaY < 0 ? 2 : -2;
-			setDetailTilePx((prev) => clamp(prev + delta, DETAIL_MIN_TILE_PX, DETAIL_MAX_TILE_PX));
-		},
-		[detailMode]
-	);
-
-	const hoveredTiles = useMemo(() => {
-		if (!hoverTile || readOnly) return new Set<string>();
-
-		// Brush always operates in the display space (subcell in detail, tile otherwise)
-		const workWidth = detailMode ? width * resolution : width;
-		const workLength = detailMode ? length * resolution : length;
-
-		if (mode === "normal" && normalTool === "eyedropper") {
-			if (detailMode) {
-				// Highlight the whole tile the cursor is over
-				const tx = Math.floor(hoverTile.x / resolution);
-				const ty = Math.floor(hoverTile.y / resolution);
-				const cells = new Set<string>();
-				for (let sz = 0; sz < resolution; sz++) {
-					for (let sx = 0; sx < resolution; sx++) {
-						cells.add(getTileKey(tx * resolution + sx, ty * resolution + sz));
-					}
-				}
-				return cells;
-			}
-			return new Set([getTileKey(hoverTile.x, hoverTile.y)]);
-		}
-
-		const baseTiles = getBrushTiles(hoverTile.x, hoverTile.y, brushSize, brushShape, workWidth, workLength);
-		const mirroredSet = new Set<string>();
-		for (const tile of baseTiles) {
-			const [tx, ty] = tile.split(",").map(Number);
-			for (const coord of getMirroredTileCoords(tx, ty, workWidth, workLength, mirrorHorizontal, mirrorVertical)) {
-				mirroredSet.add(getTileKey(coord.x, coord.y));
-			}
-		}
-		return mirroredSet;
-	}, [
-		brushShape,
-		brushSize,
-		detailMode,
-		hoverTile,
-		length,
-		mirrorHorizontal,
-		mirrorVertical,
-		mode,
-		normalTool,
-		readOnly,
-		resolution,
-		width,
-	]);
-
-	// Subcell display data for detail mode.
-	// Sculpt: colors at the selected height range.
-	// Normal detail: topmost voxel color + height per subcell column.
-	const subcellDetailData = useMemo(() => {
-		if (!detailMode) return null;
-		const colors = new Map<string, number>();
-		const heights = new Map<string, number>(); // only populated for normal mode
-
-		if (mode === "sculpt") {
-			const selectedHeights = new Set(getSelectedVoxelHeights(heightSelection, clampedMaxHeight));
-			for (const voxel of decodeVoxels(draftTerrain.Voxels)) {
-				if (selectedHeights.has(voxel.y)) {
-					colors.set(getTileKey(voxel.x, voxel.z), voxel.color);
-				}
-			}
-		} else {
-			// Normal detail: track topmost voxel per subcell column
-			const topY = new Map<string, number>();
-			for (const voxel of decodeVoxels(draftTerrain.Voxels)) {
-				const key = getTileKey(voxel.x, voxel.z);
-				const cur = topY.get(key) ?? -1;
-				if (voxel.y > cur) {
-					topY.set(key, voxel.y);
-					colors.set(key, voxel.color);
-				}
-			}
-			for (const [key, y] of topY) heights.set(key, y + 1);
-		}
-
-		return { colors, heights };
-	}, [clampedMaxHeight, detailMode, draftTerrain.Voxels, heightSelection, mode]);
-
-	const handlePreset = useCallback(
-		(preset: "hills" | "trees" | "smooth") => {
-			if (readOnly) return;
-			pushToHistory();
-
-			let heightMap: number[][];
-			if (preset === "hills") {
-				heightMap = applyRandomHills(maps.heightMap, width, length, clampedMaxHeight);
-			} else if (preset === "trees") {
-				heightMap = applyRandomTrees(maps.heightMap, width, length, clampedMaxHeight);
-			} else {
-				heightMap = applySmooth(maps.heightMap, width, length, 1);
-			}
-
-			commitDraftTerrain(
-				editorMapsToVoxelTerrain(draftTerrainRef.current, {
-					heightMap,
-					colorMap: maps.colorMap,
-				})
-			);
-		},
-		[clampedMaxHeight, commitDraftTerrain, length, maps.colorMap, maps.heightMap, pushToHistory, readOnly, width]
-	);
-
-	const handleFlatten = useCallback(() => {
-		if (readOnly) return;
-		if (!flattenConfirm) {
-			setFlattenConfirm(true);
-			setTimeout(() => setFlattenConfirm(false), 3000);
-			return;
-		}
-
-		pushToHistory();
-		commitDraftTerrain(
-			editorMapsToVoxelTerrain(draftTerrainRef.current, {
-				heightMap: applyFlatten(maps.heightMap, width, length),
-				colorMap: maps.colorMap,
-			})
-		);
-		setFlattenConfirm(false);
-	}, [commitDraftTerrain, flattenConfirm, length, maps.colorMap, maps.heightMap, pushToHistory, readOnly, width]);
-
-	const doFillAll = useCallback(() => {
-		if (readOnly) return;
-		pushToHistory();
-
-		if (mode === "sculpt") {
-			const voxelMap = cloneVoxelMap(draftTerrainRef.current.Voxels);
-			const heights = getSelectedVoxelHeights(heightSelection, clampedMaxHeight);
-			for (let tileZ = 0; tileZ < length; tileZ++) {
-				for (let tileX = 0; tileX < width; tileX++) {
-					for (let subZ = 0; subZ < resolution; subZ++) {
-						for (let subX = 0; subX < resolution; subX++) {
-							const vx = tileX * resolution + subX;
-							const vz = tileZ * resolution + subZ;
-							for (const vy of heights) {
-								const key = getVoxelPositionKey(vx, vy, vz);
-								if (sculptTool === "clear") {
-									voxelMap.delete(key);
-								} else if (sculptTool === "set") {
-									voxelMap.set(key, selectedColorIndex);
-								} else if (voxelMap.has(key)) {
-									voxelMap.set(key, selectedColorIndex);
-								}
-							}
-						}
-					}
-				}
-			}
-
-			commitDraftTerrain({
-				...draftTerrainRef.current,
-				Voxels: encodeVoxelMap(voxelMap),
-			});
-			return;
-		}
-
-		if (normalTool === "set") {
-			const nextHeights = maps.heightMap.map((row) =>
-				row.map(() => clamp(targetHeight, 0, clampedMaxHeight))
-			);
-			commitDraftTerrain(
-				editorMapsToVoxelTerrain(draftTerrainRef.current, {
-					heightMap: nextHeights,
-					colorMap: maps.colorMap,
-				})
-			);
-			return;
-		}
-
-		commitDraftTerrain(
-			recolorExistingVoxels(
-				draftTerrainRef.current,
-				getAllTileCoords(width, length),
-				selectedColorIndex
-			)
-		);
-	}, [
-		clampedMaxHeight,
-		commitDraftTerrain,
-		heightSelection,
-		length,
-		maps.colorMap,
-		maps.heightMap,
-		mode,
-		normalTool,
-		pushToHistory,
-		readOnly,
-		resolution,
-		sculptTool,
-		selectedColorIndex,
-		targetHeight,
-		width,
-	]);
-
-	const heightFontSize = useMemo(() => {
-		const maxDim = Math.max(width, length);
-		if (maxDim > 40 || activeTilePx < 12) return 8;
-		if (maxDim > 32 || activeTilePx < 16) return 12;
-		if (maxDim > 24 || activeTilePx < 20) return 16;
-		return 20;
-	}, [activeTilePx, length, width]);
-
-	const gridStyle: React.CSSProperties = useMemo(
-		() => ({
-			display: "grid",
-			gridTemplateColumns: `repeat(${displayCols}, ${activeTilePx}px)`,
-			gridTemplateRows: `repeat(${displayRows}, ${activeTilePx}px)`,
-			gap: GRID_GAP,
-			width: Math.max(0, displayCols * activeTilePx + (displayCols - 1) * GRID_GAP),
-			height: Math.max(0, displayRows * activeTilePx + (displayRows - 1) * GRID_GAP),
-			userSelect: "none",
-			touchAction: detailMode ? "pan-x pan-y" : "none",
-			pointerEvents: readOnly ? "none" : "auto",
-		}),
-		[activeTilePx, detailMode, displayCols, displayRows, readOnly]
-	);
+	}, [redo, undo]);
+
+	const handleBrushSizeChange = (value: number) => {
+		setBrushSize(clamp(Math.floor(value) || MIN_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE));
+	};
 
 	return (
-		<div
-			ref={containerRef}
-			className="w-full h-full flex flex-col min-h-0"
-			style={{ minHeight: editorMinHeight }}
-		>
-			{/* Toolbar */}
-			<div ref={toolbarStackRef} className="shrink-0 space-y-2">
+		<div className="border-2 rounded-lg bg-base-100 min-h-[38rem] h-[72dvh] flex overflow-hidden">
+			<div className="flex-1 min-w-0 flex flex-col">
+				<div className="min-h-16 shrink-0 border-b-2 bg-base-100 px-3 py-2 flex flex-wrap items-center justify-between gap-3">
+					<div className="flex flex-wrap items-center gap-3">
+						<div className="join">
+							{TOOL_BUTTONS.map((button) => (
+								<button
+									key={button.id}
+									type="button"
+									className={`btn btn-square btn-sm join-item ${tool === button.id ? "btn-neutral" : "btn-outline"}`}
+									onClick={() => setTool(button.id)}
+									title={button.label}
+									aria-label={button.label}
+								>
+									<span className={`${button.icon} w-5 h-5`} />
+								</button>
+							))}
+						</div>
 
-				{/* Row 1: history + tools + height selector + brush + fill all */}
-				<div className="flex flex-wrap items-center gap-2 rounded-lg border border-base-300 bg-base-200/60 p-2">
-
-					{/* Undo / Redo */}
-					<div className="flex items-center gap-1" aria-label="History">
-						<button
-							type="button"
-							className="btn btn-sm btn-square btn-ghost"
-							onClick={undo}
-							disabled={readOnly || undoStack.length === 0}
-							title="Undo (Ctrl+Z)"
-						>
-							<span className="icon-[mdi--undo]" />
-						</button>
-						<button
-							type="button"
-							className="btn btn-sm btn-square btn-ghost"
-							onClick={redo}
-							disabled={readOnly || redoStack.length === 0}
-							title="Redo (Ctrl+Shift+Z)"
-						>
-							<span className="icon-[mdi--redo]" />
-						</button>
-					</div>
-
-					<div className="h-8 w-px bg-base-300" />
-
-					{/* Tools (no label) */}
-					<div className="join">
-						{mode === "normal"
-							? NORMAL_TOOL_OPTIONS.map((option) => (
-									<button
-										key={option.value}
-										type="button"
-										className={`btn btn-sm join-item gap-1 ${
-											normalTool === option.value ? "btn-primary" : ""
-										}`}
-										onClick={() => setNormalTool(option.value)}
-										disabled={readOnly}
-										title={option.title}
-									>
-										<span className={option.icon} />
-										<span className="hidden 2xl:inline">{option.label}</span>
-									</button>
-								))
-							: SCULPT_TOOL_OPTIONS.map((option) => (
-									<button
-										key={option.value}
-										type="button"
-										className={`btn btn-sm join-item gap-1 ${
-											sculptTool === option.value ? "btn-primary" : ""
-										}`}
-										onClick={() => setSculptTool(option.value)}
-										disabled={readOnly}
-										title={option.title}
-									>
-										<span className={option.icon} />
-										<span className="hidden 2xl:inline">{option.label}</span>
-									</button>
-								))}
-					</div>
-
-					{/* Height input for normal "set" tool */}
-					{mode === "normal" && normalTool === "set" && (
-						<div className="flex items-center gap-1">
-							<span className="text-sm font-medium opacity-70">Height</span>
+						<div className="flex items-center gap-2">
+							<span className="text-xs font-medium text-base-content/70">Brush</span>
+							<input
+								type="range"
+								min={MIN_BRUSH_SIZE}
+								max={MAX_BRUSH_SIZE}
+								value={brushSize}
+								onChange={(event) => handleBrushSizeChange(Number(event.target.value))}
+								className="range range-sm range-primary w-28"
+								disabled={readOnly}
+								title="Brush size"
+							/>
 							<input
 								type="number"
-								min={0}
-								max={clampedMaxHeight}
-								step={1}
-								value={targetHeight}
-								onChange={(e) =>
-									setTargetHeight(clamp(Number(e.target.value) || 0, 0, clampedMaxHeight))
-								}
-								className="input input-sm input-bordered w-16 text-center"
+								min={MIN_BRUSH_SIZE}
+								max={MAX_BRUSH_SIZE}
+								value={brushSize}
+								onChange={(event) => handleBrushSizeChange(Number(event.target.value))}
+								className="input input-bordered input-sm w-14"
 								disabled={readOnly}
+								readOnly={readOnly}
+								aria-label="Brush size"
 							/>
 						</div>
-					)}
-					{/* Height range selector only shown in sculpt mode */}
-					{mode === "sculpt" && (
-						<HeightRangeInput
-							maxHeight={clampedMaxHeight}
-							value={heightSelection}
-							onChange={setHeightSelection}
-							disabled={readOnly}
-						/>
-					)}
 
-					<div className="h-8 w-px bg-base-300" />
-
-					{/* Brush palette */}
-					<div className="flex flex-wrap items-center gap-1">
-						<span className="text-sm font-medium opacity-70 mr-1">Brush</span>
-						{BRUSH_OPTIONS.map(({ size, shape }) => {
-							const footprint = size * 2 - 1;
-							const isSelected = brushSize === size && brushShape === shape;
-							const previewCells = getBrushPreviewCells(size, shape);
-							return (
-								<button
-									key={`${shape}-${size}`}
-									type="button"
-									className={`btn btn-sm h-12 min-h-0 px-2 ${
-										isSelected ? "btn-primary" : "btn-ghost"
-									}`}
-									onClick={() => {
-										setBrushSize(size);
-										setBrushShape(shape);
-									}}
-									disabled={readOnly}
-									title={`${shape === "round" ? "Round" : "Square"} brush ${footprint}x${footprint}`}
-								>
-									<span className="flex flex-col items-center gap-0.5">
-										<span
-											className="grid h-6 w-6 place-items-center"
-											style={{
-												gridTemplateColumns: `repeat(${footprint}, minmax(0, 1fr))`,
-												gridTemplateRows: `repeat(${footprint}, minmax(0, 1fr))`,
-												gap: footprint > 5 ? 1 : 2,
-											}}
-										>
-											{previewCells.map((isActiveCell, idx) => (
-												<span
-													key={idx}
-													className={`block h-full w-full rounded-[1px] ${
-														isActiveCell
-															? isSelected
-																? "bg-primary-content"
-																: "bg-base-content/60"
-															: isSelected
-																? "bg-primary-content/20"
-																: "bg-base-content/10"
-													}`}
-												/>
-											))}
-										</span>
-										<span className="text-[10px] leading-none tabular-nums">
-											{footprint}x{footprint}
-										</span>
-									</span>
-								</button>
-							);
-						})}
-
-						{/* Fill All at end of brush palette */}
-						<button
-							type="button"
-							className="btn btn-sm btn-ghost gap-1 h-12 min-h-0 px-2"
-							onClick={doFillAll}
-							disabled={readOnly}
-							title={mode === "sculpt" ? "Apply tool to all tiles" : normalTool === "set" ? "Set height for all tiles" : "Fill all tiles with selected color"}
-						>
-							<span className="flex flex-col items-center gap-0.5">
-								<span className="icon-[mdi--format-color-fill] text-lg" />
-								<span className="text-[10px] leading-none">all</span>
-							</span>
-						</button>
-					</div>
-				</div>
-
-				{/* Row 2: Color palette */}
-				<div
-					className={`flex flex-wrap items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-2 transition-opacity ${
-						isColorTool ? "" : "opacity-45"
-					}`}
-					aria-disabled={!isColorTool}
-				>
-					<span className="text-sm font-medium opacity-70">Color</span>
-					<div className="flex flex-wrap items-center gap-1">
-						{TERRAIN_PALETTE_FAMILIES.map((family, familyIndex) => {
-							const displayLevel =
-								familyIndex === selectedFamilyIndex
-									? selectedLevelIndex
-									: middlePaletteLevel;
-							const displayIndex = getTerrainPaletteIndex(familyIndex, displayLevel);
-							const isSelectedFamily = familyIndex === selectedFamilyIndex;
-
-							return (
-								<div key={family.id} className="group relative">
-									<button
-										type="button"
-										className={`h-7 w-7 rounded ${
-											isSelectedFamily
-												? "ring-2 ring-offset-2 ring-primary"
-												: "ring-1 ring-base-300"
-										}`}
-										style={{ backgroundColor: getTerrainColorByIndex(displayIndex) }}
-										onClick={() => setSelectedColorIndex(displayIndex)}
-										disabled={readOnly || !isColorTool}
-										title={family.label}
-									/>
-									{isColorTool && !readOnly && (
-										<div className="pointer-events-none absolute left-1/2 top-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-1 rounded-md border border-base-300 bg-base-100 p-1 opacity-0 shadow-lg transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
-											{family.colors.map((_, levelIndex) => {
-												const idx = getTerrainPaletteIndex(familyIndex, levelIndex);
-												return (
-													<button
-														key={idx}
-														type="button"
-														className={`h-6 w-6 rounded ${
-															selectedColorIndex === idx
-																? "ring-2 ring-primary"
-																: "ring-1 ring-base-300"
-														}`}
-														style={{ backgroundColor: getTerrainColorByIndex(idx) }}
-														onClick={() => setSelectedColorIndex(idx)}
-														title={`${family.label} ${levelIndex + 1}`}
-													/>
-												);
-											})}
-										</div>
-									)}
-								</div>
-							);
-						})}
-					</div>
-				</div>
-
-				{/* Row 3: Presets (normal mode only) */}
-				{mode === "normal" && (
-					<div className="flex flex-wrap items-center gap-2 rounded-lg border border-base-300 bg-base-100 p-2">
-						<span className="text-sm font-medium opacity-70">Presets</span>
-						<div className="flex flex-wrap gap-1">
+						<div className="join">
 							<button
 								type="button"
-								className="btn btn-sm"
-								onClick={() => handlePreset("hills")}
-								disabled={readOnly}
-								title="Add random hills to the terrain"
+								className={`btn btn-sm join-item ${granularity === "tactical" ? "btn-primary" : "btn-outline"}`}
+								onClick={() => setGranularity("tactical")}
 							>
-								<span className="icon-[mdi--terrain]" /> Hills
+								Tile Brush
 							</button>
 							<button
 								type="button"
-								className="btn btn-sm"
-								onClick={() => handlePreset("trees")}
-								disabled={readOnly}
-								title="Add random tree-like pillars"
+								className={`btn btn-sm join-item ${granularity === "voxel" ? "btn-primary" : "btn-outline"}`}
+								onClick={() => setGranularity("voxel")}
 							>
-								<span className="icon-[mdi--pine-tree]" /> Trees
+								Voxel Brush
+							</button>
+						</div>
+
+						<div className="join">
+							<button
+								type="button"
+								className="btn btn-square btn-sm join-item btn-outline"
+								onClick={undo}
+								disabled={undoStack.length === 0 || readOnly}
+								title="Undo"
+								aria-label="Undo"
+							>
+								<span className="icon-[mdi--undo] w-5 h-5" />
 							</button>
 							<button
 								type="button"
-								className="btn btn-sm"
-								onClick={() => handlePreset("smooth")}
-								disabled={readOnly}
-								title="Smooth jagged terrain edges"
+								className="btn btn-square btn-sm join-item btn-outline"
+								onClick={redo}
+								disabled={redoStack.length === 0 || readOnly}
+								title="Redo"
+								aria-label="Redo"
 							>
-								<span className="icon-[mdi--blur]" /> Smooth
-							</button>
-							<div className="mx-1 hidden min-h-8 w-px bg-base-300 sm:block" />
-							<button
-								type="button"
-								className={`btn btn-sm ${flattenConfirm ? "btn-warning" : ""}`}
-								onClick={handleFlatten}
-								disabled={readOnly}
-								title="Reset all heights to 0"
-							>
-								<span className="icon-[mdi--eraser]" /> {flattenConfirm ? "Confirm?" : "Flatten"}
+								<span className="icon-[mdi--redo] w-5 h-5" />
 							</button>
 						</div>
 					</div>
-				)}
-			</div>
 
-			{/* Grid container */}
-			{/* TODO: exiting detail mode doesn't shrink the parent card if it expanded to fit the larger grid -- requires a fixed-height layout ancestor to solve properly */}
-			<div
-				ref={gridContainerRef}
-				className={`flex-1 w-full ${
-					detailMode
-						? "overflow-auto"
-						: "flex items-center justify-center overflow-hidden"
-				}`}
-				style={
-					!detailMode
-						? { minWidth: minGridWidth, minHeight: minGridHeight }
-						: undefined
-				}
-				onWheel={detailMode ? onGridContainerWheel : undefined}
-			>
-				<div
-					ref={gridRef}
-					className="bg-base-300 relative"
-					style={gridStyle}
-					onPointerDown={onGridPointerDown}
-					onPointerMove={onGridPointerMove}
-					onPointerUp={onGridPointerUp}
-					onPointerLeave={onGridPointerLeave}
-				>
-					{Array.from({ length: displayRows }, (_, dy) =>
-						Array.from({ length: displayCols }, (_, dx) => {
-							// Derive display color/height from tile or subcell data
-							const tx = detailMode ? Math.floor(dx / resolution) : dx;
-							const ty = detailMode ? Math.floor(dy / resolution) : dy;
-
-							let colorIndex = maps.colorMap[ty]?.[tx] ?? DEFAULT_TERRAIN_COLOR_INDEX;
-							let h = clamp(maps.heightMap[ty]?.[tx] ?? 0, 0, clampedMaxHeight);
-
-							// In detail mode: use per-subcell voxel data for color and height
-							if (detailMode && subcellDetailData) {
-								const cellKey = getTileKey(dx, dy);
-								const voxelColor = subcellDetailData.colors.get(cellKey);
-								if (voxelColor != null) colorIndex = voxelColor;
-								const subcellH = subcellDetailData.heights.get(cellKey);
-								if (subcellH != null) h = subcellH;
-							}
-
-							const color = getTerrainColorByIndex(colorIndex);
-							const overlay = Math.round((h / clampedMaxHeight - 0.5) * 30);
-							const adjustedColor = adjustHexBrightness(color, 100 + overlay * 2);
-							const heightTextStyle = getReadableTextStyle(adjustedColor);
-							const isHovered = hoveredTiles.has(getTileKey(dx, dy));
-
-							// In detail mode: draw a subtle boundary between tiles
-							const isTileBoundaryX = detailMode && resolution > 1 && dx % resolution === 0;
-							const isTileBoundaryY = detailMode && resolution > 1 && dy % resolution === 0;
-							const hasTileBorder = isTileBoundaryX || isTileBoundaryY;
-
-							return (
-								<div
-									key={`${dx}-${dy}`}
-									style={{
-										width: activeTilePx,
-										height: activeTilePx,
-										backgroundColor: adjustedColor,
-										borderRadius: detailMode ? 0 : 1,
-										position: "relative",
-										boxShadow: isHovered
-											? activeTool === "clear"
-												? "inset 0 0 0 1px rgba(248,113,113,0.9)"
-												: "inset 0 0 0 1px rgba(255,255,255,0.8)"
-											: hasTileBorder
-												? "inset 1px 1px 0 rgba(0,0,0,0.18)"
-												: undefined,
-									}}
-								>
-									{showHeights && heightFontSize > 0 && !detailMode && (
-										<span
-											style={{
-												position: "absolute",
-												inset: 0,
-												display: "flex",
-												alignItems: "center",
-												justifyContent: "center",
-												fontSize: heightFontSize,
-												fontWeight: 600,
-												color: heightTextStyle.color,
-												textShadow: heightTextStyle.textShadow,
-												pointerEvents: "none",
-											}}
-										>
-											{h}
-										</span>
-									)}
-								</div>
-							);
-						})
-					)}
-				</div>
-			</div>
-
-			{/* Footer */}
-			<div ref={footerRef} className="shrink-0 pt-2 flex flex-wrap items-center justify-between gap-2">
-				<div className="flex flex-wrap items-center gap-2">
-					{/* Sculpt toggle */}
-					<button
-						type="button"
-						className={`btn btn-sm gap-1 ${mode === "sculpt" ? "btn-primary" : "btn-ghost"}`}
-						onClick={() => setMode((m) => m === "sculpt" ? "normal" : "sculpt")}
-						disabled={readOnly}
-						title={mode === "sculpt" ? "Switch to normal mode" : "Switch to sculpt mode"}
-					>
-						<span className="icon-[mdi--cube-scan]" />
-						Sculpt
-					</button>
-					{/* Detail toggle */}
-					<button
-						type="button"
-						className={`btn btn-sm gap-1 ${detailMode ? "btn-info" : "btn-ghost"}`}
-						onClick={() => setDetailMode((v) => !v)}
-						disabled={readOnly}
-						title={detailMode ? "Switch to standard grid" : "Switch to fine detail grid (subcell resolution)"}
-					>
-						<span className="icon-[mdi--magnify-plus-outline]" />
-						Detail
-					</button>
-
-					<div className="join" aria-label="Mirror mode">
+					<div className="join">
 						<button
 							type="button"
-							className={`btn btn-sm join-item gap-1 ${mirrorHorizontal ? "btn-info" : "btn-ghost"}`}
-							onClick={() => setMirrorHorizontal((value) => !value)}
-							disabled={readOnly}
-							title="Mirror horizontally"
+							className={`btn btn-sm join-item ${activeView === "edit" ? "btn-neutral" : "btn-outline"}`}
+							onClick={() => setActiveView("edit")}
 						>
-							<span className="icon-[mdi--reflect-horizontal]" />
-							<span className="hidden sm:inline">Mirror X</span>
+							Edit
 						</button>
 						<button
 							type="button"
-							className={`btn btn-sm join-item gap-1 ${mirrorVertical ? "btn-info" : "btn-ghost"}`}
-							onClick={() => setMirrorVertical((value) => !value)}
-							disabled={readOnly}
-							title="Mirror vertically"
+							className={`btn btn-sm join-item ${activeView === "preview" ? "btn-neutral" : "btn-outline"}`}
+							onClick={() => setActiveView("preview")}
 						>
-							<span className="icon-[mdi--reflect-vertical]" />
-							<span className="hidden sm:inline">Mirror Y</span>
+							Preview
 						</button>
 					</div>
-
-					{detailMode && (
-						<div className="flex items-center gap-1 text-xs opacity-60">
-							<span className="icon-[mdi--magnify]" />
-							<span>{activeTilePx}px</span>
-							<span className="hidden sm:inline">(Ctrl+scroll to zoom)</span>
-						</div>
-					)}
 				</div>
 
-				<button
-					type="button"
-					className={`btn btn-sm gap-1 ${showHeights ? "btn-info" : "btn-ghost"}`}
-					onClick={() => setShowHeights((v) => !v)}
-					title="Toggle height numbers"
-					disabled={detailMode}
-				>
-					<span className="icon-[mdi--numeric]" />
-					<span>Heights</span>
-				</button>
+				<div className="relative flex-1 min-h-0 bg-base-200">
+					<div className={activeView === "edit" ? "absolute inset-0" : "hidden"}>
+						<div ref={containerRef} className="absolute inset-0" />
+					</div>
+					<div className={activeView === "preview" ? "absolute inset-0" : "hidden"}>
+						<MapStateProvider>
+							<ThreeDMap terrain={terrain} />
+						</MapStateProvider>
+					</div>
+				</div>
+			</div>
+
+			<div className="w-64 shrink-0 border-l-2 bg-base-100 p-3 overflow-y-auto">
+				<div className="space-y-5">
+					<div>
+						<div className="text-sm font-semibold mb-2">Info</div>
+						<div className="space-y-1 text-xs text-base-content/75">
+							<div className="flex justify-between gap-3">
+								<span>Tool</span>
+								<span className="font-medium text-base-content">{selectedTool.label}</span>
+							</div>
+							<div className="flex justify-between gap-3">
+								<span>Brush</span>
+								<span className="font-medium text-base-content">
+									{brushModeLabel} {brushSize}
+								</span>
+							</div>
+							<div className="flex justify-between gap-3">
+								<span>Tiles W x L x H</span>
+								<span className="font-medium text-base-content">{tileDimensions}</span>
+							</div>
+							<div className="flex justify-between gap-3">
+								<span>Voxels W x L x H</span>
+								<span className="font-medium text-base-content">{voxelDimensions}</span>
+							</div>
+							<div className="flex justify-between gap-3">
+								<span>Count</span>
+								<span className="font-medium text-base-content">
+									{voxelCount.toLocaleString()}
+								</span>
+							</div>
+						</div>
+					</div>
+
+					<div>
+						<div className="text-sm font-semibold mb-2">Color</div>
+						<div className="space-y-1">
+							{TERRAIN_PALETTE_FAMILIES.map((family, familyIndex) => (
+								<div key={family.id} className="grid grid-cols-5 gap-1">
+									{Array.from({ length: TERRAIN_PALETTE_LEVELS }, (_, levelIndex) => {
+										const index = getTerrainPaletteIndex(familyIndex, levelIndex);
+										const color = getTerrainColorByIndex(index);
+
+										return (
+											<button
+												key={index}
+												type="button"
+												className={`h-7 border-2 ${
+													selectedColorIndex === index
+														? "border-base-content"
+														: "border-base-300/30"
+												}`}
+												style={{ backgroundColor: color }}
+												onClick={() => setSelectedColorIndex(index)}
+												title={`${family.label} ${levelIndex + 1}`}
+												aria-label={`${family.label} ${levelIndex + 1}`}
+											/>
+										);
+									})}
+								</div>
+							))}
+						</div>
+					</div>
+
+					<div>
+						<div className="text-sm font-semibold mb-2">Grid</div>
+						<div className="flex flex-col gap-2">
+							<label className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2">
+								<span className="label-text">Tile Grid</span>
+								<input
+									type="checkbox"
+									className="toggle toggle-sm toggle-primary"
+									checked={showTacticalGrid}
+									onChange={(event) => setShowTacticalGrid(event.target.checked)}
+								/>
+							</label>
+							<label className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2">
+								<span className="label-text">Voxel Grid</span>
+								<input
+									type="checkbox"
+									className="toggle toggle-sm toggle-warning"
+									checked={showVoxelGrid}
+									onChange={(event) => setShowVoxelGrid(event.target.checked)}
+								/>
+							</label>
+						</div>
+					</div>
+				</div>
 			</div>
 		</div>
 	);
 }
-
-export default VoxelTerrainEditor;

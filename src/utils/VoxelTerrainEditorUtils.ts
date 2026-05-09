@@ -4,7 +4,7 @@ import {
 	TERRAIN_PALETTE,
 	getTerrainColorByIndex,
 } from "./TerrainPaletteUtils";
-import { decodeVoxels, emptyVoxels, encodeVoxels } from "./VoxelDataUtils";
+import { decodeVoxels, encodeVoxels } from "./VoxelDataUtils";
 import { getVoxelTerrainResolution } from "./VoxelTerrainUtils";
 
 export const MAX_VOXEL_TERRAIN_HEIGHT = 16;
@@ -12,11 +12,6 @@ export const MIN_VOXEL_TERRAIN_HEIGHT = 1;
 export const DEFAULT_VOXEL_TERRAIN_HEIGHT = 8;
 export const MIN_VOXEL_TERRAIN_RESOLUTION = 1;
 export const MAX_VOXEL_TERRAIN_RESOLUTION = 3;
-
-export interface VoxelTerrainEditorMaps {
-	heightMap: number[][];
-	colorMap: number[][];
-}
 
 const clamp = (value: number, min: number, max: number) =>
 	Math.max(min, Math.min(max, value));
@@ -81,84 +76,6 @@ export function normalizeVoxelPaletteIndex(color: number): number {
 	if (index >= 0 && index < TERRAIN_PALETTE.length) return index;
 
 	return voxelColorToTerrainPaletteIndex(color);
-}
-
-export function voxelTerrainToEditorMaps(
-	terrain: VoxelTerrain
-): VoxelTerrainEditorMaps {
-	const resolution = getVoxelTerrainResolution(terrain);
-	const heightMap: number[][] = Array.from({ length: terrain.Length }, () =>
-		Array.from({ length: terrain.Width }, () => 0)
-	);
-	const colorMap: number[][] = Array.from({ length: terrain.Length }, () =>
-		Array.from({ length: terrain.Width }, () => DEFAULT_TERRAIN_COLOR_INDEX)
-	);
-
-	// Single pass: find the highest voxel in each tactical tile.
-	const topVoxels = new Map<number, Voxel>(); // key: tileX + tileZ * Width
-	for (const voxel of decodeVoxels(terrain.Voxels)) {
-		const tileX = Math.floor(voxel.x / resolution);
-		const tileZ = Math.floor(voxel.z / resolution);
-		const key = tileX + tileZ * terrain.Width;
-		const current = topVoxels.get(key);
-		if (!current || voxel.y > current.y) {
-			topVoxels.set(key, voxel);
-		}
-	}
-
-	for (let z = 0; z < terrain.Length; z++) {
-		for (let x = 0; x < terrain.Width; x++) {
-			const topVoxel = topVoxels.get(x + z * terrain.Width);
-			if (!topVoxel) continue;
-			heightMap[z][x] = clamp(topVoxel.y + 1, 0, terrain.Height * resolution);
-			colorMap[z][x] = normalizeVoxelPaletteIndex(topVoxel.color);
-		}
-	}
-
-	return { heightMap, colorMap };
-}
-
-export function editorMapsToVoxelTerrain(
-	terrain: VoxelTerrain,
-	maps: VoxelTerrainEditorMaps
-): VoxelTerrain {
-	const resolution = clampVoxelTerrainResolution(terrain.Resolution);
-	const tacticalHeight = clampVoxelTerrainHeight(terrain.Height);
-	const maxResolvedHeight = tacticalHeight * resolution;
-	const voxels: Voxel[] = [];
-
-	for (let z = 0; z < terrain.Length; z++) {
-		for (let x = 0; x < terrain.Width; x++) {
-			const height = clamp(
-				Math.floor(maps.heightMap[z]?.[x] ?? 0),
-				0,
-				maxResolvedHeight
-			);
-			const color = normalizeVoxelPaletteIndex(
-				maps.colorMap[z]?.[x] ?? DEFAULT_TERRAIN_COLOR_INDEX
-			);
-
-			for (let subZ = 0; subZ < resolution; subZ++) {
-				for (let subX = 0; subX < resolution; subX++) {
-					for (let y = 0; y < height; y++) {
-						voxels.push({
-							x: x * resolution + subX,
-							y,
-							z: z * resolution + subZ,
-							color,
-						});
-					}
-				}
-			}
-		}
-	}
-
-	return {
-		...terrain,
-		Height: tacticalHeight,
-		Resolution: resolution,
-		Voxels: encodeVoxels(voxels),
-	};
 }
 
 function getRescaledVoxelRange(
@@ -261,25 +178,30 @@ export function createFlatVoxelTerrain(params: {
 		MIN_VOXEL_TERRAIN_HEIGHT,
 		MAX_VOXEL_TERRAIN_HEIGHT
 	);
-	const colorIndex = params.colorIndex ?? DEFAULT_TERRAIN_COLOR_INDEX;
-	const heightMap: number[][] = Array.from({ length: params.length }, () =>
-		Array.from({ length: params.width }, () => height)
+	const fillHeight = clamp(height, 0, maxHeight);
+	const colorIndex = normalizeVoxelPaletteIndex(
+		params.colorIndex ?? DEFAULT_TERRAIN_COLOR_INDEX
 	);
-	const colorMap: number[][] = Array.from({ length: params.length }, () =>
-		Array.from({ length: params.width }, () => colorIndex)
-	);
-	const terrain: VoxelTerrain = {
+	const voxels: Voxel[] = [];
+
+	for (let z = 0; z < params.length; z++) {
+		for (let x = 0; x < params.width; x++) {
+			for (let y = 0; y < fillHeight; y++) {
+				voxels.push({ x, y, z, color: colorIndex });
+			}
+		}
+	}
+
+	return {
 		Id: params.id,
 		Name: params.name,
 		Width: params.width,
 		Length: params.length,
 		Height: maxHeight,
 		Resolution: 1,
-		Voxels: emptyVoxels(),
+		Voxels: encodeVoxels(voxels),
 		Tags: params.tags,
 	};
-
-	return editorMapsToVoxelTerrain(terrain, { heightMap, colorMap });
 }
 
 export function getMostCommonVoxelTerrainColor(terrain: VoxelTerrain): string {

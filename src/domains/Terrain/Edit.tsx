@@ -3,10 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { FormWrapper, useFormReadOnly } from "../../components/Form/Form";
-import ThreeDMap from "../../components/Map/3DMap";
 import { TagEditor } from "../../components/inputs/TagEditor";
 import VoxelTerrainEditor from "../../components/inputs/VoxelTerrainEditor";
-import { MapStateProvider } from "../../components/Map/MapStateProvider";
 import type { VoxelTerrain } from "../VoxelTerrain/VoxelTerrain";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import {
@@ -218,10 +216,6 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 		scheduleShapeChange(nextDraft);
 	};
 
-	const resolvedWidth = shapeDraft.width * shapeDraft.resolution;
-	const resolvedLength = shapeDraft.length * shapeDraft.resolution;
-	const resolvedHeight = shapeDraft.height * shapeDraft.resolution;
-
 	return (
 		<div className="flex flex-col gap-4 min-h-[calc(100dvh-14rem)]">
 			{/* Compact header bar: Name | Width | Length */}
@@ -321,41 +315,15 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 								))}
 							</select>
 						</div>
-						<div className="md:col-span-12 text-xs text-base-content/60">
-							Resolved: {resolvedWidth} x {resolvedLength} x {resolvedHeight}
-						</div>
 					</div>
 				</div>
 			</div>
 
-			{/* Editor keeps its intrinsic size; preview takes the remaining space. */}
-			<div className="grid grid-cols-1 grid-rows-[max-content_minmax(14rem,1fr)] xl:grid-cols-[minmax(34rem,42rem)_minmax(16rem,1fr)] xl:grid-rows-1 gap-4 flex-1 min-h-0">
-				{/* Editor */}
-				<div className="card border-2 bg-base-100 flex flex-col min-h-fit overflow-visible">
-					<div className="card-body p-4 space-y-3 flex flex-col overflow-visible">
-						<VoxelTerrainEditor
-							terrain={data}
-							readOnly={readOnly}
-							onChange={onChange}
-						/>
-					</div>
-				</div>
-
-				{/* Preview */}
-				<div className="card border-2 bg-base-100 overflow-hidden flex flex-col min-h-56">
-					<div className="card-body p-4 flex flex-col gap-3 min-h-0">
-						<div className="flex-1 min-h-40 w-full rounded-lg border bg-base-200 overflow-hidden">
-							<MapStateProvider>
-								<ThreeDMap
-									characters={[]}
-									entities={[]}
-									terrain={data}
-								/>
-							</MapStateProvider>
-						</div>
-					</div>
-				</div>
-			</div>
+			<VoxelTerrainEditor
+				terrain={data}
+				onChange={onChange}
+				readOnly={readOnly}
+			/>
 
 			{/* Tags at the bottom */}
 			<div className="card border-2 bg-base-100 shrink-0">
