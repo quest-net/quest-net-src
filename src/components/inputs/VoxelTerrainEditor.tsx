@@ -23,6 +23,12 @@ import { getVoxelTerrainResolution } from "../../utils/VoxelTerrainUtils";
 import ThreeDMap from "../Map/3DMap";
 import { MapStateProvider } from "../Map/MapStateProvider";
 
+export interface ActorOverlayInfo {
+	id: string;
+	name: string;
+	position: { x: number; y: number; h: number };
+}
+
 type EditorView = "edit" | "preview";
 type EditorTool = "place" | "erase" | "paint" | "sample";
 type EditGranularity = "tactical" | "voxel";
@@ -31,6 +37,7 @@ interface VoxelTerrainEditorProps {
 	terrain: VoxelTerrain;
 	onChange: (terrain: VoxelTerrain) => void;
 	readOnly?: boolean;
+	actors?: ActorOverlayInfo[];
 }
 
 interface VoxelCoord {
@@ -930,6 +937,7 @@ export default function VoxelTerrainEditor({
 	terrain,
 	onChange,
 	readOnly = false,
+	actors,
 }: VoxelTerrainEditorProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const resourcesRef = useRef<EditorSceneResources | null>(null);
@@ -940,6 +948,10 @@ export default function VoxelTerrainEditor({
 	const brushSizeRef = useRef(1);
 	const selectedColorRef = useRef(DEFAULT_TERRAIN_COLOR_INDEX);
 	const readOnlyRef = useRef(readOnly);
+	const actorsRef = useRef<ActorOverlayInfo[]>(actors ?? []);
+	const showActorsRef = useRef(true);
+	const actorMarkerElemsRef = useRef<Map<string, HTMLDivElement>>(new Map());
+	const actorOverlayRef = useRef<HTMLDivElement>(null);
 	const activeStrokeRef = useRef<ActiveStroke | null>(null);
 	const strokeStartedRef = useRef(false);
 	const strokeStartVoxelsRef = useRef<string | null>(null);
@@ -958,6 +970,7 @@ export default function VoxelTerrainEditor({
 	const [selectedColorIndex, setSelectedColorIndex] = useState(DEFAULT_TERRAIN_COLOR_INDEX);
 	const [showTacticalGrid, setShowTacticalGrid] = useState(true);
 	const [showVoxelGrid, setShowVoxelGrid] = useState(true);
+	const [showActors, setShowActors] = useState(true);
 	const [undoStack, setUndoStack] = useState<string[]>([]);
 	const [redoStack, setRedoStack] = useState<string[]>([]);
 	const [renderState, setRenderState] = useState<EditorRenderState>(() => ({
@@ -1032,6 +1045,9 @@ export default function VoxelTerrainEditor({
 		readOnlyRef.current = readOnly;
 	}, [tool, granularity, brushSize, selectedColorIndex, readOnly]);
 
+	useEffect(() => { actorsRef.current = actors ?? []; }, [actors]);
+	useEffect(() => { showActorsRef.current = showActors; }, [showActors]);
+
 	useEffect(() => {
 		setUndoStack([]);
 		setRedoStack([]);
@@ -1105,6 +1121,46 @@ export default function VoxelTerrainEditor({
 		setUndoStack((current) => [...current.slice(-(UNDO_LIMIT - 1)), currentTerrain.Voxels]);
 		onChange(nextTerrain);
 	}, [flushPendingTerrainChange, onChange, redoStack, setEditorRenderState]);
+
+	// Rebuild imperative actor marker elements whenever the actors list changes.
+	// Position updates happen in the rAF loop (updateActorMarkers) so React
+	// re-renders are not needed at 60 fps.
+	useEffect(() => {
+		const overlay = actorOverlayRef.current;
+		if (!overlay) return;
+
+		while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
+		const newMap = new Map<string, HTMLDivElement>();
+
+		for (const actor of actors ?? []) {
+			const wrapper = document.createElement("div");
+			// DaisyUI tooltip: show actor name on hover without any extra JS
+			wrapper.className = "tooltip tooltip-top";
+			wrapper.setAttribute("data-tip", actor.name);
+			wrapper.style.position = "absolute";
+			wrapper.style.left = "0";
+			wrapper.style.top = "0";
+			wrapper.style.display = "none";
+			// allow hover for the tooltip but keep the dot small so it
+			// rarely blocks editing clicks
+			wrapper.style.pointerEvents = "auto";
+			wrapper.style.zIndex = "10";
+
+			const dot = document.createElement("div");
+			dot.style.width = "14px";
+			dot.style.height = "14px";
+			dot.style.borderRadius = "50%";
+			dot.style.background = "rgba(167, 139, 250, 0.65)";
+			dot.style.border = "1.5px solid rgba(167, 139, 250, 0.9)";
+			dot.style.boxShadow = "0 1px 3px rgba(0,0,0,0.45)";
+
+			wrapper.appendChild(dot);
+			overlay.appendChild(wrapper);
+			newMap.set(actor.id, wrapper);
+		}
+
+		actorMarkerElemsRef.current = newMap;
+	}, [actors]);
 
 	const getPickInfo = useCallback((event: PointerEvent): PickInfo | null => {
 		const resources = resourcesRef.current;
@@ -1341,11 +1397,61 @@ export default function VoxelTerrainEditor({
 		};
 		resourcesRef.current = resources;
 
+		// Projects actor world positions to screen space and moves the
+		// imperative marker elements. Called every rAF frame so they track
+		// camera orbits and zooms with no React re-renders.
+		const updateActorMarkers = () => {
+			const overlay = actorOverlayRef.current;
+			const markerElems = actorMarkerElemsRef.current;
+			const currentActors = actorsRef.current;
+			const shouldShow = showActorsRef.current;
+
+			if (!overlay || markerElems.size === 0) return;
+
+			if (!shouldShow) {
+				markerElems.forEach(el => { el.style.display = "none"; });
+				return;
+			}
+
+			const currentTerrain = terrainRef.current;
+			const canvasW = renderer.domElement.clientWidth || 1;
+			const canvasH = renderer.domElement.clientHeight || 1;
+
+			for (const actor of currentActors) {
+				const el = markerElems.get(actor.id);
+				if (!el) continue;
+
+				// Convert tactical coords to world space.
+				// Position.x/y are tile col/row; h is tactical height level.
+				// terrainHeightToWorldY uses TERRAIN_WORLD_Y_OFFSET = -0.5,
+				// so worldY = h - 0.5. We add 0.2 to float the dot above the surface.
+				const worldX = actor.position.x + 0.5 - currentTerrain.Width / 2;
+				const worldZ = actor.position.y + 0.5 - currentTerrain.Length / 2;
+				const worldY = actor.position.h - 0.3;
+
+				const vec = new THREE.Vector3(worldX, worldY, worldZ);
+				vec.project(camera);
+
+				// Behind the near plane - hide
+				if (vec.z > 1) {
+					el.style.display = "none";
+					continue;
+				}
+
+				const screenX = ((vec.x + 1) / 2) * canvasW;
+				const screenY = ((-vec.y + 1) / 2) * canvasH;
+
+				el.style.display = "";
+				el.style.transform = `translate(calc(${screenX}px - 50%), calc(${screenY}px - 50%))`;
+			}
+		};
+
 		let rafId = 0;
 		const animate = () => {
 			rafId = requestAnimationFrame(animate);
 			controls.update();
 			renderer.render(scene, camera);
+			updateActorMarkers();
 		};
 		animate();
 
@@ -1740,6 +1846,8 @@ export default function VoxelTerrainEditor({
 				<div className="relative flex-1 min-h-0 bg-base-200">
 					<div className={activeView === "edit" ? "absolute inset-0" : "hidden"}>
 						<div ref={containerRef} className="absolute inset-0" />
+						{/* Actor overlay: markers are injected imperatively in the rAF loop */}
+						<div ref={actorOverlayRef} className="absolute inset-0 pointer-events-none overflow-hidden" />
 					</div>
 					{activeView === "preview" && (
 						<div className="absolute inset-0">
@@ -1836,6 +1944,23 @@ export default function VoxelTerrainEditor({
 							</label>
 						</div>
 					</div>
+
+					{actors && actors.length > 0 && (
+						<div>
+							<div className="text-sm font-semibold mb-2">Actors</div>
+							<div className="flex flex-col gap-2">
+								<label className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2">
+									<span className="label-text">Show on map</span>
+									<input
+										type="checkbox"
+										className="toggle toggle-sm toggle-secondary"
+										checked={showActors}
+										onChange={(event) => setShowActors(event.target.checked)}
+									/>
+								</label>
+							</div>
+						</div>
+					)}
 				</div>
 			</div>
 		</div>

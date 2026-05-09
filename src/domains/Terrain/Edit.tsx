@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { FormWrapper, useFormReadOnly } from "../../components/Form/Form";
 import { TagEditor } from "../../components/inputs/TagEditor";
-import VoxelTerrainEditor from "../../components/inputs/VoxelTerrainEditor";
+import VoxelTerrainEditor, { type ActorOverlayInfo } from "../../components/inputs/VoxelTerrainEditor";
+import { useQuestContext } from "../../domains/Context/ContextProvider";
 import type { VoxelTerrain } from "../VoxelTerrain/VoxelTerrain";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import {
@@ -135,6 +136,26 @@ interface TerrainFormFieldsProps {
 }
 
 function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps) {
+	const questContext = useQuestContext();
+	const campaign = questContext.ActiveCampaign;
+
+	// Show actor positions only when editing the terrain that is currently
+	// active in the game session, so the DM can see where actors stand.
+	const isActiveTerrain = !!(
+		data.Id && campaign?.GameState?.VoxelTerrainId === data.Id
+	);
+	const actorOverlayInfos: ActorOverlayInfo[] =
+		isActiveTerrain && campaign
+			? [
+				...(campaign.GameState.Characters ?? []),
+				...(campaign.GameState.Entities ?? []),
+			].map(actor => ({
+				id: actor.Id,
+				name: actor.Name,
+				position: actor.Position,
+			}))
+			: [];
+
 	const terrainRef = useRef(data);
 	const [shapeDraft, setShapeDraft] = useState(() => ({
 		width: data.Width,
@@ -323,6 +344,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 				terrain={data}
 				onChange={onChange}
 				readOnly={readOnly}
+				actors={actorOverlayInfos}
 			/>
 
 			{/* Tags at the bottom */}
