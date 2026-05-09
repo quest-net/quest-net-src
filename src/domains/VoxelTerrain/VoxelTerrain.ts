@@ -26,10 +26,10 @@ export interface Voxel {
  */
 /**
  * The maximum height (in tactical units) the movement cost system accounts for.
- * Derived from the legacy terrain system (MAX_HEIGHT = 16) and preserved here
- * as a gameplay constant for height-cost formula validation and UI previews.
+ * Matches MAX_VOXEL_TERRAIN_HEIGHT in VoxelTerrainEditorUtils. Used for
+ * height-cost formula validation and UI previews.
  */
-export const MAX_HEIGHT = 16;
+export const MAX_HEIGHT = 64;
 
 export interface VoxelTerrain {
 	Id: string;

@@ -10,6 +10,8 @@ import type { VoxelTerrain } from "../VoxelTerrain/VoxelTerrain";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import {
 	MAX_VOXEL_TERRAIN_HEIGHT,
+	MAX_VOXEL_TERRAIN_WIDTH,
+	MAX_VOXEL_TERRAIN_LENGTH,
 	clampVoxelTerrainHeight,
 	clampVoxelTerrainResolution,
 	reshapeVoxelTerrainForEditor,
@@ -230,8 +232,8 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 			...shapeDraft,
 			...updates,
 		};
-		nextDraft.width = Math.max(1, Math.min(48, Math.floor(nextDraft.width) || 1));
-		nextDraft.length = Math.max(1, Math.min(48, Math.floor(nextDraft.length) || 1));
+		nextDraft.width = Math.max(1, Math.min(MAX_VOXEL_TERRAIN_WIDTH, Math.floor(nextDraft.width) || 1));
+		nextDraft.length = Math.max(1, Math.min(MAX_VOXEL_TERRAIN_LENGTH, Math.floor(nextDraft.length) || 1));
 		nextDraft.height = clampVoxelTerrainHeight(nextDraft.height);
 		nextDraft.resolution = clampVoxelTerrainResolution(nextDraft.resolution);
 		scheduleShapeChange(nextDraft);
@@ -259,7 +261,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 							<label className="text-sm font-medium mb-1">
 								Width
 								<span className="text-xs text-base-content/60 ml-1">
-									(1-48)
+									(1-{MAX_VOXEL_TERRAIN_WIDTH})
 								</span>
 							</label>
 							<input
@@ -271,7 +273,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 								onBlur={flushShapeChange}
 								className="input input-bordered w-full"
 								min={1}
-								max={48}
+								max={MAX_VOXEL_TERRAIN_WIDTH}
 								disabled={readOnly}
 								readOnly={readOnly}
 							/>
@@ -280,7 +282,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 							<label className="text-sm font-medium mb-1">
 								Length
 								<span className="text-xs text-base-content/60 ml-1">
-									(1-48)
+									(1-{MAX_VOXEL_TERRAIN_LENGTH})
 								</span>
 							</label>
 							<input
@@ -292,7 +294,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 								onBlur={flushShapeChange}
 								className="input input-bordered w-full"
 								min={1}
-								max={48}
+								max={MAX_VOXEL_TERRAIN_LENGTH}
 								disabled={readOnly}
 								readOnly={readOnly}
 							/>

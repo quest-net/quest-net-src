@@ -1,4 +1,4 @@
-import type { Voxel, VoxelTerrain } from "../domains/VoxelTerrain/VoxelTerrain";
+import { MAX_HEIGHT, type Voxel, type VoxelTerrain } from "../domains/VoxelTerrain/VoxelTerrain";
 import {
 	DEFAULT_TERRAIN_COLOR_INDEX,
 	TERRAIN_PALETTE,
@@ -7,7 +7,9 @@ import {
 import { decodeVoxels, encodeVoxels } from "./VoxelDataUtils";
 import { getVoxelTerrainResolution } from "./VoxelTerrainUtils";
 
-export const MAX_VOXEL_TERRAIN_HEIGHT = 16;
+export const MAX_VOXEL_TERRAIN_WIDTH = 64;
+export const MAX_VOXEL_TERRAIN_LENGTH = 64;
+export const MAX_VOXEL_TERRAIN_HEIGHT = MAX_HEIGHT;
 export const MIN_VOXEL_TERRAIN_HEIGHT = 1;
 export const DEFAULT_VOXEL_TERRAIN_HEIGHT = 8;
 export const MIN_VOXEL_TERRAIN_RESOLUTION = 1;
@@ -105,8 +107,8 @@ export function reshapeVoxelTerrainForEditor(
 	const oldResolution = getVoxelTerrainResolution(terrain);
 	const newResolution = clampVoxelTerrainResolution(nextShape.resolution);
 	const nextHeight = clampVoxelTerrainHeight(nextShape.height);
-	const nextWidth = clamp(Math.floor(nextShape.width) || 1, 1, 48);
-	const nextLength = clamp(Math.floor(nextShape.length) || 1, 1, 48);
+	const nextWidth = clamp(Math.floor(nextShape.width) || 1, 1, MAX_VOXEL_TERRAIN_WIDTH);
+	const nextLength = clamp(Math.floor(nextShape.length) || 1, 1, MAX_VOXEL_TERRAIN_LENGTH);
 	const nextResolvedWidth = nextWidth * newResolution;
 	const nextResolvedLength = nextLength * newResolution;
 	const nextResolvedHeight = nextHeight * newResolution;
