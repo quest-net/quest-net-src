@@ -78,8 +78,37 @@ function hasLegalTileAtHeight(
 		?.some((tile) => tile.h === h) ?? false;
 }
 
+function hasReachableNeighborTile(
+	actor: FirstPersonActor,
+	legalTilesByColumn: Map<string, LegalTile[]>,
+	x: number,
+	y: number,
+	h: number
+): boolean {
+	if (actor.actor.CanFly) {
+		return hasLegalTileAtHeight(legalTilesByColumn, x, y, h);
+	}
+
+	return legalTilesByColumn
+		.get(`${x},${y}`)
+		?.some((tile) => {
+			const heightDelta = tile.h - h;
+			if (heightDelta > 0) {
+				return (
+					heightDelta <
+					getEyeHeight(actor.actor) - FIRST_PERSON_COLLISION.STEP_CLEARANCE_EPSILON
+				);
+			}
+
+			return (
+				Math.abs(heightDelta) <= FIRST_PERSON_COLLISION.MAX_GROUNDED_DROP_HEIGHT
+			);
+		}) ?? false;
+}
+
 function clampAgainstBlockedNeighbors(
 	terrain: VoxelTerrain,
+	actor: FirstPersonActor,
 	worldPosition: THREE.Vector3,
 	tile: LegalTile,
 	legalTilesByColumn: Map<string, LegalTile[]>
@@ -91,16 +120,16 @@ function clampAgainstBlockedNeighbors(
 	const centerZ = tile.y - offsetZ;
 	const next = worldPosition.clone();
 
-	if (!hasLegalTileAtHeight(legalTilesByColumn, tile.x - 1, tile.y, tile.h)) {
+	if (!hasReachableNeighborTile(actor, legalTilesByColumn, tile.x - 1, tile.y, tile.h)) {
 		next.x = Math.max(next.x, centerX - 0.5 + radius);
 	}
-	if (!hasLegalTileAtHeight(legalTilesByColumn, tile.x + 1, tile.y, tile.h)) {
+	if (!hasReachableNeighborTile(actor, legalTilesByColumn, tile.x + 1, tile.y, tile.h)) {
 		next.x = Math.min(next.x, centerX + 0.5 - radius);
 	}
-	if (!hasLegalTileAtHeight(legalTilesByColumn, tile.x, tile.y - 1, tile.h)) {
+	if (!hasReachableNeighborTile(actor, legalTilesByColumn, tile.x, tile.y - 1, tile.h)) {
 		next.z = Math.max(next.z, centerZ - 0.5 + radius);
 	}
-	if (!hasLegalTileAtHeight(legalTilesByColumn, tile.x, tile.y + 1, tile.h)) {
+	if (!hasReachableNeighborTile(actor, legalTilesByColumn, tile.x, tile.y + 1, tile.h)) {
 		next.z = Math.min(next.z, centerZ + 0.5 - radius);
 	}
 
@@ -123,6 +152,28 @@ function circleIntersectsAabb2D(
 	return dx * dx + dz * dz < radius * radius;
 }
 
+function columnHasVoxelAboveStep(
+	collision: VoxelCollisionData,
+	voxelX: number,
+	voxelZ: number,
+	fromVoxelY: number,
+	toVoxelY: number,
+	stepTopY: number
+): boolean {
+	for (let y = fromVoxelY; y <= toVoxelY; y++) {
+		if (!collision.occupied.has(voxelCollisionKey(voxelX, y, voxelZ))) {
+			continue;
+		}
+
+		const voxelMaxY = y / collision.resolution - 0.5 + collision.voxelSize;
+		if (voxelMaxY > stepTopY) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 function bodyIntersectsVoxelTerrain(
 	terrain: VoxelTerrain,
 	collision: VoxelCollisionData,
@@ -138,6 +189,10 @@ function bodyIntersectsVoxelTerrain(
 	const maxY =
 		bodyPosition.y +
 		Math.max(0.2, getEyeHeight(actor.actor) + FIRST_PERSON_COLLISION.HEAD_CLEARANCE);
+	const stepTopY =
+		bodyPosition.y +
+		getEyeHeight(actor.actor) -
+		FIRST_PERSON_COLLISION.STEP_CLEARANCE_EPSILON;
 	const startVoxelX = Math.max(
 		0,
 		Math.floor((minX + terrain.Width / 2) * collision.resolution)
@@ -180,8 +235,24 @@ function bodyIntersectsVoxelTerrain(
 
 				const voxelMinX = voxelX / collision.resolution - terrain.Width / 2;
 				const voxelMaxX = voxelMinX + collision.voxelSize;
+				const voxelMinY = voxelY / collision.resolution - 0.5;
+				const voxelMaxY = voxelMinY + collision.voxelSize;
 				const voxelMinZ = voxelZ / collision.resolution - terrain.Length / 2;
 				const voxelMaxZ = voxelMinZ + collision.voxelSize;
+				if (
+					!actor.actor.CanFly &&
+					voxelMaxY <= stepTopY &&
+					!columnHasVoxelAboveStep(
+						collision,
+						voxelX,
+						voxelZ,
+						voxelY + 1,
+						endVoxelY,
+						stepTopY
+					)
+				) {
+					continue;
+				}
 				if (
 					circleIntersectsAabb2D(
 						bodyPosition.x,
@@ -247,6 +318,7 @@ function prepareLegalCandidate(
 		legalTile = currentTile;
 		acceptedCandidate = clampAgainstBlockedNeighbors(
 			terrain,
+			actor,
 			candidate,
 			currentTile,
 			legalTilesByColumn
@@ -255,6 +327,7 @@ function prepareLegalCandidate(
 
 	const constrainedCandidate = clampAgainstBlockedNeighbors(
 		terrain,
+		actor,
 		acceptedCandidate,
 		legalTile,
 		legalTilesByColumn

@@ -68,11 +68,19 @@ export default function FirstPersonMap({
 	const bodyPositionRef = useRef(new THREE.Vector3());
 	const bodyHRef = useRef(0);
 	const bodyInitializedRef = useRef(false);
+	const cameraPositionInitializedRef = useRef(false);
+	const desiredCameraPositionRef = useRef(new THREE.Vector3());
 	const yawRef = useRef(0);
 	const pitchRef = useRef(0);
 	const lastSentKeyRef = useRef("");
 	const lastMovementInputAtRef = useRef(0);
 	const pendingSyncPositionRef = useRef<Position | null>(null);
+	// Tracks the last position committed to the DM and when it was sent.
+	// Used to suppress rubber-banding: a state sync arriving before the DM
+	// has processed our character:move will carry our old position, which
+	// would normally teleport us back. We ignore snaps while this is set.
+	const lastSentPositionRef = useRef<Position | null>(null);
+	const lastSentAtRef = useRef(0);
 	const hadFirstPersonActorRef = useRef(false);
 	const lastStateUpdateRef = useRef(0);
 	const activeActorRef = useRef<FirstPersonActor | null>(null);
@@ -259,7 +267,9 @@ export default function FirstPersonMap({
 	useEffect(() => {
 		lastSentKeyRef.current = "";
 		bodyInitializedRef.current = false;
+		cameraPositionInitializedRef.current = false;
 		pendingSyncPositionRef.current = null;
+		lastSentPositionRef.current = null;
 	}, [actor?.id, actor?.kind, terrainSignature]);
 
 	useEffect(() => {
@@ -296,6 +306,8 @@ export default function FirstPersonMap({
 			});
 		}
 		lastSentKeyRef.current = key;
+		lastSentPositionRef.current = normalized;
+		lastSentAtRef.current = Date.now();
 	}, []);
 
 	const flushPendingPosition = useCallback(() => {
@@ -309,20 +321,39 @@ export default function FirstPersonMap({
 		flushPendingPosition();
 	}, [flushPendingPosition]);
 
-	const updateCameraFromBody = useCallback(() => {
-		const camera = cameraRef.current;
-		const currentActor = activeActorRef.current;
-		if (!camera || !currentActor) return;
+	const updateCameraFromBody = useCallback(
+		(
+			dt: number,
+			positionSmoothing: number = FIRST_PERSON_CAMERA.POSITION_SMOOTHING
+		) => {
+			const camera = cameraRef.current;
+			const currentActor = activeActorRef.current;
+			if (!camera || !currentActor) return;
 
-		camera.position.set(
-			bodyPositionRef.current.x,
-			bodyPositionRef.current.y + getEyeHeight(currentActor.actor),
-			bodyPositionRef.current.z
-		);
-		camera.rotation.order = "YXZ";
-		camera.rotation.y = yawRef.current;
-		camera.rotation.x = pitchRef.current;
-	}, []);
+			desiredCameraPositionRef.current.set(
+				bodyPositionRef.current.x,
+				bodyPositionRef.current.y + getEyeHeight(currentActor.actor),
+				bodyPositionRef.current.z
+			);
+			if (!cameraPositionInitializedRef.current) {
+				camera.position.copy(desiredCameraPositionRef.current);
+				cameraPositionInitializedRef.current = true;
+			} else if (dt > 0) {
+				const alpha = 1 - Math.exp(-positionSmoothing * dt);
+				camera.position.lerp(desiredCameraPositionRef.current, alpha);
+				if (
+					camera.position.distanceToSquared(desiredCameraPositionRef.current) <
+					0.000001
+				) {
+					camera.position.copy(desiredCameraPositionRef.current);
+				}
+			}
+			camera.rotation.order = "YXZ";
+			camera.rotation.y = yawRef.current;
+			camera.rotation.x = pitchRef.current;
+		},
+		[]
+	);
 
 	const updateMovementOverlay = useCallback((now: number, rulesPosition: Position) => {
 		if (!activeActorRef.current) {
@@ -372,6 +403,7 @@ export default function FirstPersonMap({
 		(now: number, dt: number, input: FirstPersonFrameInput) => {
 			const currentTerrain = terrainRef.current;
 			const currentActor = activeActorRef.current;
+			let cameraSmoothing: number = FIRST_PERSON_CAMERA.POSITION_SMOOTHING;
 			if (
 				currentTerrain &&
 				currentActor &&
@@ -392,6 +424,7 @@ export default function FirstPersonMap({
 					forwardInput !== 0 || rightInput !== 0 || verticalInput !== 0;
 
 				if (hasInput) {
+					cameraSmoothing = FIRST_PERSON_CAMERA.ACTIVE_POSITION_SMOOTHING;
 					const forward = new THREE.Vector3(
 						-Math.sin(yawRef.current),
 						0,
@@ -452,7 +485,7 @@ export default function FirstPersonMap({
 				}
 			}
 
-			updateCameraFromBody();
+			updateCameraFromBody(dt, cameraSmoothing);
 		},
 		[flushPendingPosition, updateCameraFromBody, updateMovementOverlay]
 	);
@@ -515,11 +548,37 @@ export default function FirstPersonMap({
 			currentRules.y === authoritative.y &&
 			currentRules.h === Math.round(expectedBodyH);
 
+		// If the DM's authoritative position matches the last one we sent (confirmed),
+		// or the send is old enough that we shouldn't wait any longer, clear the
+		// in-flight record so normal DM corrections can snap us again.
+		const PENDING_MOVE_TIMEOUT_MS = 2000;
+		const lastSent = lastSentPositionRef.current;
+		if (lastSent) {
+			const confirmed =
+				authoritative.x === lastSent.x &&
+				authoritative.y === lastSent.y &&
+				authoritative.h === lastSent.h;
+			const timedOut = Date.now() - lastSentAtRef.current >= PENDING_MOVE_TIMEOUT_MS;
+			if (confirmed || timedOut) {
+				lastSentPositionRef.current = null;
+			}
+		}
+
 		if (!sameTile) {
-			bodyPositionRef.current.copy(actorToGroundWorld(actor, terrain));
-			bodyHRef.current = expectedBodyH;
-			bodyInitializedRef.current = true;
-			pendingSyncPositionRef.current = null;
+			// Suppress the snap while we have unsent local movement OR an
+			// in-flight character:move that the DM hasn't confirmed yet.
+			// Without this, any unrelated DM action that broadcasts state
+			// before our move is processed will carry our old position and
+			// rubber-band us back.
+			const hasPendingMove =
+				pendingSyncPositionRef.current !== null ||
+				lastSentPositionRef.current !== null;
+			if (!hasPendingMove) {
+				bodyPositionRef.current.copy(actorToGroundWorld(actor, terrain));
+				bodyHRef.current = expectedBodyH;
+				bodyInitializedRef.current = true;
+				pendingSyncPositionRef.current = null;
+			}
 		}
 
 		if (cameraRef.current) {
@@ -529,7 +588,7 @@ export default function FirstPersonMap({
 				yawRef.current = Math.atan2(-direction.x, -direction.z);
 			}
 		}
-		updateCameraFromBody();
+		updateCameraFromBody(0);
 	}, [
 		terrain,
 		actor?.id,
