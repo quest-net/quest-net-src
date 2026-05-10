@@ -22,12 +22,33 @@ export const FIRST_PERSON_CONTROLS = {
 	SYNC_IDLE_DEBOUNCE_MS: 450,
 } as const;
 
-export const FIRST_PERSON_COLLISION = {
-	BODY_RADIUS: 0.1,
-	FOOT_CLEARANCE: 0.08,
-	HEAD_CLEARANCE: 0.28,
-	MAX_GROUNDED_DROP_HEIGHT: 1,
-	STEP_CLEARANCE_EPSILON: 0.0001,
+export const FIRST_PERSON_PHYSICS = {
+	GRAVITY: 22,
+	JUMP_HEIGHT: 1.15,
+	GROUND_ACCELERATION: 42,
+	AIR_ACCELERATION: 11,
+	FLY_ACCELERATION: 28,
+	GROUND_FRICTION: 34,
+	AIR_DRAG: 1.2,
+	FLY_DAMPING: 12,
+	STEP_HEIGHT: 0.68,
+	STEP_HEIGHT_MARGIN: 0.12,
+	STEP_UP_MIN_HEIGHT: 0.03,
+	STEP_PROGRESS_TOLERANCE: 0.02,
+	STEP_DOWN_SNAP_DISTANCE: 0.68,
+	GROUND_SNAP_DISTANCE: 0.16,
+	MAX_SUBSTEP_DISTANCE: 0.055,
+	MAX_SUBSTEPS: 24,
+	CAPSULE_HEAD_CLEARANCE: 0.24,
+	COLLISION_EPSILON: 0.000001,
+	SETTLED_SPEED: 0.045,
+	MIN_WORLD_Y: -20,
+	RADIUS_BY_SIZE: {
+		"extra-small": 0.16,
+		small: 0.22,
+		medium: 0.3,
+		large: 0.38,
+	},
 } as const;
 
 export const FIRST_PERSON_KEY_CODES = [
@@ -41,11 +62,3 @@ export const FIRST_PERSON_KEY_CODES = [
 ] as const;
 
 export const MOVEMENT_STATE_UPDATE_MS = 120;
-
-export const FIRST_PERSON_JUMP = {
-	// Visual-only lift height in world units. ~1.2 lets you see over a
-	// single voxel step without overshooting the next tactical height.
-	HEIGHT: 1.2,
-	// Total arc duration in seconds (up + down).
-	DURATION: 0.55,
-} as const;

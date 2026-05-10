@@ -15,13 +15,6 @@ export interface FirstPersonActor {
 	actor: Character | Entity;
 }
 
-export interface LegalTile {
-	x: number;
-	y: number;
-	h: number;
-	cost: number;
-}
-
 export type MovementOverlayState =
 	| { kind: "combat"; value: number }
 	| { kind: "exploration"; value: number }

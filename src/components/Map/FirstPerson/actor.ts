@@ -3,10 +3,7 @@ import type { Position } from "../../../domains/Actor/Actor";
 import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import {
-	getActorBaseHeight,
-	getActorGroundPosition,
-} from "../Actors3D/actorTokenPlacement";
+import { getActorGroundPosition } from "../Actors3D/actorTokenPlacement";
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants";
 import type { ActorTokenDescriptor } from "../Actors3D/actorTokenTypes";
 import { FIRST_PERSON_CAMERA } from "./constants";
@@ -41,7 +38,7 @@ export function findFirstPersonActor(
 	return null;
 }
 
-export function actorPositionToGroundWorld(
+function actorPositionToGroundWorld(
 	actor: FirstPersonActor,
 	terrain: VoxelTerrain,
 	position: Position
@@ -59,28 +56,6 @@ export function actorToGroundWorld(
 export function getEyeHeight(actor: Character | Entity): number {
 	const size = actor.Size ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.SIZE;
 	return FIRST_PERSON_CAMERA.HEIGHT_BY_SIZE[size];
-}
-
-export function getFirstPersonBodyHeight(
-	actor: FirstPersonActor,
-	terrain: VoxelTerrain,
-	position: Position
-): number {
-	return getActorBaseHeight(createActorDescriptor(actor, position), terrain);
-}
-
-export function worldToRulesPosition(
-	terrain: VoxelTerrain,
-	worldPosition: THREE.Vector3,
-	h: number
-): Position {
-	const offsetX = (terrain.Width - 1) / 2;
-	const offsetZ = (terrain.Length - 1) / 2;
-	return {
-		x: Math.round(worldPosition.x + offsetX),
-		y: Math.round(worldPosition.z + offsetZ),
-		h: Math.round(h),
-	};
 }
 
 function createActorDescriptor(

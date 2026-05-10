@@ -21,27 +21,25 @@ import { useMapState } from "../MapStateProvider";
 import { ThreeDPingLayer } from "../Pings3D/ThreeDPingLayer";
 import { ThreeDStickerLayer } from "../Stickers3D/ThreeDStickerLayer";
 import {
-	actorToGroundWorld,
 	findFirstPersonActor,
 	getEyeHeight,
-	getFirstPersonBodyHeight,
-	worldToRulesPosition,
 } from "./actor";
 import {
+	createFirstPersonCapsuleState,
 	createVoxelCollisionData,
-	resolveFirstPersonMovement,
+	firstPersonCapsuleToRulesPosition,
+	isFirstPersonCapsuleSettled,
+	stepFirstPersonCapsuleController,
+	type FirstPersonCapsuleState,
 	type VoxelCollisionData,
-} from "./collision";
+} from "./capsuleController";
 import {
 	FIRST_PERSON_CAMERA,
 	FIRST_PERSON_CONTROLS,
-	FIRST_PERSON_JUMP,
 	MOVEMENT_STATE_UPDATE_MS,
 } from "./constants";
 import { FirstPersonHud, MissingActorMessage } from "./FirstPersonHud";
 import {
-	createColumnLookup,
-	createFirstPersonMovementTiles,
 	createMovementCostLookup,
 } from "./movement";
 import {
@@ -52,10 +50,12 @@ import type {
 	FirstPersonActor,
 	FirstPersonFrameInput,
 	FirstPersonMapProps,
-	LegalTile,
 	MovementOverlayState,
 } from "./types";
 import { useFirstPersonScene } from "./useFirstPersonScene";
+
+const PENDING_MOVE_TIMEOUT_MS = 2000;
+const EMPTY_FIRST_PERSON_KEYS: ReadonlySet<string> = new Set();
 
 export default function FirstPersonMap({
 	terrain,
@@ -66,24 +66,19 @@ export default function FirstPersonMap({
 	const containerRef = useRef<HTMLDivElement>(null);
 	const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
 	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
-	const bodyPositionRef = useRef(new THREE.Vector3());
-	const bodyHRef = useRef(0);
-	const bodyInitializedRef = useRef(false);
+	const capsuleStateRef = useRef<FirstPersonCapsuleState | null>(null);
+	const capsuleInitializedRef = useRef(false);
 	const cameraPositionInitializedRef = useRef(false);
 	const desiredCameraPositionRef = useRef(new THREE.Vector3());
 	const yawRef = useRef(0);
 	const pitchRef = useRef(0);
 	const lastSentKeyRef = useRef("");
 	const lastMovementInputAtRef = useRef(0);
-	// Jump state - purely visual, does not affect tactical position or sync.
-	const jumpActiveRef = useRef(false);
-	const jumpStartTimeRef = useRef(0);
-	const jumpOffsetRef = useRef(0);
 	const spaceWasPressedRef = useRef(false);
 	const pendingSyncPositionRef = useRef<Position | null>(null);
 	// Tracks the last position committed to the DM and when it was sent.
 	// Used to suppress rubber-banding: a state sync arriving before the DM
-	// has processed our character:move will carry our old position, which
+	// has processed our actor move will carry our old position, which
 	// would normally teleport us back. We ignore snaps while this is set.
 	const lastSentPositionRef = useRef<Position | null>(null);
 	const lastSentAtRef = useRef(0);
@@ -93,7 +88,6 @@ export default function FirstPersonMap({
 	const actionServiceRef = useRef<ReturnType<typeof useActionService>["actionService"]>(null);
 	const terrainRef = useRef(terrain);
 	const voxelCollisionDataRef = useRef<VoxelCollisionData | null>(null);
-	const movementColumnLookupRef = useRef(new Map<string, LegalTile[]>());
 	const movementCostLookupRef = useRef<Map<string, number> | null>(null);
 	const canControlFirstPersonActorRef = useRef(false);
 	const isCombatActiveRef = useRef(false);
@@ -146,49 +140,11 @@ export default function FirstPersonMap({
 	const actorTurnStartH = actor?.actor.TurnStartPosition?.h;
 	const isCombatActive = campaign.GameState.CombatState?.isActive ?? false;
 	const canControlFirstPersonActor = actor ? canAccessActor(actor.id) : false;
-	const restrictMovementToRange =
-		userRole === "player" &&
-		(campaign.Settings.MovementSettings?.restrictPlayerMovementToRange ?? false);
-
 	const voxelCollisionData = useMemo(
 		() => (terrain ? createVoxelCollisionData(terrain) : null),
 		[terrain, terrainSignature]
 	);
 
-	const movementTiles = useMemo(() => {
-		if (!terrain || !actor || !canControlFirstPersonActor) return [];
-
-		return createFirstPersonMovementTiles({
-			terrain,
-			actor,
-			characters,
-			entities,
-			isCombatActive,
-			restrictMovementToRange,
-			movementSettings: campaign.Settings.MovementSettings,
-		});
-	}, [
-		terrain,
-		actor?.id,
-		canControlFirstPersonActor,
-		isCombatActive,
-		restrictMovementToRange,
-		campaign.Settings.MovementSettings,
-		actorPositionX,
-		actorPositionY,
-		actorPositionH,
-		actorTurnStartX,
-		actorTurnStartY,
-		actorTurnStartH,
-		actor?.actor.MoveSpeed,
-		actor?.actor.CanFly,
-		characters,
-		entities,
-	]);
-	const movementColumnLookup = useMemo(
-		() => createColumnLookup(movementTiles),
-		[movementTiles]
-	);
 	const movementCostLookup = useMemo(() => {
 		if (!terrain || !actor || !canControlFirstPersonActor) return null;
 		return createMovementCostLookup(
@@ -255,10 +211,6 @@ export default function FirstPersonMap({
 	}, [voxelCollisionData]);
 
 	useEffect(() => {
-		movementColumnLookupRef.current = movementColumnLookup;
-	}, [movementColumnLookup]);
-
-	useEffect(() => {
 		movementCostLookupRef.current = movementCostLookup;
 	}, [movementCostLookup]);
 
@@ -272,12 +224,11 @@ export default function FirstPersonMap({
 
 	useEffect(() => {
 		lastSentKeyRef.current = "";
-		bodyInitializedRef.current = false;
+		capsuleInitializedRef.current = false;
+		capsuleStateRef.current = null;
 		cameraPositionInitializedRef.current = false;
 		pendingSyncPositionRef.current = null;
 		lastSentPositionRef.current = null;
-		jumpActiveRef.current = false;
-		jumpOffsetRef.current = 0;
 		spaceWasPressedRef.current = false;
 	}, [actor?.id, actor?.kind, terrainSignature]);
 
@@ -327,7 +278,15 @@ export default function FirstPersonMap({
 	}, [commitActorPosition]);
 
 	const commitCurrentPosition = useCallback(() => {
-		flushPendingPosition();
+		const currentActor = activeActorRef.current;
+		const state = capsuleStateRef.current;
+		if (
+			currentActor &&
+			state &&
+			isFirstPersonCapsuleSettled(state, currentActor.actor.CanFly ?? false)
+		) {
+			flushPendingPosition();
+		}
 		spaceWasPressedRef.current = false;
 	}, [flushPendingPosition]);
 
@@ -338,12 +297,13 @@ export default function FirstPersonMap({
 		) => {
 			const camera = cameraRef.current;
 			const currentActor = activeActorRef.current;
-			if (!camera || !currentActor) return;
+			const state = capsuleStateRef.current;
+			if (!camera || !currentActor || !state) return;
 
 			desiredCameraPositionRef.current.set(
-				bodyPositionRef.current.x,
-				bodyPositionRef.current.y + getEyeHeight(currentActor.actor) + jumpOffsetRef.current,
-				bodyPositionRef.current.z
+				state.position.x,
+				state.position.y + getEyeHeight(currentActor.actor),
+				state.position.z
 			);
 			if (!cameraPositionInitializedRef.current) {
 				camera.position.copy(desiredCameraPositionRef.current);
@@ -413,14 +373,47 @@ export default function FirstPersonMap({
 		(now: number, dt: number, input: FirstPersonFrameInput) => {
 			const currentTerrain = terrainRef.current;
 			const currentActor = activeActorRef.current;
+			const collision = voxelCollisionDataRef.current;
 			let cameraSmoothing: number = FIRST_PERSON_CAMERA.POSITION_SMOOTHING;
+			if (currentTerrain && currentActor) {
+				const lastSent = lastSentPositionRef.current;
+				if (lastSent) {
+					const authoritative = normalizeVoxelPosition(currentActor.actor.Position);
+					const confirmed =
+						authoritative.x === lastSent.x &&
+						authoritative.y === lastSent.y &&
+						authoritative.h === lastSent.h;
+					const timedOut =
+						Date.now() - lastSentAtRef.current >= PENDING_MOVE_TIMEOUT_MS;
+					if (confirmed || timedOut) {
+						lastSentPositionRef.current = null;
+						if (timedOut && !confirmed && !pendingSyncPositionRef.current) {
+							capsuleStateRef.current = createFirstPersonCapsuleState(
+								currentActor,
+								currentTerrain
+							);
+							capsuleInitializedRef.current = true;
+							cameraSmoothing = FIRST_PERSON_CAMERA.ACTIVE_POSITION_SMOOTHING;
+						}
+					}
+				}
+			}
+
 			if (
 				currentTerrain &&
+				collision &&
 				currentActor &&
-				canControlFirstPersonActorRef.current &&
-				input.pointerLocked
+				canControlFirstPersonActorRef.current
 			) {
-				const keys = input.keys;
+				if (!capsuleStateRef.current) {
+					capsuleStateRef.current = createFirstPersonCapsuleState(
+						currentActor,
+						currentTerrain
+					);
+					capsuleInitializedRef.current = true;
+				}
+
+				const keys = input.pointerLocked ? input.keys : EMPTY_FIRST_PERSON_KEYS;
 				const forwardInput =
 					(keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
 				const rightInput =
@@ -432,94 +425,72 @@ export default function FirstPersonMap({
 						: 0;
 				const hasInput =
 					forwardInput !== 0 || rightInput !== 0 || verticalInput !== 0;
-
-				// Jump: grounded actors only, triggered on the leading edge of Space.
-				// Purely visual - bodyPositionRef and bodyHRef are never changed.
+				let jumpPressed = false;
 				if (!currentActor.actor.CanFly) {
 					const spacePressed = keys.has("Space");
-					if (spacePressed && !spaceWasPressedRef.current && !jumpActiveRef.current) {
-						jumpActiveRef.current = true;
-						jumpStartTimeRef.current = now;
-					}
+					jumpPressed = spacePressed && !spaceWasPressedRef.current;
 					spaceWasPressedRef.current = spacePressed;
+				} else {
+					spaceWasPressedRef.current = false;
 				}
 
-				if (hasInput) {
+				const state = capsuleStateRef.current;
+				const wasPosition = state.position.clone();
+				const wasSettled = isFirstPersonCapsuleSettled(
+					state,
+					currentActor.actor.CanFly ?? false
+				);
+				const shouldSimulate =
+					input.pointerLocked ||
+					hasInput ||
+					jumpPressed ||
+					!wasSettled ||
+					pendingSyncPositionRef.current !== null;
+				if (shouldSimulate) {
 					cameraSmoothing = FIRST_PERSON_CAMERA.ACTIVE_POSITION_SMOOTHING;
-					const forward = new THREE.Vector3(
-						-Math.sin(yawRef.current),
-						0,
-						-Math.cos(yawRef.current)
-					);
-					const right = new THREE.Vector3(
-						Math.cos(yawRef.current),
-						0,
-						-Math.sin(yawRef.current)
-					);
-					const move = forward
-						.multiplyScalar(forwardInput)
-						.add(right.multiplyScalar(rightInput));
-					if (move.lengthSq() > 0) {
-						move
-							.normalize()
-							.multiplyScalar(
-								FIRST_PERSON_CONTROLS.MOVE_UNITS_PER_SECOND * dt
-							);
-					}
-
-					const candidate = bodyPositionRef.current.clone().add(move);
-					const candidateH =
-						bodyHRef.current +
-						verticalInput * FIRST_PERSON_CONTROLS.FLY_UNITS_PER_SECOND * dt;
-					const resolvedMovement = resolveFirstPersonMovement(
+					stepFirstPersonCapsuleController(
 						currentTerrain,
-						voxelCollisionDataRef.current,
+						collision,
 						currentActor,
-						bodyPositionRef.current,
-						bodyHRef.current,
-						candidate,
-						candidateH,
-						movementColumnLookupRef.current,
-						jumpOffsetRef.current
+						state,
+						{
+							forwardInput,
+							rightInput,
+							verticalInput,
+							jumpPressed,
+							yaw: yawRef.current,
+							dt,
+						}
 					);
 
-					if (resolvedMovement) {
-						bodyPositionRef.current.copy(resolvedMovement.bodyPosition);
-						bodyHRef.current = resolvedMovement.bodyH;
-						const rulesPosition = worldToRulesPosition(
-							currentTerrain,
-							bodyPositionRef.current,
-							bodyHRef.current
-						);
-						updateMovementOverlay(now, rulesPosition);
+					const rulesPosition = firstPersonCapsuleToRulesPosition(
+						currentTerrain,
+						state
+					);
+					const settled = isFirstPersonCapsuleSettled(
+						state,
+						currentActor.actor.CanFly ?? false
+					);
+					const moved =
+						wasPosition.distanceToSquared(state.position) > 0.000001;
+					if (moved || hasInput || jumpPressed || !settled) {
 						lastMovementInputAtRef.current = now;
+					}
+					if (moved || pendingSyncPositionRef.current) {
+						updateMovementOverlay(now, rulesPosition);
 						pendingSyncPositionRef.current = rulesPosition;
 					}
+					if (
+						settled &&
+						!hasInput &&
+						!jumpPressed &&
+						pendingSyncPositionRef.current &&
+						now - lastMovementInputAtRef.current >=
+							FIRST_PERSON_CONTROLS.SYNC_IDLE_DEBOUNCE_MS
+					) {
+						flushPendingPosition();
+					}
 				}
-
-				if (
-					!hasInput &&
-					pendingSyncPositionRef.current &&
-					now - lastMovementInputAtRef.current >=
-						FIRST_PERSON_CONTROLS.SYNC_IDLE_DEBOUNCE_MS
-				) {
-					flushPendingPosition();
-				}
-			}
-
-			// Jump arc animation - runs every frame so the parabola completes
-			// smoothly even if pointer lock is released mid-jump.
-			if (jumpActiveRef.current) {
-				const t = Math.min(
-					1,
-					((now - jumpStartTimeRef.current) / 1000) / FIRST_PERSON_JUMP.DURATION
-				);
-				jumpOffsetRef.current = FIRST_PERSON_JUMP.HEIGHT * 4 * t * (1 - t);
-				if (t >= 1) {
-					jumpActiveRef.current = false;
-					jumpOffsetRef.current = 0;
-				}
-				cameraSmoothing = FIRST_PERSON_CAMERA.ACTIVE_POSITION_SMOOTHING;
 			}
 
 			updateCameraFromBody(dt, cameraSmoothing);
@@ -552,7 +523,8 @@ export default function FirstPersonMap({
 		}
 
 		pendingSyncPositionRef.current = null;
-		bodyInitializedRef.current = false;
+		capsuleInitializedRef.current = false;
+		capsuleStateRef.current = null;
 		setMovementOverlay((current) => (current === null ? current : null));
 
 		if (isPointerLocked && document.pointerLockElement) {
@@ -569,26 +541,28 @@ export default function FirstPersonMap({
 		if (!terrain || !actor) return;
 
 		const authoritative = normalizeVoxelPosition(actor.actor.Position);
-		const expectedBodyH = getFirstPersonBodyHeight(
-			actor,
+		const authoritativeState = createFirstPersonCapsuleState(actor, terrain);
+		const authoritativeRules = firstPersonCapsuleToRulesPosition(
 			terrain,
-			authoritative
+			authoritativeState
 		);
-		const currentRules = worldToRulesPosition(
+		if (!capsuleStateRef.current || !capsuleInitializedRef.current) {
+			capsuleStateRef.current = authoritativeState;
+			capsuleInitializedRef.current = true;
+		}
+		const currentRules = firstPersonCapsuleToRulesPosition(
 			terrain,
-			bodyPositionRef.current,
-			bodyHRef.current
+			capsuleStateRef.current
 		);
 		const sameTile =
-			bodyInitializedRef.current &&
-			currentRules.x === authoritative.x &&
-			currentRules.y === authoritative.y &&
-			currentRules.h === Math.round(expectedBodyH);
+			capsuleInitializedRef.current &&
+			currentRules.x === authoritativeRules.x &&
+			currentRules.y === authoritativeRules.y &&
+			currentRules.h === authoritativeRules.h;
 
 		// If the DM's authoritative position matches the last one we sent (confirmed),
 		// or the send is old enough that we shouldn't wait any longer, clear the
 		// in-flight record so normal DM corrections can snap us again.
-		const PENDING_MOVE_TIMEOUT_MS = 2000;
 		const lastSent = lastSentPositionRef.current;
 		if (lastSent) {
 			const confirmed =
@@ -603,7 +577,7 @@ export default function FirstPersonMap({
 
 		if (!sameTile) {
 			// Suppress the snap while we have unsent local movement OR an
-			// in-flight character:move that the DM hasn't confirmed yet.
+			// in-flight actor move that the DM hasn't confirmed yet.
 			// Without this, any unrelated DM action that broadcasts state
 			// before our move is processed will carry our old position and
 			// rubber-band us back.
@@ -611,9 +585,8 @@ export default function FirstPersonMap({
 				pendingSyncPositionRef.current !== null ||
 				lastSentPositionRef.current !== null;
 			if (!hasPendingMove) {
-				bodyPositionRef.current.copy(actorToGroundWorld(actor, terrain));
-				bodyHRef.current = expectedBodyH;
-				bodyInitializedRef.current = true;
+				capsuleStateRef.current = authoritativeState;
+				capsuleInitializedRef.current = true;
 				pendingSyncPositionRef.current = null;
 			}
 		}
