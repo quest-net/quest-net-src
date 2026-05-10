@@ -4,8 +4,8 @@ export const FIRST_PERSON_CAMERA = {
 	FOV: 72,
 	NEAR: 0.04,
 	FAR: THREE_D_MAP_RENDERER.CAMERA_FAR,
-	POSITION_SMOOTHING: 5,
-	ACTIVE_POSITION_SMOOTHING: 10,
+	POSITION_SMOOTHING: 10,
+	ACTIVE_POSITION_SMOOTHING: 15,
 	HEIGHT_BY_SIZE: {
 		"extra-small": 0.7,
 		small: 0.95,
@@ -41,3 +41,11 @@ export const FIRST_PERSON_KEY_CODES = [
 ] as const;
 
 export const MOVEMENT_STATE_UPDATE_MS = 120;
+
+export const FIRST_PERSON_JUMP = {
+	// Visual-only lift height in world units. ~1.2 lets you see over a
+	// single voxel step without overshooting the next tactical height.
+	HEIGHT: 1.2,
+	// Total arc duration in seconds (up + down).
+	DURATION: 0.55,
+} as const;

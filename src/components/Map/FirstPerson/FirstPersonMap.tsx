@@ -35,6 +35,7 @@ import {
 import {
 	FIRST_PERSON_CAMERA,
 	FIRST_PERSON_CONTROLS,
+	FIRST_PERSON_JUMP,
 	MOVEMENT_STATE_UPDATE_MS,
 } from "./constants";
 import { FirstPersonHud, MissingActorMessage } from "./FirstPersonHud";
@@ -74,6 +75,11 @@ export default function FirstPersonMap({
 	const pitchRef = useRef(0);
 	const lastSentKeyRef = useRef("");
 	const lastMovementInputAtRef = useRef(0);
+	// Jump state - purely visual, does not affect tactical position or sync.
+	const jumpActiveRef = useRef(false);
+	const jumpStartTimeRef = useRef(0);
+	const jumpOffsetRef = useRef(0);
+	const spaceWasPressedRef = useRef(false);
 	const pendingSyncPositionRef = useRef<Position | null>(null);
 	// Tracks the last position committed to the DM and when it was sent.
 	// Used to suppress rubber-banding: a state sync arriving before the DM
@@ -270,6 +276,9 @@ export default function FirstPersonMap({
 		cameraPositionInitializedRef.current = false;
 		pendingSyncPositionRef.current = null;
 		lastSentPositionRef.current = null;
+		jumpActiveRef.current = false;
+		jumpOffsetRef.current = 0;
+		spaceWasPressedRef.current = false;
 	}, [actor?.id, actor?.kind, terrainSignature]);
 
 	useEffect(() => {
@@ -319,6 +328,7 @@ export default function FirstPersonMap({
 
 	const commitCurrentPosition = useCallback(() => {
 		flushPendingPosition();
+		spaceWasPressedRef.current = false;
 	}, [flushPendingPosition]);
 
 	const updateCameraFromBody = useCallback(
@@ -332,7 +342,7 @@ export default function FirstPersonMap({
 
 			desiredCameraPositionRef.current.set(
 				bodyPositionRef.current.x,
-				bodyPositionRef.current.y + getEyeHeight(currentActor.actor),
+				bodyPositionRef.current.y + getEyeHeight(currentActor.actor) + jumpOffsetRef.current,
 				bodyPositionRef.current.z
 			);
 			if (!cameraPositionInitializedRef.current) {
@@ -423,6 +433,17 @@ export default function FirstPersonMap({
 				const hasInput =
 					forwardInput !== 0 || rightInput !== 0 || verticalInput !== 0;
 
+				// Jump: grounded actors only, triggered on the leading edge of Space.
+				// Purely visual - bodyPositionRef and bodyHRef are never changed.
+				if (!currentActor.actor.CanFly) {
+					const spacePressed = keys.has("Space");
+					if (spacePressed && !spaceWasPressedRef.current && !jumpActiveRef.current) {
+						jumpActiveRef.current = true;
+						jumpStartTimeRef.current = now;
+					}
+					spaceWasPressedRef.current = spacePressed;
+				}
+
 				if (hasInput) {
 					cameraSmoothing = FIRST_PERSON_CAMERA.ACTIVE_POSITION_SMOOTHING;
 					const forward = new THREE.Vector3(
@@ -458,7 +479,8 @@ export default function FirstPersonMap({
 						bodyHRef.current,
 						candidate,
 						candidateH,
-						movementColumnLookupRef.current
+						movementColumnLookupRef.current,
+						jumpOffsetRef.current
 					);
 
 					if (resolvedMovement) {
@@ -483,6 +505,21 @@ export default function FirstPersonMap({
 				) {
 					flushPendingPosition();
 				}
+			}
+
+			// Jump arc animation - runs every frame so the parabola completes
+			// smoothly even if pointer lock is released mid-jump.
+			if (jumpActiveRef.current) {
+				const t = Math.min(
+					1,
+					((now - jumpStartTimeRef.current) / 1000) / FIRST_PERSON_JUMP.DURATION
+				);
+				jumpOffsetRef.current = FIRST_PERSON_JUMP.HEIGHT * 4 * t * (1 - t);
+				if (t >= 1) {
+					jumpActiveRef.current = false;
+					jumpOffsetRef.current = 0;
+				}
+				cameraSmoothing = FIRST_PERSON_CAMERA.ACTIVE_POSITION_SMOOTHING;
 			}
 
 			updateCameraFromBody(dt, cameraSmoothing);

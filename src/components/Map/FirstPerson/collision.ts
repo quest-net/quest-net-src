@@ -83,7 +83,8 @@ function hasReachableNeighborTile(
 	legalTilesByColumn: Map<string, LegalTile[]>,
 	x: number,
 	y: number,
-	h: number
+	h: number,
+	jumpOffset = 0
 ): boolean {
 	if (actor.actor.CanFly) {
 		return hasLegalTileAtHeight(legalTilesByColumn, x, y, h);
@@ -96,7 +97,7 @@ function hasReachableNeighborTile(
 			if (heightDelta > 0) {
 				return (
 					heightDelta <
-					getEyeHeight(actor.actor) - FIRST_PERSON_COLLISION.STEP_CLEARANCE_EPSILON
+					getEyeHeight(actor.actor) + jumpOffset - FIRST_PERSON_COLLISION.STEP_CLEARANCE_EPSILON
 				);
 			}
 
@@ -111,7 +112,8 @@ function clampAgainstBlockedNeighbors(
 	actor: FirstPersonActor,
 	worldPosition: THREE.Vector3,
 	tile: LegalTile,
-	legalTilesByColumn: Map<string, LegalTile[]>
+	legalTilesByColumn: Map<string, LegalTile[]>,
+	jumpOffset = 0
 ): THREE.Vector3 {
 	const radius = FIRST_PERSON_COLLISION.BODY_RADIUS;
 	const offsetX = (terrain.Width - 1) / 2;
@@ -120,16 +122,16 @@ function clampAgainstBlockedNeighbors(
 	const centerZ = tile.y - offsetZ;
 	const next = worldPosition.clone();
 
-	if (!hasReachableNeighborTile(actor, legalTilesByColumn, tile.x - 1, tile.y, tile.h)) {
+	if (!hasReachableNeighborTile(actor, legalTilesByColumn, tile.x - 1, tile.y, tile.h, jumpOffset)) {
 		next.x = Math.max(next.x, centerX - 0.5 + radius);
 	}
-	if (!hasReachableNeighborTile(actor, legalTilesByColumn, tile.x + 1, tile.y, tile.h)) {
+	if (!hasReachableNeighborTile(actor, legalTilesByColumn, tile.x + 1, tile.y, tile.h, jumpOffset)) {
 		next.x = Math.min(next.x, centerX + 0.5 - radius);
 	}
-	if (!hasReachableNeighborTile(actor, legalTilesByColumn, tile.x, tile.y - 1, tile.h)) {
+	if (!hasReachableNeighborTile(actor, legalTilesByColumn, tile.x, tile.y - 1, tile.h, jumpOffset)) {
 		next.z = Math.max(next.z, centerZ - 0.5 + radius);
 	}
-	if (!hasReachableNeighborTile(actor, legalTilesByColumn, tile.x, tile.y + 1, tile.h)) {
+	if (!hasReachableNeighborTile(actor, legalTilesByColumn, tile.x, tile.y + 1, tile.h, jumpOffset)) {
 		next.z = Math.min(next.z, centerZ + 0.5 - radius);
 	}
 
@@ -178,7 +180,8 @@ function bodyIntersectsVoxelTerrain(
 	terrain: VoxelTerrain,
 	collision: VoxelCollisionData,
 	actor: FirstPersonActor,
-	bodyPosition: THREE.Vector3
+	bodyPosition: THREE.Vector3,
+	jumpOffset = 0
 ): boolean {
 	const radius = FIRST_PERSON_COLLISION.BODY_RADIUS;
 	const minX = bodyPosition.x - radius;
@@ -191,7 +194,7 @@ function bodyIntersectsVoxelTerrain(
 		Math.max(0.2, getEyeHeight(actor.actor) + FIRST_PERSON_COLLISION.HEAD_CLEARANCE);
 	const stepTopY =
 		bodyPosition.y +
-		getEyeHeight(actor.actor) -
+		getEyeHeight(actor.actor) + jumpOffset -
 		FIRST_PERSON_COLLISION.STEP_CLEARANCE_EPSILON;
 	const startVoxelX = Math.max(
 		0,
@@ -297,7 +300,8 @@ function prepareLegalCandidate(
 	candidateH: number,
 	currentBodyPosition: THREE.Vector3,
 	currentH: number,
-	legalTilesByColumn: Map<string, LegalTile[]>
+	legalTilesByColumn: Map<string, LegalTile[]>,
+	jumpOffset = 0
 ): ResolvedFirstPersonMovement | null {
 	let legalTile = chooseLegalTile(
 		terrain,
@@ -321,7 +325,8 @@ function prepareLegalCandidate(
 			actor,
 			candidate,
 			currentTile,
-			legalTilesByColumn
+			legalTilesByColumn,
+			jumpOffset
 		);
 	}
 
@@ -330,7 +335,8 @@ function prepareLegalCandidate(
 		actor,
 		acceptedCandidate,
 		legalTile,
-		legalTilesByColumn
+		legalTilesByColumn,
+		jumpOffset
 	);
 	const bodyH =
 		actor.actor.CanFly
@@ -349,14 +355,16 @@ function candidateIsClear(
 	terrain: VoxelTerrain,
 	collision: VoxelCollisionData | null,
 	actor: FirstPersonActor,
-	candidate: ResolvedFirstPersonMovement | null
+	candidate: ResolvedFirstPersonMovement | null,
+	jumpOffset = 0
 ): candidate is ResolvedFirstPersonMovement {
 	if (!candidate) return false;
 	return !collision || !bodyIntersectsVoxelTerrain(
 		terrain,
 		collision,
 		actor,
-		candidate.bodyPosition
+		candidate.bodyPosition,
+		jumpOffset
 	);
 }
 
@@ -381,7 +389,8 @@ export function resolveFirstPersonMovement(
 	currentH: number,
 	candidate: THREE.Vector3,
 	candidateH: number,
-	legalTilesByColumn: Map<string, LegalTile[]>
+	legalTilesByColumn: Map<string, LegalTile[]>,
+	jumpOffset = 0
 ): ResolvedFirstPersonMovement | null {
 	const fullCandidate = prepareLegalCandidate(
 		terrain,
@@ -390,9 +399,10 @@ export function resolveFirstPersonMovement(
 		candidateH,
 		currentBodyPosition,
 		currentH,
-		legalTilesByColumn
+		legalTilesByColumn,
+		jumpOffset
 	);
-	if (candidateIsClear(terrain, collision, actor, fullCandidate)) {
+	if (candidateIsClear(terrain, collision, actor, fullCandidate, jumpOffset)) {
 		return fullCandidate;
 	}
 
@@ -421,9 +431,10 @@ export function resolveFirstPersonMovement(
 			axisH,
 			nextPosition,
 			nextH,
-			legalTilesByColumn
+			legalTilesByColumn,
+			jumpOffset
 		);
-		if (!candidateIsClear(terrain, collision, actor, axisCandidate)) continue;
+		if (!candidateIsClear(terrain, collision, actor, axisCandidate, jumpOffset)) continue;
 		if (
 			sameMovementState(
 				nextPosition,
