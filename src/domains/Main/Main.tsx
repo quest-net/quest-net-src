@@ -3,6 +3,7 @@
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import ThreeDMap from "../../components/Map/3DMap";
+import FirstPersonMap from "../../components/Map/FirstPersonMap";
 import { useEffect, useRef, useState } from "react";
 import { MapStateProvider } from "../../components/Map/MapStateProvider";
 import { Inspector } from "./Inspector";
@@ -25,6 +26,7 @@ import { StickerPicker } from "../../components/Sticker/StickerPicker";
 import { SharedInventoryDisplay } from "../SharedInventory/SharedInventoryDisplay";
 
 type TopTab = "music" | "calendar" | "terrain" | "combat";
+type MapViewMode = "world" | "first-person";
 type PlayerBottomTab =
 	| "character"
 	| "equipment"
@@ -42,6 +44,8 @@ export function Main() {
 	const context = useQuestContext();
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const isDM = isDmAccess();
+	const [mapViewMode, setMapViewMode] = useState<MapViewMode>("world");
+	const [isTouchDevice, setIsTouchDevice] = useState(false);
 
 	// Top tabs state (same for everyone)
 	const [activeTopTab, setActiveTopTab] = useState<TopTab>("calendar");
@@ -57,6 +61,9 @@ export function Main() {
 	const selectedCharacter = selectedCharacterId
 		? campaign.GameState.Characters.find((c) => c.Id === selectedCharacterId)
 		: null;
+	const activeTerrain = campaign.VoxelTerrains.find(
+		(t) => t.Id === campaign.GameState.VoxelTerrainId
+	);
 
 	// Hide Shared Inventories tab when none are configured. Tracking the count
 	// (rather than the array reference) keeps the effect from firing on every
@@ -145,6 +152,20 @@ export function Main() {
 		}
 	}, [hasSharedInventories, activeBottomTab, isDM]);
 
+	useEffect(() => {
+		const query = window.matchMedia("(hover: none), (pointer: coarse)");
+		const updateIsTouchDevice = () => setIsTouchDevice(query.matches);
+		updateIsTouchDevice();
+		query.addEventListener("change", updateIsTouchDevice);
+		return () => query.removeEventListener("change", updateIsTouchDevice);
+	}, []);
+
+	useEffect(() => {
+		if (isTouchDevice && mapViewMode === "first-person") {
+			setMapViewMode("world");
+		}
+	}, [isTouchDevice, mapViewMode]);
+
 	// Handle tab changes and clear indicators
 	const handleBottomTabChange = (tab: PlayerBottomTab | DMBottomTab) => {
 		setActiveBottomTab(tab);
@@ -176,13 +197,37 @@ export function Main() {
 				{/* Left 70%: Map */}
 				<div className="flex-1 overflow-hidden relative">
 					<SceneDisplay />
-					<ThreeDMap
-						characters={campaign.GameState.Characters}
-						entities={campaign.GameState.Entities}
-						terrain={campaign.VoxelTerrains.find(
-							(t) => t.Id === campaign.GameState.VoxelTerrainId
-						)}
-					/>
+					{mapViewMode === "first-person" ? (
+						<FirstPersonMap
+							characters={campaign.GameState.Characters}
+							entities={campaign.GameState.Entities}
+							terrain={activeTerrain}
+							onExitFirstPerson={() => setMapViewMode("world")}
+						/>
+					) : (
+						<ThreeDMap
+							characters={campaign.GameState.Characters}
+							entities={campaign.GameState.Entities}
+							terrain={activeTerrain}
+						/>
+					)}
+					{mapViewMode === "world" && (
+						<div className="absolute left-3 top-3 z-20">
+							<button
+								className="btn btn-sm btn-neutral gap-2"
+								onClick={() => setMapViewMode("first-person")}
+								disabled={isTouchDevice}
+								title={
+									isTouchDevice
+										? "First-person mode is disabled on touch devices"
+										: "Enter first-person mode"
+								}
+							>
+								<span className="icon-[mdi--eye] w-4 h-4" />
+								1st person
+							</button>
+						</div>
+					)}
 					<DiceRoller />
 					{/* Sticker Picker */}
 					<div className="absolute right-2 bottom-2 z-20">

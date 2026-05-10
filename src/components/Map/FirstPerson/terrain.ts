@@ -1,0 +1,156 @@
+import { useEffect, type RefObject } from "react";
+import * as THREE from "three";
+import { acceleratedRaycast } from "three-mesh-bvh";
+import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import { createVoxelTerrainGeometry } from "../../../utils/VoxelTerrainGeometryUtils";
+import { getVoxelCount } from "../../../utils/VoxelDataUtils";
+import {
+	normalizeVoxelPaletteIndex,
+	terrainPaletteIndexToVoxelColor,
+} from "../../../utils/VoxelTerrainEditorUtils";
+import {
+	getMaxVoxelSurfaceHeight,
+	getVoxelTerrainResolution,
+} from "../../../utils/VoxelTerrainUtils";
+import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
+import {
+	THREE_D_MAP_LIGHTING,
+	THREE_D_MAP_SHADOW,
+	THREE_D_TERRAIN_MATERIAL,
+	THREE_D_TERRAIN_SURFACE_VARIATION,
+} from "../threeDMapConstants";
+
+interface TerrainRenderResources {
+	mesh: THREE.Mesh;
+	geometry: THREE.BufferGeometry;
+	material: THREE.MeshStandardMaterial;
+}
+
+function disposeTerrainResources(resources: TerrainRenderResources): void {
+	resources.geometry.boundsTree = undefined;
+	resources.geometry.dispose();
+	resources.material.dispose();
+}
+
+function deterministicSurfaceVariation(x: number, z: number): number {
+	const n = Math.sin(x * 127.1 + z * 311.7) * 43758.5453123;
+	return n - Math.floor(n);
+}
+
+function createTerrainSurfaceColor(
+	baseColor: number,
+	x: number,
+	z: number,
+	isTopFace: boolean
+): THREE.Color {
+	const color = new THREE.Color(baseColor);
+	if (!isTopFace) return color;
+
+	return color.multiplyScalar(
+		1 - deterministicSurfaceVariation(x, z) *
+			THREE_D_TERRAIN_SURFACE_VARIATION.MAX_DARKENING
+	);
+}
+
+export function createTerrainSignature(terrain?: VoxelTerrain | null): string {
+	if (!terrain) return "none";
+
+	return [
+		terrain.Id,
+		terrain.Width,
+		terrain.Length,
+		terrain.Height,
+		getVoxelTerrainResolution(terrain),
+		terrain.Voxels,
+	].join(":");
+}
+
+export function createEmptyMovementHighlight(): ThreeDSceneResources["movementHighlight"] {
+	const data = new Uint8Array(4);
+	const texture = new THREE.Data3DTexture(data, 1, 1, 1);
+	texture.format = THREE.RGBAFormat;
+	texture.type = THREE.UnsignedByteType;
+	texture.needsUpdate = true;
+	return {
+		texture,
+		data,
+		width: 1,
+		heightLevels: 1,
+		length: 1,
+	};
+}
+
+export function useFirstPersonTerrain(
+	resources: ThreeDSceneResources | null,
+	terrain: VoxelTerrain | null | undefined,
+	terrainSignature: string,
+	directionalLightRef: RefObject<THREE.DirectionalLight | null>
+): void {
+	useEffect(() => {
+		const dirLight = directionalLightRef.current;
+		if (!resources || !dirLight) return;
+
+		let terrainResources: TerrainRenderResources | null = null;
+		resources.occlusionTargets.length = 0;
+
+		if (!terrain || getVoxelCount(terrain.Voxels) === 0) {
+			return () => {
+				resources.occlusionTargets.length = 0;
+			};
+		}
+
+		const maxSurfaceHeight = getMaxVoxelSurfaceHeight(terrain);
+		const terrainCenterY = (maxSurfaceHeight - 1) / 2;
+		const terrainMaxExtent = Math.max(
+			terrain.Width,
+			terrain.Length,
+			maxSurfaceHeight
+		);
+		dirLight.position.set(
+			terrainMaxExtent * THREE_D_MAP_LIGHTING.DIRECTIONAL_POSITION_X_SCALE,
+			terrainMaxExtent * THREE_D_MAP_LIGHTING.DIRECTIONAL_POSITION_Y_SCALE +
+				maxSurfaceHeight,
+			terrainMaxExtent * THREE_D_MAP_LIGHTING.DIRECTIONAL_POSITION_Z_SCALE
+		);
+		dirLight.target.position.set(0, terrainCenterY, 0);
+		dirLight.shadow.camera.near = THREE_D_MAP_SHADOW.CAMERA_NEAR;
+		dirLight.shadow.camera.far = Math.max(
+			THREE_D_MAP_SHADOW.MIN_CAMERA_DEPTH,
+			terrainMaxExtent * 4
+		);
+		dirLight.shadow.camera.updateProjectionMatrix();
+
+		const geometry = createVoxelTerrainGeometry(
+			terrain,
+			(voxel, isTopFace) =>
+				createTerrainSurfaceColor(
+					terrainPaletteIndexToVoxelColor(
+						normalizeVoxelPaletteIndex(voxel.color)
+					),
+					voxel.x,
+					voxel.z,
+					isTopFace
+				)
+		);
+		const material = new THREE.MeshStandardMaterial({
+			roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
+			metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
+			vertexColors: true,
+		});
+		const mesh = new THREE.Mesh(geometry, material);
+		mesh.raycast = acceleratedRaycast;
+		mesh.castShadow = true;
+		mesh.receiveShadow = true;
+		resources.scene.add(mesh);
+		resources.occlusionTargets.push(mesh);
+		terrainResources = { mesh, geometry, material };
+
+		return () => {
+			resources.scene.remove(mesh);
+			resources.occlusionTargets.length = 0;
+			if (terrainResources) {
+				disposeTerrainResources(terrainResources);
+			}
+		};
+	}, [resources, terrain, terrainSignature, directionalLightRef]);
+}

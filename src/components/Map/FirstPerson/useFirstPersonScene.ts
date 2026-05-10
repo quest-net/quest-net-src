@@ -1,0 +1,233 @@
+import { useEffect, useRef, useState, type RefObject } from "react";
+import * as THREE from "three";
+import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
+import {
+	THREE_D_MAP_LIGHTING,
+	THREE_D_MAP_RENDERER,
+	THREE_D_MAP_SHADOW,
+} from "../threeDMapConstants";
+import {
+	FIRST_PERSON_CAMERA,
+	FIRST_PERSON_KEY_CODES,
+} from "./constants";
+import { createEmptyMovementHighlight } from "./terrain";
+import type { FirstPersonFrameInput } from "./types";
+
+interface FirstPersonSceneHandlers {
+	onFrame: (now: number, dt: number, input: FirstPersonFrameInput) => void;
+	onLookDelta: (movementX: number, movementY: number) => void;
+	onControlReleased: () => void;
+}
+
+interface FirstPersonSceneState {
+	sceneResources: ThreeDSceneResources | null;
+	isPointerLocked: boolean;
+	cameraRef: RefObject<THREE.PerspectiveCamera | null>;
+	directionalLightRef: RefObject<THREE.DirectionalLight | null>;
+}
+
+function isMovementKey(code: string): boolean {
+	return FIRST_PERSON_KEY_CODES.includes(
+		code as (typeof FIRST_PERSON_KEY_CODES)[number]
+	);
+}
+
+export function useFirstPersonScene(
+	containerRef: RefObject<HTMLDivElement | null>,
+	handlers: FirstPersonSceneHandlers,
+	cameraRef: RefObject<THREE.PerspectiveCamera | null>,
+	directionalLightRef: RefObject<THREE.DirectionalLight | null>
+): FirstPersonSceneState {
+	const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+	const keysRef = useRef(new Set<string>());
+	const handlersRef = useRef(handlers);
+	const [sceneResources, setSceneResources] =
+		useState<ThreeDSceneResources | null>(null);
+	const [isPointerLocked, setIsPointerLocked] = useState(false);
+
+	useEffect(() => {
+		handlersRef.current = handlers;
+	}, [handlers]);
+
+	useEffect(() => {
+		const container = containerRef.current;
+		if (!container) return;
+
+		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+		renderer.setPixelRatio(
+			Math.min(window.devicePixelRatio, THREE_D_MAP_RENDERER.MAX_PIXEL_RATIO)
+		);
+		renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
+		renderer.outputColorSpace = THREE.SRGBColorSpace;
+		renderer.shadowMap.enabled = true;
+		renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+		container.appendChild(renderer.domElement);
+		rendererRef.current = renderer;
+
+		const scene = new THREE.Scene();
+		scene.background = null;
+
+		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
+		const camera = new THREE.PerspectiveCamera(
+			FIRST_PERSON_CAMERA.FOV,
+			aspect,
+			FIRST_PERSON_CAMERA.NEAR,
+			FIRST_PERSON_CAMERA.FAR
+		);
+		camera.rotation.order = "YXZ";
+		cameraRef.current = camera;
+
+		const hemi = new THREE.HemisphereLight(
+			THREE_D_MAP_LIGHTING.HEMISPHERE_SKY_COLOR,
+			THREE_D_MAP_LIGHTING.HEMISPHERE_GROUND_COLOR,
+			Math.PI * THREE_D_MAP_LIGHTING.HEMISPHERE_INTENSITY_MULTIPLIER
+		);
+		scene.add(hemi);
+
+		const dirLight = new THREE.DirectionalLight(
+			THREE_D_MAP_LIGHTING.DIRECTIONAL_COLOR,
+			Math.PI * THREE_D_MAP_LIGHTING.DIRECTIONAL_INTENSITY_MULTIPLIER
+		);
+		dirLight.castShadow = true;
+		dirLight.shadow.mapSize.set(
+			THREE_D_MAP_SHADOW.MAP_SIZE,
+			THREE_D_MAP_SHADOW.MAP_SIZE
+		);
+		dirLight.shadow.bias = THREE_D_MAP_SHADOW.BIAS;
+		dirLight.shadow.normalBias = THREE_D_MAP_SHADOW.NORMAL_BIAS;
+		scene.add(dirLight);
+		scene.add(dirLight.target);
+		directionalLightRef.current = dirLight;
+
+		const resources: ThreeDSceneResources = {
+			scene,
+			camera,
+			domElement: renderer.domElement,
+			occlusionTargets: [],
+			movementHighlight: createEmptyMovementHighlight(),
+			animationCallbacks: new Set(),
+			actorPickTargets: [],
+			dragState: { active: false },
+		};
+		setSceneResources(resources);
+
+		let lastFrame = performance.now();
+		let rafId = 0;
+		const animate = (now: number) => {
+			rafId = requestAnimationFrame(animate);
+			const dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000));
+			lastFrame = now;
+
+			const pointerLocked = document.pointerLockElement === renderer.domElement;
+			handlersRef.current.onFrame(now, dt, {
+				pointerLocked,
+				keys: keysRef.current,
+			});
+			for (const callback of resources.animationCallbacks) {
+				callback(now);
+			}
+			renderer.render(scene, camera);
+		};
+		rafId = requestAnimationFrame(animate);
+
+		const updateCameraProjection = () => {
+			const w = container.clientWidth;
+			const h = container.clientHeight;
+			if (w === 0 || h === 0) return;
+			camera.aspect = w / h;
+			camera.updateProjectionMatrix();
+			renderer.setSize(w, h);
+		};
+
+		const releaseControl = () => {
+			keysRef.current.clear();
+			handlersRef.current.onControlReleased();
+		};
+
+		const onPointerLockChange = () => {
+			const locked = document.pointerLockElement === renderer.domElement;
+			setIsPointerLocked(locked);
+			if (!locked) {
+				releaseControl();
+			}
+		};
+
+		const onContextMenu = (event: MouseEvent) => {
+			event.preventDefault();
+		};
+
+		const onPointerDown = (event: PointerEvent) => {
+			if (event.button !== 2) return;
+			event.preventDefault();
+			renderer.domElement.requestPointerLock();
+		};
+
+		const onPointerUp = (event: PointerEvent) => {
+			if (event.button !== 2) return;
+			event.preventDefault();
+			releaseControl();
+			if (document.pointerLockElement === renderer.domElement) {
+				document.exitPointerLock();
+			}
+		};
+
+		const onMouseMove = (event: MouseEvent) => {
+			if (document.pointerLockElement !== renderer.domElement) return;
+			handlersRef.current.onLookDelta(event.movementX, event.movementY);
+		};
+
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (document.pointerLockElement !== renderer.domElement) return;
+			if (!isMovementKey(event.code)) return;
+			keysRef.current.add(event.code);
+			event.preventDefault();
+		};
+
+		const onKeyUp = (event: KeyboardEvent) => {
+			if (!isMovementKey(event.code)) return;
+			keysRef.current.delete(event.code);
+			event.preventDefault();
+		};
+
+		const ro = new ResizeObserver(updateCameraProjection);
+		ro.observe(container);
+		document.addEventListener("pointerlockchange", onPointerLockChange);
+		renderer.domElement.addEventListener("contextmenu", onContextMenu);
+		renderer.domElement.addEventListener("pointerdown", onPointerDown);
+		window.addEventListener("pointerup", onPointerUp);
+		window.addEventListener("mousemove", onMouseMove);
+		window.addEventListener("keydown", onKeyDown);
+		window.addEventListener("keyup", onKeyUp);
+
+		return () => {
+			setSceneResources(null);
+			cancelAnimationFrame(rafId);
+			ro.disconnect();
+			document.removeEventListener("pointerlockchange", onPointerLockChange);
+			renderer.domElement.removeEventListener("contextmenu", onContextMenu);
+			renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+			window.removeEventListener("pointerup", onPointerUp);
+			window.removeEventListener("mousemove", onMouseMove);
+			window.removeEventListener("keydown", onKeyDown);
+			window.removeEventListener("keyup", onKeyUp);
+			if (document.pointerLockElement === renderer.domElement) {
+				document.exitPointerLock();
+			}
+			resources.movementHighlight.texture.dispose();
+			cameraRef.current = null;
+			directionalLightRef.current = null;
+			renderer.dispose();
+			rendererRef.current = null;
+			if (renderer.domElement.parentElement === container) {
+				container.removeChild(renderer.domElement);
+			}
+		};
+	}, [containerRef, cameraRef, directionalLightRef]);
+
+	return {
+		sceneResources,
+		isPointerLocked,
+		cameraRef,
+		directionalLightRef,
+	};
+}

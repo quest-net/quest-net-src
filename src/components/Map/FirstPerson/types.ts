@@ -1,0 +1,33 @@
+import type { Character } from "../../../domains/Character/Character";
+import type { Entity } from "../../../domains/Entity/Entity";
+import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+
+export interface FirstPersonMapProps {
+	terrain?: VoxelTerrain | null;
+	characters?: Character[];
+	entities?: Entity[];
+	onExitFirstPerson?: () => void;
+}
+
+export interface FirstPersonActor {
+	id: string;
+	kind: "character" | "entity";
+	actor: Character | Entity;
+}
+
+export interface LegalTile {
+	x: number;
+	y: number;
+	h: number;
+	cost: number;
+}
+
+export type MovementOverlayState =
+	| { kind: "combat"; value: number }
+	| { kind: "exploration"; value: number }
+	| null;
+
+export interface FirstPersonFrameInput {
+	pointerLocked: boolean;
+	keys: ReadonlySet<string>;
+}
