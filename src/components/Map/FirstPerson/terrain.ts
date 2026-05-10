@@ -152,5 +152,13 @@ export function useFirstPersonTerrain(
 				disposeTerrainResources(terrainResources);
 			}
 		};
-	}, [resources, terrain, terrainSignature, directionalLightRef]);
+		// `terrain` is intentionally omitted from deps: StateSync deep-clones the
+		// campaign on every delta (fast-json-patch is called with mutateDocument=false),
+		// so the terrain object reference flips on every sync even when its contents
+		// are unchanged. Rebuilding the voxel geometry + BVH per sync costs ~300ms
+		// and stutters the first-person camera. terrainSignature is the value-equal
+		// identity (Id:W:L:H:res:Voxels) and is the only thing we actually need to
+		// react to, matching 3DMap.tsx's terrain effect.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [resources, terrainSignature, directionalLightRef]);
 }
