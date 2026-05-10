@@ -38,6 +38,19 @@ export function CampaignView() {
 		status: "loading",
 	});
 
+	// When the URL identifier changes, drop status back to "loading" before
+	// any other effect runs. Without this, status carries over as "ready"
+	// from the previous campaign, and there's a window during the new
+	// effect's pack/unpack where ActiveCampaign is null but the parent still
+	// thinks it should render <DMView/> or <PlayerView/> — both of those
+	// call usePeerTracking() unconditionally, which throws on null
+	// ActiveCampaign. Resetting here closes that window.
+	useEffect(() => {
+		setState((prev) =>
+			prev.status === "loading" ? prev : { status: "loading" }
+		);
+	}, [identifier]);
+
 	useAutoReconnect(
 		{
 			enabled: state.status === "ready", // Only auto-reconnect when we're supposed to be connected

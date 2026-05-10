@@ -1,9 +1,11 @@
 // Campaign/Index.tsx
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { triggerContextUpdate } from "../Context/ContextProvider";
 import { CampaignActions, ExportProgress } from "./CampaignActions";
+import { ContextActions } from "../Context/ContextActions";
+import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 import { useNavigate } from "react-router-dom";
 import CircularText from "../../components/CircularText/CircularText";
 import PixelBlast from "../../components/PixelBlast/PixelBlast";
@@ -22,6 +24,43 @@ export function CampaignIndex() {
 	const colors = useThemeColors("neutral", "primary");
 	const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
 	const [editRoomCode, setEditRoomCode] = useState("");
+
+	// On entry to the index, refresh the CampaignInfo for the currently
+	// active campaign from the live in-memory payload. The active campaign
+	// stays unpacked in localStorage during play (we only pack/unpack on URL
+	// switches), so without this refresh the index can show stale name /
+	// last-activity for the campaign the user just left.
+	useEffect(() => {
+		const active = context.ActiveCampaign;
+		if (!active) return;
+
+		// CampaignInfo.Id is the RoomCode for player-side entries and the
+		// secret GUID for DM-side entries. We pick the right builder by
+		// looking up which key actually exists in the list.
+		const isPlayerEntry = !!context.Campaigns.find(
+			(c) => c.Id === active.RoomCode
+		);
+		const refreshed = isPlayerEntry
+			? CampaignLoadingService.buildPlayerInfo(active)
+			: CampaignLoadingService.buildInfo(active);
+
+		const idx = context.Campaigns.findIndex((c) => c.Id === refreshed.Id);
+		if (idx === -1) return;
+
+		const cur = context.Campaigns[idx];
+		const unchanged =
+			cur.Name === refreshed.Name &&
+			cur.RoomCode === refreshed.RoomCode &&
+			cur.LastActivity === refreshed.LastActivity &&
+			cur.CharacterCount === refreshed.CharacterCount;
+		if (unchanged) return;
+
+		context.Campaigns[idx] = refreshed;
+		ContextActions.save(context);
+		triggerContextUpdate();
+		// Mount-only on purpose — this is "refresh on entry to the index".
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	const handleCreateCampaign = async () => {
 		if (!campaignName.trim()) {
@@ -399,10 +438,23 @@ export function CampaignIndex() {
 														<span className="icon-[mdi--key] w-3 h-3" />
 														{info.RoomCode}
 													</div>
-													<div className="badge badge-outline gap-1">
-														<span className="icon-[mdi--account-group] w-3 h-3" />
-														{info.CharacterCount} characters
-													</div>
+													{isGUID(info.Id) ? (
+														<div
+															className="badge badge-primary gap-1"
+															title="You are the DM of this campaign"
+														>
+															<span className="icon-[mdi--crown] w-3 h-3" />
+															DM
+														</div>
+													) : (
+														<div
+															className="badge badge-secondary gap-1"
+															title="You joined this campaign as a player"
+														>
+															<span className="icon-[mdi--sword] w-3 h-3" />
+															Player
+														</div>
+													)}
 												</div>
 
 												<div className="text-xs opacity-60 mt-2">

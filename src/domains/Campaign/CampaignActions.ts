@@ -272,8 +272,13 @@ export const CampaignActions = {
 	},
 
 	/**
-	 * Deletes a campaign by ID — removes both the CampaignInfo entry and the
-	 * stored payload in IndexedDB. Clears ActiveCampaign if it matches.
+	 * Deletes a campaign by ID — removes the CampaignInfo entry, the
+	 * stored payload in IndexedDB, AND every image binary referenced by
+	 * the campaign. Clears ActiveCampaign if it matches.
+	 *
+	 * The image cleanup runs before the payload delete so that if we crash
+	 * partway through, we'd rather leak the (small) campaign record than
+	 * leave the (potentially large) image binaries behind unreferenced.
 	 */
 	async delete(params: { campaignId: string }, context: Context): Promise<void> {
 		const index = context.Campaigns.findIndex(
@@ -285,14 +290,63 @@ export const CampaignActions = {
 			return;
 		}
 
+		// Resolve image IDs from the live ActiveCampaign if it matches, so
+		// we don't pay for an extra IDB load when deleting the current one.
+		// Otherwise we have to pull the payload to know which image binaries
+		// to free.
+		let imageIds: string[] = [];
+		const isActive =
+			!!context.ActiveCampaign &&
+			(context.ActiveCampaign.Id === params.campaignId ||
+				context.ActiveCampaign.RoomCode === params.campaignId);
+
+		if (isActive && context.ActiveCampaign) {
+			imageIds = (context.ActiveCampaign.Images ?? []).map((img) => img.Id);
+		} else {
+			try {
+				const stored = await CampaignLoadingService.loadCampaign(
+					params.campaignId,
+					context
+				);
+				if (stored) {
+					imageIds = (stored.Images ?? []).map((img) => img.Id);
+				}
+			} catch (e) {
+				// Non-fatal: we'll still proceed with the deletion below.
+				// Worst case is leaked image binaries that a future GC pass
+				// can pick up, which is the same situation we were in before
+				// this cleanup existed.
+				console.error(
+					"[CampaignActions] Failed to enumerate images for delete cleanup:",
+					e
+				);
+			}
+		}
+
+		// Drop the metadata + active-campaign reference up front so the UI
+		// reflects the deletion immediately even if the IDB cleanup below
+		// is slow.
 		context.Campaigns.splice(index, 1);
 
-		if (
-			context.ActiveCampaign &&
-			(context.ActiveCampaign.Id === params.campaignId ||
-				context.ActiveCampaign.RoomCode === params.campaignId)
-		) {
+		if (isActive) {
 			context.ActiveCampaign = null;
+		}
+
+		// Free image binaries first. We log per-failure but don't abort the
+		// rest — partial cleanup is better than no cleanup.
+		if (imageIds.length > 0) {
+			await Promise.all(
+				imageIds.map(async (id) => {
+					try {
+						await IndexedDBUtilities.remove(id);
+					} catch (e) {
+						console.error(
+							`[CampaignActions] Failed to remove image binary ${id}:`,
+							e
+						);
+					}
+				})
+			);
 		}
 
 		try {

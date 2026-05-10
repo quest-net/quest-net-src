@@ -2,6 +2,10 @@
 
 Quest-Net is a real-time collaborative TTRPG (tabletop role-playing game) manager built with React, TypeScript, and Vite. It enables a DM and players to connect peer-to-peer via Trystero (WebRTC/MQTT) and run game sessions with an isometric map, character management, combat, dice rolling, and more.
 
+## Note for Claude
+
+The sandboxed Linux shell sees a stale/truncated view of files in this repo (bash `cat`, `wc -c`, `tsc`, etc. may show files cut off mid-line, even though the actual files on disk are intact and the Read/Write/Edit tools see them correctly). This is purely a workspace-mount issue on Claude's side. Do not try to "fix" truncated files by rewriting them through bash — the source of truth is what the file tools report. Skip running `tsc`/`vite build` from the shell to verify changes; rely on the file-tool view and let the user run the build themselves.
+
 ## Tech Stack
 
 - **React 19** with **TypeScript** (strict mode) and **React Router** (HashRouter)

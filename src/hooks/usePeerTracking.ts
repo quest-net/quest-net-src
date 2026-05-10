@@ -3,7 +3,6 @@ import { useEffect } from "react";
 import { useActionService } from "../services/Actions/ActionServiceProvider";
 import { useQuestContext } from "../domains/Context/ContextProvider";
 import { User } from "../domains/User/User";
-import { CampaignActions } from "../domains/Campaign/CampaignActions";
 
 export interface PeerInfo {
 	peerId: string;
@@ -28,11 +27,17 @@ export interface PeerTrackingData {
  * Initial peer User exchange happens via the joinRoom handshake, set up
  * in `CampaignView`. Runtime updates (e.g., character selection) flow
  * through the `userUpdate` action.
+ *
+ * NOTE: Reads `context.ActiveCampaign` as nullable — during the brief
+ * navigation window between campaigns, ActiveCampaign can be null while
+ * the parent view is mid-transition. The actor-resolver helpers all
+ * gracefully degrade to "no actor" in that case rather than throwing.
  */
 export function usePeerTracking(): PeerTrackingData {
 	const { actionService } = useActionService();
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = context.ActiveCampaign;
+	const roomCode = campaign?.RoomCode;
 
 	// Re-broadcast our User whenever it changes (character selection, etc.).
 	// ActionService dedupes against the last broadcast, so calling this from
@@ -58,17 +63,19 @@ export function usePeerTracking(): PeerTrackingData {
 		peers.length === 0 ? "online" : "connected";
 
 	const getActorIdFromUserId = (userId: string): string | null => {
+		if (!roomCode) return null;
 		for (const user of peerUsersMap.values()) {
 			if (user.Id === userId) {
-				return user.SelectedCharacters[campaign.RoomCode] || null;
+				return user.SelectedCharacters[roomCode] || null;
 			}
 		}
 		return null;
 	};
 
 	const getUserIdFromActorId = (actorId: string): string | null => {
+		if (!roomCode) return null;
 		for (const user of peerUsersMap.values()) {
-			if (user.SelectedCharacters[campaign.RoomCode] === actorId) {
+			if (user.SelectedCharacters[roomCode] === actorId) {
 				return user.Id;
 			}
 		}
@@ -76,8 +83,9 @@ export function usePeerTracking(): PeerTrackingData {
 	};
 
 	const getUserFromActorId = (actorId: string): User | null => {
+		if (!roomCode) return null;
 		for (const user of peerUsersMap.values()) {
-			if (user.SelectedCharacters[campaign.RoomCode] === actorId) {
+			if (user.SelectedCharacters[roomCode] === actorId) {
 				return user;
 			}
 		}
@@ -86,7 +94,8 @@ export function usePeerTracking(): PeerTrackingData {
 
 	const canAccessActor = (actorId: string): boolean => {
 		if (context.User.Role === "dm") return true;
-		return context.User.SelectedCharacters[campaign.RoomCode] === actorId;
+		if (!roomCode) return false;
+		return context.User.SelectedCharacters[roomCode] === actorId;
 	};
 
 	return {
