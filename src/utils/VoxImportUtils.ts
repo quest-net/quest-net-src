@@ -8,7 +8,16 @@
 // Axis remapping:
 //   MagicaVoxel uses Z-up (Z = height).
 //   Quest-Net uses Y-up (Y = elevation).
-//   VOX (x, y, z)  ->  Quest-Net (x=vox_x, y=vox_z, z=vox_y)
+//   VOX (x, y, z)  ->  Quest-Net (x=vox_x, y=vox_z, z=mirrored_vox_y)
+//
+//   The VOX Y axis increases going "north" (away from the viewer in
+//   MagicaVoxel's default isometric camera which sits in the +X/-Y/+Z
+//   octant).  Three.js positive Z points toward the camera (south), so
+//   the two axes are antiparallel.  Without a mirror the imported model
+//   appears flipped front-to-back.  We apply:
+//     Quest-Net z = (SIZE.y - 1) - VOX y
+//   which preserves the extent (terrain.Length = SIZE.y) while correcting
+//   the orientation.
 //
 // Chunk walking strategy:
 //   Unknown chunks are skipped including their children
@@ -173,15 +182,18 @@ export function parseVoxFile(buffer: ArrayBuffer): VoxParseResult {
 
 		} else if (id === "XYZI" && size !== null && rawData === null) {
 			// 4 bytes: num_voxels, then num_voxels * 4 bytes of [x, y, z, i] quads.
-			// We remap axes here: VOX(x,y,z) -> Quest-Net(x, elevation=z, depth=y).
+			// We remap axes here: VOX(x,y,z) -> Quest-Net(x, elevation=z, depth=mirrored_y).
+			// The VOX Y axis is mirrored (see comment at top of file) so that the
+			// model's front face stays front-facing after import.
 			const numVoxels = view.getUint32(offset, true);
 			const remapped = new Uint8Array(numVoxels * 4);
+			const sizeY = size.y; // captured for mirror calculation below
 			for (let i = 0; i < numVoxels; i++) {
 				const base = contentStart + 4 + i * 4;
-				remapped[i * 4]     = view.getUint8(base);     // Quest-Net x  <- VOX x
-				remapped[i * 4 + 1] = view.getUint8(base + 2); // Quest-Net y  <- VOX z (elevation)
-				remapped[i * 4 + 2] = view.getUint8(base + 1); // Quest-Net z  <- VOX y (depth)
-				remapped[i * 4 + 3] = view.getUint8(base + 3); // color index unchanged
+				remapped[i * 4]     = view.getUint8(base);                         // Quest-Net x  <- VOX x
+				remapped[i * 4 + 1] = view.getUint8(base + 2);                     // Quest-Net y  <- VOX z (elevation)
+				remapped[i * 4 + 2] = sizeY - 1 - view.getUint8(base + 1);        // Quest-Net z  <- mirrored VOX y
+				remapped[i * 4 + 3] = view.getUint8(base + 3);                     // color index unchanged
 			}
 			rawData = remapped;
 			offset += contentSize;

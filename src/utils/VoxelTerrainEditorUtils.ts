@@ -49,21 +49,58 @@ function numberToHex(color: number): string {
 	return `#${(color & 0xffffff).toString(16).padStart(6, "0")}`;
 }
 
+// ---------------------------------------------------------------------------
+// OKLab perceptual color distance
+// ---------------------------------------------------------------------------
+// Euclidean RGB distance gives poor results when matching natural/desaturated
+// colors (e.g. olive greens, warm browns) against a palette generated in
+// OKLCh space, because the palette colors are "pure" in each hue direction
+// while real-world colors have mixed RGB channels.  A grey can end up closer
+// to an olive green than the correct green palette entry in raw RGB space.
+//
+// OKLab distance correlates with how humans actually perceive color difference,
+// so the nearest-neighbor search returns the right hue bucket instead of grey.
+// ---------------------------------------------------------------------------
+
+function srgbChannelToLinear(c: number): number {
+	const v = c / 255;
+	return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+}
+
+function rgbToOklab(r: number, g: number, b: number): [number, number, number] {
+	const rl = srgbChannelToLinear(r);
+	const gl = srgbChannelToLinear(g);
+	const bl = srgbChannelToLinear(b);
+
+	const l = Math.cbrt(0.4122214708 * rl + 0.5363325363 * gl + 0.0514459929 * bl);
+	const m = Math.cbrt(0.2119034982 * rl + 0.6806995451 * gl + 0.1073969566 * bl);
+	const s = Math.cbrt(0.0883024619 * rl + 0.2817188376 * gl + 0.6299787005 * bl);
+
+	return [
+		0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+		1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+		0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+	];
+}
+
 export function terrainPaletteIndexToVoxelColor(index: number): number {
 	return parseInt(getTerrainColorByIndex(index).slice(1), 16);
 }
 
 export function voxelColorToTerrainPaletteIndex(color: number): number {
-	const rgb = hexToRgb(numberToHex(color));
+	const { r, g, b } = hexToRgb(numberToHex(color));
+	const [L1, a1, b1] = rgbToOklab(r, g, b);
+
 	let bestIndex = DEFAULT_TERRAIN_COLOR_INDEX;
 	let bestDistance = Infinity;
 
 	for (let index = 0; index < TERRAIN_PALETTE.length; index++) {
 		const candidate = hexToRgb(TERRAIN_PALETTE[index]);
-		const dr = rgb.r - candidate.r;
-		const dg = rgb.g - candidate.g;
-		const db = rgb.b - candidate.b;
-		const distance = dr * dr + dg * dg + db * db;
+		const [L2, a2, b2] = rgbToOklab(candidate.r, candidate.g, candidate.b);
+		const dL = L1 - L2;
+		const da = a1 - a2;
+		const db = b1 - b2;
+		const distance = dL * dL + da * da + db * db;
 
 		if (distance < bestDistance) {
 			bestDistance = distance;
