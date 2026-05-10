@@ -88,7 +88,7 @@ export const ScenarioActions = {
      * Loads a scenario, replacing current game state configuration
      * Clears entities, spawns from placements, relocates characters
      */
-    load(params: { scenarioId: string }, context: Context): void {
+    async load(params: { scenarioId: string }, context: Context): Promise<void> {
         const campaign = CampaignActions.getActiveCampaign(context);
         const scenario = campaign.Scenarios.find((s) => s.Id === params.scenarioId);
 
@@ -103,7 +103,7 @@ export const ScenarioActions = {
             (t) => t.Id === scenario.TerrainId
         );
         if (terrainExists) {
-            VoxelTerrainActions.setActive({ terrainId: scenario.TerrainId }, context);
+            await VoxelTerrainActions.setActive({ terrainId: scenario.TerrainId }, context);
         }
 
         // 2. Clear existing entities

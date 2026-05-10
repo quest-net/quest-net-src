@@ -1,12 +1,13 @@
 // utils/IndexedDBUtilities.ts
 const DB_NAME = "quest-net-db";
-// Bumped to 3 to add the "campaigns" object store. IndexedDB cannot open a
+// Bumped to 4 to add the "voxelTerrains" object store. IndexedDB cannot open a
 // later version DB as an earlier one, so older builds with v2 will still see
 // their original "images" store after this upgrade — we just add another
 // store alongside it.
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE_NAME = "images";
 export const CAMPAIGNS_STORE_NAME = "campaigns";
+export const VOXEL_TERRAINS_STORE_NAME = "voxelTerrains";
 
 /**
  * Generic utilities for IndexedDB operations
@@ -61,6 +62,11 @@ export class IndexedDBUtilities {
 				// Create object store for full Campaign payloads
 				if (!db.objectStoreNames.contains(CAMPAIGNS_STORE_NAME)) {
 					db.createObjectStore(CAMPAIGNS_STORE_NAME, { keyPath: "Id" });
+				}
+
+				// Create object store for voxel terrain payloads
+				if (!db.objectStoreNames.contains(VOXEL_TERRAINS_STORE_NAME)) {
+					db.createObjectStore(VOXEL_TERRAINS_STORE_NAME, { keyPath: "Key" });
 				}
 			};
 		});

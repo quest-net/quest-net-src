@@ -240,6 +240,7 @@ export function createFlatVoxelTerrain(params: {
 		Height: maxHeight,
 		Resolution: 1,
 		Voxels: encodeVoxels(voxels),
+		VoxelsLoaded: true,
 		Tags: params.tags,
 	};
 }

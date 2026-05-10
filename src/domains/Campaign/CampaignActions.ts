@@ -9,6 +9,7 @@ import { APP_VERSION, type VersionString } from "../../version";
 import { runMigrations } from "../../updates/migrator";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
+import { TerrainStorageService } from "../../services/TerrainStorageService";
 
 
 /**
@@ -48,6 +49,7 @@ function generateRoomCode(): string {
  */
 function createBlankCampaign(name: string, roomCode?: string): Campaign {
 	const defaultVoxelTerrain = VoxelTerrainActions.createDefault();
+	defaultVoxelTerrain.VoxelsLoaded = true;
 
 	return {
 		Id: crypto.randomUUID(),
@@ -355,6 +357,12 @@ export const CampaignActions = {
 			console.error("[CampaignActions] Failed to delete campaign payload:", e);
 		}
 
+		try {
+			await TerrainStorageService.deleteCampaignTerrains(params.campaignId);
+		} catch (e) {
+			console.error("[CampaignActions] Failed to delete terrain payloads:", e);
+		}
+
 		ContextActions.save(context);
 	},
 
@@ -446,6 +454,8 @@ export const CampaignActions = {
 			);
 			return;
 		}
+
+		campaign = await TerrainStorageService.hydrateAllTerrains(campaign);
 
 		try {
 			onProgress?.({
@@ -575,6 +585,10 @@ export const CampaignActions = {
 
 			// Generate new ID to avoid conflicts
 			campaign.Id = crypto.randomUUID();
+			for (const terrain of campaign.VoxelTerrains ?? []) {
+				delete terrain.VoxelStorageKey;
+				terrain.VoxelsLoaded = true;
+			}
 
 			// Ensure room code is unique against existing CampaignInfos
 			const existingRoomCodes = context.Campaigns.map((c) => c.RoomCode);

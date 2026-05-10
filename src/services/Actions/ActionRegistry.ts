@@ -28,7 +28,7 @@ import { StickerActions } from "../../domains/Sticker/StickerActions";
 // etc.
 
 export type Role = "dm" | "player";
-type ActionHandler = (params: any, context: Context) => void;
+type ActionHandler = (params: any, context: Context) => void | Promise<void>;
 
 interface ActionDefinition {
 	roles: Role[];
@@ -457,7 +457,7 @@ export function getActionsForRole(role: Role): string[] {
  */
 function registerDomain(
 	domain: string,
-	actions: Record<string, ActionHandler>,
+	actions: Record<string, any>,
 	roles: Role[]
 ) {
 	const registered: Record<string, ActionDefinition> = {};

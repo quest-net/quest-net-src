@@ -38,6 +38,10 @@ export interface VoxelTerrain {
 	Length: number;      // Z extent in tactical units
 	Height: number;      // Y extent in tactical units
 	Resolution?: number; // voxels per tactical unit; defaults to 1 for older saves
-	Voxels: string;      // base64-encoded sorted Uint32Array (see VoxelDataUtils)
+	Voxels: string;      // base64-encoded sorted Uint32Array when loaded (see VoxelDataUtils)
+	VoxelsLoaded?: boolean;
+	VoxelStorageKey?: string;
+	VoxelCount?: number;
+	PreviewColor?: string;
 	Tags?: string[];
 }

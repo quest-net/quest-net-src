@@ -12,6 +12,7 @@ import { RoomActions } from "../../domains/Room/RoomActions";
 import { LogActions } from "../../domains/Log/LogActions";
 import { User } from "../../domains/User/User";
 import { CampaignLoadingService } from "../CampaignLoadingService";
+import { TerrainStorageService } from "../TerrainStorageService";
 
 const PING_INTERVAL_MS = 3000;
 const PEER_RECONCILE_INTERVAL_MS = 2000;
@@ -149,44 +150,48 @@ export class ActionService {
 			// replaced with the public RoomCode — that's the key we use to
 			// match against the player's CampaignInfo entries.
 			this.stateSync.onUpdate((campaign) => {
-				// ISOLATION: clone so the UI can mutate optimistically without
-				// polluting StateSync's internal baseline.
-				const isolatedCampaign = structuredClone(campaign);
-				const refreshedInfo =
-					CampaignLoadingService.buildPlayerInfo(isolatedCampaign);
-
-				// Use the mutator form of triggerContextUpdate so that
-				// reassigning the top-level ActiveCampaign field lands on the
-				// live React state rather than the stale context object we
-				// captured at construction. Inner-array mutations (Campaigns
-				// upsert) are visible everywhere via shallow-spread, but
-				// they're cleaner inside the same mutator.
-				const applyUpdate = () => {
-					if (this.onFirstUpdateCallback) {
-						this.onFirstUpdateCallback();
-						this.onFirstUpdateCallback = undefined;
-					}
-				};
-
-				triggerContextUpdate((ctx) => {
-					ctx.ActiveCampaign = isolatedCampaign;
-
-					const idx = ctx.Campaigns.findIndex(
-						(c) => c.Id === refreshedInfo.Id
-					);
-					if (idx !== -1) {
-						ctx.Campaigns[idx] = refreshedInfo;
-					} else {
-						ctx.Campaigns.push(refreshedInfo);
-					}
+				void this.applyPlayerStateUpdate(campaign).catch((error) => {
+					console.error("[ActionService] Error applying player state:", error);
 				});
-
-				// Resolve the first-update promise after the React update has
-				// been queued so CampaignView's setState({ status: "ready" })
-				// batches with our setContext.
-				applyUpdate();
 			});
 		}
+	}
+
+	private async applyPlayerStateUpdate(campaign: Campaign): Promise<void> {
+		// ISOLATION: clone so the UI can mutate optimistically without
+		// polluting StateSync's internal baseline.
+		const isolatedCampaign = structuredClone(campaign);
+		await TerrainStorageService.prepareCampaignAfterLoad(isolatedCampaign);
+		const refreshedInfo =
+			CampaignLoadingService.buildPlayerInfo(isolatedCampaign);
+
+		// Use the mutator form of triggerContextUpdate so that reassigning the
+		// top-level ActiveCampaign field lands on the live React state rather
+		// than the stale context object we captured at construction.
+		const applyUpdate = () => {
+			if (this.onFirstUpdateCallback) {
+				this.onFirstUpdateCallback();
+				this.onFirstUpdateCallback = undefined;
+			}
+		};
+
+		triggerContextUpdate((ctx) => {
+			ctx.ActiveCampaign = isolatedCampaign;
+
+			const idx = ctx.Campaigns.findIndex(
+				(c) => c.Id === refreshedInfo.Id
+			);
+			if (idx !== -1) {
+				ctx.Campaigns[idx] = refreshedInfo;
+			} else {
+				ctx.Campaigns.push(refreshedInfo);
+			}
+		});
+
+		// Resolve the first-update promise after the React update has been
+		// queued so CampaignView's setState({ status: "ready" }) batches with
+		// our setContext.
+		applyUpdate();
 	}
 
 	private setupPeerHandlers() {
@@ -198,7 +203,9 @@ export class ActionService {
 				const isSecret = this.context.SecretModes?.[campaign.Id];
 				if (!isSecret) {
 					// Force full state for new peer
-					this.stateSync.broadcastFull(campaign);
+					void TerrainStorageService.packInactiveTerrains(campaign).then(() => {
+						this.stateSync.broadcastFull(campaign);
+					});
 				}
 			}
 
@@ -304,6 +311,12 @@ export class ActionService {
 	 * Main entry point for executing actions
 	 */
 	execute(actionKey: string, params: any): void {
+		void this.executeAsync(actionKey, params).catch((error) => {
+			console.error(`[ActionService] Error executing ${actionKey}:`, error);
+		});
+	}
+
+	private async executeAsync(actionKey: string, params: any): Promise<void> {
 		// Permission check
 		if (!canPerformAction(this.context.User, actionKey)) {
 			console.warn(
@@ -314,22 +327,23 @@ export class ActionService {
 
 		// Route based on role
 		if (this.context.User.Role === "dm") {
-			this.executeDM(actionKey, params);
+			await this.executeDM(actionKey, params);
 		} else {
-			this.executePlayer(actionKey, params);
+			await this.executePlayer(actionKey, params);
 		}
 	}
 
 	/**
 	 * DM executes action directly and broadcasts result
 	 */
-	private executeDM(actionKey: string, params: any): void {
+	private async executeDM(actionKey: string, params: any): Promise<void> {
 
 		// Execute the domain action (modifies Context/Campaign)
-		this.runDomainAction(actionKey, params);
+		await this.runDomainAction(actionKey, params);
 
 		// Broadcast updated campaign to all players
 		const campaign = CampaignActions.getActiveCampaign(this.context);
+		await TerrainStorageService.packInactiveTerrains(campaign);
 
 		this.bumpMapRefs(campaign);
 
@@ -344,7 +358,7 @@ export class ActionService {
 	/**
 	 * Player sends action request to DM
 	 */
-	private executePlayer(actionKey: string, params: any): void {
+	private async executePlayer(actionKey: string, params: any): Promise<void> {
 
 		// Check for connection before allowing any action
 		if (!RoomActions.hasConnectedPeers(this.room)) {
@@ -355,8 +369,9 @@ export class ActionService {
 		// OPTIMISTIC UPDATE: Run locally first
 		try {
 			this.context.IsOptimistic = true;
-			this.runDomainAction(actionKey, params);
+			await this.runDomainAction(actionKey, params);
 			const campaign = CampaignActions.getActiveCampaign(this.context);
+			await TerrainStorageService.packInactiveTerrains(campaign);
 			this.bumpMapRefs(campaign);
 			triggerContextUpdate();
 		} catch (error) {
@@ -378,6 +393,10 @@ export class ActionService {
 	 * DM receives and processes player action requests
 	 */
 	private handlePlayerRequest(data: any, peerId?: string) {
+		void this.handlePlayerRequestAsync(data, peerId);
+	}
+
+	private async handlePlayerRequestAsync(data: any, peerId?: string): Promise<void> {
 		// While the DM is in secret mode, drop player requests on the floor.
 		// Applying them would corrupt the prep state (e.g. a move request
 		// scoped to the player's stale terrain). The full sync that fires when
@@ -402,7 +421,7 @@ export class ActionService {
 			const originalUser = this.context.User;
 			try {
 				this.context.User = requestingUser;
-				this.runDomainAction(data.actionKey, data.params);
+				await this.runDomainAction(data.actionKey, data.params);
 			} finally {
 				this.context.User = originalUser;
 			}
@@ -413,6 +432,7 @@ export class ActionService {
 
 		// Broadcast updated campaign to all players
 		const campaign = CampaignActions.getActiveCampaign(this.context);
+		await TerrainStorageService.packInactiveTerrains(campaign);
 
 		this.bumpMapRefs(campaign);
 
@@ -438,7 +458,7 @@ export class ActionService {
 	/**
 	 * Executes a domain action by looking up its handler in the registry
 	 */
-	private runDomainAction(actionKey: string, params: any): void {
+	private async runDomainAction(actionKey: string, params: any): Promise<void> {
 		const action = ACTION_REGISTRY[actionKey];
 
 		if (!action) {
@@ -447,7 +467,7 @@ export class ActionService {
 		}
 
 		try {
-			action.handler(params, this.context);
+			await action.handler(params, this.context);
 		} catch (error) {
 			console.error(`[ActionService] Error executing ${actionKey}:`, error);
 			throw error;
@@ -458,8 +478,13 @@ export class ActionService {
 	 * Forces a full sync broadcast to all players (used when turning off secret mode)
 	 */
 	public forceSync(): void {
+		void this.forceSyncAsync();
+	}
+
+	private async forceSyncAsync(): Promise<void> {
 		if (this.context.User.Role === "dm") {
 			const campaign = CampaignActions.getActiveCampaign(this.context);
+			await TerrainStorageService.packInactiveTerrains(campaign);
 			this.bumpMapRefs(campaign);
 			this.stateSync.broadcastFull(campaign);
 		}

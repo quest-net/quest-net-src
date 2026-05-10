@@ -8,6 +8,7 @@ import { runMigrations } from "../../updates/migrator";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 import type { Campaign } from "../Campaign/Campaign";
 import type { CampaignInfo } from "../Campaign/CampaignInfo";
+import { TerrainStorageService } from "../../services/TerrainStorageService";
 
 const STORAGE_KEY = "quest-net-context";
 const BACKUP_PREFIX = `${STORAGE_KEY}-backup`;
@@ -110,8 +111,20 @@ export const ContextActions = {
 				await CampaignLoadingService.migrateStoredCampaigns(migrated);
 			}
 
+			const didPrepareActiveCampaign = !!migrated.ActiveCampaign;
+			if (migrated.ActiveCampaign) {
+				await TerrainStorageService.prepareCampaignAfterLoad(
+					migrated.ActiveCampaign
+				);
+			}
+
 			// If migration changed version OR we reshaped, persist
-			if (didMigrateContext || didReshape || hasOutdatedCampaignInfo) {
+			if (
+				didMigrateContext ||
+				didReshape ||
+				hasOutdatedCampaignInfo ||
+				didPrepareActiveCampaign
+			) {
 				this.save(migrated);
 			}
 

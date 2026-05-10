@@ -6,6 +6,7 @@ import { getMostCommonVoxelTerrainColor } from "../../utils/VoxelTerrainEditorUt
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { useQuestContext } from "../Context/ContextProvider";
 import { TerrainEdit } from "./Edit";
+import { TerrainStorageService } from "../../services/TerrainStorageService";
 
 export function TerrainIndex() {
 	const context = useQuestContext();
@@ -41,9 +42,11 @@ export function TerrainIndex() {
 		return {
 			id: terrain.Id,
 			label: terrain.Name,
-			details: `${terrain.Width}x${terrain.Length}${isActive ? " - Active" : ""}`,
+			details: `${terrain.Width}x${terrain.Length}${terrain.VoxelCount !== undefined ? ` - ${terrain.VoxelCount.toLocaleString()} voxels` : ""}${isActive ? " - Active" : ""}`,
 			icon: "icon-[mdi--terrain]",
-			iconColor: getMostCommonVoxelTerrainColor(terrain),
+			iconColor: TerrainStorageService.isHydrated(terrain)
+				? getMostCommonVoxelTerrainColor(terrain)
+				: terrain.PreviewColor,
 			tags: terrain.Tags || [],
 			action: isActive
 				? undefined

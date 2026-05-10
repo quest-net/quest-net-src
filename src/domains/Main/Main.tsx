@@ -24,6 +24,7 @@ import { CombatDisplay } from "../Combat/CombatDisplay";
 import { StatusCollection } from "../Status/Collection";
 import { StickerPicker } from "../../components/Sticker/StickerPicker";
 import { SharedInventoryDisplay } from "../SharedInventory/SharedInventoryDisplay";
+import { TerrainStorageService } from "../../services/TerrainStorageService";
 
 type TopTab = "music" | "calendar" | "terrain" | "combat";
 type MapViewMode = "world" | "first-person";
@@ -64,6 +65,10 @@ export function Main() {
 	const activeTerrain = campaign.VoxelTerrains.find(
 		(t) => t.Id === campaign.GameState.VoxelTerrainId
 	);
+	const hydratedActiveTerrain =
+		activeTerrain && TerrainStorageService.isHydrated(activeTerrain)
+			? activeTerrain
+			: undefined;
 
 	// Hide Shared Inventories tab when none are configured. Tracking the count
 	// (rather than the array reference) keeps the effect from firing on every
@@ -201,15 +206,23 @@ export function Main() {
 						<FirstPersonMap
 							characters={campaign.GameState.Characters}
 							entities={campaign.GameState.Entities}
-							terrain={activeTerrain}
+							terrain={hydratedActiveTerrain}
 							onExitFirstPerson={() => setMapViewMode("world")}
 						/>
 					) : (
 						<ThreeDMap
 							characters={campaign.GameState.Characters}
 							entities={campaign.GameState.Entities}
-							terrain={activeTerrain}
+							terrain={hydratedActiveTerrain}
 						/>
+					)}
+					{activeTerrain && !hydratedActiveTerrain && (
+						<div className="absolute inset-0 z-30 flex items-center justify-center bg-base-200/80">
+							<div className="flex items-center gap-3 rounded bg-base-100 px-4 py-3 shadow">
+								<span className="loading loading-spinner loading-sm" />
+								<span>Loading terrain...</span>
+							</div>
+						</div>
 					)}
 					{mapViewMode === "world" && (
 						<div className="absolute left-3 top-3 z-20">

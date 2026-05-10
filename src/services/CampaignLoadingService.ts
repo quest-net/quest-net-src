@@ -9,6 +9,7 @@ import type { CampaignInfo } from "../domains/Campaign/CampaignInfo";
 import { APP_VERSION, type VersionString } from "../version";
 import { runMigrations } from "../updates/migrator";
 import type { Context } from "../domains/Context/Context";
+import { TerrainStorageService } from "./TerrainStorageService";
 
 /**
  * CampaignLoadingService
@@ -29,6 +30,7 @@ export class CampaignLoadingService {
 	 * version on the stored record so future schema migrations can find it.
 	 */
 	static async saveCampaign(campaign: Campaign): Promise<void> {
+		await TerrainStorageService.prepareCampaignForStorage(campaign);
 		const db = await IndexedDBUtilities.getDB();
 
 		const record = {
@@ -107,6 +109,8 @@ export class CampaignLoadingService {
 			// Persist the migrated version so we don't pay this cost again.
 			await this.saveCampaign(campaign);
 		}
+
+		await TerrainStorageService.prepareCampaignAfterLoad(campaign);
 
 		return campaign;
 	}

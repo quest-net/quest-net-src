@@ -70,6 +70,11 @@ export class StateSync {
 		const sanitized = structuredClone(campaign);
 		// Replace secret Campaign ID with room code so players can identify it
 		sanitized.Id = campaign.RoomCode;
+		for (const terrain of sanitized.VoxelTerrains ?? []) {
+			if (terrain.VoxelStorageKey) {
+				terrain.VoxelStorageKey = `${sanitized.Id}:${terrain.Id}`;
+			}
+		}
 		return sanitized;
 	}
 

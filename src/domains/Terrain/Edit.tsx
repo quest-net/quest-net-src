@@ -8,6 +8,7 @@ import VoxelTerrainEditor, { type ActorOverlayInfo } from "../../components/inpu
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import type { VoxelTerrain } from "../VoxelTerrain/VoxelTerrain";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
+import { TerrainStorageService } from "../../services/TerrainStorageService";
 import {
 	MAX_VOXEL_TERRAIN_HEIGHT,
 	MAX_VOXEL_TERRAIN_WIDTH,
@@ -43,15 +44,87 @@ export function TerrainEdit({
 	onClose,
 }: TerrainEditProps) {
 	const { actionService } = useActionService();
+	const questContext = useQuestContext();
+	const campaign = questContext.ActiveCampaign;
+	const [loadedTerrain, setLoadedTerrain] = useState<VoxelTerrain | undefined>(
+		() =>
+			terrain && TerrainStorageService.isHydrated(terrain)
+				? { ...terrain }
+				: undefined
+	);
+	const [loadError, setLoadError] = useState<string | null>(null);
 
-	const initialData: VoxelTerrain = terrain
+	useEffect(() => {
+		if (!terrain) {
+			setLoadedTerrain(undefined);
+			setLoadError(null);
+			return;
+		}
+
+		let isMounted = true;
+		setLoadError(null);
+
+		if (TerrainStorageService.isHydrated(terrain)) {
+			setLoadedTerrain({ ...terrain });
+			return;
+		}
+
+		if (!campaign) {
+			setLoadError("Campaign not loaded");
+			return;
+		}
+
+		setLoadedTerrain(undefined);
+		TerrainStorageService.loadTerrainForEditing(campaign, terrain)
+			.then((hydrated) => {
+				if (!isMounted) return;
+				if (!hydrated) {
+					setLoadError("Terrain voxel data was not found in storage.");
+					return;
+				}
+				setLoadedTerrain(hydrated);
+			})
+			.catch((error) => {
+				console.error("[TerrainEdit] Failed to load terrain:", error);
+				if (isMounted) {
+					setLoadError("Failed to load terrain voxel data.");
+				}
+			});
+
+		return () => {
+			isMounted = false;
+		};
+	}, [campaign, terrain]);
+
+	if (terrain && loadError) {
+		return (
+			<div className="p-6 text-error">
+				<p>{loadError}</p>
+			</div>
+		);
+	}
+
+	if (terrain && !loadedTerrain) {
+		return (
+			<div className="p-6 flex items-center gap-3">
+				<span className="loading loading-spinner loading-sm" />
+				<span>Loading terrain...</span>
+			</div>
+		);
+	}
+
+	const terrainData = loadedTerrain;
+
+	const initialData: VoxelTerrain = terrainData
 		? {
-			...terrain,
-			Voxels: terrain.Voxels,
-			Tags: initialTags ?? terrain.Tags,
+			...terrainData,
+			Voxels: terrainData.Voxels,
+			VoxelsLoaded: true,
+			Tags: initialTags ?? terrainData.Tags,
 		}
 		: {
 			...VoxelTerrainActions.createNew(),
+			VoxelsLoaded: true,
 			Tags: initialTags,
 		};
 
@@ -75,6 +148,10 @@ export function TerrainEdit({
 			Id: crypto.randomUUID(),
 			Name: `${data.Name} (Copy)`,
 			Voxels: data.Voxels,
+			VoxelsLoaded: true,
+			VoxelStorageKey: undefined,
+			VoxelCount: undefined,
+			PreviewColor: undefined,
 			Tags: data.Tags ? [...data.Tags] : undefined,
 		};
 		actionService.execute("terrain:create", { terrain: cloned });

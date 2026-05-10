@@ -14,6 +14,7 @@ import {
 } from "../../utils/VoxelTerrainUtils";
 import { createFlatVoxelTerrain } from "../../utils/VoxelTerrainEditorUtils";
 import type { VoxelTerrain } from "./VoxelTerrain";
+import { TerrainStorageService } from "../../services/TerrainStorageService";
 
 function getCenterTile(terrain: VoxelTerrain): { x: number; y: number } {
 	return {
@@ -164,7 +165,7 @@ export const VoxelTerrainActions = {
 		VoxelTerrainActions.validateActors(context);
 	},
 
-	delete(params: { terrainId: string }, context: Context): void {
+	async delete(params: { terrainId: string }, context: Context): Promise<void> {
 		const campaign = CampaignActions.getActiveCampaign(context);
 		const index = campaign.VoxelTerrains.findIndex((t) => t.Id === params.terrainId);
 		if (index === -1) {
@@ -179,6 +180,7 @@ export const VoxelTerrainActions = {
 
 		const terrain = campaign.VoxelTerrains[index];
 		campaign.VoxelTerrains.splice(index, 1);
+		await TerrainStorageService.deleteTerrain(campaign, terrain);
 
 		LogActions.create(
 			{
@@ -192,7 +194,10 @@ export const VoxelTerrainActions = {
 		);
 	},
 
-	setActive(params: { terrainId: string | undefined }, context: Context): void {
+	async setActive(
+		params: { terrainId: string | undefined },
+		context: Context
+	): Promise<void> {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
 		if (!params.terrainId) {
@@ -204,13 +209,17 @@ export const VoxelTerrainActions = {
 			params.terrainId = fallback.Id;
 		}
 
-		const terrain = campaign.VoxelTerrains.find((t) => t.Id === params.terrainId);
+		const terrain = await TerrainStorageService.hydrateTerrain(
+			campaign,
+			params.terrainId
+		);
 		if (!terrain) {
 			console.warn(`Voxel terrain not found: ${params.terrainId}`);
 			return;
 		}
 
 		campaign.GameState.VoxelTerrainId = terrain.Id;
+		await TerrainStorageService.packInactiveTerrains(campaign);
 
 		LogActions.create(
 			{
