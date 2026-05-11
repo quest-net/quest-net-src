@@ -6,10 +6,10 @@ import {
 } from "../utils/IndexedDBUtilities";
 import type { Campaign } from "../domains/Campaign/Campaign";
 import type { CampaignInfo } from "../domains/Campaign/CampaignInfo";
-import { APP_VERSION, type VersionString } from "../version";
-import { runMigrations } from "../updates/migrator";
-import type { Context } from "../domains/Context/Context";
+import { APP_VERSION } from "../version";
 import { TerrainStorageService } from "./TerrainStorageService";
+import { runMigrations } from "../migrations/runMigrations";
+import { campaignMigrations } from "../migrations/campaignMigrations";
 
 /**
  * CampaignLoadingService
@@ -64,12 +64,12 @@ export class CampaignLoadingService {
 	 *
 	 * Returns null if no campaign is stored under that id.
 	 */
-	static async loadCampaign(id: string, context: Context): Promise<Campaign | null> {
+	static async loadCampaign(id: string): Promise<Campaign | null> {
 		const db = await IndexedDBUtilities.getDB();
 
 		const record = await new Promise<{
 			Id: string;
-			Version: VersionString;
+			Version: string;
 			Campaign: Campaign;
 		} | null>((resolve, reject) => {
 			const transaction = db.transaction([CAMPAIGNS_STORE_NAME], "readonly");
@@ -88,25 +88,17 @@ export class CampaignLoadingService {
 
 		if (!record) return null;
 
-		const storedVersion = record.Version ?? APP_VERSION;
+		const storedVersion = record.Version ?? "0.0.0";
 		let campaign = record.Campaign;
 
-		// Run schema migrations if the stored payload is older than the app.
-		// Wrap it in a temporary single-campaign Context so the existing
-		// migrator (which iterates context.Campaigns) keeps working unchanged.
+		// Run schema migrations if the stored record is older than APP_VERSION.
+		// Write the migrated payload back so each campaign is only migrated once.
 		if (storedVersion !== APP_VERSION) {
-			const tempContext = {
-				User: structuredClone(context.User),
-				Campaigns: [structuredClone(campaign)] as unknown as Campaign[],
-				ActiveCampaign: null,
-				AppSettings: structuredClone(context.AppSettings),
-				version: storedVersion,
-			} as unknown as Context;
-
-			const migrated = runMigrations(tempContext, APP_VERSION);
-			campaign = (migrated.Campaigns as unknown as Campaign[])[0];
-
-			// Persist the migrated version so we don't pay this cost again.
+			campaign = (await runMigrations(
+				campaign,
+				storedVersion,
+				campaignMigrations
+			)) as Campaign;
 			await this.saveCampaign(campaign);
 		}
 
@@ -151,35 +143,6 @@ export class CampaignLoadingService {
 			request.onsuccess = () => resolve(request.result as string[]);
 			request.onerror = () => reject(request.error);
 		});
-	}
-
-	/**
-	 * Migrates every stored Campaign payload in IndexedDB to APP_VERSION.
-	 * Used by ContextActions.load() after the synchronous context migration has
-	 * advanced the lightweight localStorage record.
-	 */
-	static async migrateStoredCampaigns(context: Context): Promise<void> {
-		const ids = await this.listCampaignIds();
-
-		for (const id of ids) {
-			try {
-				const campaign = await this.loadCampaign(id, context);
-				if (!campaign) continue;
-
-				const index = context.Campaigns.findIndex((info) => info.Id === id);
-				if (index === -1) continue;
-
-				context.Campaigns[index] =
-					id === campaign.RoomCode
-						? this.buildPlayerInfo(campaign)
-						: this.buildInfo(campaign);
-			} catch (error) {
-				console.error(
-					`[CampaignLoadingService] Failed to migrate stored campaign: ${id}`,
-					error
-				);
-			}
-		}
 	}
 
 	/**

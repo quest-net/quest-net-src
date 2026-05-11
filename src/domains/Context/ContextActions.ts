@@ -4,11 +4,13 @@ import { Context } from "./Context";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import { UserActions } from "../User/UserActions";
 import { APP_VERSION } from "../../version";
-import { runMigrations } from "../../updates/migrator";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 import type { Campaign } from "../Campaign/Campaign";
 import type { CampaignInfo } from "../Campaign/CampaignInfo";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
+import { runMigrations } from "../../migrations/runMigrations";
+import { contextMigrations } from "../../migrations/contextMigrations";
+import { campaignMigrations } from "../../migrations/campaignMigrations";
 
 const STORAGE_KEY = "quest-net-context";
 const BACKUP_PREFIX = `${STORAGE_KEY}-backup`;
@@ -56,19 +58,36 @@ export const ContextActions = {
 		const original: Context = structuredClone(stored);
 
 		try {
-			const migrated = runMigrations(stored, APP_VERSION);
-			const didMigrateContext = migrated.version !== stored.version;
+			const storedVersion: string = (stored as any).version ?? "0.0.0";
 
-			if (!migrated.SecretModes) {
-				migrated.SecretModes = {};
+			// Run context-level migrations (operates on the raw stored object).
+			const context = (await runMigrations(
+				stored,
+				storedVersion,
+				contextMigrations
+			)) as Context;
+
+			// Run campaign-level migrations for the ActiveCampaign stored in
+			// localStorage.  The IDB copies of inactive campaigns are migrated
+			// lazily on first load via CampaignLoadingService.loadCampaign.
+			if (context.ActiveCampaign && storedVersion !== APP_VERSION) {
+				context.ActiveCampaign = (await runMigrations(
+					context.ActiveCampaign,
+					storedVersion,
+					campaignMigrations
+				)) as Campaign;
 			}
-			if (!Array.isArray(migrated.Campaigns)) {
-				migrated.Campaigns = [];
+
+			if (!context.SecretModes) {
+				context.SecretModes = {};
+			}
+			if (!Array.isArray(context.Campaigns)) {
+				context.Campaigns = [];
 			}
 			// ActiveCampaign is not persisted (it's just a localStorage cache),
 			// but ensure the field always exists so consumers can rely on it.
-			if (!("ActiveCampaign" in migrated) || migrated.ActiveCampaign === undefined) {
-				(migrated as Context).ActiveCampaign = null;
+			if (!("ActiveCampaign" in context) || context.ActiveCampaign === undefined) {
+				(context as Context).ActiveCampaign = null;
 			}
 
 			// Legacy reshape: if any entry in Campaigns is still a full Campaign
@@ -77,7 +96,7 @@ export const ContextActions = {
 			const fullCampaigns: Campaign[] = [];
 			const newCampaigns: CampaignInfo[] = [];
 			let didReshape = false;
-			for (const entry of migrated.Campaigns as Array<CampaignInfo | Campaign>) {
+			for (const entry of context.Campaigns as Array<CampaignInfo | Campaign>) {
 				if (looksLikeFullCampaign(entry)) {
 					fullCampaigns.push(entry);
 					newCampaigns.push(CampaignLoadingService.buildInfo(entry));
@@ -101,34 +120,24 @@ export const ContextActions = {
 						);
 					}
 				}
-				migrated.Campaigns = newCampaigns;
+				context.Campaigns = newCampaigns;
 			}
 
-			const hasOutdatedCampaignInfo = migrated.Campaigns.some(
-				(c) => c.Version !== APP_VERSION
-			);
-			if (didMigrateContext || hasOutdatedCampaignInfo) {
-				await CampaignLoadingService.migrateStoredCampaigns(migrated);
-			}
+			// Stamp the current version so the field stays current.
+			context.version = APP_VERSION;
 
-			const didPrepareActiveCampaign = !!migrated.ActiveCampaign;
-			if (migrated.ActiveCampaign) {
+			const didPrepareActiveCampaign = !!context.ActiveCampaign;
+			if (context.ActiveCampaign) {
 				await TerrainStorageService.prepareCampaignAfterLoad(
-					migrated.ActiveCampaign
+					context.ActiveCampaign
 				);
 			}
 
-			// If migration changed version OR we reshaped, persist
-			if (
-				didMigrateContext ||
-				didReshape ||
-				hasOutdatedCampaignInfo ||
-				didPrepareActiveCampaign
-			) {
-				this.save(migrated);
+			if (didReshape || didPrepareActiveCampaign) {
+				this.save(context);
 			}
 
-			return migrated;
+			return context;
 		} catch (error) {
 			console.error("[Context] Failed to migrate context:", error);
 

@@ -6,10 +6,11 @@ import { ContextActions } from "../Context/ContextActions";
 import { CampaignSettingActions } from "../CampaignSetting/CampaignSettingActions";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 import { APP_VERSION, type VersionString } from "../../version";
-import { runMigrations } from "../../updates/migrator";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
+import { runMigrations } from "../../migrations/runMigrations";
+import { campaignMigrations } from "../../migrations/campaignMigrations";
 
 
 /**
@@ -216,8 +217,7 @@ export const CampaignActions = {
 		context: Context
 	): Promise<Campaign | null> {
 		const loaded = await CampaignLoadingService.loadCampaign(
-			identifier,
-			context
+			identifier
 		);
 		if (!loaded) return null;
 
@@ -307,8 +307,7 @@ export const CampaignActions = {
 		} else {
 			try {
 				const stored = await CampaignLoadingService.loadCampaign(
-					params.campaignId,
-					context
+					params.campaignId
 				);
 				if (stored) {
 					imageIds = (stored.Images ?? []).map((img) => img.Id);
@@ -394,8 +393,7 @@ export const CampaignActions = {
 			Object.assign(campaign, params.updates);
 		} else {
 			campaign = await CampaignLoadingService.loadCampaign(
-				params.campaignId,
-				context
+				params.campaignId
 			);
 			if (!campaign) {
 				console.warn(
@@ -443,8 +441,7 @@ export const CampaignActions = {
 			campaign = context.ActiveCampaign;
 		} else {
 			campaign = await CampaignLoadingService.loadCampaign(
-				params.campaignId,
-				context
+				params.campaignId
 			);
 		}
 
@@ -546,7 +543,6 @@ export const CampaignActions = {
 
 			let campaign: Campaign;
 			let imageData: Record<string, { base64: string; mimeType: string }> = {};
-			let dataVersion: VersionString = "1.0.0"; // baseline for really old exports
 
 			// New-style exports: { version, campaign, imageData }
 			if (
@@ -559,29 +555,10 @@ export const CampaignActions = {
 				imageData =
 					(data.imageData as Record<string, { base64: string; mimeType: string }>) ||
 					{};
-
-				if (typeof data.version === "string") {
-					dataVersion = data.version as VersionString;
-				}
 			} else {
 				// Old-style exports (pre-container) – assume it's just the Campaign object
 				campaign = data as Campaign;
 			}
-
-			// --- Run schema migrations on this imported campaign ---
-			//
-			// We feed it through a scratch Context so we can reuse the same
-			// migration system, then pull the migrated Campaign back out.
-			const tempContext = {
-				User: structuredClone(context.User),
-				Campaigns: [structuredClone(campaign)] as unknown as Campaign[],
-				ActiveCampaign: null,
-				AppSettings: structuredClone(context.AppSettings as any),
-				version: dataVersion,
-			} as unknown as Context;
-
-			const migratedContext = runMigrations(tempContext, APP_VERSION);
-			campaign = (migratedContext.Campaigns as unknown as Campaign[])[0];
 
 			// Generate new ID to avoid conflicts
 			campaign.Id = crypto.randomUUID();
@@ -589,6 +566,19 @@ export const CampaignActions = {
 				delete terrain.VoxelStorageKey;
 				terrain.VoxelsLoaded = true;
 			}
+
+			// Run schema migrations against the file's saved version.
+			// For new-style exports the version lives on the container object;
+			// old-style exports carry no version, so we start from scratch.
+			const fileVersion: string =
+				(data && typeof data === "object" && "version" in data
+					? (data as any).version
+					: null) ?? "0.0.0";
+			campaign = (await runMigrations(
+				campaign,
+				fileVersion,
+				campaignMigrations
+			)) as Campaign;
 
 			// Ensure room code is unique against existing CampaignInfos
 			const existingRoomCodes = context.Campaigns.map((c) => c.RoomCode);
