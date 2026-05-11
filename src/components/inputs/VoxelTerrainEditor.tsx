@@ -11,9 +11,8 @@ import {
 import {
 	DEFAULT_TERRAIN_COLOR_INDEX,
 	getTerrainColorByIndex,
-	getTerrainPaletteIndex,
-	TERRAIN_PALETTE_FAMILIES,
-	TERRAIN_PALETTE_LEVELS,
+	TERRAIN_PALETTE,
+	TERRAIN_PALETTE_ROWS,
 } from "../../utils/TerrainPaletteUtils";
 import {
 	normalizeVoxelPaletteIndex,
@@ -1997,30 +1996,20 @@ export default function VoxelTerrainEditor({
 
 					<div>
 						<div className="text-sm font-semibold mb-2">Color</div>
-						<div className="space-y-1">
-							{TERRAIN_PALETTE_FAMILIES.map((family, familyIndex) => (
-								<div key={family.id} className="grid grid-cols-5 gap-1">
-									{Array.from({ length: TERRAIN_PALETTE_LEVELS }, (_, levelIndex) => {
-										const index = getTerrainPaletteIndex(familyIndex, levelIndex);
-										const color = getTerrainColorByIndex(index);
-
-										return (
-											<button
-												key={index}
-												type="button"
-												className={`h-7 border-2 ${
-													selectedColorIndex === index
-														? "border-base-content"
-														: "border-base-300/30"
-												}`}
-												style={{ backgroundColor: color }}
-												onClick={() => setSelectedColorIndex(index)}
-												title={`${family.label} ${levelIndex + 1}`}
-												aria-label={`${family.label} ${levelIndex + 1}`}
-											/>
-										);
-									})}
-								</div>
+						<div
+							className="grid"
+							style={{ gridTemplateColumns: `repeat(${TERRAIN_PALETTE_ROWS}, 1fr)` }}
+						>
+							{TERRAIN_PALETTE.map((color, index) => (
+								<button
+									key={index}
+									type="button"
+									className={`aspect-square${selectedColorIndex === index ? " ring-2 ring-base-content ring-inset" : ""}`}
+									style={{ backgroundColor: color }}
+									onClick={() => setSelectedColorIndex(index)}
+									title={`Color ${index}`}
+									aria-label={`Color ${index}`}
+								/>
 							))}
 						</div>
 					</div>
