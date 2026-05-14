@@ -10,6 +10,7 @@ import {
 	FormGrid,
 } from "../../components/Form/Form";
 import { TagEditor } from "../../components/inputs/TagEditor";
+import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 
 interface ImageEditProps {
 	image: Image;
@@ -32,6 +33,19 @@ export function ImageEdit({ image, onClose }: ImageEditProps) {
 		});
 	};
 
+	const handleDelete = () => {
+		if (!actionService) return;
+
+		// Remove metadata from the campaign (broadcasts to peers via StateSync).
+		actionService.execute("image:delete", { imageId: image.Id });
+		// Drop the blob from IndexedDB. Fire-and-forget: the action above has
+		// already removed the metadata, so the image is logically gone even if
+		// the IDB cleanup happens slightly later or fails. Peer IndexedDB caches
+		// are intentionally not cleaned here — a future page-load sweep will
+		// reconcile orphaned blobs against the campaign's image list.
+		void IndexedDBUtilities.remove(image.Id);
+	};
+
 	return (
 		<FormWrapper
 			domain="image"
@@ -39,6 +53,7 @@ export function ImageEdit({ image, onClose }: ImageEditProps) {
 			initialData={image}
 			onSave={handleSave}
 			onClose={onClose}
+			onDelete={handleDelete}
 			editTitle="Edit Image"
 			viewTitle="View Image"
 			createTitle="Create Image"
