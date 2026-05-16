@@ -15,10 +15,15 @@ export function FirstPersonHud({
 	return (
 		<>
 			<div className="absolute left-3 top-3 z-20 flex items-center gap-2">
-				<button className="btn btn-sm btn-neutral" onClick={onExitFirstPerson}>
-					<span className="icon-[mdi--map] w-4 h-4" />
-					World view
-				</button>
+				<div className="tooltip tooltip-right" data-tip="Return to world view">
+					<button
+						className="btn btn-sm btn-square btn-neutral"
+						onClick={onExitFirstPerson}
+						aria-label="Return to world view"
+					>
+						<span className="icon-[mdi--map] w-5 h-5" />
+					</button>
+				</div>
 				<div className="badge badge-neutral gap-1">
 					<span className="icon-[mdi--mouse-right-click] w-4 h-4" />
 					{isPointerLocked ? "Look mode" : "Hold right click"}
@@ -52,9 +57,15 @@ export function MissingActorMessage({
 					Players use their selected character. DMs can use impersonation.
 				</div>
 				{onExitFirstPerson && (
-					<button className="btn btn-sm btn-neutral mt-4" onClick={onExitFirstPerson}>
-						Return to world view
-					</button>
+					<div className="tooltip tooltip-top mt-4" data-tip="Return to world view">
+						<button
+							className="btn btn-sm btn-square btn-neutral"
+							onClick={onExitFirstPerson}
+							aria-label="Return to world view"
+						>
+							<span className="icon-[mdi--map] w-5 h-5" />
+						</button>
+					</div>
 				)}
 			</div>
 		</div>

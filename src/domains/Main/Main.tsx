@@ -25,6 +25,7 @@ import { StatusCollection } from "../Status/Collection";
 import { StickerPicker } from "../../components/Sticker/StickerPicker";
 import { SharedInventoryDisplay } from "../SharedInventory/SharedInventoryDisplay";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
+import { findFirstPersonActor } from "../../components/Map/FirstPerson/actor";
 
 type TopTab = "music" | "calendar" | "terrain" | "combat";
 type MapViewMode = "world" | "first-person";
@@ -46,7 +47,6 @@ export function Main() {
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const isDM = isDmAccess();
 	const [mapViewMode, setMapViewMode] = useState<MapViewMode>("world");
-	const [isTouchDevice, setIsTouchDevice] = useState(false);
 
 	// Top tabs state (same for everyone)
 	const [activeTopTab, setActiveTopTab] = useState<TopTab>("calendar");
@@ -69,6 +69,16 @@ export function Main() {
 		activeTerrain && TerrainStorageService.isHydrated(activeTerrain)
 			? activeTerrain
 			: undefined;
+	const firstPersonActor = findFirstPersonActor(
+		isDM ? "dm" : "player",
+		campaign.RoomCode,
+		context.User.SelectedCharacters,
+		context.User.ImpersonatedActors,
+		campaign.GameState.Characters,
+		campaign.GameState.Entities
+	);
+	const firstPersonActorId = firstPersonActor?.id ?? null;
+	const showFirstPersonButton = !isDM || firstPersonActorId !== null;
 
 	// Hide Shared Inventories tab when none are configured. Tracking the count
 	// (rather than the array reference) keeps the effect from firing on every
@@ -158,18 +168,14 @@ export function Main() {
 	}, [hasSharedInventories, activeBottomTab, isDM]);
 
 	useEffect(() => {
-		const query = window.matchMedia("(hover: none), (pointer: coarse)");
-		const updateIsTouchDevice = () => setIsTouchDevice(query.matches);
-		updateIsTouchDevice();
-		query.addEventListener("change", updateIsTouchDevice);
-		return () => query.removeEventListener("change", updateIsTouchDevice);
-	}, []);
-
-	useEffect(() => {
-		if (isTouchDevice && mapViewMode === "first-person") {
+		if (
+			mapViewMode === "first-person" &&
+			isDM &&
+			!firstPersonActorId
+		) {
 			setMapViewMode("world");
 		}
-	}, [isTouchDevice, mapViewMode]);
+	}, [firstPersonActorId, isDM, mapViewMode]);
 
 	// Handle tab changes and clear indicators
 	const handleBottomTabChange = (tab: PlayerBottomTab | DMBottomTab) => {
@@ -224,21 +230,20 @@ export function Main() {
 							</div>
 						</div>
 					)}
-					{mapViewMode === "world" && (
+					{mapViewMode === "world" && showFirstPersonButton && (
 						<div className="absolute left-3 top-3 z-20">
-							<button
-								className="btn btn-sm btn-neutral gap-2"
-								onClick={() => setMapViewMode("first-person")}
-								disabled={isTouchDevice}
-								title={
-									isTouchDevice
-										? "First-person mode is disabled on touch devices"
-										: "Enter first-person mode"
-								}
+							<div
+								className="tooltip tooltip-right"
+								data-tip="Enter first-person mode"
 							>
-								<span className="icon-[mdi--eye] w-4 h-4" />
-								1st person
-							</button>
+								<button
+									className="btn btn-sm btn-square btn-neutral"
+									onClick={() => setMapViewMode("first-person")}
+									aria-label="Enter first-person mode"
+								>
+									<span className="icon-[mdi--camera-control] w-5 h-5" />
+								</button>
+							</div>
 						</div>
 					)}
 					<DiceRoller />
