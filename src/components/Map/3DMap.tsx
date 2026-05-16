@@ -47,7 +47,6 @@ import {
 	THREE_D_MAP_RENDERER,
 	THREE_D_MAP_SHADOW,
 	THREE_D_TERRAIN_MATERIAL,
-	THREE_D_TERRAIN_SURFACE_VARIATION,
 } from './threeDMapConstants';
 
 interface ThreeDMapProps {
@@ -84,20 +83,6 @@ function disposeTerrainResources(resources: TerrainRenderResources): void {
 	resources.geometry.dispose();
 	resources.material.dispose();
 	resources.movementHighlight.texture.dispose();
-}
-
-function deterministicSurfaceVariation(x: number, z: number): number {
-	const n = Math.sin(x * 127.1 + z * 311.7) * 43758.5453123;
-	return n - Math.floor(n);
-}
-
-function createTerrainSurfaceColor(baseColor: number, x: number, z: number, isTopFace: boolean): THREE.Color {
-	const color = new THREE.Color(baseColor);
-	if (!isTopFace) return color;
-
-	return color.multiplyScalar(
-		1 - deterministicSurfaceVariation(x, z) * THREE_D_TERRAIN_SURFACE_VARIATION.MAX_DARKENING
-	);
 }
 
 function getShadowCameraBounds(width: number, length: number, maxElevation: number): ShadowCameraBounds {
@@ -703,13 +688,9 @@ export default function ThreeDMap({
 
 		const geometry = createVoxelTerrainGeometry(
 			terrain,
-			(voxel, isTopFace) =>
-				createTerrainSurfaceColor(
-					terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(voxel.color)),
-					voxel.x,
-					voxel.z,
-					isTopFace
-				)
+			(voxel) => new THREE.Color(
+				terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(voxel.color))
+			)
 		);
 		const material = new THREE.MeshStandardMaterial({
 			roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,

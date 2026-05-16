@@ -5,7 +5,7 @@ export const THREE_D_MAP_RENDERER = {
 } as const;
 
 export const THREE_D_MAP_CAMERA = {
-	FRAMING_MULTIPLIER: 1.3,
+	FRAMING_MULTIPLIER: 0.85,
 	DISTANCE_MULTIPLIER: 2.5,
 } as const;
 
@@ -45,10 +45,6 @@ export const THREE_D_MAP_CONTROLS = {
 export const THREE_D_TERRAIN_MATERIAL = {
 	ROUGHNESS: 0.85,
 	METALNESS: 0,
-} as const;
-
-export const THREE_D_TERRAIN_SURFACE_VARIATION = {
-	MAX_DARKENING: 0.20,
 } as const;
 
 export const THREE_D_MOVEMENT_HIGHLIGHT = {

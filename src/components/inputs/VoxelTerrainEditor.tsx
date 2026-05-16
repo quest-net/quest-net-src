@@ -10,7 +10,6 @@ import {
 } from "../../utils/VoxelDataUtils";
 import {
 	DEFAULT_TERRAIN_COLOR_INDEX,
-	getTerrainColorByIndex,
 	TERRAIN_PALETTE,
 	TERRAIN_PALETTE_ROWS,
 } from "../../utils/TerrainPaletteUtils";
@@ -1821,7 +1820,7 @@ export default function VoxelTerrainEditor({
 
 	return (
 		<>
-		<div className="border-2 rounded-lg bg-base-100 min-h-[38rem] h-[72dvh] flex overflow-hidden">
+		<div className="border-2 rounded-lg bg-base-100 min-h-152 h-[72dvh] flex overflow-hidden">
 			<div className="flex-1 min-w-0 flex flex-col">
 				<div className="min-h-16 shrink-0 border-b-2 bg-base-100 px-3 py-2 flex flex-wrap items-center justify-between gap-3">
 					<div className="flex flex-wrap items-center gap-3">

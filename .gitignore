@@ -24,3 +24,4 @@ localhost+*.pem
 localhost+*-key.pem
 IMPLEMENTATION_PLAN.md
 AGENTS.md
+RENDERING_OPTIMIZATION.md
