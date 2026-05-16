@@ -1,5 +1,6 @@
 import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
+import { ACTOR_DEFAULT_COLORS } from "../../../domains/Actor/Actor";
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "./actorTokenConstants";
 import type { ActorTokenDescriptor } from "./actorTokenTypes";
 
@@ -19,6 +20,7 @@ export function buildActorTokenDescriptors(
 			kind: "character",
 			name: character.Name,
 			imageId: character.Image,
+			color: character.Color ?? ACTOR_DEFAULT_COLORS.CHARACTER,
 			position: character.Position ?? { ...ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.POSITION },
 			moveSpeed: character.MoveSpeed ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.MOVE_SPEED,
 			size: character.Size ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.SIZE,
@@ -33,6 +35,7 @@ export function buildActorTokenDescriptors(
 			kind: "entity",
 			name: entity.Name,
 			imageId: entity.Image,
+			color: entity.Color ?? ACTOR_DEFAULT_COLORS.ENTITY,
 			position: entity.Position ?? { ...ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.POSITION },
 			moveSpeed: entity.MoveSpeed ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.MOVE_SPEED,
 			size: entity.Size ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.SIZE,

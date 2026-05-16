@@ -10,6 +10,7 @@ import { StatBar } from "../../components/StatBar/StatBar";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
 import { ActorPicker } from "../../components/inputs/ActorPicker";
 import { AttributesSection } from "../../components/AttributesSection/AttributesSection";
+import { ACTOR_DEFAULT_COLORS } from "../Actor/Actor";
 import {
 	ResolvedAction,
 	ResolvedStat,
@@ -225,8 +226,8 @@ export function CharacterSheet() {
 				</div>
 			)}
 
-			{/* Move Speed & Flying */}
-			<div className="grid grid-cols-2 gap-4">
+			{/* Token details */}
+			<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 				<div>
 					<label className="label">
 						<span className="label-text">Move Speed</span>
@@ -254,6 +255,17 @@ export function CharacterSheet() {
 							className="toggle toggle-primary toggle-lg"
 						/>
 					</div>
+				</div>
+				<div>
+					<label className="label">
+						<span className="label-text">Token Color</span>
+					</label>
+					<input
+						type="color"
+						value={character.Color ?? ACTOR_DEFAULT_COLORS.CHARACTER}
+						onChange={(e) => handleFieldChange("Color", e.target.value)}
+						className="input input-bordered h-12 w-20 p-1"
+					/>
 				</div>
 			</div>
 

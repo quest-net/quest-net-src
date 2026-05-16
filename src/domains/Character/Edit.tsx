@@ -14,6 +14,7 @@ import {
 import { TagEditor } from "../../components/inputs/TagEditor";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { AttributeEditor } from "../../components/inputs/AttributeEditor";
+import { ACTOR_DEFAULT_COLORS } from "../Actor/Actor";
 import { isDmAccess } from "../../utils/UrlParser";
 import {
 	resolveStats,
@@ -225,6 +226,15 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 							<option>medium</option>
 							<option>large</option>
 						</select>
+					</FormField>
+
+					<FormField label="Token Color">
+						<input
+							type="color"
+							value={data.Color ?? ACTOR_DEFAULT_COLORS.CHARACTER}
+							onChange={(e) => handleFieldChange("Color", e.target.value)}
+							className="input input-bordered h-12 w-20 p-1"
+						/>
 					</FormField>
 				</FormGrid>
 			</FormSection>

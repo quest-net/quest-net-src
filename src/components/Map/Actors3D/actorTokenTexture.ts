@@ -9,6 +9,10 @@ import {
 } from "./actorTokenConstants";
 import type { ActorTokenDescriptor } from "./actorTokenTypes";
 
+function isHexColor(value: string | undefined): value is string {
+	return /^#[0-9a-f]{6}$/i.test(value ?? "");
+}
+
 export function getActorTokenWorldSize(
 	size: ActorSize,
 	cutout = false
@@ -93,9 +97,11 @@ function createPlaceholderGradient(
 	actor: ActorTokenDescriptor
 ): CanvasGradient {
 	const baseColor =
-		actor.kind === "character"
-			? ACTOR_TOKEN_PLACEHOLDER.CHARACTER_FILL
-			: ACTOR_TOKEN_PLACEHOLDER.ENTITY_FILL;
+		isHexColor(actor.color)
+			? actor.color
+			: actor.kind === "character"
+				? ACTOR_TOKEN_PLACEHOLDER.CHARACTER_FILL
+				: ACTOR_TOKEN_PLACEHOLDER.ENTITY_FILL;
 	const gradient = ctx.createLinearGradient(
 		0,
 		0,

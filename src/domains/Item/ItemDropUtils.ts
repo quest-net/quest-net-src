@@ -3,7 +3,7 @@
 // Dropped items are entities with a serialized item snapshot stored in a tag.
 
 import { Item } from "./Item";
-import { Actor, InventorySlot, EquipmentSlot, Position } from "../Actor/Actor";
+import { ACTOR_DEFAULT_COLORS, Actor, InventorySlot, EquipmentSlot, Position } from "../Actor/Actor";
 import { Entity } from "../Entity/Entity";
 import {
 	StatDefinition,
@@ -81,6 +81,7 @@ export function createItemEntity(
 		Name: template.Name,
 		Description: template.Description ?? "",
 		Image: template.Image,
+		Color: ACTOR_DEFAULT_COLORS.ITEM_ENTITY,
 		Position: { ...position },
 		Size: "extra-small",
 		MoveSpeed: 0,

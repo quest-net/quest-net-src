@@ -15,6 +15,7 @@ import { SkillCollection } from "../Skill/Collection";
 import { StatusCollection } from "../Status/Collection";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
 import { AttributesSection } from "../../components/AttributesSection/AttributesSection";
+import { ACTOR_DEFAULT_COLORS } from "../Actor/Actor";
 import {
 	ResolvedAction,
 	resolveStats,
@@ -622,45 +623,62 @@ function ActorInfoTab({
 			{/* Compact info line */}
 			{isDM ? (
 				// DM: Editable inline fields
-				<div className="grid grid-cols-4 gap-x-8 text-sm justify-items-center">
-					{/* Labels row */}
-					<div className="font-medium">Pos:</div>
-					<div className="font-medium">Size:</div>
-					<div className="font-medium">Speed:</div>
-					<div className="font-medium">Flying:</div>
+				<div className="space-y-2">
+					<div className="grid grid-cols-4 gap-x-8 text-sm justify-items-center">
+						{/* Labels row */}
+						<div className="font-medium">Pos:</div>
+						<div className="font-medium">Size:</div>
+						<div className="font-medium">Speed:</div>
+						<div className="font-medium">Flying:</div>
 
-					{/* Inputs row */}
-					<div className="opacity-70 text-sm mt-1">
-						({actor.Position.x}, {actor.Position.y}, {actor.Position.h})
+						{/* Inputs row */}
+						<div className="opacity-70 text-sm mt-1">
+							({actor.Position.x}, {actor.Position.y}, {actor.Position.h})
+						</div>
+						<select
+							value={actor.Size || "small"}
+							onChange={(e) =>
+								handleFieldChange("Size", e.target.value as Actor["Size"])
+							}
+							className="select select-sm select-bordered"
+							disabled={!actionService}
+						>
+							<option value="extra-small">Extra Small</option>
+							<option value="small">Small</option>
+							<option value="medium">Medium</option>
+							<option value="large">Large</option>
+						</select>
+						<input
+							type="number"
+							value={localMoveSpeed}
+							onChange={(e) => handleMoveSpeedChange(Number(e.target.value))}
+							className="input input-sm input-bordered"
+							min={0}
+							max={99}
+						/>
+						<input
+							type="checkbox"
+							checked={actor.CanFly}
+							onChange={(e) => handleFieldChange("CanFly", e.target.checked)}
+							className="toggle toggle-sm toggle-primary mt-1"
+							disabled={!actionService}
+						/>
 					</div>
-					<select
-						value={actor.Size || "small"}
-						onChange={(e) =>
-							handleFieldChange("Size", e.target.value as Actor["Size"])
-						}
-						className="select select-sm select-bordered"
-						disabled={!actionService}
-					>
-						<option value="extra-small">Extra Small</option>
-						<option value="small">Small</option>
-						<option value="medium">Medium</option>
-						<option value="large">Large</option>
-					</select>
-					<input
-						type="number"
-						value={localMoveSpeed}
-						onChange={(e) => handleMoveSpeedChange(Number(e.target.value))}
-						className="input input-sm input-bordered"
-						min={0}
-						max={99}
-					/>
-					<input
-						type="checkbox"
-						checked={actor.CanFly}
-						onChange={(e) => handleFieldChange("CanFly", e.target.checked)}
-						className="toggle toggle-sm toggle-primary mt-1"
-						disabled={!actionService}
-					/>
+					<div className="flex items-center justify-center gap-3 text-sm">
+						<span className="font-medium">Token Color</span>
+						<input
+							type="color"
+							value={
+								actor.Color ??
+								(kind === "character"
+									? ACTOR_DEFAULT_COLORS.CHARACTER
+									: ACTOR_DEFAULT_COLORS.ENTITY)
+							}
+							onChange={(e) => handleFieldChange("Color", e.target.value)}
+							className="input input-bordered input-sm h-9 w-16 p-1"
+							disabled={!actionService}
+						/>
+					</div>
 				</div>
 			) : (
 				// Player: Compact readonly display

@@ -196,6 +196,7 @@ function createActorVisualSignature(actor: ActorTokenDescriptor, isDM: boolean):
 	return [
 		actor.kind,
 		actor.name,
+		actor.color,
 		actor.imageId ?? "",
 		actor.cutout ? "cutout" : "framed",
 		actor.size,
@@ -219,6 +220,16 @@ function getActorSupportMode(
 	terrain: VoxelTerrain
 ): "grounded" | "airborne" {
 	return isActorAirborne(actor, terrain) ? "airborne" : "grounded";
+}
+
+function getActorAccentHex(actor: ActorTokenDescriptor): number {
+	try {
+		return new THREE.Color(actor.color).getHex();
+	} catch {
+		return actor.kind === "character"
+			? ACTOR_TOKEN_COLORS.CHARACTER_BASE
+			: ACTOR_TOKEN_COLORS.ENTITY_BASE;
+	}
 }
 
 function applySelection(handles: SelectionHandles, selected: boolean) {
@@ -411,9 +422,7 @@ function createBaseMesh(actor: ActorTokenDescriptor): BaseMeshResult {
 	const group = new THREE.Group();
 	const { width } = getActorTokenWorldSize(actor.size);
 	const radius = width * ACTOR_TOKEN_BASE.RADIUS_SCALE;
-	const accentColor = actor.kind === "character"
-		? ACTOR_TOKEN_COLORS.CHARACTER_BASE
-		: ACTOR_TOKEN_COLORS.ENTITY_BASE;
+	const accentColor = getActorAccentHex(actor);
 	const geometry = new THREE.CylinderGeometry(
 		radius,
 		radius,
@@ -457,9 +466,7 @@ function createHaloMesh(actor: ActorTokenDescriptor): HaloMeshResult {
 	const group = new THREE.Group();
 	const { width } = getActorTokenWorldSize(actor.size);
 	const radius = width * ACTOR_TOKEN_HALO.RADIUS_SCALE;
-	const color = actor.kind === "character"
-		? ACTOR_TOKEN_COLORS.CHARACTER_BASE
-		: ACTOR_TOKEN_COLORS.ENTITY_BASE;
+	const color = getActorAccentHex(actor);
 
 	const haloGeometry = new THREE.TorusGeometry(
 		radius,

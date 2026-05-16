@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Position } from "../../../domains/Actor/Actor";
+import { ACTOR_DEFAULT_COLORS } from "../../../domains/Actor/Actor";
 import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
@@ -67,6 +68,11 @@ function createActorDescriptor(
 		kind: actor.kind,
 		name: actor.actor.Name,
 		imageId: actor.actor.Image,
+		color: actor.actor.Color ?? (
+			actor.kind === "character"
+				? ACTOR_DEFAULT_COLORS.CHARACTER
+				: ACTOR_DEFAULT_COLORS.ENTITY
+		),
 		position,
 		moveSpeed: actor.actor.MoveSpeed ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.MOVE_SPEED,
 		size: actor.actor.Size ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.SIZE,

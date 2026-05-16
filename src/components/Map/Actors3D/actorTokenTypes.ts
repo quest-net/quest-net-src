@@ -8,6 +8,7 @@ export interface ActorTokenDescriptor {
 	kind: ActorKind;
 	name: string;
 	imageId?: string;
+	color: string;
 	position: Position;
 	moveSpeed: number;
 	size: ActorSize;

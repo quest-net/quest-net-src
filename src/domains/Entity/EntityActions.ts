@@ -5,7 +5,7 @@ import { Entity } from "./Entity";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { ActorActions } from "../Actor/ActorActions";
-import { Position } from "../Actor/Actor";
+import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
 import { createDefaultStatSlots, createDefaultActionSlots, createDefaultAttributeSlots } from "../../utils/ActorResolvers";
 import { getActiveVoxelSpawnPosition, getActiveVoxelTerrain } from "../../utils/VoxelTerrainUtils";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
@@ -28,6 +28,7 @@ export const EntityActions = {
 			Name: "New Entity",
 			Description: "",
 			Image: undefined,
+			Color: ACTOR_DEFAULT_COLORS.ENTITY,
 			Stats: createDefaultStatSlots(settings.StatDefinitions),
 			Actions: createDefaultActionSlots(settings.ActionDefinitions),
 			Attributes: createDefaultAttributeSlots(settings.AttributeDefinitions ?? []),
@@ -54,6 +55,7 @@ export const EntityActions = {
 		// This fixes a bug where editing Max HP during creation didn't update Current HP
 		const entity: Entity = {
 			...params.entity,
+			Color: params.entity.Color ?? ACTOR_DEFAULT_COLORS.ENTITY,
 			Stats: params.entity.Stats.map((stat) => ({
 				...stat,
 				Current: stat.Max,
@@ -155,6 +157,7 @@ export const EntityActions = {
 		const instance: Entity = {
 			...structuredClone(template),
 			Id: crypto.randomUUID(), // New ID for the instance
+			Color: template.Color ?? ACTOR_DEFAULT_COLORS.ENTITY,
 		};
 		const voxelSpawnPosition = getActiveVoxelSpawnPosition(
 			campaign,

@@ -2,11 +2,18 @@ import type { RestoreRule } from "../CampaignSetting/CampaignSetting";
 
 export type ActorSize = "extra-small" | "small" | "medium" | "large";
 
+export const ACTOR_DEFAULT_COLORS = {
+	CHARACTER: "#2563eb",
+	ENTITY: "#b45309",
+	ITEM_ENTITY: "#f8fafc",
+} as const;
+
 export interface Actor {
 	Id: string;
 	Name: string;
 	Description?: string;
 	Image?: string;
+	Color: string;
 
 	// Slots referencing campaign-level templates by Id
 	Stats: StatSlot[];

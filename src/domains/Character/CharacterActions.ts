@@ -5,7 +5,7 @@ import { Character } from "./Character";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { ActorActions } from "../Actor/ActorActions";
-import { Position } from "../Actor/Actor";
+import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
 import { createDefaultStatSlots, createDefaultActionSlots, createDefaultAttributeSlots } from "../../utils/ActorResolvers";
 import { getActiveVoxelSpawnPosition, getActiveVoxelTerrain } from "../../utils/VoxelTerrainUtils";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
@@ -29,6 +29,7 @@ export const CharacterActions = {
 			Name: "New Character",
 			Description: "",
 			Image: undefined,
+			Color: ACTOR_DEFAULT_COLORS.CHARACTER,
 			Stats: createDefaultStatSlots(settings.StatDefinitions),
 			Actions: createDefaultActionSlots(settings.ActionDefinitions),
 			Attributes: createDefaultAttributeSlots(settings.AttributeDefinitions ?? []),
@@ -54,6 +55,7 @@ export const CharacterActions = {
 
 		const character: Character = {
 			...params.character,
+			Color: params.character.Color ?? ACTOR_DEFAULT_COLORS.CHARACTER,
 			Notes: params.character.Notes || [],
 			// Ensure stats are fully healed upon creation
 			Stats: params.character.Stats.map((stat) => ({
@@ -92,6 +94,7 @@ export const CharacterActions = {
 
 		const character: Character = {
 			...params.character,
+			Color: params.character.Color ?? ACTOR_DEFAULT_COLORS.CHARACTER,
 			Notes: params.character.Notes || [],
 			Position: voxelSpawnPosition ?? { x: 0, y: 0, h: 0 },
 			// Ensure stats are fully healed upon creation
