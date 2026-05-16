@@ -25,8 +25,30 @@ export interface VoxelTerrainBuffers {
 	indices: Uint32Array;
 }
 
+interface VoxelTerrainBufferOptions {
+	transferSafe?: boolean;
+}
+
 function voxelKey(x: number, y: number, z: number): number {
 	return x + y * 256 + z * 65536;
+}
+
+function trimFloat32Buffer(
+	buffer: Float32Array,
+	length: number,
+	transferSafe: boolean
+): Float32Array {
+	const view = buffer.subarray(0, length);
+	return transferSafe ? view.slice() : view;
+}
+
+function trimUint32Buffer(
+	buffer: Uint32Array,
+	length: number,
+	transferSafe: boolean
+): Uint32Array {
+	const view = buffer.subarray(0, length);
+	return transferSafe ? view.slice() : view;
 }
 
 // ---------------------------------------------------------------------------
@@ -79,13 +101,15 @@ function vertexAO(
 // ---------------------------------------------------------------------------
 export function buildVoxelTerrainBuffers(
 	terrain: VoxelTerrain,
-	createVoxelColor: VoxelColorFactory
+	createVoxelColor: VoxelColorFactory,
+	options: VoxelTerrainBufferOptions = {}
 ): VoxelTerrainBuffers {
 	const voxelSize = getVoxelSize(terrain);
 	const halfVoxelSize = voxelSize / 2;
 	const resolution = getVoxelTerrainResolution(terrain);
 	const voxels = Array.from(decodeVoxels(terrain.Voxels));
 	const voxelCount = voxels.length;
+	const transferSafe = options.transferSafe ?? false;
 
 	// Pre-allocate at worst-case size: every voxel fully exposed (6 faces, 4 vertices, 6 indices).
 	const maxVertices = voxelCount * 6 * 4;
@@ -186,15 +210,14 @@ export function buildVoxelTerrainBuffers(
 		}
 	}
 
-	// Slice to exact usage size so the returned buffers can be cleanly transferred.
 	return {
-		positions:          positions.slice(0, vp * 3),
-		normals:            normals.slice(0, vp * 3),
-		colors:             colors.slice(0, vp * 3),
-		tileCoords:         tileCoords.slice(0, vp * 2),
-		tileHeights:        tileHeights.slice(0, vp),
-		highlightStrengths: highlightStrengths.slice(0, vp),
-		indices:            indices.slice(0, ip),
+		positions:          trimFloat32Buffer(positions, vp * 3, transferSafe),
+		normals:            trimFloat32Buffer(normals, vp * 3, transferSafe),
+		colors:             trimFloat32Buffer(colors, vp * 3, transferSafe),
+		tileCoords:         trimFloat32Buffer(tileCoords, vp * 2, transferSafe),
+		tileHeights:        trimFloat32Buffer(tileHeights, vp, transferSafe),
+		highlightStrengths: trimFloat32Buffer(highlightStrengths, vp, transferSafe),
+		indices:            trimUint32Buffer(indices, ip, transferSafe),
 	};
 }
 

@@ -35,10 +35,13 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 	const { buildId, terrain } = event.data;
 
 	// Build raw buffers (face-culled, AO-baked, quad-flipped).
-	const buf = buildVoxelTerrainBuffers(terrain, (voxel) =>
-		new THREE.Color(
-			terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(voxel.color))
-		)
+	const buf = buildVoxelTerrainBuffers(
+		terrain,
+		(voxel) =>
+			new THREE.Color(
+				terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(voxel.color))
+			),
+		{ transferSafe: true }
 	);
 
 	// Build BVH. Only position + index are needed for tree construction.

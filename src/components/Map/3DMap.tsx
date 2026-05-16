@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { acceleratedRaycast, MeshBVH } from 'three-mesh-bvh';
+import { acceleratedRaycast } from 'three-mesh-bvh';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
 import type { Character } from '../../domains/Character/Character';
@@ -14,13 +14,8 @@ import { useQuestContext } from '../../domains/Context/ContextProvider';
 import { useActionService } from '../../services/Actions/ActionServiceProvider';
 import { CampaignActions } from '../../domains/Campaign/CampaignActions';
 import { AppSettingActions } from '../../domains/AppSetting/AppSettingActions';
-// createVoxelTerrainGeometry is now run inside voxelGeometryWorker.ts
-import {
-	getMaxVoxelSurfaceHeight,
-	getVoxelTerrainResolution,
-} from '../../utils/VoxelTerrainUtils';
+import { getMaxVoxelSurfaceHeight } from '../../utils/VoxelTerrainUtils';
 import { getVoxelCount } from '../../utils/VoxelDataUtils';
-// normalizeVoxelPaletteIndex / terrainPaletteIndexToVoxelColor are used inside the worker
 import {
 	calculateVoxelMovementRange,
 	calculateVoxelRemainingMovementRange,
@@ -45,6 +40,10 @@ import {
 	THREE_D_MAP_SHADOW,
 	THREE_D_TERRAIN_MATERIAL,
 } from './threeDMapConstants';
+import {
+	createTerrainSignature,
+	useVoxelTerrainGeometryWorker,
+} from './hooks/useVoxelTerrainGeometryWorker';
 
 interface ThreeDMapProps {
 	terrain?: VoxelTerrain | null;
@@ -67,11 +66,6 @@ interface ThreeDMapCameraState {
 	cursor: THREE.Vector3;
 	zoom: number;
 }
-
-type RuntimeSerializedBVH = Parameters<typeof MeshBVH.deserialize>[0] & {
-	version: number;
-	indirectBuffer: ArrayBufferView | null;
-};
 
 interface TerrainRenderResources {
 	mesh: THREE.Mesh;
@@ -219,19 +213,6 @@ function installMovementHighlightShader(
 	material.needsUpdate = true;
 }
 
-function createTerrainSignature(terrain?: VoxelTerrain | null): string {
-	if (!terrain) return "none";
-
-	return [
-		terrain.Id,
-		terrain.Width,
-		terrain.Length,
-		terrain.Height,
-		getVoxelTerrainResolution(terrain),
-		terrain.Voxels,
-	].join(":");
-}
-
 function findSelectedActor(
 	selectedActor: { id: string; kind: "character" | "entity" } | null,
 	characters: Character[],
@@ -260,8 +241,6 @@ export default function ThreeDMap({
 	const controlsRef = useRef<OrbitControls | null>(null);
 	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
 	const terrainResourcesRef = useRef<TerrainRenderResources | null>(null);
-	const terrainWorkerRef = useRef<Worker | null>(null);
-	const terrainBuildIdRef = useRef(0);
 	const currentHalfSizeRef = useRef<number>(THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS);
 	const hasFramedTerrainRef = useRef(false);
 	const context = useQuestContext();
@@ -310,6 +289,11 @@ export default function ThreeDMap({
 		return ids;
 	}, [campaign]);
 	const terrainSignature = useMemo(() => createTerrainSignature(terrain), [terrain]);
+	const terrainGeometry = useVoxelTerrainGeometryWorker(
+		terrain,
+		terrainSignature,
+		sceneResources !== null
+	);
 	// Memo deps read primitives from Position/TurnStartPosition rather than the
 	// actor reference. Move actions replace Position with a new object but
 	// keep the actor reference stable, which previously left this BFS stale --
@@ -614,46 +598,13 @@ export default function ThreeDMap({
 		};
 	}, []);
 
-	// Spawn one worker per 3DMap instance; terminated on unmount.
-	useEffect(() => {
-		const worker = new Worker(
-			new URL('../../utils/voxelGeometryWorker.ts', import.meta.url),
-			{ type: 'module' }
-		);
-		terrainWorkerRef.current = worker;
-		return () => {
-			worker.terminate();
-			terrainWorkerRef.current = null;
-		};
-	}, []);
-
 	useEffect(() => {
 		const resources = sceneResourcesRef.current;
 		const container = containerRef.current;
 		const controls = controlsRef.current;
 		const dirLight = directionalLightRef.current;
-		const worker = terrainWorkerRef.current;
-		if (!resources || !container || !controls || !dirLight || !worker) return;
-
-		// Bump build ID so any result from a previous (now-stale) request is silently dropped.
-		const buildId = ++terrainBuildIdRef.current;
-
-		if (!terrain || getVoxelCount(terrain.Voxels) === 0) {
-			// Remove whatever is currently in the scene immediately.
-			const old = terrainResourcesRef.current;
-			if (old) {
-				resources.scene.remove(old.mesh);
-				disposeTerrainResources(old);
-				terrainResourcesRef.current = null;
-			} else {
-				resources.movementHighlight.texture.dispose();
-			}
-			resources.occlusionTargets.length = 0;
-			resources.movementHighlight = createMovementHighlightTexture(1, 1, 1);
-			return;
-		}
-
-		// ---- synchronous: camera framing, shadow camera, controls ----
+		if (!resources || !container || !controls || !dirLight) return;
+		if (!terrain || getVoxelCount(terrain.Voxels) === 0) return;
 
 		const W = terrain.Width;
 		const L = terrain.Length;
@@ -709,94 +660,59 @@ export default function ThreeDMap({
 			hasFramedTerrainRef.current = true;
 		}
 
-		// Create the movement highlight texture synchronously -- its size is known
-		// from terrain dimensions alone, so we can set it up before the build finishes.
-		// tactical heights run 0 .. terrain.Height inclusive -- that is Height+1 levels.
-		const heightLevels = terrain.Height + 1;
-		const movementHighlight = createMovementHighlightTexture(W, heightLevels, L);
-
-		// ---- async: off-thread geometry + BVH build ----
-
-		const onMessage = (event: MessageEvent) => {
-			if (event.data.buildId !== buildId) return; // stale result, ignore
-			worker.removeEventListener('message', onMessage);
-
-			const {
-				positions, normals, colors, tileCoords, tileHeights, highlightStrengths,
-				indices, bvhRoots, bvhVersion,
-			} = event.data;
-
-			// Reconstruct BufferGeometry from the transferred typed arrays.
-			const geometry = new THREE.BufferGeometry();
-			geometry.setAttribute('position',          new THREE.BufferAttribute(positions, 3));
-			geometry.setAttribute('normal',            new THREE.BufferAttribute(normals, 3));
-			geometry.setAttribute('color',             new THREE.BufferAttribute(colors, 3));
-			geometry.setAttribute('tileCoord',         new THREE.BufferAttribute(tileCoords, 2));
-			geometry.setAttribute('tileHeight',        new THREE.BufferAttribute(tileHeights, 1));
-			geometry.setAttribute('highlightStrength', new THREE.BufferAttribute(highlightStrengths, 1));
-			geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-			geometry.computeBoundingBox();
-			geometry.computeBoundingSphere();
-			// Deserialize the BVH that was built in the worker -- no rebuild needed.
-			const serializedBvh: RuntimeSerializedBVH = {
-				version: bvhVersion,
-				roots: bvhRoots,
-				index: indices,
-				indirectBuffer: null,
-			};
-			geometry.boundsTree = MeshBVH.deserialize(
-				serializedBvh,
-				geometry,
-				{ setIndex: false }
-			);
-
-			const material = new THREE.MeshStandardMaterial({
-				roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
-				metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
-				vertexColors: true,
-			});
-			installMovementHighlightShader(material, movementHighlight);
-			const mesh = new THREE.Mesh(geometry, material);
-			mesh.raycast = acceleratedRaycast;
-			mesh.castShadow = true;
-			mesh.receiveShadow = true;
-
-			// Guard: the scene may have been torn down while the build was in flight.
-			const currentResources = sceneResourcesRef.current;
-			if (!currentResources) {
-				geometry.boundsTree = undefined;
-				geometry.dispose();
-				material.dispose();
-				movementHighlight.texture.dispose();
-				return;
-			}
-
-			// Swap old terrain out, new terrain in.
-			const old = terrainResourcesRef.current;
-			if (old) {
-				currentResources.scene.remove(old.mesh);
-				disposeTerrainResources(old); // also disposes old.movementHighlight.texture
-			} else {
-				// First terrain ever: dispose the 1x1 placeholder highlight.
-				currentResources.movementHighlight.texture.dispose();
-			}
-
-			currentResources.scene.add(mesh);
-			currentResources.occlusionTargets.length = 0;
-			currentResources.occlusionTargets.push(mesh);
-			currentResources.movementHighlight = movementHighlight;
-			terrainResourcesRef.current = { mesh, geometry, material, movementHighlight };
-		};
-
-		worker.addEventListener('message', onMessage);
-		worker.postMessage({ buildId, terrain });
-
-		return () => {
-			// If the terrain signature changes before the result arrives, deregister
-			// the stale handler. The old mesh stays visible until the next result lands.
-			worker.removeEventListener('message', onMessage);
-		};
 	}, [terrainSignature]);
+
+	useEffect(() => {
+		const resources = sceneResourcesRef.current;
+		if (!resources) return;
+
+		if (!terrainGeometry) {
+			const old = terrainResourcesRef.current;
+			if (!old) return;
+
+			resources.scene.remove(old.mesh);
+			disposeTerrainResources(old);
+			terrainResourcesRef.current = null;
+			resources.occlusionTargets.length = 0;
+			resources.movementHighlight = createMovementHighlightTexture(1, 1, 1);
+			return;
+		}
+
+		const movementHighlight = createMovementHighlightTexture(
+			terrainGeometry.width,
+			terrainGeometry.height + 1,
+			terrainGeometry.length
+		);
+		const material = new THREE.MeshStandardMaterial({
+			roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
+			metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
+			vertexColors: true,
+		});
+		installMovementHighlightShader(material, movementHighlight);
+		const mesh = new THREE.Mesh(terrainGeometry.geometry, material);
+		mesh.raycast = acceleratedRaycast;
+		mesh.castShadow = true;
+		mesh.receiveShadow = true;
+
+		const old = terrainResourcesRef.current;
+		if (old) {
+			resources.scene.remove(old.mesh);
+			disposeTerrainResources(old);
+		} else {
+			resources.movementHighlight.texture.dispose();
+		}
+
+		resources.scene.add(mesh);
+		resources.occlusionTargets.length = 0;
+		resources.occlusionTargets.push(mesh);
+		resources.movementHighlight = movementHighlight;
+		terrainResourcesRef.current = {
+			mesh,
+			geometry: terrainGeometry.geometry,
+			material,
+			movementHighlight,
+		};
+	}, [terrainGeometry]);
 
 	return (
 		<div className="relative w-full h-full">
