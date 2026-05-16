@@ -11,6 +11,20 @@ import { decodeVoxels } from './VoxelDataUtils';
 
 export type VoxelColorFactory = (voxel: Voxel) => THREE.Color;
 
+// ---------------------------------------------------------------------------
+// Raw geometry buffers
+// ---------------------------------------------------------------------------
+
+export interface VoxelTerrainBuffers {
+	positions: Float32Array;
+	normals: Float32Array;
+	colors: Float32Array;
+	tileCoords: Float32Array;
+	tileHeights: Float32Array;
+	highlightStrengths: Float32Array;
+	indices: Uint32Array;
+}
+
 function voxelKey(x: number, y: number, z: number): number {
 	return x + y * 256 + z * 65536;
 }
@@ -59,10 +73,14 @@ function vertexAO(
 	return 3 - (side1 + side2 + corner);
 }
 
-export function createVoxelTerrainGeometry(
+// ---------------------------------------------------------------------------
+// Core buffer builder -- no Three.js objects created, safe to run in a worker.
+// Returns properly-sized (sliced) TypedArrays ready for transfer.
+// ---------------------------------------------------------------------------
+export function buildVoxelTerrainBuffers(
 	terrain: VoxelTerrain,
 	createVoxelColor: VoxelColorFactory
-): THREE.BufferGeometry {
+): VoxelTerrainBuffers {
 	const voxelSize = getVoxelSize(terrain);
 	const halfVoxelSize = voxelSize / 2;
 	const resolution = getVoxelTerrainResolution(terrain);
@@ -168,15 +186,37 @@ export function createVoxelTerrainGeometry(
 		}
 	}
 
-	// Slice down to actual usage before uploading to the GPU.
+	// Slice to exact usage size so the returned buffers can be cleanly transferred.
+	return {
+		positions:          positions.slice(0, vp * 3),
+		normals:            normals.slice(0, vp * 3),
+		colors:             colors.slice(0, vp * 3),
+		tileCoords:         tileCoords.slice(0, vp * 2),
+		tileHeights:        tileHeights.slice(0, vp),
+		highlightStrengths: highlightStrengths.slice(0, vp),
+		indices:            indices.slice(0, ip),
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Convenience wrapper that constructs a BufferGeometry + BVH on the caller's
+// thread. Used by editor previews and any path that doesn't need off-thread
+// building.
+// ---------------------------------------------------------------------------
+export function createVoxelTerrainGeometry(
+	terrain: VoxelTerrain,
+	createVoxelColor: VoxelColorFactory
+): THREE.BufferGeometry {
+	const buf = buildVoxelTerrainBuffers(terrain, createVoxelColor);
+
 	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute('position',          new THREE.BufferAttribute(positions.subarray(0, vp * 3), 3));
-	geometry.setAttribute('normal',            new THREE.BufferAttribute(normals.subarray(0, vp * 3), 3));
-	geometry.setAttribute('color',             new THREE.BufferAttribute(colors.subarray(0, vp * 3), 3));
-	geometry.setAttribute('tileCoord',         new THREE.BufferAttribute(tileCoords.subarray(0, vp * 2), 2));
-	geometry.setAttribute('tileHeight',        new THREE.BufferAttribute(tileHeights.subarray(0, vp), 1));
-	geometry.setAttribute('highlightStrength', new THREE.BufferAttribute(highlightStrengths.subarray(0, vp), 1));
-	geometry.setIndex(new THREE.BufferAttribute(indices.subarray(0, ip), 1));
+	geometry.setAttribute('position',          new THREE.BufferAttribute(buf.positions, 3));
+	geometry.setAttribute('normal',            new THREE.BufferAttribute(buf.normals, 3));
+	geometry.setAttribute('color',             new THREE.BufferAttribute(buf.colors, 3));
+	geometry.setAttribute('tileCoord',         new THREE.BufferAttribute(buf.tileCoords, 2));
+	geometry.setAttribute('tileHeight',        new THREE.BufferAttribute(buf.tileHeights, 1));
+	geometry.setAttribute('highlightStrength', new THREE.BufferAttribute(buf.highlightStrengths, 1));
+	geometry.setIndex(new THREE.BufferAttribute(buf.indices, 1));
 	geometry.computeBoundingBox();
 	geometry.computeBoundingSphere();
 	geometry.boundsTree = new MeshBVH(geometry);

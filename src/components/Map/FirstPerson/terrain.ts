@@ -1,13 +1,8 @@
-import { useEffect, type RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import * as THREE from "three";
-import { acceleratedRaycast } from "three-mesh-bvh";
+import { acceleratedRaycast, MeshBVH } from "three-mesh-bvh";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { createVoxelTerrainGeometry } from "../../../utils/VoxelTerrainGeometryUtils";
 import { getVoxelCount } from "../../../utils/VoxelDataUtils";
-import {
-	normalizeVoxelPaletteIndex,
-	terrainPaletteIndexToVoxelColor,
-} from "../../../utils/VoxelTerrainEditorUtils";
 import {
 	getMaxVoxelSurfaceHeight,
 	getVoxelTerrainResolution,
@@ -24,6 +19,11 @@ interface TerrainRenderResources {
 	geometry: THREE.BufferGeometry;
 	material: THREE.MeshStandardMaterial;
 }
+
+type RuntimeSerializedBVH = Parameters<typeof MeshBVH.deserialize>[0] & {
+	version: number;
+	indirectBuffer: ArrayBufferView | null;
+};
 
 function disposeTerrainResources(resources: TerrainRenderResources): void {
 	resources.geometry.boundsTree = undefined;
@@ -65,18 +65,46 @@ export function useFirstPersonTerrain(
 	terrainSignature: string,
 	directionalLightRef: RefObject<THREE.DirectionalLight | null>
 ): void {
+	const terrainWorkerRef = useRef<Worker | null>(null);
+	const terrainBuildIdRef = useRef(0);
+	const terrainResourcesRef = useRef<TerrainRenderResources | null>(null);
+
+	// Spawn one worker for the lifetime of this hook instance; terminated on unmount.
+	useEffect(() => {
+		const worker = new Worker(
+			new URL('../../../utils/voxelGeometryWorker.ts', import.meta.url),
+			{ type: 'module' }
+		);
+		terrainWorkerRef.current = worker;
+		return () => {
+			worker.terminate();
+			terrainWorkerRef.current = null;
+		};
+	}, []);
+
 	useEffect(() => {
 		const dirLight = directionalLightRef.current;
-		if (!resources || !dirLight) return;
+		const worker = terrainWorkerRef.current;
+		if (!resources || !dirLight || !worker) return;
 
-		let terrainResources: TerrainRenderResources | null = null;
+		// Bump build ID so any result from a previous (now-stale) request is silently dropped.
+		const buildId = ++terrainBuildIdRef.current;
 		resources.occlusionTargets.length = 0;
 
 		if (!terrain || getVoxelCount(terrain.Voxels) === 0) {
+			// Remove current terrain immediately if no new terrain is incoming.
+			const old = terrainResourcesRef.current;
+			if (old) {
+				resources.scene.remove(old.mesh);
+				disposeTerrainResources(old);
+				terrainResourcesRef.current = null;
+			}
 			return () => {
 				resources.occlusionTargets.length = 0;
 			};
 		}
+
+		// ---- synchronous: directional light setup ----
 
 		const maxSurfaceHeight = getMaxVoxelSurfaceHeight(terrain);
 		const terrainCenterY = (maxSurfaceHeight - 1) / 2;
@@ -99,39 +127,81 @@ export function useFirstPersonTerrain(
 		);
 		dirLight.shadow.camera.updateProjectionMatrix();
 
-		const geometry = createVoxelTerrainGeometry(
-			terrain,
-			(voxel) => new THREE.Color(
-				terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(voxel.color))
-			)
-		);
-		const material = new THREE.MeshStandardMaterial({
-			roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
-			metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
-			vertexColors: true,
-		});
-		const mesh = new THREE.Mesh(geometry, material);
-		mesh.raycast = acceleratedRaycast;
-		mesh.castShadow = true;
-		mesh.receiveShadow = true;
-		resources.scene.add(mesh);
-		resources.occlusionTargets.push(mesh);
-		terrainResources = { mesh, geometry, material };
+		// ---- async: off-thread geometry + BVH build ----
+
+		const onMessage = (event: MessageEvent) => {
+			if (event.data.buildId !== buildId) return; // stale result, ignore
+			worker.removeEventListener('message', onMessage);
+
+			const {
+				positions, normals, colors, tileCoords, tileHeights, highlightStrengths,
+				indices, bvhRoots, bvhVersion,
+			} = event.data;
+
+			// Reconstruct BufferGeometry from the transferred typed arrays.
+			const geometry = new THREE.BufferGeometry();
+			geometry.setAttribute('position',          new THREE.BufferAttribute(positions, 3));
+			geometry.setAttribute('normal',            new THREE.BufferAttribute(normals, 3));
+			geometry.setAttribute('color',             new THREE.BufferAttribute(colors, 3));
+			geometry.setAttribute('tileCoord',         new THREE.BufferAttribute(tileCoords, 2));
+			geometry.setAttribute('tileHeight',        new THREE.BufferAttribute(tileHeights, 1));
+			geometry.setAttribute('highlightStrength', new THREE.BufferAttribute(highlightStrengths, 1));
+			geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+			geometry.computeBoundingBox();
+			geometry.computeBoundingSphere();
+			// Deserialize the BVH that was built in the worker -- no rebuild needed.
+			const serializedBvh: RuntimeSerializedBVH = {
+				version: bvhVersion,
+				roots: bvhRoots,
+				index: indices,
+				indirectBuffer: null,
+			};
+			geometry.boundsTree = MeshBVH.deserialize(
+				serializedBvh,
+				geometry,
+				{ setIndex: false }
+			);
+
+			const material = new THREE.MeshStandardMaterial({
+				roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
+				metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
+				vertexColors: true,
+			});
+			const mesh = new THREE.Mesh(geometry, material);
+			mesh.raycast = acceleratedRaycast;
+			mesh.castShadow = true;
+			mesh.receiveShadow = true;
+
+			// Guard: resources may have been torn down while build was in flight.
+			if (!resources) {
+				geometry.boundsTree = undefined;
+				geometry.dispose();
+				material.dispose();
+				return;
+			}
+
+			// Swap old terrain out, new terrain in.
+			const old = terrainResourcesRef.current;
+			if (old) {
+				resources.scene.remove(old.mesh);
+				disposeTerrainResources(old);
+			}
+
+			resources.scene.add(mesh);
+			resources.occlusionTargets.push(mesh);
+			terrainResourcesRef.current = { mesh, geometry, material };
+		};
+
+		worker.addEventListener('message', onMessage);
+		worker.postMessage({ buildId, terrain });
 
 		return () => {
-			resources.scene.remove(mesh);
+			worker.removeEventListener('message', onMessage);
 			resources.occlusionTargets.length = 0;
-			if (terrainResources) {
-				disposeTerrainResources(terrainResources);
-			}
+			// Old mesh stays visible until the new result lands (or the hook unmounts,
+			// in which case the component that owns the scene handles final cleanup).
 		};
-		// `terrain` is intentionally omitted from deps: StateSync deep-clones the
-		// campaign on every delta (fast-json-patch is called with mutateDocument=false),
-		// so the terrain object reference flips on every sync even when its contents
-		// are unchanged. Rebuilding the voxel geometry + BVH per sync costs ~300ms
-		// and stutters the first-person camera. terrainSignature is the value-equal
-		// identity (Id:W:L:H:res:Voxels) and is the only thing we actually need to
-		// react to, matching 3DMap.tsx's terrain effect.
+		// `terrain` intentionally omitted from deps: see comment in 3DMap.tsx.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [resources, terrainSignature, directionalLightRef]);
 }
