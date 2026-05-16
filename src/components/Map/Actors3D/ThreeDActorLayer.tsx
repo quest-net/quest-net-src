@@ -47,6 +47,7 @@ interface ThreeDActorLayerProps {
 	selectedActor: SelectedActor | null;
 	terrain: VoxelTerrain;
 	isDM: boolean;
+	xRayActors?: boolean;
 	imageService?: {
 		getImage(imageId: string): Promise<Blob | null>;
 	} | null;
@@ -254,6 +255,58 @@ function applySelectionToAll(
 	for (const [key, handles] of handlesByKey) {
 		applySelection(handles, key === selectedKey);
 	}
+}
+
+function forEachObjectMaterial(
+	object: THREE.Object3D | undefined,
+	callback: (material: THREE.Material) => void
+): void {
+	if (!object) return;
+	object.traverse((child) => {
+		if (!(child instanceof THREE.Mesh)) return;
+		if (Array.isArray(child.material)) {
+			child.material.forEach(callback);
+		} else {
+			callback(child.material);
+		}
+	});
+}
+
+function applyXRayToObject(object: THREE.Object3D | undefined, enabled: boolean): void {
+	if (!object) return;
+	object.traverse((child) => {
+		if (!(child instanceof THREE.Mesh)) return;
+
+		if (child.userData.actorXRayRenderOrder === undefined) {
+			child.userData.actorXRayRenderOrder = child.renderOrder;
+		}
+		child.renderOrder = enabled
+			? ACTOR_TOKEN_RENDER_ORDER.X_RAY
+			: child.userData.actorXRayRenderOrder;
+
+		forEachObjectMaterial(child, (material) => {
+			if (material.userData.actorXRayDepthTest === undefined) {
+				material.userData.actorXRayDepthTest = material.depthTest;
+			}
+			if (material.userData.actorXRayDepthWrite === undefined) {
+				material.userData.actorXRayDepthWrite = material.depthWrite;
+			}
+
+			material.depthTest = enabled
+				? false
+				: material.userData.actorXRayDepthTest;
+			material.depthWrite = enabled
+				? false
+				: material.userData.actorXRayDepthWrite;
+			material.needsUpdate = true;
+		});
+	});
+}
+
+function applyActorXRay(visual: ActorVisualHandles, enabled: boolean): void {
+	applyXRayToObject(visual.supportGroup, enabled);
+	applyXRayToObject(visual.standee, enabled);
+	applyXRayToObject(visual.selectionOverlay, enabled);
 }
 
 function calculateShadowParams(heightDelta: number): {
@@ -702,6 +755,7 @@ export function ThreeDActorLayer({
 	selectedActor,
 	terrain,
 	isDM,
+	xRayActors = false,
 	imageService,
 	onActorClick,
 	onActorSelect,
@@ -719,6 +773,7 @@ export function ThreeDActorLayer({
 	const canControlActorRef = useRef(canControlActor);
 	const onActorDragEndRef = useRef(onActorDragEnd);
 	const selectedActorRef = useRef(selectedActor);
+	const xRayActorsRef = useRef(xRayActors);
 	const terrainRef = useRef(terrain);
 	const selectionHandlesRef = useRef<Map<string, SelectionHandles>>(new Map());
 	const actorGroupsRef = useRef<Map<string, THREE.Group>>(new Map());
@@ -767,6 +822,13 @@ export function ThreeDActorLayer({
 	useEffect(() => {
 		selectedActorRef.current = selectedActor;
 	}, [selectedActor]);
+
+	useEffect(() => {
+		xRayActorsRef.current = xRayActors;
+		for (const visual of visualHandlesRef.current.values()) {
+			applyActorXRay(visual, xRayActors);
+		}
+	}, [xRayActors]);
 
 	useEffect(() => {
 		terrainRef.current = terrain;
@@ -994,6 +1056,8 @@ export function ThreeDActorLayer({
 			actorTexture: texture,
 			visualSignature,
 		});
+		const visual = visualHandlesRef.current.get(actorKey);
+		if (visual) applyActorXRay(visual, xRayActorsRef.current);
 
 		if (
 			previousVisualPosition &&
@@ -1070,6 +1134,7 @@ export function ThreeDActorLayer({
 			const occlusionHit = intersectFirstTerrainHit(raycaster, resources.occlusionTargets);
 			for (const hit of actorHits) {
 				if (
+					!xRayActorsRef.current &&
 					occlusionHit &&
 					occlusionHit.distance <
 						hit.distance - ACTOR_TOKEN_OCCLUSION.EPSILON
@@ -1140,6 +1205,7 @@ export function ThreeDActorLayer({
 				if (nextHandles) {
 					selectionHandlesRef.current.set(drag.actorKey, nextHandles);
 				}
+				applyActorXRay(visual, xRayActorsRef.current);
 				// Hide the static shadow during drag -- the support visual's
 				// own shadow is recomputed at the candidate position each
 				// pointermove.
@@ -1229,6 +1295,7 @@ export function ThreeDActorLayer({
 				if (nextHandles) {
 					selectionHandlesRef.current.set(drag.actorKey, nextHandles);
 				}
+				applyActorXRay(visual, xRayActorsRef.current);
 				visual.shadow.visible = true;
 			}
 			animateActorToPosition(
@@ -1427,6 +1494,7 @@ export function ThreeDActorLayer({
 				if (nextHandles) {
 					selectionHandlesRef.current.set(key, nextHandles);
 				}
+				applyActorXRay(visual, xRayActorsRef.current);
 			}
 
 			const nextTarget = getActorGroundPosition(actor, terrain);

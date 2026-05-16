@@ -49,6 +49,7 @@ interface ThreeDMapProps {
 	terrain?: VoxelTerrain | null;
 	characters?: Character[];
 	entities?: Entity[];
+	xRayActors?: boolean;
 }
 
 interface ShadowCameraBounds {
@@ -231,6 +232,7 @@ export default function ThreeDMap({
 	terrain,
 	characters = [],
 	entities = [],
+	xRayActors = false,
 }: ThreeDMapProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const cameraStateRef = useRef<ThreeDMapCameraState | null>(null);
@@ -727,6 +729,7 @@ export default function ThreeDMap({
 						selectedActor={selectedActor}
 						terrain={terrain}
 						isDM={isDM}
+						xRayActors={xRayActors}
 						imageService={imageService}
 						onActorClick={handleActorClick}
 						onActorSelect={handleActorSelect}

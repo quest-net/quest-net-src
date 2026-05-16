@@ -47,6 +47,7 @@ export function Main() {
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const isDM = isDmAccess();
 	const [mapViewMode, setMapViewMode] = useState<MapViewMode>("world");
+	const [xRayActors, setXRayActors] = useState(false);
 
 	// Top tabs state (same for everyone)
 	const [activeTopTab, setActiveTopTab] = useState<TopTab>("calendar");
@@ -220,6 +221,7 @@ export function Main() {
 							characters={campaign.GameState.Characters}
 							entities={campaign.GameState.Entities}
 							terrain={hydratedActiveTerrain}
+							xRayActors={isDM && xRayActors}
 						/>
 					)}
 					{activeTerrain && !hydratedActiveTerrain && (
@@ -230,20 +232,39 @@ export function Main() {
 							</div>
 						</div>
 					)}
-					{mapViewMode === "world" && showFirstPersonButton && (
-						<div className="absolute left-3 top-3 z-20">
-							<div
-								className="tooltip tooltip-right"
-								data-tip="Enter first-person mode"
-							>
-								<button
-									className="btn btn-sm btn-square btn-neutral"
-									onClick={() => setMapViewMode("first-person")}
-									aria-label="Enter first-person mode"
+					{mapViewMode === "world" && (showFirstPersonButton || isDM) && (
+						<div className="absolute left-3 top-3 z-20 flex items-center gap-2">
+							{showFirstPersonButton && (
+								<div
+									className="tooltip tooltip-right"
+									data-tip="Enter first-person mode"
 								>
-									<span className="icon-[mdi--camera-control] w-5 h-5" />
-								</button>
-							</div>
+									<button
+										className="btn btn-sm btn-square btn-neutral"
+										onClick={() => setMapViewMode("first-person")}
+										aria-label="Enter first-person mode"
+									>
+										<span className="icon-[mdi--camera-control] w-5 h-5" />
+									</button>
+								</div>
+							)}
+							{isDM && (
+								<div
+									className="tooltip tooltip-right"
+									data-tip={xRayActors ? "Disable actor X-Ray" : "Enable actor X-Ray"}
+								>
+									<button
+										className={`btn btn-sm btn-square ${xRayActors ? "btn-primary" : "btn-neutral"}`}
+										onClick={() => setXRayActors((current) => !current)}
+										aria-label="Toggle actor X-Ray"
+										aria-pressed={xRayActors}
+									>
+										<span
+											className={`${xRayActors ? "icon-[mdi--account-search]" : "icon-[mdi--account-search-outline]"} w-5 h-5`}
+										/>
+									</button>
+								</div>
+							)}
 						</div>
 					)}
 					<DiceRoller />

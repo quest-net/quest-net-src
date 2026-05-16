@@ -49,6 +49,7 @@ export const ACTOR_TOKEN_RENDER_ORDER = {
 	NORMAL: 101,
 	SELECTION: 101.5,
 	PICK: 102,
+	X_RAY: 110,
 } as const;
 
 export const ACTOR_TOKEN_PLACEMENT = {
