@@ -252,10 +252,6 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm"],
 		handler: CombatActions.decrementTurn,
 	},
-	"combat:setinitiative": {
-		roles: ["dm"],
-		handler: CombatActions.setInitiativeSide,
-	},
 	"combat:markActorTurnDone": {
 		// Both roles allowed: UI restricts players to their own selected character.
 		// The handler itself is non-destructive (toggles a string-array entry).

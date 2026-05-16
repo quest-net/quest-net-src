@@ -1,150 +1,54 @@
 // Main/Party.tsx
 
-import { useState } from "react";
+import { KeyboardEvent, MouseEvent } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { ImageDisplay } from "../Image/ImageDisplay";
-import { StatBar } from "../../components/StatBar/StatBar";
-import { ObjectPicker, ObjectTypeConfig } from "../../components/inputs/ObjectPicker";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
+import { useMapState } from "../../components/Map/MapStateProvider";
 import {
 	ResolvedAction,
-	resolveStats,
 	resolveActions,
+	resolveStats,
 } from "../../utils/ActorResolvers";
 import { computeInitiativeOrder } from "../../utils/InitiativeUtils";
+import {
+	AggregateStatsSummary,
+	isInteractiveCardTarget,
+} from "./ActorPanelHelpers";
+import { Character } from "../Character/Character";
 
-export function Party() {
+interface PartyProps {
+	onInspectActor: () => void;
+}
+
+export function Party({ onInspectActor }: PartyProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
+	const { selectActor } = useMapState();
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const myCharacterId = context.User.SelectedCharacters[campaign.RoomCode];
-
-	const isDM = context.User.Role === "dm";
 	const characters = campaign.GameState.Characters;
 
-	// Actor selection state for DM
-	const [selectedActorIds, setSelectedActorIds] = useState<string[]>([]);
-	const [showObjectPicker, setShowObjectPicker] = useState(false);
-
-	const handleStatChange = (
+	const handleActionsChange = (
 		characterId: string,
-		statId: string,
-		field: "Current" | "Max",
-		value: number
+		updatedActions: ResolvedAction[]
 	) => {
-		if (!actionService || !isDM) return;
-
-		const character = characters.find((c) => c.Id === characterId);
-		if (!character) return;
-
-		const updatedStats = character.Stats.map((stat) =>
-			stat.Id === statId ? { ...stat, [field]: value } : stat
-		);
-
-		actionService.execute("character:edit", {
-			characterId: characterId,
-			updates: { Stats: updatedStats },
-		});
-	};
-
-	const handleActionsChange = (characterId: string, updatedActions: ResolvedAction[]) => {
 		if (!actionService) return;
 
-		const actionSlots = updatedActions.map((a) => ({
-			Id: a.Id,
-			Max: a.Max,
-			Current: a.Current,
+		const actionSlots = updatedActions.map((action) => ({
+			Id: action.Id,
+			Max: action.Max,
+			Current: action.Current,
 		}));
 
 		actionService.execute("character:edit", {
-			characterId: characterId,
+			characterId,
 			updates: { Actions: actionSlots },
 		});
 	};
 
-	const toggleActorSelection = (actorId: string) => {
-		setSelectedActorIds((prev) =>
-			prev.includes(actorId)
-				? prev.filter((id) => id !== actorId)
-				: [...prev, actorId]
-		);
-	};
-
-	const toggleSelectAll = () => {
-		if (selectedActorIds.length === characters.length) {
-			setSelectedActorIds([]);
-		} else {
-			setSelectedActorIds(characters.map((c) => c.Id));
-		}
-	};
-
-	const handleGiveObjects = (
-		objectIds: string[],
-		objectType: string,
-		count: number
-	) => {
-		if (!actionService || selectedActorIds.length === 0) return;
-
-		// Call the appropriate give action based on object type
-		actionService.execute(`${objectType}:give`, {
-			[`${objectType}Ids`]: objectIds,
-			actorIds: selectedActorIds,
-			count: count,
-		});
-
-		// Close picker and clear selection
-		setShowObjectPicker(false);
-		setSelectedActorIds([]);
-	};
-
-	// Calculate party-wide stats
-	const calculatePartyStats = () => {
-		if (characters.length === 0) return [];
-
-		// Use the first character's stats as a template
-		const statTemplate = characters[0].Stats;
-
-		return statTemplate.map((templateStat) => {
-			let totalCurrent = 0;
-			let totalMax = 0;
-
-			// Sum up this stat across all characters. Skip characters where the
-			// stat is unset (they don't have this stat).
-			characters.forEach((character) => {
-				const stat = character.Stats.find((s) => s.Id === templateStat.Id);
-				if (stat && stat.Current !== null) {
-					totalCurrent += stat.Current;
-					totalMax += stat.Max;
-				}
-			});
-
-			const percentage = totalMax > 0 ? (totalCurrent / totalMax) * 100 : 0;
-
-			// Look up stat name and color from campaign settings
-			const statDef = campaign.Settings.StatDefinitions.find(
-				(d) => d.Id === templateStat.Id
-			);
-
-			return {
-				id: templateStat.Id,
-				name: statDef?.Name ?? templateStat.Id,
-				color: statDef?.Color ?? "#888",
-				totalCurrent,
-				totalMax,
-				percentage,
-			};
-		});
-	};
-
-	const partyStats = calculatePartyStats();
-
-	// ---- Initiative state (party-side only) -------------------------------
-	// Order is recomputed on every render from current actor stats — see
-	// InitiativeUtils. The done list lives on CombatState so it survives
-	// network sync. Badges render only while combat is active and the DM has
-	// configured at least one initiative source.
 	const combatState = campaign.GameState.CombatState;
 	const initiativeEntries = combatState.isActive
 		? computeInitiativeOrder(
@@ -154,14 +58,11 @@ export function Party() {
 		)
 		: [];
 	const orderByActorId = new Map(
-		initiativeEntries.map((e) => [e.ActorId, e.Order])
+		initiativeEntries.map((entry) => [entry.ActorId, entry.Order])
 	);
 	const partyDoneSet = new Set(combatState.PartyTurnsCompleted ?? []);
 	const showInitiative = initiativeEntries.length > 0;
 
-	// When initiative is configured during combat, render party cards in
-	// initiative order (lowest Order first). Otherwise keep the natural
-	// roster order.
 	const displayCharacters = showInitiative
 		? [...characters].sort((a, b) => {
 			const ao = orderByActorId.get(a.Id) ?? Number.POSITIVE_INFINITY;
@@ -170,27 +71,48 @@ export function Party() {
 		})
 		: characters;
 
+	const inspectCharacter = (character: Character) => {
+		selectActor({
+			id: character.Id,
+			kind: "character",
+			moveSpeed: character.MoveSpeed,
+		});
+		onInspectActor();
+	};
+
+	const handleCardDoubleClick = (
+		event: MouseEvent<HTMLDivElement>,
+		character: Character
+	) => {
+		if (isInteractiveCardTarget(event.target, event.currentTarget)) return;
+		inspectCharacter(character);
+	};
+
+	const handleCardKeyDown = (
+		event: KeyboardEvent<HTMLDivElement>,
+		character: Character
+	) => {
+		if (isInteractiveCardTarget(event.target, event.currentTarget)) return;
+		if (event.key !== "Enter" && event.key !== " ") return;
+		event.preventDefault();
+		inspectCharacter(character);
+	};
+
 	const handleBadgeClick = (characterId: string) => {
-		if (!actionService) return;
-		// DM can toggle any badge; players can only toggle their own.
-		const allowed = isDM || characterId === myCharacterId;
-		if (!allowed) return;
+		if (!actionService || characterId !== myCharacterId) return;
 		actionService.execute("combat:markActorTurnDone", {
 			actorId: characterId,
 			side: "party",
 		});
 	};
 
-	// Renders the corner initiative badge for a character card. Returns null
-	// when initiative isn't configured / combat isn't active so the card stays
-	// clean. The badge is a small clickable square flush with the top-left
-	// corner of the parent (which must be `relative`).
 	const renderInitiativeBadge = (characterId: string) => {
 		if (!showInitiative) return null;
 		const order = orderByActorId.get(characterId);
 		if (order === undefined) return null;
 		const isDone = partyDoneSet.has(characterId);
-		const canToggle = isDM || characterId === myCharacterId;
+		const canToggle = characterId === myCharacterId;
+
 		return (
 			<button
 				type="button"
@@ -198,7 +120,7 @@ export function Party() {
 				disabled={!canToggle}
 				title={
 					isDone
-						? "Turn done — click to undo"
+						? "Turn done - click to undo"
 						: canToggle
 							? "Click to mark turn done"
 							: `Initiative ${order}`
@@ -213,138 +135,37 @@ export function Party() {
 		);
 	};
 
-	// Prepare object types for ObjectPicker
-	const objectTypes: ObjectTypeConfig<any>[] = [
-		{
-			label: "Items",
-			items: campaign.ItemTemplates,
-			icon: "icon-[mdi--bag-personal]",
-			typeKey: "item",
-		},
-		{
-			label: "Skills",
-			items: campaign.SkillTemplates,
-			icon: "icon-[mdi--star]",
-			typeKey: "skill",
-		},
-		{
-			label: "Statuses",
-			items: campaign.StatusTemplates,
-			icon: "icon-[mdi--heart-pulse]",
-			typeKey: "status",
-		},
-	];
-
-	// Empty state
 	if (characters.length === 0) {
 		return (
 			<div className="text-center py-12">
-				<div className="text-6xl mb-4">👥</div>
 				<p className="text-xl mb-2">No characters spawned</p>
-				{isDM ? (
-					<p className="text-base-content/60">
-						Go to the Characters tab to spawn characters
-					</p>
-				) : (
-					<p className="text-base-content/60">How are you even here?</p>
-				)}
+				<p className="text-base-content/60">How are you even here?</p>
 			</div>
 		);
 	}
 
 	return (
 		<div className="space-y-4">
-			{/* DM Controls */}
-			{isDM && (
-				<div className="card bg-base-200 border-2 border-base-300">
-					<div className="card-body p-4">
-						<div className="flex justify-between items-center">
-							<div className="flex items-center gap-3">
-								<button
-									onClick={toggleSelectAll}
-									className="btn btn-sm btn-ghost"
-								>
-									{selectedActorIds.length === characters.length ? (
-										<span className="icon-[mdi--checkbox-marked] w-5 h-5" />
-									) : (
-										<span className="icon-[mdi--checkbox-blank-outline] w-5 h-5" />
-									)}
-								</button>
-								<span className="text-sm font-medium">
-									{selectedActorIds.length > 0
-										? `${selectedActorIds.length} selected`
-										: "Select actors"}
-								</span>
-							</div>
-							<button
-								onClick={() => setShowObjectPicker(true)}
-								disabled={selectedActorIds.length === 0}
-								className="btn btn-primary btn-sm gap-2"
-							>
-								<span className="icon-[mdi--gift] w-4 h-4" />
-								Give Objects
-							</button>
-						</div>
-					</div>
-				</div>
-			)}
+			<AggregateStatsSummary
+				title="Party Stats"
+				actors={characters}
+				settings={campaign.Settings}
+			/>
 
-			{/* Party Stats Summary */}
-			<div className="card bg-base-200 border-2 border-base-300">
-				<div className="card-body p-4">
-					<h2 className="font-bold text-lg mb-3">Party Stats</h2>
-					<div className="space-y-3">
-						{partyStats.map((stat) => (
-							<div key={stat.id} className="space-y-1">
-								<div className="flex items-center justify-between">
-									<span className="text-sm font-medium">{stat.name}</span>
-									<span className="text-sm opacity-70">
-										{stat.totalCurrent} / {stat.totalMax} ({stat.percentage.toFixed(0)}%)
-									</span>
-								</div>
-								<div className="relative w-full h-6 bg-base-300 rounded overflow-hidden">
-									<div
-										className="h-full transition-all duration-300"
-										style={{
-											width: `${stat.percentage}%`,
-											backgroundColor: stat.color,
-										}}
-									/>
-								</div>
-							</div>
-						))}
-					</div>
-				</div>
-			</div>
-
-			{/* Individual Characters */}
 			<div className="space-y-2">
 				{displayCharacters.map((character) => (
 					<div
 						key={character.Id}
-						className={`card bg-base-100 border-2 relative transition-all ${isDM && selectedActorIds.includes(character.Id)
-							? "border-primary ring-2 ring-primary"
-							: "border-base-300"
-							}`}
+						role="button"
+						tabIndex={0}
+						onDoubleClick={(event) => handleCardDoubleClick(event, character)}
+						onKeyDown={(event) => handleCardKeyDown(event, character)}
+						title="Double-click to inspect"
+						className="card bg-base-100 border-2 border-base-300 relative transition-all cursor-pointer hover:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
 					>
-						{/* Corner initiative badge — flush with the top-left corner.
-						    Click toggles turn done (DM any actor, players only their own). */}
 						{renderInitiativeBadge(character.Id)}
 						<div className="card-body p-4">
 							<div className="flex gap-2 items-center">
-								{/* DM Selection Checkbox */}
-								{isDM && (
-									<div className="shrink-0">
-										<input
-											type="checkbox"
-											checked={selectedActorIds.includes(character.Id)}
-											onChange={() => toggleActorSelection(character.Id)}
-											className="checkbox checkbox-primary"
-										/>
-									</div>
-								)}
-
-								{/* Left side: Name and Image */}
 								<div className="flex flex-col items-center w-32 shrink-0">
 									<h3 className="font-bold text-lg text-center">
 										{character.Name}
@@ -358,61 +179,37 @@ export function Party() {
 									</div>
 								</div>
 
-								{/* Right side: Stats */}
 								<div className="flex-1 space-y-2">
-									{isDM ? (
-										// DM: Interactive stat bars
-										resolveStats(
-											character.Stats,
-											campaign.Settings.StatDefinitions
-										).map((stat) => (
-											<StatBar
-												key={stat.Id}
-												stat={stat}
-												editingMax={false}
-												onCurrentChange={(value) =>
-													handleStatChange(character.Id, stat.Id, "Current", value)
-												}
-												onMaxChange={(value) =>
-													handleStatChange(character.Id, stat.Id, "Max", value)
-												}
-											/>
-										))
-									) : (
-										// Player: Readonly stat bars
-										resolveStats(
-											character.Stats,
-											campaign.Settings.StatDefinitions
-										).map((stat) => {
-											// Hide unset stats — character doesn't have this one.
-											if (stat.Current === null) return null;
-											const current = stat.Current;
-											const percentage = (current / stat.Max) * 100;
+									{resolveStats(
+										character.Stats,
+										campaign.Settings.StatDefinitions
+									).map((stat) => {
+										if (stat.Current === null) return null;
+										const percentage = (stat.Current / stat.Max) * 100;
 
-											return (
-												<div key={stat.Id} className="space-y-1">
-													<div className="flex items-center justify-between">
-														<span className="text-sm font-medium">{stat.Name}</span>
-														<span className="text-sm opacity-70">
-															{current} / {stat.Max}
-														</span>
-													</div>
-													<div className="relative w-full h-6 bg-base-300 rounded overflow-hidden">
-														<div
-															className="h-full transition-all duration-150"
-															style={{
-																width: `${percentage}%`,
-																backgroundColor: stat.Color,
-															}}
-														/>
-													</div>
+										return (
+											<div key={stat.Id} className="space-y-1">
+												<div className="flex items-center justify-between gap-2">
+													<span className="text-sm font-medium truncate">{stat.Name}</span>
+													<span className="text-sm opacity-70 shrink-0">
+														{stat.Current} / {stat.Max}
+													</span>
 												</div>
-											);
-										})
-									)}
+												<div className="relative w-full h-6 bg-base-300 rounded overflow-hidden">
+													<div
+														className="h-full transition-all duration-150"
+														style={{
+															width: `${Math.max(0, Math.min(100, percentage))}%`,
+															backgroundColor: stat.Color,
+														}}
+													/>
+												</div>
+											</div>
+										);
+									})}
 								</div>
 							</div>
-							{/* Actions */}
+
 							{character.Actions && character.Actions.length > 0 && (
 								<div className="pt-2 border-t border-base-300">
 									<ActionBubbles
@@ -423,7 +220,7 @@ export function Party() {
 										onChange={(updatedActions) =>
 											handleActionsChange(character.Id, updatedActions)
 										}
-										readonly={!isDM && character.Id !== myCharacterId}
+										readonly={character.Id !== myCharacterId}
 									/>
 								</div>
 							)}
@@ -431,17 +228,6 @@ export function Party() {
 					</div>
 				))}
 			</div>
-
-			{/* Object Picker Modal */}
-			<ObjectPicker
-				isOpen={showObjectPicker}
-				types={objectTypes}
-				multiSelect={true}
-				showCount={true}
-				onConfirm={handleGiveObjects}
-				onCancel={() => setShowObjectPicker(false)}
-				title="Give Objects to Selected Actors"
-			/>
 		</div>
 	);
 }

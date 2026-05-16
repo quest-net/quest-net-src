@@ -230,35 +230,6 @@ export const CombatActions = {
 			: [...existing, params.actorId];
 	},
 
-	/**
-	 * Sets which side currently has initiative
-	 * DM-only
-	 */
-	setInitiativeSide(
-		params: { side: "party" | "enemies" },
-		context: Context
-	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
-		const combatState = campaign.GameState.CombatState;
-
-		if (!combatState.isActive) {
-			console.warn("[Combat] Cannot set initiative - combat is not active");
-			return;
-		}
-
-		combatState.initiativeSide = params.side;
-
-		LogActions.create(
-			{
-				action: "Initiative changed",
-				details: `${params.side === "party" ? "Party" : "Enemies"} now have initiative.`,
-				category: "combat",
-				level: "info",
-				visibility: ["all"],
-			},
-			context
-		);
-	},
 };
 
 // ============================================================================

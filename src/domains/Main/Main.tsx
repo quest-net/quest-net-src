@@ -19,6 +19,7 @@ import { NoteDisplay } from "../Note/NoteDisplay";
 import { CharacterSheet } from "../Character/CharacterSheet";
 import { ItemCollection } from "../Item/Collection";
 import { Party } from "./Party";
+import { Overview } from "./Overview";
 import { SkillCollection } from "../Skill/Collection";
 import { CombatDisplay } from "../Combat/CombatDisplay";
 import { StatusCollection } from "../Status/Collection";
@@ -40,7 +41,7 @@ type PlayerBottomTab =
 	| "inspector"
 	| "log"
 	| "notes";
-type DMBottomTab = "inspector" | "scene" | "log" | "party" | "shared-inventories";
+type DMBottomTab = "inspector" | "scene" | "log" | "overview" | "shared-inventories";
 
 export function Main() {
 	const context = useQuestContext();
@@ -189,6 +190,10 @@ export function Main() {
 			setShowSkillsIndicator(false);
 		}
 	};
+
+	const switchToInspector = () => {
+		setActiveBottomTab("inspector");
+	};
 	// Get label for current top tab
 	const getTopTabLabel = () => {
 		switch (activeTopTab) {
@@ -318,12 +323,12 @@ export function Main() {
 										<span className="icon-[mdi--message-text] w-6 h-6" />
 									</button>
 									<button
-										className={`btn btn-square ${activeBottomTab === "party" ? "btn-neutral" : ""
+										className={`btn btn-square ${activeBottomTab === "overview" ? "btn-neutral" : ""
 											}`}
-										onClick={() => setActiveBottomTab("party")}
-										title="Party"
+										onClick={() => setActiveBottomTab("overview")}
+										title="Overview"
 									>
-										<span className="icon-[mdi--account-group] w-6 h-6" />
+										<span className="icon-[mdi--account-multiple] w-6 h-6" />
 									</button>
 									{hasSharedInventories && (
 										<button
@@ -515,7 +520,12 @@ export function Main() {
 							{activeBottomTab === "statuses" && selectedCharacter && (
 								<StatusCollection actor={selectedCharacter} />
 							)}
-							{activeBottomTab === "party" && <Party />}
+							{!isDM && activeBottomTab === "party" && (
+								<Party onInspectActor={switchToInspector} />
+							)}
+							{isDM && activeBottomTab === "overview" && (
+								<Overview onInspectActor={switchToInspector} />
+							)}
 							{activeBottomTab === "notes" && <NoteDisplay />}
 							{activeBottomTab === "inspector" && <Inspector />}
 							{activeBottomTab === "scene" && <SceneEdit />}

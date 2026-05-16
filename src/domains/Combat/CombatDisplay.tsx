@@ -80,11 +80,6 @@ export function CombatDisplay() {
 		actionService.execute("combat:decrementTurn", {});
 	};
 
-	const handleSetInitiative = (side: "party" | "enemies") => {
-		if (!isInteractive) return;
-		actionService.execute("combat:setInitiativeSide", { side });
-	};
-
 	// =========================================================================
 	// PLAYER VIEW
 	// =========================================================================
@@ -211,32 +206,24 @@ export function CombatDisplay() {
 					</div>
 				)}
 
-				{/* Initiative buttons */}
-				<div className="flex gap-2 justify-center">
-					<button
-						onClick={() => handleSetInitiative("party")}
-						className={`btn btn-sm gap-1 ${
+				{/* Current side and combat controls */}
+				<div className="flex gap-2 justify-center items-center">
+					<span
+						className={`badge badge-lg gap-1 ${
 							combatState.initiativeSide === "party"
-								? "btn-primary"
-								: "btn-outline"
+								? "badge-primary"
+								: "badge-error"
 						}`}
-						disabled={!isInteractive}
 					>
-						<span className="icon-[mdi--shield-account] w-4 h-4" />
-						Party
-					</button>
-					<button
-						onClick={() => handleSetInitiative("enemies")}
-						className={`btn btn-sm gap-1 ${
-							combatState.initiativeSide === "enemies"
-								? "btn-error"
-								: "btn-outline"
-						}`}
-						disabled={!isInteractive}
-					>
-						<span className="icon-[mdi--skull] w-4 h-4" />
-						Enemies
-					</button>
+						<span
+							className={`w-4 h-4 ${
+								combatState.initiativeSide === "party"
+									? "icon-[mdi--shield-account]"
+									: "icon-[mdi--skull]"
+							}`}
+						/>
+						{combatState.initiativeSide === "party" ? "Party" : "Enemies"} Initiative
+					</span>
 					<button
 						onClick={handleEndCombat}
 						className="btn btn-sm btn-neutral gap-1"
