@@ -14,16 +14,31 @@ export interface CampaignSettings {
 }
 
 /**
- * InitiativeSettings configures how combat turn order is determined within a side.
- * Sources is an ordered chain: the first entry is the primary sort key, subsequent
- * entries are tiebreakers applied in order. All sources are sorted greatest-first.
- * Actors with no value for a source are placed at the bottom of the list.
+ * InitiativeSettings configures combat round structure and how turn order is
+ * determined within a round. Sources is an ordered chain: the first entry is the
+ * primary sort key, subsequent entries are tiebreakers applied in order. All
+ * sources are sorted greatest-first. Actors with no value for a source are
+ * placed at the bottom of the list.
+ *
+ * Mode chooses the round structure:
+ *  - "party": party and enemies alternate. Each side's collective acting period
+ *    is one round, and Sources orders actors within their own side only.
+ *  - "individual": every actor (party + entities) shares one round, and Sources
+ *    orders them all against each other.
  *
  * If undefined or Sources is empty, no initiative ordering is displayed.
  */
 export interface InitiativeSettings {
 	Sources: InitiativeSource[];
+	Mode: InitiativeMode;
 }
+
+/**
+ * Initiative round-structure mode.
+ *  - party: alternating party/enemy rounds.
+ *  - individual: a single mixed round across all actors per cycle.
+ */
+export type InitiativeMode = "party" | "individual";
 
 /**
  * InitiativeSource identifies a single sortable field on an actor.

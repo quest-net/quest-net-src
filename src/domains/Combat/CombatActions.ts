@@ -2,37 +2,55 @@
 
 import { Context } from "../Context/Context";
 import { CampaignActions } from "../Campaign/CampaignActions";
+import type { Campaign } from "../Campaign/Campaign";
 import { LogActions } from "../Log/LogActions";
 import { restoreCharacter, restoreSharedInventories } from "../Calendar/CalendarActions";
 import { Actor } from "../Actor/Actor";
+import type { InitiativeMode } from "../CampaignSetting/CampaignSetting";
 import { resolveStat } from "../../utils/ActorResolvers";
+
+function getInitiativeMode(campaign: Campaign): InitiativeMode {
+	const initiativeSettings = campaign.Settings.InitiativeSettings;
+	return initiativeSettings ? initiativeSettings.Mode : "party";
+}
 
 export const CombatActions = {
 	/**
-	 * Starts combat with the specified starting side
+	 * Starts combat. In party mode, startingSide chooses which side acts first.
+	 * In individual mode, startingSide is ignored (everyone shares each round)
+	 * but is still recorded on the state.
 	 * DM-only
 	 */
 	start(params: { startingSide: "party" | "enemies" }, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
+		const mode = getInitiativeMode(campaign);
 
 		campaign.GameState.CombatState = {
 			isActive: true,
-			currentTurn: 1,
+			currentRound: 1,
 			initiativeSide: params.startingSide,
-			PartyTurnsCompleted: [],
-			EnemyTurnsCompleted: [],
+			RoundCompleted: [],
 		};
 
 		// Snapshot turn-start positions for everyone. Both sides are entering
-		// their first turn fresh — even the side that doesn't go first benefits
-		// from having an anchor (it just won't be consulted until their turn).
+		// their first round fresh — even the side that doesn't go first benefits
+		// from having an anchor (it just won't be consulted until their round).
 		snapshotTurnStartForActors(campaign.GameState.Characters);
 		snapshotTurnStartForActors(campaign.GameState.Entities);
 
+		const startedBy =
+			mode === "individual"
+				? "All actors"
+				: params.startingSide === "party"
+					? "Party"
+					: "Enemies";
 		LogActions.create(
 			{
 				action: "Combat started",
-				details: `Combat begins! ${params.startingSide === "party" ? "Party" : "Enemies"} have initiative.`,
+				details:
+					mode === "individual"
+						? "Combat begins! All actors share the round."
+						: `Combat begins! ${startedBy} have initiative.`,
 				category: "combat",
 				level: "important",
 				visibility: ["all"],
@@ -76,10 +94,9 @@ export const CombatActions = {
 
 		campaign.GameState.CombatState = {
 			isActive: false,
-			currentTurn: 0,
+			currentRound: 0,
 			initiativeSide: "party",
-			PartyTurnsCompleted: [],
-			EnemyTurnsCompleted: [],
+			RoundCompleted: [],
 		};
 
 		LogActions.create(
@@ -95,36 +112,47 @@ export const CombatActions = {
 	},
 
 	/**
-	 * Increments the turn counter, switches initiative, applies regen, and decrements status durations
+	 * Advances to the next round: bumps the counter, flips initiative in party
+	 * mode (no flip in individual mode), clears the round-completed list,
+	 * applies regen, and decrements status durations.
 	 * DM-only
 	 */
-	incrementTurn(_params: {}, context: Context): void {
+	incrementRound(_params: {}, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 		const combatState = campaign.GameState.CombatState;
+		const mode = getInitiativeMode(campaign);
 
 		if (!combatState.isActive) {
-			console.warn("[Combat] Cannot increment turn - combat is not active");
+			console.warn("[Combat] Cannot increment round - combat is not active");
 			return;
 		}
 
-		// Increment turn
-		combatState.currentTurn++;
+		// Increment round
+		combatState.currentRound++;
 
-		// Switch initiative
-		combatState.initiativeSide =
-			combatState.initiativeSide === "party" ? "enemies" : "party";
+		// Switch initiative — only in party mode. Individual mode has no sides
+		// to flip; everyone shares the round.
+		if (mode === "party") {
+			combatState.initiativeSide =
+				combatState.initiativeSide === "party" ? "enemies" : "party";
+		}
 
-		// Clear the *destination* side's "turn done" list so the next turn
-		// starts with everyone unmarked. Initiative order itself is recomputed
-		// live at render time, so there's nothing else to refresh.
-		clearTurnsCompletedForSide(combatState, combatState.initiativeSide);
+		// Clear the round-completed list so the next round starts with everyone
+		// unmarked. Initiative order itself is recomputed live at render time,
+		// so there's nothing else to refresh.
+		clearRoundCompleted(combatState);
 
-		// Snapshot turn-start positions for the side whose turn is now
+		// Snapshot turn-start positions for the actors whose round is now
 		// beginning, so remaining-movement UI re-anchors at this position.
-		// Note: decrementTurn deliberately does NOT do this — rewinding loses
+		// Note: decrementRound deliberately does NOT do this — rewinding loses
 		// historical turn-start data, matching the existing "we don't perfectly
 		// reverse complex state" stance for that direction.
-		snapshotTurnStartForSide(campaign, combatState.initiativeSide);
+		if (mode === "party") {
+			snapshotTurnStartForSide(campaign, combatState.initiativeSide);
+		} else {
+			snapshotTurnStartForActors(campaign.GameState.Characters);
+			snapshotTurnStartForActors(campaign.GameState.Entities);
+		}
 
 		// Apply regen to all actors with regen rates
 		applyRegenToAllActors(campaign, 1);
@@ -138,10 +166,19 @@ export const CombatActions = {
 		// Decrement status durations and remove expired statuses
 		decrementAndRemoveStatuses(campaign);
 
+		const sideLabel =
+			mode === "individual"
+				? "All actors"
+				: combatState.initiativeSide === "party"
+					? "Party"
+					: "Enemies";
 		LogActions.create(
 			{
-				action: "Turn incremented",
-				details: `Turn ${combatState.currentTurn}. ${combatState.initiativeSide === "party" ? "Party" : "Enemies"} have initiative.`,
+				action: "Round incremented",
+				details:
+					mode === "individual"
+						? `Round ${combatState.currentRound}. All actors share initiative.`
+						: `Round ${combatState.currentRound}. ${sideLabel} have initiative.`,
 				category: "combat",
 				level: "important",
 				visibility: ["all"],
@@ -151,32 +188,37 @@ export const CombatActions = {
 	},
 
 	/**
-	 * Decrements the turn counter, switches initiative back, reverses regen, and reverses status decrements
+	 * Rewinds to the previous round: decrements the counter, flips initiative
+	 * back in party mode (no flip in individual mode), clears the
+	 * round-completed list, and reverses regen.
 	 * DM-only
 	 */
-	decrementTurn(_params: {}, context: Context): void {
+	decrementRound(_params: {}, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 		const combatState = campaign.GameState.CombatState;
+		const mode = getInitiativeMode(campaign);
 
 		if (!combatState.isActive) {
-			console.warn("[Combat] Cannot decrement turn - combat is not active");
+			console.warn("[Combat] Cannot decrement round - combat is not active");
 			return;
 		}
 
-		if (combatState.currentTurn <= 1) {
-			console.warn("[Combat] Cannot decrement below turn 1");
+		if (combatState.currentRound <= 1) {
+			console.warn("[Combat] Cannot decrement below round 1");
 			return;
 		}
 
-		// Decrement turn
-		combatState.currentTurn--;
+		// Decrement round
+		combatState.currentRound--;
 
-		// Switch initiative back
-		combatState.initiativeSide =
-			combatState.initiativeSide === "party" ? "enemies" : "party";
+		// Switch initiative back — only in party mode.
+		if (mode === "party") {
+			combatState.initiativeSide =
+				combatState.initiativeSide === "party" ? "enemies" : "party";
+		}
 
-		// Clear the side we're rewinding into — same reasoning as incrementTurn.
-		clearTurnsCompletedForSide(combatState, combatState.initiativeSide);
+		// Clear the round we're rewinding into — same reasoning as incrementRound.
+		clearRoundCompleted(combatState);
 
 		// Reverse regen from all actors
 		applyRegenToAllActors(campaign, -1);
@@ -190,10 +232,19 @@ export const CombatActions = {
 		// Note: We don't reverse status decrements as that would be complex
 		// and could lead to inconsistent state. DM can manually adjust durations if needed.
 
+		const sideLabel =
+			mode === "individual"
+				? "All actors"
+				: combatState.initiativeSide === "party"
+					? "Party"
+					: "Enemies";
 		LogActions.create(
 			{
-				action: "Turn decremented",
-				details: `Turn ${combatState.currentTurn}. ${combatState.initiativeSide === "party" ? "Party" : "Enemies"} have initiative.`,
+				action: "Round decremented",
+				details:
+					mode === "individual"
+						? `Round ${combatState.currentRound}. All actors share initiative.`
+						: `Round ${combatState.currentRound}. ${sideLabel} have initiative.`,
 				category: "combat",
 				level: "important",
 				visibility: ["all"],
@@ -203,13 +254,16 @@ export const CombatActions = {
 	},
 
 	/**
-	 * Toggles whether an actor's turn is marked "done" for the current side's
-	 * turn. Purely visual — used by the party-tab badge click handler and the
-	 * battle banner. Allowed for DM and players alike (the UI restricts which
-	 * actors a player can click; this handler trusts the call).
+	 * Toggles whether an actor's turn is marked "done" within the current
+	 * round. Purely visual — used by the party-tab badge click handler and the
+	 * battle banner. Both party and enemy actor IDs feed into the unified
+	 * RoundCompleted list.
+	 *
+	 * Allowed for DM and players alike (the UI restricts which actors a player
+	 * can click; this handler trusts the call).
 	 */
 	markActorTurnDone(
-		params: { actorId: string; side: "party" | "enemies" },
+		params: { actorId: string },
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
@@ -220,12 +274,10 @@ export const CombatActions = {
 			return;
 		}
 
-		const key =
-			params.side === "party" ? "PartyTurnsCompleted" : "EnemyTurnsCompleted";
-		const existing = combatState[key] ?? [];
+		const existing = combatState.RoundCompleted ?? [];
 		const isDone = existing.includes(params.actorId);
 
-		combatState[key] = isDone
+		combatState.RoundCompleted = isDone
 			? existing.filter((id) => id !== params.actorId)
 			: [...existing, params.actorId];
 	},
@@ -237,16 +289,13 @@ export const CombatActions = {
 // ============================================================================
 
 /**
- * Clears the "turn done" list for one side. Used when initiative flips so the
- * incoming side starts fresh. The opposite side's list is left intact so a
- * decrementTurn rewind doesn't lose data within a round.
+ * Clears the unified RoundCompleted list. Used when a round advances so the
+ * next round starts with everyone unmarked.
  */
-function clearTurnsCompletedForSide(
-	combatState: { PartyTurnsCompleted?: string[]; EnemyTurnsCompleted?: string[] },
-	side: "party" | "enemies"
+function clearRoundCompleted(
+	combatState: { RoundCompleted?: string[] }
 ): void {
-	if (side === "party") combatState.PartyTurnsCompleted = [];
-	else combatState.EnemyTurnsCompleted = [];
+	combatState.RoundCompleted = [];
 }
 
 /**

@@ -244,13 +244,13 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm"],
 		handler: CombatActions.end,
 	},
-	"combat:incrementTurn": {
+	"combat:incrementRound": {
 		roles: ["dm"],
-		handler: CombatActions.incrementTurn,
+		handler: CombatActions.incrementRound,
 	},
-	"combat:decrementTurn": {
+	"combat:decrementRound": {
 		roles: ["dm"],
-		handler: CombatActions.decrementTurn,
+		handler: CombatActions.decrementRound,
 	},
 	"combat:markActorTurnDone": {
 		// Both roles allowed: UI restricts players to their own selected character.

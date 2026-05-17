@@ -71,8 +71,9 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 			Entities: [],
 			CombatState: {
 				isActive: false,
-				currentTurn: 0,
+				currentRound: 0,
 				initiativeSide: "party",
+				RoundCompleted: [],
 			},
 			Audio: [],
 			Volume: 0.5,

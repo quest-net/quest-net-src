@@ -2,7 +2,7 @@
 // Pure functions that compute initiative order for a list of actors against a
 // CampaignSettings.InitiativeSettings configuration. No state stored — order
 // is recomputed at render time. The "done" flag for each actor lives on
-// CombatState.PartyTurnsCompleted / EnemyTurnsCompleted.
+// CombatState.RoundCompleted (a unified per-round list).
 
 import { Actor } from "../domains/Actor/Actor";
 import {
@@ -57,6 +57,22 @@ export function getInitiativeSourceValue(
 			return Number.isFinite(parsed) ? parsed : null;
 		}
 	}
+}
+
+/**
+ * Returns true when an actor has at least one usable value for the configured
+ * initiative chain. Callers use this to keep actors with no applicable
+ * initiative data out of the acting order and sort them after ordered actors.
+ */
+export function hasInitiativeSourceValue(
+	actor: Actor,
+	settings: InitiativeSettings | undefined,
+	campaignSettings: CampaignSettings
+): boolean {
+	if (!settings || settings.Sources.length === 0) return false;
+	return settings.Sources.some(
+		(src) => getInitiativeSourceValue(actor, src, campaignSettings) !== null
+	);
 }
 
 /**

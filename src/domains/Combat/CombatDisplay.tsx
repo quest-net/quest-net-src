@@ -7,9 +7,11 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import {
 	computeInitiativeOrder,
 	getActiveOrder,
+	hasInitiativeSourceValue,
 } from "../../utils/InitiativeUtils";
 import { InitiativeSettingsEditor } from "../../components/inputs/InitiativeSettingsEditor";
 import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
+import { isItemEntity } from "../Item/ItemDropUtils";
 
 export function CombatDisplay() {
 	const context = useQuestContext();
@@ -20,36 +22,50 @@ export function CombatDisplay() {
 	const [showInitiativeModal, setShowInitiativeModal] = useState(false);
 
 	const combatState = campaign.GameState.CombatState;
+	const initiativeSettings = campaign.Settings.InitiativeSettings;
+	const mode = initiativeSettings?.Mode ?? "party";
+	const isIndividualMode = mode === "individual";
 
-	// Active-actor banner: lowest-Order party member(s) whose turn isn't done.
-	// Computed live from the same utility the Party tab uses, so they stay in
-	// sync without a stored snapshot.
-	const partyInitiative = combatState.isActive
+	// Active-actor banner: lowest-Order actor(s) whose turn isn't done.
+	// The pool follows mode + side: in individual mode it's everyone; in party
+	// mode it's whichever side currently has initiative. Computed live from
+	// the same utility the Party/Overview tabs use so they stay in sync.
+	const bannerCandidates = isIndividualMode
+		? [...campaign.GameState.Characters, ...campaign.GameState.Entities]
+		: combatState.initiativeSide === "enemies"
+			? campaign.GameState.Entities
+			: campaign.GameState.Characters;
+	const bannerPool = bannerCandidates.filter(
+		(actor) =>
+			!isItemEntity(actor) &&
+			hasInitiativeSourceValue(actor, initiativeSettings, campaign.Settings)
+	);
+	const initiativeEntries = combatState.isActive
 		? computeInitiativeOrder(
-			campaign.GameState.Characters,
-			campaign.Settings.InitiativeSettings,
+			bannerPool,
+			initiativeSettings,
 			campaign.Settings
 		)
 		: [];
 	const activeOrder = getActiveOrder(
-		partyInitiative,
-		combatState.PartyTurnsCompleted
+		initiativeEntries,
+		combatState.RoundCompleted
 	);
-	const activePartyNames =
+	const allActors = [
+		...campaign.GameState.Characters,
+		...campaign.GameState.Entities,
+	];
+	const activeActorNames =
 		activeOrder !== null
-			? partyInitiative
+			? initiativeEntries
 				.filter((e) => e.Order === activeOrder)
-				.map((e) => {
-					const character = campaign.GameState.Characters.find(
-						(c) => c.Id === e.ActorId
-					);
-					return character?.Name ?? "Unknown";
-				})
+				.map((e) => allActors.find((a) => a.Id === e.ActorId)?.Name ?? "Unknown")
 			: [];
-	const showPartyTurnBanner =
-		combatState.isActive &&
-		combatState.initiativeSide === "party" &&
-		partyInitiative.length > 0;
+	// Banner is shown whenever there's an initiative chain for the current
+	// acting pool. In party mode that's the party (party round) or entities
+	// (enemy round); in individual mode it's the whole group.
+	const showActiveBanner =
+		combatState.isActive && initiativeEntries.length > 0;
 
 	const handleSaveInitiative = (
 		next: CampaignSettings["InitiativeSettings"]
@@ -65,19 +81,19 @@ export function CombatDisplay() {
 		actionService.execute("combat:start", { startingSide });
 	};
 
+	const handleIncrementRound = () => {
+		if (!isInteractive) return;
+		actionService.execute("combat:incrementRound", {});
+	};
+
+	const handleDecrementRound = () => {
+		if (!isInteractive) return;
+		actionService.execute("combat:decrementRound", {});
+	};
+
 	const handleEndCombat = () => {
 		if (!isInteractive) return;
 		actionService.execute("combat:end", {});
-	};
-
-	const handleIncrementTurn = () => {
-		if (!isInteractive) return;
-		actionService.execute("combat:incrementTurn", {});
-	};
-
-	const handleDecrementTurn = () => {
-		if (!isInteractive) return;
-		actionService.execute("combat:decrementTurn", {});
 	};
 
 	// =========================================================================
@@ -98,26 +114,32 @@ export function CombatDisplay() {
 		return (
 			<div className="h-full flex items-center justify-center">
 				<div className="text-center space-y-3">
-					<div className="text-3xl font-bold">Turn {combatState.currentTurn}</div>
-					<div>
-						<span
-							className={`badge badge-lg ${
-								combatState.initiativeSide === "party"
-									? "badge-primary"
-									: "badge-error"
-							}`}
-						>
-							{combatState.initiativeSide === "party" ? "Party" : "Enemies"} Initiative
-						</span>
-					</div>
-					{showPartyTurnBanner && activePartyNames.length > 0 && (
-						<div className="text-lg">
-							It is now <span className="font-semibold">{activePartyNames.join(" or ")}</span>'s turn
+					<div className="text-3xl font-bold">Round {combatState.currentRound}</div>
+					{!isIndividualMode && (
+						<div>
+							<span
+								className={`badge badge-lg ${
+									combatState.initiativeSide === "party"
+										? "badge-primary"
+										: "badge-error"
+								}`}
+							>
+								{combatState.initiativeSide === "party" ? "Party" : "Enemies"} Initiative
+							</span>
 						</div>
 					)}
-					{showPartyTurnBanner && activePartyNames.length === 0 && (
+					{showActiveBanner && activeActorNames.length > 0 && (
+						<div className="text-lg">
+							It is now <span className="font-semibold">{activeActorNames.join(" or ")}</span>'s turn
+						</div>
+					)}
+					{showActiveBanner && activeActorNames.length === 0 && (
 						<div className="text-sm opacity-60">
-							All party members have acted this turn.
+							{isIndividualMode
+								? "All actors have acted this round."
+								: combatState.initiativeSide === "enemies"
+									? "All enemies have acted this round."
+									: "All party members have acted this round."}
 						</div>
 					)}
 				</div>
@@ -128,35 +150,10 @@ export function CombatDisplay() {
 	// =========================================================================
 	// DM VIEW
 	// =========================================================================
-	if (!combatState.isActive) {
-		return (
-			<div className="h-full flex items-center justify-center">
-				<div className="text-center space-y-4">
-					<div className="text-4xl">⚔️</div>
-					<p className="text-lg">Combat is not active</p>
-					<div className="flex gap-2 justify-center">
-						<button
-							onClick={() => handleStartCombat("party")}
-							className="btn btn-sm btn-primary gap-1"
-							disabled={!isInteractive}
-						>
-							<span className="icon-[mdi--shield-account] w-4 h-4" />
-							Start (Party)
-						</button>
-						<button
-							onClick={() => handleStartCombat("enemies")}
-							className="btn btn-sm btn-error gap-1"
-							disabled={!isInteractive}
-						>
-							<span className="icon-[mdi--skull] w-4 h-4" />
-							Start (Enemies)
-						</button>
-					</div>
-				</div>
-			</div>
-		);
-	}
-
+	// The DM always gets the floating gear + initiative settings modal, even
+	// before combat starts, so initiative can be configured up front. The
+	// inner content switches between the "not active" prompt and the active
+	// combat controls.
 	return (
 		<div className="h-full flex items-center justify-center relative">
 			{/* Floating gear: opens the inline initiative settings modal.
@@ -170,73 +167,121 @@ export function CombatDisplay() {
 				<span className="icon-[mdi--cog] w-5 h-5" />
 			</button>
 
-			<div className="text-center space-y-4">
-				{/* Turn Counter with controls on sides */}
-				<div className="flex items-center justify-center gap-3">
-					<button
-						onClick={handleDecrementTurn}
-						disabled={!isInteractive || combatState.currentTurn <= 1}
-						className="btn btn-circle btn-sm"
-						title="Previous turn"
-					>
-						<span className="icon-[mdi--chevron-left] w-5 h-5" />
-					</button>
-					<div className="text-4xl font-bold min-w-32">
-						Turn {combatState.currentTurn}
+			{!combatState.isActive ? (
+				<div className="text-center space-y-4">
+					<div className="text-4xl">⚔️</div>
+					<p className="text-lg">Combat is not active</p>
+					<div className="flex gap-2 justify-center">
+						{isIndividualMode ? (
+							// Individual mode has no "starting side" — everyone shares the
+							// round — so we just offer a single Start button. The handler
+							// still records initiativeSide internally on the combat state.
+							<button
+								onClick={() => handleStartCombat("party")}
+								className="btn btn-sm btn-primary gap-1"
+								disabled={!isInteractive}
+							>
+								<span className="icon-[mdi--sword-cross] w-4 h-4" />
+								Start Combat
+							</button>
+						) : (
+							<>
+								<button
+									onClick={() => handleStartCombat("party")}
+									className="btn btn-sm btn-primary gap-1"
+									disabled={!isInteractive}
+								>
+									<span className="icon-[mdi--shield-account] w-4 h-4" />
+									Start (Party)
+								</button>
+								<button
+									onClick={() => handleStartCombat("enemies")}
+									className="btn btn-sm btn-error gap-1"
+									disabled={!isInteractive}
+								>
+									<span className="icon-[mdi--skull] w-4 h-4" />
+									Start (Enemies)
+								</button>
+							</>
+						)}
 					</div>
-					<button
-						onClick={handleIncrementTurn}
-						disabled={!isInteractive}
-						className="btn btn-circle btn-sm"
-						title="Next turn"
-					>
-						<span className="icon-[mdi--chevron-right] w-5 h-5" />
-					</button>
 				</div>
-
-				{/* Active actor banner — lowest-order party member not yet done. */}
-				{showPartyTurnBanner && activePartyNames.length > 0 && (
-					<div className="text-lg">
-						It is now <span className="font-semibold">{activePartyNames.join(" or ")}</span>'s turn
+			) : (
+				<div className="text-center space-y-4">
+					{/* Round counter with controls on sides */}
+					<div className="flex items-center justify-center gap-3">
+						<button
+							onClick={handleDecrementRound}
+							disabled={!isInteractive || combatState.currentRound <= 1}
+							className="btn btn-circle btn-sm"
+							title="Previous round"
+						>
+							<span className="icon-[mdi--chevron-left] w-5 h-5" />
+						</button>
+						<div className="text-4xl font-bold min-w-32">
+							Round {combatState.currentRound}
+						</div>
+						<button
+							onClick={handleIncrementRound}
+							disabled={!isInteractive}
+							className="btn btn-circle btn-sm"
+							title="Next round"
+						>
+							<span className="icon-[mdi--chevron-right] w-5 h-5" />
+						</button>
 					</div>
-				)}
-				{showPartyTurnBanner && activePartyNames.length === 0 && (
-					<div className="text-sm opacity-60">
-						All party members have acted this turn.
-					</div>
-				)}
 
-				{/* Current side and combat controls */}
-				<div className="flex gap-2 justify-center items-center">
-					<span
-						className={`badge badge-lg gap-1 ${
-							combatState.initiativeSide === "party"
-								? "badge-primary"
-								: "badge-error"
-						}`}
-					>
-						<span
-							className={`w-4 h-4 ${
-								combatState.initiativeSide === "party"
-									? "icon-[mdi--shield-account]"
-									: "icon-[mdi--skull]"
-							}`}
-						/>
-						{combatState.initiativeSide === "party" ? "Party" : "Enemies"} Initiative
-					</span>
-					<button
-						onClick={handleEndCombat}
-						className="btn btn-sm btn-neutral gap-1"
-						disabled={!isInteractive}
-						title="End combat"
-					>
-						<span className="icon-[mdi--stop] w-4 h-4" />
-						End
-					</button>
+					{/* Active actor banner -- lowest-order actor not yet done. */}
+					{showActiveBanner && activeActorNames.length > 0 && (
+						<div className="text-lg">
+							It is now <span className="font-semibold">{activeActorNames.join(" or ")}</span>'s turn
+						</div>
+					)}
+					{showActiveBanner && activeActorNames.length === 0 && (
+						<div className="text-sm opacity-60">
+							{isIndividualMode
+								? "All actors have acted this round."
+								: combatState.initiativeSide === "enemies"
+									? "All enemies have acted this round."
+									: "All party members have acted this round."}
+						</div>
+					)}
+
+					{/* Current side and combat controls. The side badge is meaningless
+					    in individual mode (no sides) so we hide it there. */}
+					<div className="flex gap-2 justify-center items-center">
+						{!isIndividualMode && (
+							<span
+								className={`badge badge-lg gap-1 ${
+									combatState.initiativeSide === "party"
+										? "badge-primary"
+										: "badge-error"
+								}`}
+							>
+								<span
+									className={`w-4 h-4 ${
+										combatState.initiativeSide === "party"
+											? "icon-[mdi--shield-account]"
+											: "icon-[mdi--skull]"
+									}`}
+								/>
+								{combatState.initiativeSide === "party" ? "Party" : "Enemies"} Initiative
+							</span>
+						)}
+						<button
+							onClick={handleEndCombat}
+							className="btn btn-sm btn-neutral gap-1"
+							disabled={!isInteractive}
+							title="End combat"
+						>
+							<span className="icon-[mdi--stop] w-4 h-4" />
+							End
+						</button>
+					</div>
 				</div>
-			</div>
+			)}
 
-			{/* Initiative settings modal — same data as the global Settings page,
+			{/* Initiative settings modal -- same data as the global Settings page,
 			    just a faster entry point during combat. */}
 			{showInitiativeModal && (
 				<div className="modal modal-open">
@@ -253,6 +298,7 @@ export function CombatDisplay() {
 							}
 							onChange={handleSaveInitiative}
 							readOnly={!isInteractive}
+							lockMode={combatState.isActive}
 						/>
 						<div className="modal-action">
 							<button

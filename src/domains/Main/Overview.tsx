@@ -10,18 +10,20 @@ import { ObjectPicker, ObjectTypeConfig } from "../../components/inputs/ObjectPi
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
 import { useMapState } from "../../components/Map/MapStateProvider";
 import { Actor } from "../Actor/Actor";
-import { Character } from "../Character/Character";
-import { Entity } from "../Entity/Entity";
 import {
 	ResolvedAction,
 	resolveActions,
 	resolveStats,
 } from "../../utils/ActorResolvers";
-import { computeInitiativeOrder } from "../../utils/InitiativeUtils";
+import {
+	computeInitiativeOrder,
+	hasInitiativeSourceValue,
+} from "../../utils/InitiativeUtils";
 import {
 	AggregateStatsSummary,
 	isInteractiveCardTarget,
 } from "./ActorPanelHelpers";
+import { isItemEntity } from "../Item/ItemDropUtils";
 
 type OverviewFilter = "all" | "party" | "npcs";
 
@@ -44,31 +46,69 @@ export function Overview({ onInspectActor }: OverviewProps) {
 	const [showObjectPicker, setShowObjectPicker] = useState(false);
 
 	const combatState = campaign.GameState.CombatState;
-	const partyInitiative = combatState.isActive
+	const initiativeSettings = campaign.Settings.InitiativeSettings;
+	const initiativeMode = initiativeSettings?.Mode ?? "party";
+	const isIndividualMode = initiativeMode === "individual";
+	const allEntries: OverviewActorEntry[] = [
+		...campaign.GameState.Characters.map((actor) => ({
+			actor,
+			kind: "character" as const,
+		})),
+		...campaign.GameState.Entities.map((actor) => ({
+			actor,
+			kind: "entity" as const,
+		})),
+	];
+	const isActingEntry = (entry: OverviewActorEntry) => {
+		if (!combatState.isActive) return false;
+		if (entry.kind === "entity" && isItemEntity(entry.actor)) return false;
+		if (isIndividualMode) return true;
+		return entry.kind === (
+			combatState.initiativeSide === "enemies" ? "entity" : "character"
+		);
+	};
+	const initiativePool = allEntries
+		.filter(
+			(entry) =>
+				isActingEntry(entry) &&
+				hasInitiativeSourceValue(
+					entry.actor,
+					initiativeSettings,
+					campaign.Settings
+				)
+		)
+		.map((entry) => entry.actor);
+	const initiativeEntries = combatState.isActive
 		? computeInitiativeOrder(
-			campaign.GameState.Characters,
-			campaign.Settings.InitiativeSettings,
+			initiativePool,
+			initiativeSettings,
 			campaign.Settings
 		)
 		: [];
 	const orderByActorId = new Map(
-		partyInitiative.map((entry) => [entry.ActorId, entry.Order])
+		initiativeEntries.map((entry) => [entry.ActorId, entry.Order])
 	);
-	const partyDoneSet = new Set(combatState.PartyTurnsCompleted ?? []);
-	const showInitiative = partyInitiative.length > 0;
+	const roundDoneSet = new Set(combatState.RoundCompleted ?? []);
+	const entryIndexByActorId = new Map(
+		allEntries.map((entry, index) => [entry.actor.Id, index])
+	);
+	const sortEntriesByInitiative = (entries: OverviewActorEntry[]) => {
+		if (!combatState.isActive) return entries;
+		return [...entries].sort((a, b) => {
+			const ao = orderByActorId.get(a.actor.Id);
+			const bo = orderByActorId.get(b.actor.Id);
+			if (ao !== undefined && bo !== undefined && ao !== bo) return ao - bo;
+			if (ao !== undefined && bo === undefined) return -1;
+			if (ao === undefined && bo !== undefined) return 1;
+			return (
+				(entryIndexByActorId.get(a.actor.Id) ?? 0) -
+				(entryIndexByActorId.get(b.actor.Id) ?? 0)
+			);
+		});
+	};
 
-	const sortedCharacters = showInitiative
-		? [...campaign.GameState.Characters].sort((a, b) => {
-			const ao = orderByActorId.get(a.Id) ?? Number.POSITIVE_INFINITY;
-			const bo = orderByActorId.get(b.Id) ?? Number.POSITIVE_INFINITY;
-			return ao - bo;
-		})
-		: campaign.GameState.Characters;
-
-	const visibleEntries = getVisibleEntries(
-		filter,
-		sortedCharacters,
-		campaign.GameState.Entities
+	const visibleEntries = sortEntriesByInitiative(
+		getVisibleEntries(filter, allEntries)
 	);
 	const visibleActorIds = new Set(visibleEntries.map((entry) => entry.actor.Id));
 	const visibleSelectedCount = selectedActorIds.filter((id) =>
@@ -205,24 +245,22 @@ export function Overview({ onInspectActor }: OverviewProps) {
 		});
 	};
 
-	const handleBadgeClick = (actorId: string) => {
+	const handleBadgeClick = (entry: OverviewActorEntry) => {
 		if (!actionService) return;
 		actionService.execute("combat:markActorTurnDone", {
-			actorId,
-			side: "party",
+			actorId: entry.actor.Id,
 		});
 	};
 
 	const renderInitiativeBadge = (entry: OverviewActorEntry) => {
-		if (entry.kind !== "character" || !showInitiative) return null;
 		const order = orderByActorId.get(entry.actor.Id);
 		if (order === undefined) return null;
-		const isDone = partyDoneSet.has(entry.actor.Id);
+		const isDone = roundDoneSet.has(entry.actor.Id);
 
 		return (
 			<button
 				type="button"
-				onClick={() => handleBadgeClick(entry.actor.Id)}
+				onClick={() => handleBadgeClick(entry)}
 				title={isDone ? "Turn done - click to undo" : "Click to mark turn done"}
 				className={`absolute top-0 left-0 w-7 h-7 rounded-tl-md rounded-br-md flex items-center justify-center text-sm font-bold z-10 ${isDone
 					? "bg-base-300 text-base-content/40 line-through"
@@ -404,21 +442,17 @@ export function Overview({ onInspectActor }: OverviewProps) {
 
 function getVisibleEntries(
 	filter: OverviewFilter,
-	characters: Character[],
-	entities: Entity[]
+	entries: OverviewActorEntry[]
 ): OverviewActorEntry[] {
 	if (filter === "party") {
-		return characters.map((actor) => ({ actor, kind: "character" }));
+		return entries.filter((entry) => entry.kind === "character");
 	}
 
 	if (filter === "npcs") {
-		return entities.map((actor) => ({ actor, kind: "entity" }));
+		return entries.filter((entry) => entry.kind === "entity");
 	}
 
-	return [
-		...characters.map((actor) => ({ actor, kind: "character" as const })),
-		...entities.map((actor) => ({ actor, kind: "entity" as const })),
-	];
+	return entries;
 }
 
 function getFilterLabel(filter: OverviewFilter): string {

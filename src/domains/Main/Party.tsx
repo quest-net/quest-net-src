@@ -12,12 +12,16 @@ import {
 	resolveActions,
 	resolveStats,
 } from "../../utils/ActorResolvers";
-import { computeInitiativeOrder } from "../../utils/InitiativeUtils";
+import {
+	computeInitiativeOrder,
+	hasInitiativeSourceValue,
+} from "../../utils/InitiativeUtils";
 import {
 	AggregateStatsSummary,
 	isInteractiveCardTarget,
 } from "./ActorPanelHelpers";
 import { Character } from "../Character/Character";
+import { isItemEntity } from "../Item/ItemDropUtils";
 
 interface PartyProps {
 	onInspectActor: () => void;
@@ -50,24 +54,51 @@ export function Party({ onInspectActor }: PartyProps) {
 	};
 
 	const combatState = campaign.GameState.CombatState;
+	const initiativeSettings = campaign.Settings.InitiativeSettings;
+	const initiativeMode = initiativeSettings?.Mode ?? "party";
+	const charactersHaveInitiative =
+		initiativeMode === "individual" ||
+		combatState.initiativeSide === "party";
+	const initiativeCandidates =
+		combatState.isActive && charactersHaveInitiative
+			? initiativeMode === "individual"
+				? [
+					...characters,
+					...campaign.GameState.Entities.filter(
+						(entity) => !isItemEntity(entity)
+					),
+				]
+				: characters
+			: [];
+	const initiativePool = initiativeCandidates.filter((actor) =>
+		hasInitiativeSourceValue(actor, initiativeSettings, campaign.Settings)
+	);
 	const initiativeEntries = combatState.isActive
 		? computeInitiativeOrder(
-			characters,
-			campaign.Settings.InitiativeSettings,
+			initiativePool,
+			initiativeSettings,
 			campaign.Settings
 		)
 		: [];
 	const orderByActorId = new Map(
 		initiativeEntries.map((entry) => [entry.ActorId, entry.Order])
 	);
-	const partyDoneSet = new Set(combatState.PartyTurnsCompleted ?? []);
-	const showInitiative = initiativeEntries.length > 0;
+	const roundDoneSet = new Set(combatState.RoundCompleted ?? []);
+	const characterIndexById = new Map(
+		characters.map((character, index) => [character.Id, index])
+	);
 
-	const displayCharacters = showInitiative
+	const displayCharacters = combatState.isActive
 		? [...characters].sort((a, b) => {
-			const ao = orderByActorId.get(a.Id) ?? Number.POSITIVE_INFINITY;
-			const bo = orderByActorId.get(b.Id) ?? Number.POSITIVE_INFINITY;
-			return ao - bo;
+			const ao = orderByActorId.get(a.Id);
+			const bo = orderByActorId.get(b.Id);
+			if (ao !== undefined && bo !== undefined && ao !== bo) return ao - bo;
+			if (ao !== undefined && bo === undefined) return -1;
+			if (ao === undefined && bo !== undefined) return 1;
+			return (
+				(characterIndexById.get(a.Id) ?? 0) -
+				(characterIndexById.get(b.Id) ?? 0)
+			);
 		})
 		: characters;
 
@@ -102,15 +133,13 @@ export function Party({ onInspectActor }: PartyProps) {
 		if (!actionService || characterId !== myCharacterId) return;
 		actionService.execute("combat:markActorTurnDone", {
 			actorId: characterId,
-			side: "party",
 		});
 	};
 
 	const renderInitiativeBadge = (characterId: string) => {
-		if (!showInitiative) return null;
 		const order = orderByActorId.get(characterId);
 		if (order === undefined) return null;
-		const isDone = partyDoneSet.has(characterId);
+		const isDone = roundDoneSet.has(characterId);
 		const canToggle = characterId === myCharacterId;
 
 		return (

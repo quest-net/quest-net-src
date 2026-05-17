@@ -113,7 +113,9 @@ export function CampaignSettingEdit() {
 						showBottomButtons: false,
 					}}
 				>
-					<CampaignSettingForm />
+					<CampaignSettingForm
+						combatActive={campaign.GameState.CombatState.isActive}
+					/>
 				</FormWrapper>
 			</div>
 
@@ -208,9 +210,14 @@ function CampaignNameForm({ data, onChange }: CampaignNameFormProps) {
 interface CampaignSettingFormProps {
 	data?: CampaignSettings;
 	onChange?: (data: CampaignSettings) => void;
+	combatActive?: boolean;
 }
 
-function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
+function CampaignSettingForm({
+	data,
+	onChange,
+	combatActive = false,
+}: CampaignSettingFormProps) {
 	if (!data || !onChange) return null;
 
 	const handleSettingChange = (
@@ -383,6 +390,7 @@ function CampaignSettingForm({ data, onChange }: CampaignSettingFormProps) {
 					statDefinitions={data.StatDefinitions}
 					attributeDefinitions={data.AttributeDefinitions ?? []}
 					onChange={(InitiativeSettings) => updateSettings({ InitiativeSettings })}
+					lockMode={combatActive}
 				/>
 			</FormSection>
 			<FormSection

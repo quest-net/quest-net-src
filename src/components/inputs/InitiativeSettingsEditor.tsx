@@ -2,6 +2,7 @@
 
 import { useFormReadOnly } from "../Form/Form";
 import {
+	InitiativeMode,
 	InitiativeSettings,
 	InitiativeSource,
 	StatDefinition,
@@ -14,6 +15,12 @@ interface InitiativeSettingsEditorProps {
 	attributeDefinitions: AttributeDefinition[];
 	onChange: (value: InitiativeSettings | undefined) => void;
 	readOnly?: boolean;
+	/**
+	 * When true, the round-structure mode toggle (Party / Individual) is
+	 * disabled while the rest of the editor remains interactive. Used during
+	 * active combat to prevent the round model from changing mid-fight.
+	 */
+	lockMode?: boolean;
 }
 
 /**
@@ -48,11 +55,14 @@ export function InitiativeSettingsEditor({
 	attributeDefinitions,
 	onChange,
 	readOnly: readOnlyProp,
+	lockMode = false,
 }: InitiativeSettingsEditorProps) {
 	const contextReadOnly = useFormReadOnly();
 	const readOnly = readOnlyProp ?? contextReadOnly;
+	const modeDisabled = readOnly || lockMode;
 
 	const sources = value?.Sources ?? [];
+	const mode: InitiativeMode = value?.Mode ?? "party";
 
 	// Build the option list once. Stats and attributes share the dropdown so a
 	// "STR" attribute and a "STR" stat would collide on label only — we tag the
@@ -74,19 +84,19 @@ export function InitiativeSettingsEditor({
 		if (!decoded) return;
 		const next = [...sources];
 		next[index] = decoded;
-		onChange({ Sources: next });
+		onChange({ Sources: next, Mode: mode });
 	};
 
 	const addTiebreaker = () => {
 		// Default new entries to Move Speed since it always exists and is a number.
-		onChange({ Sources: [...sources, { kind: "moveSpeed" }] });
+		onChange({ Sources: [...sources, { kind: "moveSpeed" }], Mode: mode });
 	};
 
 	const removeSource = (index: number) => {
 		const next = sources.filter((_, i) => i !== index);
 		// If the user removed the last source, drop InitiativeSettings entirely
 		// so the rest of the app treats initiative as "not configured".
-		onChange(next.length === 0 ? undefined : { Sources: next });
+		onChange(next.length === 0 ? undefined : { Sources: next, Mode: mode });
 	};
 
 	const moveSource = (index: number, direction: -1 | 1) => {
@@ -94,7 +104,15 @@ export function InitiativeSettingsEditor({
 		if (target < 0 || target >= sources.length) return;
 		const next = [...sources];
 		[next[index], next[target]] = [next[target], next[index]];
-		onChange({ Sources: next });
+		onChange({ Sources: next, Mode: mode });
+	};
+
+	const updateMode = (next: InitiativeMode) => {
+		// If sources is empty we haven't started configuring yet — selecting a
+		// mode alone shouldn't materialize InitiativeSettings, since downstream
+		// code treats empty Sources as "not configured" anyway.
+		if (sources.length === 0) return;
+		onChange({ Sources: sources, Mode: next });
 	};
 
 	// Empty state — invite the DM to configure a primary source.
@@ -107,7 +125,7 @@ export function InitiativeSettingsEditor({
 				<button
 					type="button"
 					onClick={() =>
-						onChange({ Sources: [{ kind: "moveSpeed" }] })
+						onChange({ Sources: [{ kind: "moveSpeed" }], Mode: "party" })
 					}
 					disabled={readOnly}
 					className="btn btn-sm btn-primary gap-2"
@@ -121,6 +139,47 @@ export function InitiativeSettingsEditor({
 
 	return (
 		<div className="space-y-3">
+			<div className="space-y-2">
+				<div className="flex items-center gap-2">
+					<div className="text-sm font-medium">Round structure</div>
+					{lockMode && !readOnly && (
+						<span
+							className="badge badge-sm badge-ghost gap-1"
+							title="The round structure can't be changed while combat is active. End combat to switch modes."
+						>
+							<span className="icon-[mdi--lock] w-3 h-3" />
+							Locked during combat
+						</span>
+					)}
+				</div>
+				<div className="join">
+					{(
+						[
+							{ value: "party", label: "Party-based" },
+							{ value: "individual", label: "Individual-based" },
+						] as { value: InitiativeMode; label: string }[]
+					).map((opt) => (
+						<button
+							key={opt.value}
+							type="button"
+							onClick={() => updateMode(opt.value)}
+							disabled={modeDisabled}
+							className={`btn btn-sm join-item ${
+								mode === opt.value ? "btn-primary" : "btn-outline"
+							}`}
+						>
+							{opt.label}
+						</button>
+					))}
+				</div>
+				<div className="text-xs opacity-60">
+					{mode === "party"
+						? "Party and enemies alternate. Each side acts as its own round, with initiative ordering applied within the side."
+						: "All actors share each round. Initiative ordering applies across party and enemies together."}
+				</div>
+			</div>
+
+			<div className="text-sm font-medium pt-1">Order sources</div>
 			{sources.map((source, index) => {
 				const isPrimary = index === 0;
 				return (

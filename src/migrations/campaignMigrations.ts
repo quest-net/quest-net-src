@@ -2,6 +2,7 @@
 import type { Migration } from "./types";
 import { terrainPaletteV190Migration } from "./v1_9_0_terrainPalette";
 import { actorColorsV200Migration } from "./v2_0_0_actorColors";
+import { initiativeRenameV210Migration } from "./v2_1_0_initiativeRename";
 
 /**
  * Ordered list of campaign-level migrations, sorted ascending by version.
@@ -11,4 +12,5 @@ import { actorColorsV200Migration } from "./v2_0_0_actorColors";
 export const campaignMigrations: Migration[] = [
 	terrainPaletteV190Migration,
 	actorColorsV200Migration,
+	initiativeRenameV210Migration,
 ];
