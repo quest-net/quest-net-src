@@ -33,6 +33,7 @@ export function CampaignView() {
 	const context = useQuestContext();
 	const { setActionService } = useActionService();
 	const [reconnectTrigger, setReconnectTrigger] = useState(0);
+	const isDMRoute = !!identifier && isGUID(identifier);
 
 	const [state, setState] = useState<CampaignViewState>({
 		status: "loading",
@@ -60,6 +61,7 @@ export function CampaignView() {
 			// we leave-and-rejoin the room ourselves.
 			checkIntervalMs: 10000,
 			reconnectDelayMs: 8000,
+			peerlessReconnectDelayMs: isDMRoute ? 30000 : undefined,
 			// maxAttempts is Infinity by default - unlimited retries!
 		},
 		() => {

@@ -6,6 +6,8 @@ interface AutoReconnectConfig {
 	enabled: boolean;
 	checkIntervalMs?: number; // How often to check for 0 peers (default: 5000ms)
 	reconnectDelayMs?: number; // How long to wait before attempting reconnect (default: 3000ms)
+	peerlessReconnectDelayMs?: number; // Slow recycle for rooms that have never had peers (disabled by default)
+	sleepDriftThresholdMs?: number; // Timer drift that implies the browser slept (default: max(3 checks, 30s))
 	maxAttempts?: number; // Max reconnect attempts (default: Infinity for unlimited)
 }
 
@@ -28,16 +30,19 @@ export function useAutoReconnect(
 
 	const checkIntervalMs = config.checkIntervalMs ?? 5000;
 	const reconnectDelayMs = config.reconnectDelayMs ?? 3000;
+	const peerlessReconnectDelayMs = config.peerlessReconnectDelayMs;
+	const sleepDriftThresholdMs =
+		config.sleepDriftThresholdMs ?? Math.max(checkIntervalMs * 3, 30000);
 	const maxAttempts = config.maxAttempts ?? Infinity;
 
 	const zeroPeersSinceRef = useRef<number | null>(null);
 	const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const attemptCountRef = useRef(0);
 	const onReconnectRef = useRef(onReconnect);
+	const lastCheckTimeRef = useRef<number | null>(null);
 	// Latches once we have ever observed a peer in this room. We don't want to
-	// auto-reconnect a session that has never had a peer (e.g., a DM testing
-	// alone) -- that just churns leave/rejoin every reconnectDelayMs and
-	// rebuilds ActionService for no reason.
+	// use the fast reconnect path for a room that has never had peers. DM rooms
+	// can opt into a slower peerless recycle cadence separately.
 	const hasEverHadPeersRef = useRef(false);
 
 	// Update the ref when the callback changes
@@ -48,6 +53,7 @@ export function useAutoReconnect(
 	useEffect(() => {
 		if (!config.enabled || !actionService) {
 			zeroPeersSinceRef.current = null;
+			lastCheckTimeRef.current = null;
 			if (reconnectTimeoutRef.current) {
 				clearTimeout(reconnectTimeoutRef.current);
 				reconnectTimeoutRef.current = null;
@@ -61,9 +67,56 @@ export function useAutoReconnect(
 			return;
 		}
 
+		const didTimerDrift = (now: number) => {
+			const lastCheckTime = lastCheckTimeRef.current;
+			return (
+				lastCheckTime !== null &&
+				now - lastCheckTime > sleepDriftThresholdMs
+			);
+		};
+
+		const scheduleReconnect = (now: number) => {
+			if (
+				reconnectTimeoutRef.current ||
+				attemptCountRef.current >= maxAttempts
+			) {
+				return;
+			}
+
+			attemptCountRef.current++;
+
+			setState({
+				isReconnecting: true,
+				attemptCount: attemptCountRef.current,
+				lastAttemptTime: now,
+			});
+
+			// Schedule the actual reconnect outside the current event/check call.
+			reconnectTimeoutRef.current = setTimeout(() => {
+				onReconnectRef.current();
+				reconnectTimeoutRef.current = null;
+
+				setState((prev) => ({
+					...prev,
+					isReconnecting: false,
+				}));
+
+				// Reset the zero peers timer to give the new connection time to establish.
+				zeroPeersSinceRef.current = Date.now();
+			}, 500);
+		};
+
 		const checkPeers = () => {
+			const now = Date.now();
 			const peers = room.getPeers();
 			const peerCount = Object.keys(peers).length;
+			const timerDrifted = didTimerDrift(now);
+			lastCheckTimeRef.current = now;
+
+			if (timerDrifted && document.visibilityState === "visible") {
+				scheduleReconnect(now);
+				return;
+			}
 
 			if (peerCount > 0) {
 				// We have peers! Latch the "ever connected" flag and reset state.
@@ -91,47 +144,46 @@ export function useAutoReconnect(
 				return;
 			}
 
-			// peerCount === 0. Don't try to reconnect a session that has never
-			// observed a peer -- there's nothing to recover, and rejoining would
-			// just churn ActionService instances.
-			if (!hasEverHadPeersRef.current) {
+			const activeReconnectDelayMs = hasEverHadPeersRef.current
+				? reconnectDelayMs
+				: peerlessReconnectDelayMs;
+
+			// peerCount === 0. Rooms that previously had peers take the fast
+			// recovery path. Rooms that have never had peers only reconnect when
+			// the caller opts into a slower peerless recycle cadence.
+			if (activeReconnectDelayMs === undefined) {
 				return;
 			}
 
 			// Start tracking when we first noticed 0 peers
 			if (zeroPeersSinceRef.current === null) {
-				zeroPeersSinceRef.current = Date.now();
+				zeroPeersSinceRef.current = now;
 			}
 
-			const timeSinceZeroPeers = Date.now() - zeroPeersSinceRef.current;
+			const timeSinceZeroPeers = now - zeroPeersSinceRef.current;
 
-			// If we've had 0 peers for longer than reconnectDelayMs and haven't exceeded max attempts
-			if (
-				timeSinceZeroPeers >= reconnectDelayMs &&
-				!reconnectTimeoutRef.current &&
-				attemptCountRef.current < maxAttempts
-			) {
-				attemptCountRef.current++;
+			// If we've had 0 peers longer than the active reconnect delay,
+			// recycle the room.
+			if (timeSinceZeroPeers >= activeReconnectDelayMs) {
+				scheduleReconnect(now);
+			}
+		};
 
-				setState({
-					isReconnecting: true,
-					attemptCount: attemptCountRef.current,
-					lastAttemptTime: Date.now(),
-				});
+		const handleWake = () => {
+			const now = Date.now();
+			const peerCount = Object.keys(room.getPeers()).length;
+			const timerDrifted = didTimerDrift(now);
+			lastCheckTimeRef.current = now;
 
-				// Schedule the actual reconnect
-				reconnectTimeoutRef.current = setTimeout(() => {
-					onReconnectRef.current();
-					reconnectTimeoutRef.current = null;
+			if (peerCount === 0 || timerDrifted) {
+				zeroPeersSinceRef.current = now;
+				scheduleReconnect(now);
+			}
+		};
 
-					setState((prev) => ({
-						...prev,
-						isReconnecting: false,
-					}));
-
-					// Reset the zero peers timer to give the new connection time to establish
-					zeroPeersSinceRef.current = Date.now();
-				}, 500);
+		const handleVisibilityChange = () => {
+			if (document.visibilityState === "visible") {
+				handleWake();
 			}
 		};
 
@@ -140,11 +192,20 @@ export function useAutoReconnect(
 
 		// Then check periodically
 		const interval = setInterval(checkPeers, checkIntervalMs);
+		window.addEventListener("online", handleWake);
+		window.addEventListener("focus", handleWake);
+		window.addEventListener("pageshow", handleWake);
+		document.addEventListener("visibilitychange", handleVisibilityChange);
 
 		return () => {
 			clearInterval(interval);
+			window.removeEventListener("online", handleWake);
+			window.removeEventListener("focus", handleWake);
+			window.removeEventListener("pageshow", handleWake);
+			document.removeEventListener("visibilitychange", handleVisibilityChange);
 			if (reconnectTimeoutRef.current) {
 				clearTimeout(reconnectTimeoutRef.current);
+				reconnectTimeoutRef.current = null;
 			}
 		};
 	}, [
@@ -152,6 +213,8 @@ export function useAutoReconnect(
 		actionService,
 		checkIntervalMs,
 		reconnectDelayMs,
+		peerlessReconnectDelayMs,
+		sleepDriftThresholdMs,
 		maxAttempts,
 	]);
 
