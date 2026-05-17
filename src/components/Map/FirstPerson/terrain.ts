@@ -9,9 +9,9 @@ import {
 	createTerrainSignature,
 	useVoxelTerrainGeometryWorker,
 } from "../hooks/useVoxelTerrainGeometryWorker";
+import { getShadowCameraBounds } from "../shadowCameraBounds";
 import {
 	THREE_D_MAP_LIGHTING,
-	THREE_D_MAP_SHADOW,
 	THREE_D_TERRAIN_MATERIAL,
 } from "../threeDMapConstants";
 
@@ -95,11 +95,17 @@ export function useFirstPersonTerrain(
 			terrainMaxExtent * THREE_D_MAP_LIGHTING.DIRECTIONAL_POSITION_Z_SCALE
 		);
 		dirLight.target.position.set(0, terrainCenterY, 0);
-		dirLight.shadow.camera.near = THREE_D_MAP_SHADOW.CAMERA_NEAR;
-		dirLight.shadow.camera.far = Math.max(
-			THREE_D_MAP_SHADOW.MIN_CAMERA_DEPTH,
-			terrainMaxExtent * 4
+		const shadowCamera = getShadowCameraBounds(
+			terrain.Width,
+			terrain.Length,
+			maxSurfaceHeight
 		);
+		dirLight.shadow.camera.left = shadowCamera.left;
+		dirLight.shadow.camera.right = shadowCamera.right;
+		dirLight.shadow.camera.top = shadowCamera.top;
+		dirLight.shadow.camera.bottom = shadowCamera.bottom;
+		dirLight.shadow.camera.near = shadowCamera.near;
+		dirLight.shadow.camera.far = shadowCamera.far;
 		dirLight.shadow.camera.updateProjectionMatrix();
 		// `terrain` intentionally omitted from deps: terrainSignature is the
 		// value-equal identity for terrain geometry and lighting.
