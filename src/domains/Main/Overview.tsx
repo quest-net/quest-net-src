@@ -203,6 +203,24 @@ export function Overview({ onInspectActor }: OverviewProps) {
 		setSelectedActorIds([]);
 	};
 
+	const handleDespawnSelected = () => {
+		if (!actionService || selectedActorIds.length === 0) return;
+
+		allEntries
+			.filter((entry) => selectedActorIds.includes(entry.actor.Id))
+			.forEach((entry) => {
+				if (entry.kind === "character") {
+					actionService.execute("character:remove", {
+						characterId: entry.actor.Id,
+					});
+				} else {
+					actionService.execute("entity:remove", { entityId: entry.actor.Id });
+				}
+			});
+
+		setSelectedActorIds([]);
+	};
+
 	const handleStatChange = (
 		entry: OverviewActorEntry,
 		statId: string,
@@ -315,15 +333,27 @@ export function Overview({ onInspectActor }: OverviewProps) {
 									: "Select actors"}
 							</span>
 						</div>
-						<button
-							type="button"
-							onClick={() => setShowObjectPicker(true)}
-							disabled={selectedActorIds.length === 0}
-							className="btn btn-primary btn-sm gap-2"
-						>
-							<span className="icon-[mdi--gift] w-4 h-4" />
-							Give Objects
-						</button>
+						<div className="flex items-center gap-2">
+							<button
+								type="button"
+								onClick={() => setShowObjectPicker(true)}
+								disabled={selectedActorIds.length === 0}
+								className="btn btn-primary btn-sm gap-2"
+							>
+								<span className="icon-[mdi--gift] w-4 h-4" />
+								Give Objects
+							</button>
+							<button
+								type="button"
+								onClick={handleDespawnSelected}
+								disabled={selectedActorIds.length === 0}
+								className="btn btn-error btn-sm gap-2"
+								title="Despawn selected actors"
+							>
+								<span className="icon-[mdi--close-circle] w-4 h-4" />
+								Despawn
+							</button>
+						</div>
 					</div>
 				</div>
 			</div>
