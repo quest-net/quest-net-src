@@ -247,7 +247,7 @@ export function CharacterSheet() {
 					<label className="label">
 						<span className="label-text">Can Fly</span>
 					</label>
-					<div className="flex items-center h-12">
+					<div className="flex items-center">
 						<input
 							type="checkbox"
 							checked={character.CanFly}
@@ -258,13 +258,13 @@ export function CharacterSheet() {
 				</div>
 				<div>
 					<label className="label">
-						<span className="label-text">Token Color</span>
+						<span className="label-text w-24">Token Color</span>
 					</label>
 					<input
 						type="color"
 						value={character.Color ?? ACTOR_DEFAULT_COLORS.CHARACTER}
 						onChange={(e) => handleFieldChange("Color", e.target.value)}
-						className="input input-bordered h-12 w-20 p-1"
+						className="input input-bordered h-10 p-1"
 					/>
 				</div>
 			</div>

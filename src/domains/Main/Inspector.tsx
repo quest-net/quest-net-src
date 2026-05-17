@@ -664,8 +664,8 @@ function ActorInfoTab({
 							disabled={!actionService}
 						/>
 					</div>
-					<div className="flex items-center justify-center gap-3 text-sm">
-						<span className="font-medium">Token Color</span>
+					<div className="flex items-center justify-center gap-3 text-sm mt-4">
+						<span className="font-medium">Color</span>
 						<input
 							type="color"
 							value={
@@ -675,7 +675,7 @@ function ActorInfoTab({
 									: ACTOR_DEFAULT_COLORS.ENTITY)
 							}
 							onChange={(e) => handleFieldChange("Color", e.target.value)}
-							className="input input-bordered input-sm h-9 w-16 p-1"
+							className="input input-bordered input-sm h-9 w-44 p-1"
 							disabled={!actionService}
 						/>
 					</div>
