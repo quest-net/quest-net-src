@@ -13,6 +13,7 @@ import { LogActions } from "../../domains/Log/LogActions";
 import { User } from "../../domains/User/User";
 import { CampaignLoadingService } from "../CampaignLoadingService";
 import { TerrainStorageService } from "../TerrainStorageService";
+import { ActorPoseService } from "../ActorPoseService";
 
 const PING_INTERVAL_MS = 3000;
 const PEER_RECONCILE_INTERVAL_MS = 2000;
@@ -22,6 +23,7 @@ export class ActionService {
 	private room: Room;
 	private stateSync: StateSync;
 	public imageService: ImageService;
+	public actorPoseService: ActorPoseService;
 
 	private onFirstUpdateCallback?: () => void;
 
@@ -50,6 +52,9 @@ export class ActionService {
 			context.User.Role === "dm",
 			this.execute.bind(this)
 		);
+		this.actorPoseService = new ActorPoseService(context, room, {
+			getPeerUser: (peerId) => this.peerUsers.get(peerId),
+		});
 		this.setupChannels();
 		this.setupStateSync();
 		this.setupPeerHandlers();
@@ -86,6 +91,7 @@ export class ActionService {
 		const hadConnection = this.connectedPeerIds.delete(peerId);
 		const hadUser = this.peerUsers.delete(peerId);
 		this.stopPinging(peerId);
+		this.actorPoseService.clearForPeer(peerId);
 		if (hadConnection || hadUser) {
 			triggerContextUpdate();
 		}
@@ -188,6 +194,8 @@ export class ActionService {
 			}
 		});
 
+		this.actorPoseService.clearLiveActorPoses();
+
 		// Resolve the first-update promise after the React update has been
 		// queued so CampaignView's setState({ status: "ready" }) batches with
 		// our setContext.
@@ -274,6 +282,7 @@ export class ActionService {
 				this.connectedPeerIds.delete(peerId);
 				this.peerUsers.delete(peerId);
 				this.stopPinging(peerId);
+				this.actorPoseService.clearForPeer(peerId);
 				didChange = true;
 			}
 		}
@@ -353,6 +362,7 @@ export class ActionService {
 		}
 
 		triggerContextUpdate();
+		this.actorPoseService.clearForAuthoritativeAction(actionKey, params);
 	}
 
 	/**
@@ -443,6 +453,10 @@ export class ActionService {
 			this.stateSync.broadcast(campaign, true);
 		}
 		triggerContextUpdate();
+		this.actorPoseService.clearForAuthoritativeAction(
+			data?.actionKey,
+			data?.params
+		);
 	}
 
 	private getRequestingPlayer(peerId?: string, playerId?: string): User {
@@ -496,6 +510,7 @@ export class ActionService {
 			clearInterval(this.peerReconcileInterval);
 			this.peerReconcileInterval = undefined;
 		}
+		this.actorPoseService.cleanup();
 		this.pingIntervals.forEach(clearInterval);
 		this.pingIntervals.clear();
 		this.peerPings.clear();
