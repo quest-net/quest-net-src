@@ -8,6 +8,7 @@ import { usePeerTracking } from "../../../hooks/usePeerTracking";
 import { useActionService } from "../../../services/Actions/ActionServiceProvider";
 import { getVoxelCount } from "../../../utils/VoxelDataUtils";
 import {
+	canOccupyVoxelTile,
 	getVoxelTileHeightKey,
 	normalizeVoxelPosition,
 } from "../../../utils/VoxelMovementUtilities";
@@ -26,11 +27,13 @@ import {
 	getEyeHeight,
 } from "./actor";
 import {
+	createFirstPersonActorColliders,
 	createFirstPersonCapsuleState,
 	createVoxelCollisionData,
 	firstPersonCapsuleToRulesPosition,
 	isFirstPersonCapsuleSettled,
 	stepFirstPersonCapsuleController,
+	type FirstPersonActorCollider,
 	type FirstPersonCapsuleState,
 	type VoxelCollisionData,
 } from "./capsuleController";
@@ -93,10 +96,13 @@ export default function FirstPersonMap({
 	const actionServiceRef = useRef<ReturnType<typeof useActionService>["actionService"]>(null);
 	const terrainRef = useRef(terrain);
 	const voxelCollisionDataRef = useRef<VoxelCollisionData | null>(null);
+	const actorCollidersRef = useRef<readonly FirstPersonActorCollider[]>([]);
 	const movementCostLookupRef = useRef<Map<string, number> | null>(null);
 	const canControlFirstPersonActorRef = useRef(false);
 	const isCombatActiveRef = useRef(false);
 	const lastPingTimeRef = useRef(0);
+	const charactersRef = useRef(characters);
+	const entitiesRef = useRef(entities);
 
 	const terrainSignature = useMemo(
 		() => createTerrainSignature(terrain),
@@ -149,6 +155,28 @@ export default function FirstPersonMap({
 	const voxelCollisionData = useMemo(
 		() => (terrain ? createVoxelCollisionData(terrain) : null),
 		[terrain, terrainSignature]
+	);
+	const actorCollisionSignature = [
+		...characters.map(
+			(character) =>
+				`c:${character.Id}:${character.Position.x},${character.Position.y},${character.Position.h}:${character.Size ?? ""}:${character.CanFly ? 1 : 0}`
+		),
+		...entities.map(
+			(entity) =>
+				`e:${entity.Id}:${entity.Position.x},${entity.Position.y},${entity.Position.h}:${entity.Size ?? ""}:${entity.CanFly ? 1 : 0}:${entity.Tags?.join(",") ?? ""}`
+		),
+	].join("|");
+	const actorColliders = useMemo(
+		() =>
+			terrain && actor
+				? createFirstPersonActorColliders(
+						terrain,
+						actor,
+						characters,
+						entities
+				  )
+				: [],
+		[terrain, terrainSignature, actor?.id, actorCollisionSignature]
 	);
 
 	const movementCostLookup = useMemo(() => {
@@ -213,8 +241,20 @@ export default function FirstPersonMap({
 	}, [terrain]);
 
 	useEffect(() => {
+		charactersRef.current = characters;
+	}, [characters]);
+
+	useEffect(() => {
+		entitiesRef.current = entities;
+	}, [entities]);
+
+	useEffect(() => {
 		voxelCollisionDataRef.current = voxelCollisionData;
 	}, [voxelCollisionData]);
+
+	useEffect(() => {
+		actorCollidersRef.current = actorColliders;
+	}, [actorColliders]);
 
 	useEffect(() => {
 		movementCostLookupRef.current = movementCostLookup;
@@ -257,6 +297,20 @@ export default function FirstPersonMap({
 		}
 
 		const normalized = normalizeVoxelPosition(position);
+		const currentTerrain = terrainRef.current;
+		if (
+			currentTerrain &&
+			!canOccupyVoxelTile(
+				currentTerrain,
+				normalized,
+				charactersRef.current,
+				entitiesRef.current,
+				currentActor.id
+			)
+		) {
+			return;
+		}
+
 		const key = `${currentActor.kind}:${currentActor.id}:${normalized.x},${normalized.y},${normalized.h}`;
 		if (lastSentKeyRef.current === key) {
 			return;
@@ -506,7 +560,8 @@ export default function FirstPersonMap({
 							jumpPressed,
 							yaw: yawRef.current,
 							dt,
-						}
+						},
+						actorCollidersRef.current
 					);
 
 					const rulesPosition = firstPersonCapsuleToRulesPosition(

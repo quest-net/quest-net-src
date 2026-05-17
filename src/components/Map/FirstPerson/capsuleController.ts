@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import type { Position } from "../../../domains/Actor/Actor";
+import type { Character } from "../../../domains/Character/Character";
+import type { Entity } from "../../../domains/Entity/Entity";
+import { isItemEntity } from "../../../domains/Item/ItemDropUtils";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { decodeVoxels } from "../../../utils/VoxelDataUtils";
 import { getVoxelTerrainResolution } from "../../../utils/VoxelTerrainUtils";
@@ -29,6 +32,13 @@ export interface FirstPersonCapsuleState {
 	grounded: boolean;
 }
 
+export interface FirstPersonActorCollider {
+	id: string;
+	position: THREE.Vector3;
+	radius: number;
+	height: number;
+}
+
 interface CapsuleDimensions {
 	radius: number;
 	height: number;
@@ -46,6 +56,8 @@ interface CapsuleFrameInput {
 interface AxisMoveResult {
 	blocked: boolean;
 }
+
+const EMPTY_ACTOR_COLLIDERS: readonly FirstPersonActorCollider[] = [];
 
 function voxelCollisionKey(x: number, y: number, z: number): string {
 	return `${x},${y},${z}`;
@@ -97,6 +109,44 @@ function pointIntervalDistance(value: number, min: number, max: number): number 
 	if (value < min) return min - value;
 	if (value > max) return value - max;
 	return 0;
+}
+
+function capsuleIntersectsActorCollider(
+	position: THREE.Vector3,
+	dimensions: CapsuleDimensions,
+	collider: FirstPersonActorCollider
+): boolean {
+	const verticalDistance = intervalDistance(
+		position.y,
+		position.y + dimensions.height,
+		collider.position.y,
+		collider.position.y + collider.height
+	);
+	if (verticalDistance > FIRST_PERSON_PHYSICS.COLLISION_EPSILON) {
+		return false;
+	}
+
+	const radius = dimensions.radius + collider.radius;
+	const dx = position.x - collider.position.x;
+	const dz = position.z - collider.position.z;
+	return (
+		dx * dx + dz * dz <
+		radius * radius - FIRST_PERSON_PHYSICS.COLLISION_EPSILON
+	);
+}
+
+function capsuleIntersectsActorColliders(
+	position: THREE.Vector3,
+	dimensions: CapsuleDimensions,
+	actorColliders: readonly FirstPersonActorCollider[]
+): boolean {
+	for (const collider of actorColliders) {
+		if (capsuleIntersectsActorCollider(position, dimensions, collider)) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 function getCapsuleDimensions(actor: FirstPersonActor): CapsuleDimensions {
@@ -254,6 +304,19 @@ function capsuleIntersectsTerrain(
 	return false;
 }
 
+function capsuleIntersectsCollision(
+	terrain: VoxelTerrain,
+	collision: VoxelCollisionData,
+	dimensions: CapsuleDimensions,
+	position: THREE.Vector3,
+	actorColliders: readonly FirstPersonActorCollider[]
+): boolean {
+	return (
+		capsuleIntersectsTerrain(terrain, collision, dimensions, position) ||
+		capsuleIntersectsActorColliders(position, dimensions, actorColliders)
+	);
+}
+
 function liftOutOfTerrain(
 	terrain: VoxelTerrain,
 	collision: VoxelCollisionData,
@@ -280,7 +343,8 @@ function moveAxis(
 	dimensions: CapsuleDimensions,
 	state: FirstPersonCapsuleState,
 	axis: "x" | "y" | "z",
-	delta: number
+	delta: number,
+	actorColliders: readonly FirstPersonActorCollider[]
 ): AxisMoveResult {
 	if (Math.abs(delta) <= FIRST_PERSON_PHYSICS.COLLISION_EPSILON) {
 		return { blocked: false };
@@ -305,7 +369,15 @@ function moveAxis(
 
 	const actualDelta = target - original;
 	state.position[axis] = target;
-	if (!capsuleIntersectsTerrain(terrain, collision, dimensions, state.position)) {
+	if (
+		!capsuleIntersectsCollision(
+			terrain,
+			collision,
+			dimensions,
+			state.position,
+			actorColliders
+		)
+	) {
 		if (hitBounds) {
 			state.velocity[axis] = 0;
 		}
@@ -318,7 +390,15 @@ function moveAxis(
 	for (let iteration = 0; iteration < 12; iteration++) {
 		const mid = (low + high) / 2;
 		state.position[axis] = original + actualDelta * mid;
-		if (capsuleIntersectsTerrain(terrain, collision, dimensions, state.position)) {
+		if (
+			capsuleIntersectsCollision(
+				terrain,
+				collision,
+				dimensions,
+				state.position,
+				actorColliders
+			)
+		) {
 			high = mid;
 		} else {
 			low = mid;
@@ -336,7 +416,8 @@ function moveHorizontalAxes(
 	dimensions: CapsuleDimensions,
 	state: FirstPersonCapsuleState,
 	deltaX: number,
-	deltaZ: number
+	deltaZ: number,
+	actorColliders: readonly FirstPersonActorCollider[]
 ): AxisMoveResult {
 	const xFirst = Math.abs(deltaX) >= Math.abs(deltaZ);
 	const first = xFirst ? "x" : "z";
@@ -349,7 +430,8 @@ function moveHorizontalAxes(
 		dimensions,
 		state,
 		first,
-		firstDelta
+		firstDelta,
+		actorColliders
 	);
 	const secondResult = moveAxis(
 		terrain,
@@ -357,7 +439,8 @@ function moveHorizontalAxes(
 		dimensions,
 		state,
 		second,
-		secondDelta
+		secondDelta,
+		actorColliders
 	);
 	return { blocked: firstResult.blocked || secondResult.blocked };
 }
@@ -434,14 +517,23 @@ function tryGroundedEndpointMove(
 	state: FirstPersonCapsuleState,
 	deltaX: number,
 	deltaZ: number,
-	stepHeight: number
+	stepHeight: number,
+	actorColliders: readonly FirstPersonActorCollider[]
 ): boolean {
 	const probe = state.position.clone();
 	probe.x += deltaX;
 	probe.y += stepHeight;
 	probe.z += deltaZ;
 
-	if (capsuleIntersectsTerrain(terrain, collision, dimensions, probe)) {
+	if (
+		capsuleIntersectsCollision(
+			terrain,
+			collision,
+			dimensions,
+			probe,
+			actorColliders
+		)
+	) {
 		return false;
 	}
 
@@ -463,7 +555,15 @@ function tryGroundedEndpointMove(
 	}
 
 	probe.y = groundY;
-	if (capsuleIntersectsTerrain(terrain, collision, dimensions, probe)) {
+	if (
+		capsuleIntersectsCollision(
+			terrain,
+			collision,
+			dimensions,
+			probe,
+			actorColliders
+		)
+	) {
 		return false;
 	}
 
@@ -479,7 +579,8 @@ function applyHorizontalMoveWithStep(
 	dimensions: CapsuleDimensions,
 	state: FirstPersonCapsuleState,
 	deltaX: number,
-	deltaZ: number
+	deltaZ: number,
+	actorColliders: readonly FirstPersonActorCollider[]
 ): void {
 	const originalPosition = state.position.clone();
 	const originalVelocity = state.velocity.clone();
@@ -494,7 +595,8 @@ function applyHorizontalMoveWithStep(
 		dimensions,
 		normalState,
 		deltaX,
-		deltaZ
+		deltaZ,
+		actorColliders
 	);
 
 	if (
@@ -516,7 +618,8 @@ function applyHorizontalMoveWithStep(
 			state,
 			deltaX,
 			deltaZ,
-			stepHeight
+			stepHeight,
+			actorColliders
 		)
 	) {
 		return;
@@ -529,7 +632,15 @@ function applyHorizontalMoveWithStep(
 		velocity: originalVelocity.clone(),
 		grounded: false,
 	};
-	if (capsuleIntersectsTerrain(terrain, collision, dimensions, stepState.position)) {
+	if (
+		capsuleIntersectsCollision(
+			terrain,
+			collision,
+			dimensions,
+			stepState.position,
+			actorColliders
+		)
+	) {
 		state.position.copy(normalState.position);
 		state.velocity.copy(normalState.velocity);
 		return;
@@ -541,7 +652,8 @@ function applyHorizontalMoveWithStep(
 		dimensions,
 		stepState,
 		deltaX,
-		deltaZ
+		deltaZ,
+		actorColliders
 	);
 	const groundY = findGroundBelow(
 		terrain,
@@ -561,7 +673,15 @@ function applyHorizontalMoveWithStep(
 	}
 
 	stepState.position.y = groundY;
-	if (capsuleIntersectsTerrain(terrain, collision, dimensions, stepState.position)) {
+	if (
+		capsuleIntersectsCollision(
+			terrain,
+			collision,
+			dimensions,
+			stepState.position,
+			actorColliders
+		)
+	) {
 		state.position.copy(normalState.position);
 		state.velocity.copy(normalState.velocity);
 		return;
@@ -728,12 +848,58 @@ export function createFirstPersonCapsuleState(
 	};
 }
 
+function createActorCollider(
+	actor: FirstPersonActor,
+	terrain: VoxelTerrain
+): FirstPersonActorCollider {
+	const dimensions = getCapsuleDimensions(actor);
+	return {
+		id: actor.id,
+		position: actorToGroundWorld(actor, terrain),
+		radius: dimensions.radius,
+		height: dimensions.height,
+	};
+}
+
+export function createFirstPersonActorColliders(
+	terrain: VoxelTerrain,
+	activeActor: FirstPersonActor,
+	characters: Character[],
+	entities: Entity[]
+): FirstPersonActorCollider[] {
+	const colliders: FirstPersonActorCollider[] = [];
+
+	for (const character of characters) {
+		if (character.Id === activeActor.id) continue;
+		colliders.push(
+			createActorCollider(
+				{ id: character.Id, kind: "character", actor: character },
+				terrain
+			)
+		);
+	}
+
+	for (const entity of entities) {
+		if (entity.Id === activeActor.id) continue;
+		if (isItemEntity(entity)) continue;
+		colliders.push(
+			createActorCollider(
+				{ id: entity.Id, kind: "entity", actor: entity },
+				terrain
+			)
+		);
+	}
+
+	return colliders;
+}
+
 export function stepFirstPersonCapsuleController(
 	terrain: VoxelTerrain,
 	collision: VoxelCollisionData,
 	actor: FirstPersonActor,
 	state: FirstPersonCapsuleState,
-	input: CapsuleFrameInput
+	input: CapsuleFrameInput,
+	actorColliders: readonly FirstPersonActorCollider[] = EMPTY_ACTOR_COLLIDERS
 ): void {
 	const dt = Math.max(0, input.dt);
 	if (dt <= 0) return;
@@ -776,8 +942,24 @@ export function stepFirstPersonCapsuleController(
 		const deltaZ = state.velocity.z * subDt;
 
 		if (canFly) {
-			moveHorizontalAxes(terrain, collision, dimensions, state, deltaX, deltaZ);
-			moveAxis(terrain, collision, dimensions, state, "y", deltaY);
+			moveHorizontalAxes(
+				terrain,
+				collision,
+				dimensions,
+				state,
+				deltaX,
+				deltaZ,
+				actorColliders
+			);
+			moveAxis(
+				terrain,
+				collision,
+				dimensions,
+				state,
+				"y",
+				deltaY,
+				actorColliders
+			);
 			continue;
 		}
 
@@ -787,7 +969,8 @@ export function stepFirstPersonCapsuleController(
 			dimensions,
 			state,
 			deltaX,
-			deltaZ
+			deltaZ,
+			actorColliders
 		);
 
 		const wasMovingDown = deltaY <= 0;
@@ -797,7 +980,8 @@ export function stepFirstPersonCapsuleController(
 			dimensions,
 			state,
 			"y",
-			deltaY
+			deltaY,
+			actorColliders
 		);
 		if (verticalResult.blocked) {
 			state.grounded = wasMovingDown;
