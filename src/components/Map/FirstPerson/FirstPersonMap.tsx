@@ -17,7 +17,6 @@ import {
 import { ThreeDActorLayer } from "../Actors3D/ThreeDActorLayer";
 import { useActivePings } from "../hooks/useActivePings";
 import { useActiveStickers } from "../hooks/useActiveStickers";
-import { useLiveActorPoseOverrides } from "../hooks/useLiveActorPoseOverrides";
 import { useMapState } from "../MapStateProvider";
 import { ThreeDPingLayer } from "../Pings3D/ThreeDPingLayer";
 import { ThreeDStickerLayer } from "../Stickers3D/ThreeDStickerLayer";
@@ -56,8 +55,6 @@ import type {
 import { useFirstPersonScene } from "./useFirstPersonScene";
 
 const PENDING_MOVE_TIMEOUT_MS = 2000;
-const ACTOR_POSE_SEND_INTERVAL_MS = 80;
-const ACTOR_POSE_MIN_DISTANCE_SQ = 0.0004;
 const EMPTY_FIRST_PERSON_KEYS: ReadonlySet<string> = new Set();
 
 export default function FirstPersonMap({
@@ -85,8 +82,6 @@ export default function FirstPersonMap({
 	// would normally teleport us back. We ignore snaps while this is set.
 	const lastSentPositionRef = useRef<Position | null>(null);
 	const lastSentAtRef = useRef(0);
-	const lastPoseSentAtRef = useRef(0);
-	const lastPoseSentPositionRef = useRef<THREE.Vector3 | null>(null);
 	const hadFirstPersonActorRef = useRef(false);
 	const lastStateUpdateRef = useRef(0);
 	const activeActorRef = useRef<FirstPersonActor | null>(null);
@@ -114,7 +109,6 @@ export default function FirstPersonMap({
 		useState<MovementOverlayState>(null);
 	const activeStickers = useActiveStickers();
 	const { pings: activePings } = useActivePings();
-	const liveActorPoses = useLiveActorPoseOverrides(terrain, characters, entities);
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const imageService = (actionService as any)?.imageService ?? null;
 	const userRole = context.User.Role === "dm" ? "dm" : "player";
@@ -235,8 +229,6 @@ export default function FirstPersonMap({
 		cameraPositionInitializedRef.current = false;
 		pendingSyncPositionRef.current = null;
 		lastSentPositionRef.current = null;
-		lastPoseSentAtRef.current = 0;
-		lastPoseSentPositionRef.current = null;
 		spaceWasPressedRef.current = false;
 	}, [actor?.id, actor?.kind, terrainSignature]);
 
@@ -276,44 +268,6 @@ export default function FirstPersonMap({
 		lastSentKeyRef.current = key;
 		lastSentPositionRef.current = normalized;
 		lastSentAtRef.current = Date.now();
-	}, []);
-
-	const sendCurrentActorPose = useCallback((now: number, position: THREE.Vector3) => {
-		const currentActor = activeActorRef.current;
-		const currentTerrain = terrainRef.current;
-		const service = actionServiceRef.current;
-		if (
-			!currentActor ||
-			!currentTerrain ||
-			!service ||
-			!canControlFirstPersonActorRef.current
-		) {
-			return;
-		}
-
-		if (now - lastPoseSentAtRef.current < ACTOR_POSE_SEND_INTERVAL_MS) {
-			return;
-		}
-
-		const lastPosition = lastPoseSentPositionRef.current;
-		if (
-			lastPosition &&
-			lastPosition.distanceToSquared(position) < ACTOR_POSE_MIN_DISTANCE_SQ
-		) {
-			return;
-		}
-
-		service.actorPoseService.sendActorPose({
-			actorId: currentActor.id,
-			terrainId: currentTerrain.Id,
-			position: [position.x, position.y, position.z],
-		});
-		lastPoseSentAtRef.current = now;
-		if (lastPosition) {
-			lastPosition.copy(position);
-		} else {
-			lastPoseSentPositionRef.current = position.clone();
-		}
 	}, []);
 
 	const flushPendingPosition = useCallback(() => {
@@ -522,9 +476,6 @@ export default function FirstPersonMap({
 					if (moved || hasInput || jumpPressed || !settled) {
 						lastMovementInputAtRef.current = now;
 					}
-					if (moved) {
-						sendCurrentActorPose(now, state.position);
-					}
 					if (moved || pendingSyncPositionRef.current) {
 						updateMovementOverlay(now, rulesPosition);
 						pendingSyncPositionRef.current = rulesPosition;
@@ -544,12 +495,7 @@ export default function FirstPersonMap({
 
 			updateCameraFromBody(dt, cameraSmoothing);
 		},
-		[
-			flushPendingPosition,
-			sendCurrentActorPose,
-			updateCameraFromBody,
-			updateMovementOverlay,
-		]
+		[flushPendingPosition, updateCameraFromBody, updateMovementOverlay]
 	);
 
 	const { sceneResources, isPointerLocked } = useFirstPersonScene(
@@ -719,7 +665,6 @@ export default function FirstPersonMap({
 						terrain={terrain}
 						isDM={isDM}
 						imageService={imageService}
-						liveActorPoses={liveActorPoses}
 						onActorClick={handleActorClick}
 						onActorSelect={handleActorSelect}
 					/>
