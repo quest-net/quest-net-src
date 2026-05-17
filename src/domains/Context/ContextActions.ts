@@ -66,6 +66,8 @@ export const ContextActions = {
 				storedVersion,
 				contextMigrations
 			)) as Context;
+			const hadPersistedOptimisticFlag = "IsOptimistic" in context;
+			delete context.IsOptimistic;
 
 			// Run campaign-level migrations for the ActiveCampaign stored in
 			// localStorage.  The IDB copies of inactive campaigns are migrated
@@ -133,7 +135,7 @@ export const ContextActions = {
 				);
 			}
 
-			if (didReshape || didPrepareActiveCampaign) {
+			if (didReshape || didPrepareActiveCampaign || hadPersistedOptimisticFlag) {
 				this.save(context);
 			}
 
@@ -172,7 +174,9 @@ export const ContextActions = {
 	 * campaign (see CampaignLoadingService and CampaignView).
 	 */
 	save(context: Context): void {
-		LocalStorageUtilities.save(STORAGE_KEY, context);
+		const persistedContext: Context = { ...context };
+		delete persistedContext.IsOptimistic;
+		LocalStorageUtilities.save(STORAGE_KEY, persistedContext);
 	},
 
 	/**
