@@ -3,11 +3,19 @@ import { loadImageBlob } from "../../../domains/Image/ImageLoading";
 import type { ActorSize } from "../../../domains/Actor/Actor";
 import {
 	ACTOR_TOKEN_PLACEHOLDER,
+	ACTOR_TOKEN_PICK,
 	ACTOR_TOKEN_SIZE_SCALE,
 	ACTOR_TOKEN_TEXTURE,
 	ACTOR_TOKEN_WORLD_SIZE,
 } from "./actorTokenConstants";
 import type { ActorTokenDescriptor } from "./actorTokenTypes";
+
+export interface ActorTokenPickBounds {
+	minU: number;
+	maxU: number;
+	minV: number;
+	maxV: number;
+}
 
 function isHexColor(value: string | undefined): value is string {
 	return /^#[0-9a-f]{6}$/i.test(value ?? "");
@@ -301,6 +309,42 @@ function createTextureFromCanvas(canvas: HTMLCanvasElement): THREE.CanvasTexture
 	return texture;
 }
 
+function clamp01(value: number): number {
+	return Math.max(0, Math.min(1, value));
+}
+
+function getAlphaPickBounds(
+	ctx: CanvasRenderingContext2D,
+	size: number
+): ActorTokenPickBounds | null {
+	const { data } = ctx.getImageData(0, 0, size, size);
+	let minX = size;
+	let minY = size;
+	let maxX = -1;
+	let maxY = -1;
+
+	for (let y = 0; y < size; y++) {
+		for (let x = 0; x < size; x++) {
+			const alpha = data[(y * size + x) * 4 + 3];
+			if (alpha <= ACTOR_TOKEN_PICK.ALPHA_THRESHOLD) continue;
+			minX = Math.min(minX, x);
+			minY = Math.min(minY, y);
+			maxX = Math.max(maxX, x);
+			maxY = Math.max(maxY, y);
+		}
+	}
+
+	if (maxX < minX || maxY < minY) return null;
+
+	const padding = ACTOR_TOKEN_PICK.BOUNDS_PADDING_PX;
+	return {
+		minU: clamp01((minX - padding) / size),
+		maxU: clamp01((maxX + 1 + padding) / size),
+		minV: clamp01(1 - (maxY + 1 + padding) / size),
+		maxV: clamp01(1 - (minY - padding) / size),
+	};
+}
+
 export async function createActorTokenTexture(
 	actor: ActorTokenDescriptor,
 	options: TextureLoaderOptions
@@ -334,7 +378,12 @@ export async function createActorTokenTexture(
 	// path so unloaded actors still have a recognizable token.
 	if (actor.cutout && image) {
 		drawImageContain(ctx, image);
-		return createTextureFromCanvas(canvas);
+		const texture = createTextureFromCanvas(canvas);
+		texture.userData.actorPickBounds = getAlphaPickBounds(
+			ctx,
+			ACTOR_TOKEN_TEXTURE.SIZE
+		);
+		return texture;
 	}
 
 	ctx.save();

@@ -30,6 +30,7 @@ import {
 	createActorTokenTexture,
 	createSelectionOutlineTexture,
 	getActorTokenWorldSize,
+	type ActorTokenPickBounds,
 } from "./actorTokenTexture";
 import {
 	getActorBaseHeight,
@@ -442,8 +443,69 @@ function createSelectionOverlayMesh(
 	return mesh;
 }
 
+function texturePickBoundsToMeshBounds(
+	bounds: ActorTokenPickBounds
+): ActorTokenPickBounds {
+	const scale = ACTOR_TOKEN_PICK.SCALE_MULTIPLIER;
+	const inset = (scale - 1) / (2 * scale);
+	const textureSpan = 1 / scale;
+	return {
+		minU: inset + bounds.minU * textureSpan,
+		maxU: inset + bounds.maxU * textureSpan,
+		minV: inset + bounds.minV * textureSpan,
+		maxV: inset + bounds.maxV * textureSpan,
+	};
+}
+
+function isCutoutPickHitVisible(
+	hit: THREE.Intersection<THREE.Object3D>,
+	bounds: ActorTokenPickBounds
+): boolean {
+	if (!hit.uv) return false;
+	const { x: u, y: v } = hit.uv;
+	if (
+		u >= bounds.minU &&
+		u <= bounds.maxU &&
+		v >= bounds.minV &&
+		v <= bounds.maxV
+	) {
+		return true;
+	}
+
+	return (
+		u >= ACTOR_TOKEN_PICK.SUPPORT_U_MIN &&
+		u <= ACTOR_TOKEN_PICK.SUPPORT_U_MAX &&
+		v <= ACTOR_TOKEN_PICK.SUPPORT_BAND_MAX_V
+	);
+}
+
+function applyCutoutPickFilter(
+	mesh: THREE.Mesh,
+	texture: THREE.Texture,
+	actor: ActorTokenDescriptor
+): void {
+	const textureBounds = texture.userData.actorPickBounds as
+		| ActorTokenPickBounds
+		| null
+		| undefined;
+	if (!actor.cutout || !textureBounds) return;
+
+	const pickBounds = texturePickBoundsToMeshBounds(textureBounds);
+	const baseRaycast = mesh.raycast.bind(mesh);
+	mesh.raycast = (raycaster, intersects) => {
+		const firstNewHit = intersects.length;
+		baseRaycast(raycaster, intersects);
+		for (let i = intersects.length - 1; i >= firstNewHit; i--) {
+			if (!isCutoutPickHitVisible(intersects[i], pickBounds)) {
+				intersects.splice(i, 1);
+			}
+		}
+	};
+}
+
 function createPickMesh(
 	actor: ActorTokenDescriptor,
+	texture: THREE.Texture,
 	resources: ThreeDSceneResources,
 	actorGroup: THREE.Group,
 	bottomOffset: number
@@ -464,6 +526,7 @@ function createPickMesh(
 	mesh.position.y = bottomOffset + height / 2;
 	mesh.renderOrder = ACTOR_TOKEN_RENDER_ORDER.PICK;
 	setActorUserData(mesh, actor);
+	applyCutoutPickFilter(mesh, texture, actor);
 	mesh.onBeforeRender = () => faceCameraAroundY(mesh, resources.camera, actorGroup);
 	return mesh;
 }
@@ -1049,6 +1112,7 @@ export function ThreeDActorLayer({
 			  );
 		const pickMesh = createPickMesh(
 			latestActor,
+			texture,
 			resources,
 			actorGroup,
 			standeeBottomOffset
@@ -1190,6 +1254,7 @@ export function ThreeDActorLayer({
 				const key = getActorKey(kind, actorId);
 				const actor = descriptorsByKeyRef.current.get(key);
 				if (!actor) continue;
+				if (actor.cutout) continue;
 				pickMesh.getWorldPosition(tmpWorldPos);
 				const ndc = tmpWorldPos.clone().project(resources.camera);
 				const sx = ((ndc.x + 1) / 2) * rect.width + rect.left;
