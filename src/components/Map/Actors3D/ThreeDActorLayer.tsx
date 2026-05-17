@@ -4,6 +4,7 @@ import type { Position } from "../../../domains/Actor/Actor";
 import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import type { LiveActorPose } from "../../../services/ActorPoseService";
 import {
 	getMaxVoxelSurfaceHeight,
 	getVoxelRulesSurfaceHeight,
@@ -39,6 +40,8 @@ import {
 } from "./actorTokenPlacement";
 import { intersectFirstTerrainHit } from "../Movement3D/movement3DHelpers";
 
+const ACTOR_LIVE_POSE_FOLLOW_MS = 90;
+
 interface ThreeDActorLayerProps {
 	resources: ThreeDSceneResources;
 	characters: Character[];
@@ -51,6 +54,7 @@ interface ThreeDActorLayerProps {
 	imageService?: {
 		getImage(imageId: string): Promise<Blob | null>;
 	} | null;
+	liveActorPoses?: ReadonlyMap<string, LiveActorPose>;
 	onActorClick: (actor: SelectedActor) => void;
 	onActorSelect: (actor: SelectedActor) => void;
 	/**
@@ -757,6 +761,7 @@ export function ThreeDActorLayer({
 	isDM,
 	xRayActors = false,
 	imageService,
+	liveActorPoses,
 	onActorClick,
 	onActorSelect,
 	canControlActor,
@@ -775,6 +780,7 @@ export function ThreeDActorLayer({
 	const selectedActorRef = useRef(selectedActor);
 	const xRayActorsRef = useRef(xRayActors);
 	const terrainRef = useRef(terrain);
+	const liveActorPosesRef = useRef(liveActorPoses);
 	const selectionHandlesRef = useRef<Map<string, SelectionHandles>>(new Map());
 	const actorGroupsRef = useRef<Map<string, THREE.Group>>(new Map());
 	const targetPositionsRef = useRef<Map<string, THREE.Vector3>>(new Map());
@@ -834,6 +840,10 @@ export function ThreeDActorLayer({
 		terrainRef.current = terrain;
 	}, [terrain]);
 
+	useEffect(() => {
+		liveActorPosesRef.current = liveActorPoses;
+	}, [liveActorPoses]);
+
 	const tickMoveAnimations = (now: number) => {
 		moveAnimationRafRef.current = 0;
 		for (const [key, animation] of Array.from(moveAnimationsRef.current)) {
@@ -885,6 +895,21 @@ export function ThreeDActorLayer({
 				durationMs ?? getMovementAnimationDuration(actorGroup.position, targetPosition),
 		});
 		scheduleMoveAnimationTick();
+	};
+
+	const getActorRenderTarget = (
+		actor: ActorTokenDescriptor,
+		currentTerrain: VoxelTerrain
+	): THREE.Vector3 => {
+		const livePose = liveActorPosesRef.current?.get(actor.id);
+		if (livePose) {
+			return new THREE.Vector3(
+				livePose.position[0],
+				livePose.position[1],
+				livePose.position[2]
+			);
+		}
+		return getActorGroundPosition(actor, currentTerrain);
 	};
 
 	const clearFlightGuide = () => {
@@ -994,7 +1019,7 @@ export function ThreeDActorLayer({
 		}
 
 		const currentTerrain = terrainRef.current;
-		const targetPosition = getActorGroundPosition(latestActor, currentTerrain);
+		const targetPosition = getActorRenderTarget(latestActor, currentTerrain);
 		const previousVisualPosition = previousVisualPositionsRef.current.get(actorKey);
 		previousVisualPositionsRef.current.delete(actorKey);
 		const actorGroup = new THREE.Group();
@@ -1497,7 +1522,7 @@ export function ThreeDActorLayer({
 				applyActorXRay(visual, xRayActorsRef.current);
 			}
 
-			const nextTarget = getActorGroundPosition(actor, terrain);
+			const nextTarget = getActorRenderTarget(actor, terrain);
 			const currentTarget = targetPositionsRef.current.get(key);
 			if (
 				currentTarget &&
@@ -1508,16 +1533,19 @@ export function ThreeDActorLayer({
 			}
 
 			targetPositionsRef.current.set(key, nextTarget.clone());
+			const hasLivePose = liveActorPoses?.has(actor.id) ?? false;
 			moveAnimationsRef.current.set(key, {
 				group: actorGroup,
 				from: actorGroup.position.clone(),
 				to: nextTarget,
 				startedAt: now,
-				durationMs: getMovementAnimationDuration(actorGroup.position, nextTarget),
+				durationMs: hasLivePose
+					? ACTOR_LIVE_POSE_FOLLOW_MS
+					: getMovementAnimationDuration(actorGroup.position, nextTarget),
 			});
 			scheduleMoveAnimationTick();
 		}
-	}, [characters, entities, cutoutImageIds, terrain, isDM]);
+	}, [characters, entities, cutoutImageIds, terrain, isDM, liveActorPoses]);
 
 	useEffect(() => {
 		return () => {

@@ -30,6 +30,7 @@ import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from './Actors3D/actorTokenConstants'
 import type { ThreeDSceneResources } from './Actors3D/actorTokenTypes';
 import { useActiveStickers } from './hooks/useActiveStickers';
 import { useActivePings } from './hooks/useActivePings';
+import { useLiveActorPoseOverrides } from './hooks/useLiveActorPoseOverrides';
 import { PING_DURATION_MS } from '../../domains/Ping/Ping';
 import { usePeerTracking } from '../../hooks/usePeerTracking';
 import {
@@ -259,6 +260,7 @@ export default function ThreeDMap({
 	const [sceneResources, setSceneResources] = useState<ThreeDSceneResources | null>(null);
 	const activeStickers = useActiveStickers();
 	const { pings: activePings } = useActivePings();
+	const liveActorPoses = useLiveActorPoseOverrides(terrain, characters, entities);
 	const lastPingTimeRef = useRef(0);
 	const isDM = context.User.Role === "dm";
 	const imageService = (actionService as any)?.imageService ?? null;
@@ -731,6 +733,7 @@ export default function ThreeDMap({
 						isDM={isDM}
 						xRayActors={xRayActors}
 						imageService={imageService}
+						liveActorPoses={liveActorPoses}
 						onActorClick={handleActorClick}
 						onActorSelect={handleActorSelect}
 						canControlActor={canControlActor}

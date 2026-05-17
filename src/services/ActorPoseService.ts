@@ -1,0 +1,221 @@
+import type { Campaign } from "../domains/Campaign/Campaign";
+import { CampaignActions } from "../domains/Campaign/CampaignActions";
+import type { Context } from "../domains/Context/Context";
+import type { Room } from "../domains/Room/Room";
+import type { User } from "../domains/User/User";
+
+const ACTOR_POSE_TIMEOUT_MS = 800;
+const ACTOR_POSE_PRUNE_INTERVAL_MS = 250;
+
+export type ActorPosePacket = {
+	actorId: string;
+	terrainId: string;
+	position: [number, number, number];
+};
+
+export type LiveActorPose = ActorPosePacket & {
+	receivedAt: number;
+	peerId: string;
+};
+
+type LiveActorPoseListener = () => void;
+
+interface ActorPoseServiceOptions {
+	getPeerUser: (peerId: string) => User | undefined;
+}
+
+export class ActorPoseService {
+	private context: Context;
+	private sendActorPosePacket?: (data: ActorPosePacket) => void;
+	private liveActorPoses: Map<string, LiveActorPose> = new Map();
+	private liveActorPoseListeners: Set<LiveActorPoseListener> = new Set();
+	private pruneInterval?: ReturnType<typeof setInterval>;
+
+	constructor(
+		context: Context,
+		room: Room,
+		private options: ActorPoseServiceOptions
+	) {
+		this.context = context;
+		const [sendActorPose, getActorPose] = room.makeAction("actorPose");
+		this.sendActorPosePacket = sendActorPose;
+		getActorPose((data, peerId) => {
+			this.handleActorPose(data, peerId);
+		});
+
+		this.pruneInterval = setInterval(
+			() => this.reconcileLiveActorPoses(),
+			ACTOR_POSE_PRUNE_INTERVAL_MS
+		);
+	}
+
+	public sendActorPose(packet: ActorPosePacket): void {
+		if (!this.sendActorPosePacket) return;
+		if (!this.isActorPosePacket(packet)) return;
+		this.sendActorPosePacket(packet);
+	}
+
+	public subscribeLiveActorPoses(listener: LiveActorPoseListener): () => void {
+		this.liveActorPoseListeners.add(listener);
+		return () => {
+			this.liveActorPoseListeners.delete(listener);
+		};
+	}
+
+	public getLiveActorPoses(
+		terrainId: string,
+		actorIds?: ReadonlySet<string>
+	): Map<string, LiveActorPose> {
+		const now = Date.now();
+		const poses = new Map<string, LiveActorPose>();
+		for (const [actorId, pose] of this.liveActorPoses) {
+			if (now - pose.receivedAt > ACTOR_POSE_TIMEOUT_MS) continue;
+			if (pose.terrainId !== terrainId) continue;
+			if (actorIds && !actorIds.has(actorId)) continue;
+			poses.set(actorId, {
+				...pose,
+				position: [...pose.position] as [number, number, number],
+			});
+		}
+		return poses;
+	}
+
+	public reconcileLiveActorPoses(
+		terrainId?: string,
+		actorIds?: ReadonlySet<string>
+	): void {
+		const now = Date.now();
+		let changed = false;
+		for (const [actorId, pose] of Array.from(this.liveActorPoses)) {
+			const expired = now - pose.receivedAt > ACTOR_POSE_TIMEOUT_MS;
+			const wrongTerrain = terrainId !== undefined && pose.terrainId !== terrainId;
+			const actorMissing = actorIds !== undefined && !actorIds.has(actorId);
+			if (expired || wrongTerrain || actorMissing) {
+				this.liveActorPoses.delete(actorId);
+				changed = true;
+			}
+		}
+		if (changed) {
+			this.emitLiveActorPoseChange();
+		}
+	}
+
+	public clearLiveActorPoses(actorId?: string): void {
+		let changed = false;
+		if (actorId) {
+			changed = this.liveActorPoses.delete(actorId);
+		} else if (this.liveActorPoses.size > 0) {
+			this.liveActorPoses.clear();
+			changed = true;
+		}
+		if (changed) {
+			this.emitLiveActorPoseChange();
+		}
+	}
+
+	public clearForPeer(peerId: string): void {
+		let changed = false;
+		for (const [actorId, pose] of Array.from(this.liveActorPoses)) {
+			if (pose.peerId === peerId) {
+				this.liveActorPoses.delete(actorId);
+				changed = true;
+			}
+		}
+		if (changed) {
+			this.emitLiveActorPoseChange();
+		}
+	}
+
+	public clearForAuthoritativeAction(
+		actionKey: string | undefined,
+		params: any
+	): void {
+		if (actionKey === "terrain:setActive" || actionKey === "scenario:load") {
+			this.clearLiveActorPoses();
+			return;
+		}
+		if (actionKey === "character:move" || actionKey === "character:remove") {
+			if (typeof params?.characterId === "string") {
+				this.clearLiveActorPoses(params.characterId);
+			}
+			return;
+		}
+		if (actionKey === "entity:move" || actionKey === "entity:remove") {
+			if (typeof params?.entityId === "string") {
+				this.clearLiveActorPoses(params.entityId);
+			}
+		}
+	}
+
+	public cleanup(): void {
+		if (this.pruneInterval) {
+			clearInterval(this.pruneInterval);
+			this.pruneInterval = undefined;
+		}
+		this.liveActorPoses.clear();
+		this.liveActorPoseListeners.clear();
+	}
+
+	private handleActorPose(data: unknown, peerId?: string): void {
+		if (!peerId || !this.isActorPosePacket(data)) return;
+
+		let campaign: Campaign;
+		try {
+			campaign = CampaignActions.getActiveCampaign(this.context);
+		} catch {
+			return;
+		}
+
+		if (campaign.GameState.VoxelTerrainId !== data.terrainId) return;
+		if (!this.actorExistsInGameState(campaign, data.actorId)) return;
+		if (!this.canPeerControlActor(peerId, data.actorId, campaign)) return;
+
+		this.liveActorPoses.set(data.actorId, {
+			actorId: data.actorId,
+			terrainId: data.terrainId,
+			position: [...data.position] as [number, number, number],
+			receivedAt: Date.now(),
+			peerId,
+		});
+		this.emitLiveActorPoseChange();
+	}
+
+	private isActorPosePacket(data: unknown): data is ActorPosePacket {
+		if (!data || typeof data !== "object") return false;
+		const packet = data as Partial<ActorPosePacket>;
+		return (
+			typeof packet.actorId === "string" &&
+			packet.actorId.length > 0 &&
+			typeof packet.terrainId === "string" &&
+			packet.terrainId.length > 0 &&
+			Array.isArray(packet.position) &&
+			packet.position.length === 3 &&
+			packet.position.every((value) => Number.isFinite(value))
+		);
+	}
+
+	private actorExistsInGameState(campaign: Campaign, actorId: string): boolean {
+		return (
+			campaign.GameState.Characters.some((actor) => actor.Id === actorId) ||
+			campaign.GameState.Entities.some((actor) => actor.Id === actorId)
+		);
+	}
+
+	private canPeerControlActor(
+		peerId: string,
+		actorId: string,
+		campaign: Campaign
+	): boolean {
+		const user = this.options.getPeerUser(peerId);
+		if (!user) return false;
+		if (user.Role === "dm") return true;
+		if (user.Role !== "player") return false;
+		return user.SelectedCharacters?.[campaign.RoomCode] === actorId;
+	}
+
+	private emitLiveActorPoseChange(): void {
+		for (const listener of this.liveActorPoseListeners) {
+			listener();
+		}
+	}
+}
