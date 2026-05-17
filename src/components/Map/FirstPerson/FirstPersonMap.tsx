@@ -8,6 +8,7 @@ import { usePeerTracking } from "../../../hooks/usePeerTracking";
 import { useActionService } from "../../../services/Actions/ActionServiceProvider";
 import { getVoxelCount } from "../../../utils/VoxelDataUtils";
 import {
+	canOccupyVoxelTile,
 	getVoxelTileHeightKey,
 	normalizeVoxelPosition,
 } from "../../../utils/VoxelMovementUtilities";
@@ -97,6 +98,8 @@ export default function FirstPersonMap({
 	const canControlFirstPersonActorRef = useRef(false);
 	const isCombatActiveRef = useRef(false);
 	const lastPingTimeRef = useRef(0);
+	const charactersRef = useRef(characters);
+	const entitiesRef = useRef(entities);
 
 	const terrainSignature = useMemo(
 		() => createTerrainSignature(terrain),
@@ -213,6 +216,14 @@ export default function FirstPersonMap({
 	}, [terrain]);
 
 	useEffect(() => {
+		charactersRef.current = characters;
+	}, [characters]);
+
+	useEffect(() => {
+		entitiesRef.current = entities;
+	}, [entities]);
+
+	useEffect(() => {
 		voxelCollisionDataRef.current = voxelCollisionData;
 	}, [voxelCollisionData]);
 
@@ -257,6 +268,20 @@ export default function FirstPersonMap({
 		}
 
 		const normalized = normalizeVoxelPosition(position);
+		const currentTerrain = terrainRef.current;
+		if (
+			currentTerrain &&
+			!canOccupyVoxelTile(
+				currentTerrain,
+				normalized,
+				charactersRef.current,
+				entitiesRef.current,
+				currentActor.id
+			)
+		) {
+			return;
+		}
+
 		const key = `${currentActor.kind}:${currentActor.id}:${normalized.x},${normalized.y},${normalized.h}`;
 		if (lastSentKeyRef.current === key) {
 			return;
