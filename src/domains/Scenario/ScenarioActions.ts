@@ -97,13 +97,18 @@ export const ScenarioActions = {
             return;
         }
 
-        // 1. Set terrain (skip if deleted, validateActors handles positions)
-        // We do this FIRST so that validating entity spawns/character moves checks against the NEW terrain
+        // 1. Set terrain (skip if deleted). Defer actor validation until
+        // after this scenario has fully replaced entities and character
+        // positions, otherwise the previous encounter layout can be judged
+        // against the new terrain.
         const terrainExists = campaign.VoxelTerrains.some(
             (t) => t.Id === scenario.TerrainId
         );
         if (terrainExists) {
-            await VoxelTerrainActions.setActive({ terrainId: scenario.TerrainId }, context);
+            await VoxelTerrainActions.setActive(
+                { terrainId: scenario.TerrainId, validateActors: false },
+                context
+            );
         }
 
         // 2. Clear existing entities
@@ -119,6 +124,7 @@ export const ScenarioActions = {
                     {
                         entityId: placement.EntityTemplateId,
                         position: placement.Position,
+                        validateActors: false,
                     },
                     context
                 );

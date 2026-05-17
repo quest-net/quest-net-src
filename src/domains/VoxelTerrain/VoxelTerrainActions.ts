@@ -1,13 +1,16 @@
 // domains/VoxelTerrain/VoxelTerrainActions.ts
 
 import type { Actor } from "../Actor/Actor";
+import type { Character } from "../Character/Character";
 import { CampaignActions } from "../Campaign/CampaignActions";
+import type { Campaign } from "../Campaign/Campaign";
 import type { Context } from "../Context/Context";
 import { isItemEntity } from "../Item/ItemDropUtils";
 import { LogActions } from "../Log/LogActions";
 import {
 	getActiveVoxelTerrain,
 	getMaxVoxelSurfaceHeight,
+	getVoxelTerrainResolution,
 	getVoxelRulesSurfaceHeight,
 	getVoxelTerrainSurfaceData,
 	type VoxelTerrainSurfaceData,
@@ -15,6 +18,14 @@ import {
 import { createFlatVoxelTerrain } from "../../utils/VoxelTerrainEditorUtils";
 import type { VoxelTerrain } from "./VoxelTerrain";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
+import { decodeVoxels } from "../../utils/VoxelDataUtils";
+
+const FLYING_ACTOR_CLEARANCE_BY_SIZE = {
+	"extra-small": 1,
+	small: 1.25,
+	medium: 1.5,
+	large: 1.75,
+} as const;
 
 function getCenterTile(terrain: VoxelTerrain): { x: number; y: number } {
 	return {
@@ -95,6 +106,89 @@ function getAdjustedActorHeight(
 	}
 
 	return getClosestHeight(surfaces, actor.Position.h);
+}
+
+function getFlyingActorClearance(actor: Actor): number {
+	return FLYING_ACTOR_CLEARANCE_BY_SIZE[actor.Size ?? "small"];
+}
+
+function buildOccupiedVoxelHeightsByTile(terrain: VoxelTerrain): Set<string> {
+	const resolution = getVoxelTerrainResolution(terrain);
+	const occupied = new Set<string>();
+
+	for (const voxel of decodeVoxels(terrain.Voxels)) {
+		if (voxel.x < 0 || voxel.y < 0 || voxel.z < 0) continue;
+
+		const tileX = Math.floor(voxel.x / resolution);
+		const tileY = Math.floor(voxel.z / resolution);
+		if (!VoxelTerrainActions.isInBounds(tileX, tileY, terrain)) continue;
+
+		occupied.add(`${tileX},${tileY},${voxel.y}`);
+	}
+
+	return occupied;
+}
+
+function isFlyingHeightClear(
+	actor: Actor,
+	terrain: VoxelTerrain,
+	occupiedVoxelHeightsByTile: Set<string>,
+	x: number,
+	y: number,
+	h: number
+): boolean {
+	if (!VoxelTerrainActions.isInBounds(x, y, terrain)) return false;
+	if (h < 0) return false;
+	if (
+		h > Math.ceil(Math.max(terrain.Height, getMaxVoxelSurfaceHeight(terrain)))
+	) {
+		return false;
+	}
+
+	const resolution = getVoxelTerrainResolution(terrain);
+	const startVoxelY = Math.max(0, Math.floor(h * resolution));
+	const endVoxelY = Math.max(
+		startVoxelY,
+		Math.ceil((h + getFlyingActorClearance(actor)) * resolution) - 1
+	);
+
+	for (let voxelY = startVoxelY; voxelY <= endVoxelY; voxelY++) {
+		if (occupiedVoxelHeightsByTile.has(`${x},${y},${voxelY}`)) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+function returnCharacterToRoster(
+	campaign: Campaign,
+	character: Character,
+	context: Context
+): void {
+	const alreadyInRoster = campaign.CharacterRoster.some(
+		(candidate) => candidate.Id === character.Id
+	);
+	if (!alreadyInRoster) {
+		campaign.CharacterRoster.push(character);
+	}
+
+	const impersonated = (context.User.ImpersonatedActors ?? {})[campaign.RoomCode];
+	if (impersonated === character.Id && context.User.ImpersonatedActors) {
+		delete context.User.ImpersonatedActors[campaign.RoomCode];
+	}
+
+	LogActions.create(
+		{
+			action: "Character despawned",
+			details: `${character.Name} returned to roster due to invalid voxel position`,
+			category: "system",
+			level: "important",
+			visibility: ["all"],
+			actorId: character.Id,
+		},
+		context
+	);
 }
 
 export const VoxelTerrainActions = {
@@ -195,7 +289,7 @@ export const VoxelTerrainActions = {
 	},
 
 	async setActive(
-		params: { terrainId: string | undefined },
+		params: { terrainId: string | undefined; validateActors?: boolean },
 		context: Context
 	): Promise<void> {
 		const campaign = CampaignActions.getActiveCampaign(context);
@@ -232,7 +326,9 @@ export const VoxelTerrainActions = {
 			context
 		);
 
-		VoxelTerrainActions.validateActors(context);
+		if (params.validateActors !== false) {
+			VoxelTerrainActions.validateActors(context);
+		}
 	},
 
 	bulkEditTags(
@@ -274,18 +370,24 @@ export const VoxelTerrainActions = {
 
 		const occupiedTiles = new Set<string>();
 
+		const occupiedVoxelHeightsByTile = buildOccupiedVoxelHeightsByTile(terrain);
+
 		VoxelTerrainActions.validateActorArray(
 			campaign.GameState.Entities,
 			terrain,
 			occupiedTiles,
+			occupiedVoxelHeightsByTile,
 			"entity",
+			campaign,
 			context
 		);
 		VoxelTerrainActions.validateActorArray(
 			campaign.GameState.Characters,
 			terrain,
 			occupiedTiles,
+			occupiedVoxelHeightsByTile,
 			"character",
+			campaign,
 			context
 		);
 	},
@@ -294,7 +396,9 @@ export const VoxelTerrainActions = {
 		actors: Actor[],
 		terrain: VoxelTerrain,
 		occupiedTiles: Set<string>,
+		occupiedVoxelHeightsByTile: Set<string>,
 		type: "entity" | "character",
+		campaign: Campaign,
 		context: Context
 	): void {
 		const toRemove: string[] = [];
@@ -306,7 +410,12 @@ export const VoxelTerrainActions = {
 			actor.Position.h = Math.round(actor.Position.h);
 
 			if (!VoxelTerrainActions.isInBounds(actor.Position.x, actor.Position.y, terrain)) {
-				const validPosition = VoxelTerrainActions.findValidPosition(actor, terrain, occupiedTiles);
+				const validPosition = VoxelTerrainActions.findValidPosition(
+					actor,
+					terrain,
+					occupiedTiles,
+					occupiedVoxelHeightsByTile
+				);
 				if (validPosition) {
 					actor.Position = validPosition;
 					occupiedTiles.add(
@@ -324,7 +433,12 @@ export const VoxelTerrainActions = {
 				!actor.CanFly &&
 				getSurfaceHeights(surfaceData, actor.Position.x, actor.Position.y).length === 0
 			) {
-				const validPosition = VoxelTerrainActions.findValidPosition(actor, terrain, occupiedTiles);
+				const validPosition = VoxelTerrainActions.findValidPosition(
+					actor,
+					terrain,
+					occupiedTiles,
+					occupiedVoxelHeightsByTile
+				);
 				if (validPosition) {
 					actor.Position = validPosition;
 					occupiedTiles.add(
@@ -338,13 +452,46 @@ export const VoxelTerrainActions = {
 
 			VoxelTerrainActions.adjustHeight(actor, terrain, surfaceData);
 
+			if (
+				actor.CanFly &&
+				!isFlyingHeightClear(
+					actor,
+					terrain,
+					occupiedVoxelHeightsByTile,
+					actor.Position.x,
+					actor.Position.y,
+					actor.Position.h
+				)
+			) {
+				const validPosition = VoxelTerrainActions.findValidPosition(
+					actor,
+					terrain,
+					occupiedTiles,
+					occupiedVoxelHeightsByTile
+				);
+				if (validPosition) {
+					actor.Position = validPosition;
+					occupiedTiles.add(
+						`${validPosition.x},${validPosition.y},${validPosition.h}`
+					);
+				} else {
+					toRemove.push(actor.Id);
+				}
+				continue;
+			}
+
 			if (isItem) {
 				continue;
 			}
 
 			const tileKey = `${actor.Position.x},${actor.Position.y},${actor.Position.h}`;
 			if (occupiedTiles.has(tileKey)) {
-				const validPosition = VoxelTerrainActions.findValidPosition(actor, terrain, occupiedTiles);
+				const validPosition = VoxelTerrainActions.findValidPosition(
+					actor,
+					terrain,
+					occupiedTiles,
+					occupiedVoxelHeightsByTile
+				);
 				if (validPosition) {
 					actor.Position = validPosition;
 					occupiedTiles.add(
@@ -364,6 +511,11 @@ export const VoxelTerrainActions = {
 
 			const actor = actors[index];
 			actors.splice(index, 1);
+			if (type === "character") {
+				returnCharacterToRoster(campaign, actor as Character, context);
+				continue;
+			}
+
 			LogActions.create(
 				{
 					action: `${type} despawned`,
@@ -393,12 +545,25 @@ export const VoxelTerrainActions = {
 	findValidPosition(
 		actor: Actor,
 		terrain: VoxelTerrain,
-		occupiedTiles: Set<string>
+		occupiedTiles: Set<string>,
+		occupiedVoxelHeightsByTile: Set<string> = buildOccupiedVoxelHeightsByTile(terrain)
 	): { x: number; y: number; h: number } | null {
 		const maxHeight = Math.ceil(Math.max(terrain.Height, getMaxVoxelSurfaceHeight(terrain)));
 		const surfaceData = getVoxelTerrainSurfaceData(terrain);
 		const isPositionAvailable = (x: number, y: number, h: number): boolean =>
-			VoxelTerrainActions.isInBounds(x, y, terrain) && !occupiedTiles.has(`${x},${y},${h}`);
+			VoxelTerrainActions.isInBounds(x, y, terrain) &&
+			!occupiedTiles.has(`${x},${y},${h}`) &&
+			(
+				!actor.CanFly ||
+				isFlyingHeightClear(
+					actor,
+					terrain,
+					occupiedVoxelHeightsByTile,
+					x,
+					y,
+					h
+				)
+			);
 
 		const findAvailableHeight = (x: number, y: number): number | null => {
 			if (!VoxelTerrainActions.isInBounds(x, y, terrain)) return null;
