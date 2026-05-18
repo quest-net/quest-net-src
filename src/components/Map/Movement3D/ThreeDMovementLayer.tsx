@@ -98,15 +98,7 @@ function getTileFromPointerEvent(
 
 	if (terrainHit) {
 		const worldNormal = getHitWorldNormal(terrainHit);
-		// Pass the hit face and object so worldPointToVoxelTile can read the
-		// tileHeight attribute and return the exact (x, y, h) of the clicked face.
-		return worldPointToVoxelTile(
-			terrain,
-			terrainHit.point,
-			worldNormal,
-			terrainHit.face,
-			terrainHit.object
-		);
+		return worldPointToVoxelTile(terrain, terrainHit.point, worldNormal);
 	}
 
 	if (!allowVirtualGroundTile) return null;

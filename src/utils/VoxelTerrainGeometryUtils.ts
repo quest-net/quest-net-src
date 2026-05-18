@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 import type { Voxel, VoxelTerrain } from '../domains/VoxelTerrain/VoxelTerrain';
 import {
-	getVoxelSize,
 	getVoxelTerrainResolution,
 	voxelTopToRulesHeight,
 } from './VoxelTerrainUtils';
@@ -10,6 +9,38 @@ import { VOXEL_AO_CURVE, VOXEL_FACE_DEFINITIONS } from './VoxelTerrainGeometryCo
 import { decodeVoxels } from './VoxelDataUtils';
 
 export type VoxelColorFactory = (voxel: Voxel) => THREE.Color;
+
+type GridCoordinate = [number, number, number];
+
+interface FaceLayout {
+	normal: [number, number, number];
+	neighborOffset: [number, number, number];
+	corners: Array<[number, number, number]>;
+	cornerOffsets: GridCoordinate[];
+	normalAxis: number;
+	uAxis: number;
+	uSign: number;
+	vAxis: number;
+	vSign: number;
+	uVector: GridCoordinate;
+	vVector: GridCoordinate;
+}
+
+interface GreedyFaceCell {
+	u: number;
+	v: number;
+	corner0: GridCoordinate;
+	layout: FaceLayout;
+	r: number;
+	g: number;
+	b: number;
+	tileX: number;
+	tileY: number;
+	tileH: number;
+	highlightStrength: number;
+	aoValues: readonly [number, number, number, number];
+	mergeKey: string;
+}
 
 // ---------------------------------------------------------------------------
 // Raw geometry buffers
@@ -32,6 +63,52 @@ interface VoxelTerrainBufferOptions {
 function voxelKey(x: number, y: number, z: number): number {
 	return x + y * 256 + z * 65536;
 }
+
+function cornerOffset([cx, cy, cz]: [number, number, number]): GridCoordinate {
+	return [cx > 0 ? 1 : 0, cy > 0 ? 1 : 0, cz > 0 ? 1 : 0];
+}
+
+function subtractGridCoordinate(a: GridCoordinate, b: GridCoordinate): GridCoordinate {
+	return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+
+function getVectorAxis(vector: GridCoordinate): { axis: number; sign: number } {
+	for (let axis = 0; axis < 3; axis++) {
+		if (vector[axis] !== 0) {
+			return { axis, sign: vector[axis] > 0 ? 1 : -1 };
+		}
+	}
+	return { axis: 0, sign: 1 };
+}
+
+function getNormalAxis(normal: [number, number, number]): number {
+	for (let axis = 0; axis < 3; axis++) {
+		if (normal[axis] !== 0) return axis;
+	}
+	return 0;
+}
+
+const FACE_LAYOUTS: FaceLayout[] = VOXEL_FACE_DEFINITIONS.map((face) => {
+	const cornerOffsets = face.corners.map(cornerOffset);
+	const uVector = subtractGridCoordinate(cornerOffsets[3], cornerOffsets[0]);
+	const vVector = subtractGridCoordinate(cornerOffsets[1], cornerOffsets[0]);
+	const u = getVectorAxis(uVector);
+	const v = getVectorAxis(vVector);
+
+	return {
+		normal: face.normal,
+		neighborOffset: face.neighborOffset,
+		corners: face.corners,
+		cornerOffsets,
+		normalAxis: getNormalAxis(face.normal),
+		uAxis: u.axis,
+		uSign: u.sign,
+		vAxis: v.axis,
+		vSign: v.sign,
+		uVector,
+		vVector,
+	};
+});
 
 function trimFloat32Buffer(
 	buffer: Float32Array,
@@ -95,6 +172,37 @@ function vertexAO(
 	return 3 - (side1 + side2 + corner);
 }
 
+function greedyCellKey(u: number, v: number): string {
+	return `${u},${v}`;
+}
+
+function addScaledGridCoordinate(
+	base: GridCoordinate,
+	a: GridCoordinate,
+	aScale: number,
+	b?: GridCoordinate,
+	bScale = 0
+): GridCoordinate {
+	return [
+		base[0] + a[0] * aScale + (b?.[0] ?? 0) * bScale,
+		base[1] + a[1] * aScale + (b?.[1] ?? 0) * bScale,
+		base[2] + a[2] * aScale + (b?.[2] ?? 0) * bScale,
+	];
+}
+
+function writeGridPosition(
+	positions: Float32Array,
+	vertexIndex: number,
+	corner: GridCoordinate,
+	resolution: number,
+	terrain: VoxelTerrain
+): void {
+	const p3 = vertexIndex * 3;
+	positions[p3]     = corner[0] / resolution - terrain.Width / 2;
+	positions[p3 + 1] = corner[1] / resolution - 0.5;
+	positions[p3 + 2] = corner[2] / resolution - terrain.Length / 2;
+}
+
 // ---------------------------------------------------------------------------
 // Core buffer builder -- no Three.js objects created, safe to run in a worker.
 // Returns properly-sized (sliced) TypedArrays ready for transfer.
@@ -104,8 +212,6 @@ export function buildVoxelTerrainBuffers(
 	createVoxelColor: VoxelColorFactory,
 	options: VoxelTerrainBufferOptions = {}
 ): VoxelTerrainBuffers {
-	const voxelSize = getVoxelSize(terrain);
-	const halfVoxelSize = voxelSize / 2;
 	const resolution = getVoxelTerrainResolution(terrain);
 	const voxels = Array.from(decodeVoxels(terrain.Voxels));
 	const voxelCount = voxels.length;
@@ -131,56 +237,127 @@ export function buildVoxelTerrainBuffers(
 		occupied.add(voxelKey(voxel.x, voxel.y, voxel.z));
 	}
 
+	const cellsByPlane = new Map<string, GreedyFaceCell[]>();
+
 	for (const voxel of voxels) {
 		const { x: vx, y: vy, z: vz } = voxel;
 		const tileX   = Math.floor(vx / resolution);
 		const tileY   = Math.floor(vz / resolution);
 		const tileH   = voxelTopToRulesHeight(vy, resolution);
-		const centerX = vx / resolution - terrain.Width  / 2 + halfVoxelSize;
-		const centerY = (vy + 0.5)      / resolution     - 0.5;
-		const centerZ = vz / resolution - terrain.Length / 2 + halfVoxelSize;
 
 		const baseColor = createVoxelColor(voxel);
 		const bcr = baseColor.r;
 		const bcg = baseColor.g;
 		const bcb = baseColor.b;
 
-		for (const face of VOXEL_FACE_DEFINITIONS) {
-			const [dx, dy, dz] = face.neighborOffset;
+		for (const layout of FACE_LAYOUTS) {
+			const [dx, dy, dz] = layout.neighborOffset;
 			if (occupied.has(voxelKey(vx + dx, vy + dy, vz + dz))) continue;
 
-			const [nx, ny, nz] = face.normal;
+			const [nx, ny, nz] = layout.normal;
 			const strength = ny > 0.5 ? 1 : 0.28;
 
-			// Compute AO for all four corners before writing vertex data,
-			// because the quad-flip decision depends on all four values.
-			const ao0 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[0][0], face.corners[0][1], face.corners[0][2], occupied);
-			const ao1 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[1][0], face.corners[1][1], face.corners[1][2], occupied);
-			const ao2 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[2][0], face.corners[2][1], face.corners[2][2], occupied);
-			const ao3 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[3][0], face.corners[3][1], face.corners[3][2], occupied);
+			const ao0 = vertexAO(vx, vy, vz, nx, ny, nz, layout.corners[0][0], layout.corners[0][1], layout.corners[0][2], occupied);
+			const ao1 = vertexAO(vx, vy, vz, nx, ny, nz, layout.corners[1][0], layout.corners[1][1], layout.corners[1][2], occupied);
+			const ao2 = vertexAO(vx, vy, vz, nx, ny, nz, layout.corners[2][0], layout.corners[2][1], layout.corners[2][2], occupied);
+			const ao3 = vertexAO(vx, vy, vz, nx, ny, nz, layout.corners[3][0], layout.corners[3][1], layout.corners[3][2], occupied);
 			const aoValues = [ao0, ao1, ao2, ao3] as const;
+			const [c0x, c0y, c0z] = layout.cornerOffsets[0];
+			const corner0: GridCoordinate = [vx + c0x, vy + c0y, vz + c0z];
+			const u = corner0[layout.uAxis] * layout.uSign;
+			const v = corner0[layout.vAxis] * layout.vSign;
+			const plane = corner0[layout.normalAxis];
+			const planeKey = `${layout.normal[0]},${layout.normal[1]},${layout.normal[2]}:${plane}`;
+			const mergeKey = `${voxel.color & 0xff}:${ao0}:${ao1}:${ao2}:${ao3}`;
+			let planeCells = cellsByPlane.get(planeKey);
+			if (!planeCells) {
+				planeCells = [];
+				cellsByPlane.set(planeKey, planeCells);
+			}
+			planeCells.push({
+				u,
+				v,
+				corner0,
+				layout,
+				r: bcr,
+				g: bcg,
+				b: bcb,
+				tileX,
+				tileY,
+				tileH,
+				highlightStrength: strength,
+				aoValues,
+				mergeKey,
+			});
+		}
+	}
+
+	for (const planeCells of cellsByPlane.values()) {
+		const cellMap = new Map<string, GreedyFaceCell>();
+		for (const cell of planeCells) {
+			cellMap.set(greedyCellKey(cell.u, cell.v), cell);
+		}
+
+		const visited = new Set<string>();
+		const sortedCells = planeCells.slice().sort((a, b) => a.v - b.v || a.u - b.u);
+		for (const startCell of sortedCells) {
+			const startKey = greedyCellKey(startCell.u, startCell.v);
+			if (visited.has(startKey)) continue;
+
+			let width = 1;
+			while (true) {
+				const nextKey = greedyCellKey(startCell.u + width, startCell.v);
+				const nextCell = cellMap.get(nextKey);
+				if (!nextCell || visited.has(nextKey) || nextCell.mergeKey !== startCell.mergeKey) {
+					break;
+				}
+				width++;
+			}
+
+			let height = 1;
+			heightScan:
+			while (true) {
+				for (let dx = 0; dx < width; dx++) {
+					const nextKey = greedyCellKey(startCell.u + dx, startCell.v + height);
+					const nextCell = cellMap.get(nextKey);
+					if (!nextCell || visited.has(nextKey) || nextCell.mergeKey !== startCell.mergeKey) {
+						break heightScan;
+					}
+				}
+				height++;
+			}
+
+			for (let dy = 0; dy < height; dy++) {
+				for (let dx = 0; dx < width; dx++) {
+					visited.add(greedyCellKey(startCell.u + dx, startCell.v + dy));
+				}
+			}
 
 			const faceStartVertex = vp;
+			const { layout } = startCell;
+			const [nx, ny, nz] = layout.normal;
+			const quadCorners = [
+				startCell.corner0,
+				addScaledGridCoordinate(startCell.corner0, layout.vVector, height),
+				addScaledGridCoordinate(startCell.corner0, layout.vVector, height, layout.uVector, width),
+				addScaledGridCoordinate(startCell.corner0, layout.uVector, width),
+			] as const;
 
 			for (let ci = 0; ci < 4; ci++) {
-				const [cx, cy, cz] = face.corners[ci];
-				const aoFactor = VOXEL_AO_CURVE[aoValues[ci]];
-
+				const aoFactor = VOXEL_AO_CURVE[startCell.aoValues[ci]];
 				const p3 = vp * 3;
 				const p2 = vp * 2;
-				positions[p3]     = centerX + cx * voxelSize;
-				positions[p3 + 1] = centerY + cy * voxelSize;
-				positions[p3 + 2] = centerZ + cz * voxelSize;
+				writeGridPosition(positions, vp, quadCorners[ci], resolution, terrain);
 				normals[p3]       = nx;
 				normals[p3 + 1]   = ny;
 				normals[p3 + 2]   = nz;
-				colors[p3]        = bcr * aoFactor;
-				colors[p3 + 1]    = bcg * aoFactor;
-				colors[p3 + 2]    = bcb * aoFactor;
-				tileCoords[p2]    = tileX;
-				tileCoords[p2 + 1] = tileY;
-				tileHeights[vp]         = tileH;
-				highlightStrengths[vp]  = strength;
+				colors[p3]        = startCell.r * aoFactor;
+				colors[p3 + 1]    = startCell.g * aoFactor;
+				colors[p3 + 2]    = startCell.b * aoFactor;
+				tileCoords[p2]    = startCell.tileX;
+				tileCoords[p2 + 1] = startCell.tileY;
+				tileHeights[vp]         = startCell.tileH;
+				highlightStrengths[vp]  = startCell.highlightStrength;
 				vp++;
 			}
 
@@ -188,6 +365,7 @@ export function buildVoxelTerrainBuffers(
 			// When AO values differ across the diagonal, the "wrong" triangle split
 			// creates a visible seam. Flip the winding when the sum of opposite corners
 			// is unequal, so the interpolation gradient is always consistent.
+			const [ao0, ao1, ao2, ao3] = startCell.aoValues;
 			const flipQuad = ao0 + ao2 > ao1 + ao3;
 			if (!flipQuad) {
 				// Default winding: diagonal v0--v2

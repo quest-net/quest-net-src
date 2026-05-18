@@ -34,7 +34,7 @@ function getTransferableBuffer(view: ArrayBufferView): ArrayBuffer {
 self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }>) => {
 	const { buildId, terrain } = event.data;
 
-	// Build raw buffers (face-culled, AO-baked, quad-flipped).
+	// Build raw buffers (greedy-meshed, AO-baked, quad-flipped).
 	const buf = buildVoxelTerrainBuffers(
 		terrain,
 		(voxel) =>
