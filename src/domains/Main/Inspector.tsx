@@ -495,10 +495,10 @@ function ActorInfoTab({
 					></ImagePicker>
 				</div>
 			) : (
-				<div className="h-64 mx-auto aspect-square bg-base-200 rounded-lg overflow-hidden flex items-center justify-center">
+				<div className="mx-auto rounded-lg flex items-center justify-center">
 					<ImageDisplay
 						imageId={actor.Image}
-						className="w-full h-full object-cover"
+						className="max-h-96 object-contain rounded-lg"
 						alt={actor.Name}
 					/>
 				</div>
