@@ -4,12 +4,14 @@ import { formatMovementValue } from "./movement";
 interface FirstPersonHudProps {
 	isPointerLocked: boolean;
 	movementOverlay: MovementOverlayState;
+	canFly?: boolean;
 	onExitFirstPerson?: () => void;
 }
 
 export function FirstPersonHud({
 	isPointerLocked,
 	movementOverlay,
+	canFly,
 	onExitFirstPerson,
 }: FirstPersonHudProps) {
 	return (
@@ -28,6 +30,36 @@ export function FirstPersonHud({
 					<span className="icon-[mdi--mouse-right-click] w-4 h-4" />
 					{isPointerLocked ? "Look mode" : "Hold right click"}
 				</div>
+				{isPointerLocked && (
+					<div className="badge badge-neutral gap-2 whitespace-nowrap">
+						<span className="flex items-center gap-1">
+							<kbd className="kbd kbd-xs">W</kbd>
+							<kbd className="kbd kbd-xs">A</kbd>
+							<kbd className="kbd kbd-xs">S</kbd>
+							<kbd className="kbd kbd-xs">D</kbd>
+							<span className="opacity-80">move</span>
+						</span>
+						<span className="opacity-50">·</span>
+						{canFly ? (
+							<>
+								<span className="flex items-center gap-1">
+									<kbd className="kbd kbd-xs">Space</kbd>
+									<span className="opacity-80">up</span>
+								</span>
+								<span className="opacity-50">·</span>
+								<span className="flex items-center gap-1">
+									<kbd className="kbd kbd-xs">Shift</kbd>
+									<span className="opacity-80">down</span>
+								</span>
+							</>
+						) : (
+							<span className="flex items-center gap-1">
+								<kbd className="kbd kbd-xs">Space</kbd>
+								<span className="opacity-80">jump</span>
+							</span>
+						)}
+					</div>
+				)}
 			</div>
 			{movementOverlay && (
 				<div className="absolute left-1/2 top-3 -translate-x-1/2 z-20">

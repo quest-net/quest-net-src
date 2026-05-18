@@ -730,6 +730,7 @@ export default function FirstPersonMap({
 				<FirstPersonHud
 					isPointerLocked={isPointerLocked}
 					movementOverlay={movementOverlay}
+					canFly={actor.actor.CanFly ?? false}
 					onExitFirstPerson={onExitFirstPerson}
 				/>
 			)}

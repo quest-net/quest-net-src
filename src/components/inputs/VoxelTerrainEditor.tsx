@@ -125,28 +125,38 @@ const TOOL_BUTTONS: Array<{
 	id: EditorTool;
 	label: string;
 	icon: string;
+	shortcut: string;
 }> = [
 	{
 		id: "place",
 		label: "Place",
 		icon: "icon-[mdi--cube-outline]",
+		shortcut: "P",
 	},
 	{
 		id: "erase",
 		label: "Erase",
 		icon: "icon-[mdi--eraser]",
+		shortcut: "R",
 	},
 	{
 		id: "paint",
 		label: "Paint",
 		icon: "icon-[mdi--palette]",
+		shortcut: "G",
 	},
 	{
 		id: "sample",
 		label: "Sample",
 		icon: "icon-[mdi--eyedropper]",
+		shortcut: "I",
 	},
 ];
+
+// Detect Mac for showing the right modifier glyph in tooltips.
+const IS_MAC =
+	typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
+const MOD_KEY_LABEL = IS_MAC ? "⌘" : "Ctrl";
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
@@ -1831,8 +1841,8 @@ export default function VoxelTerrainEditor({
 									type="button"
 									className={`btn btn-square btn-sm join-item ${tool === button.id ? "btn-neutral" : "btn-outline"}`}
 									onClick={() => setTool(button.id)}
-									title={button.label}
-									aria-label={button.label}
+									title={`${button.label} (${button.shortcut})`}
+									aria-label={`${button.label} (shortcut ${button.shortcut})`}
 								>
 									<span className={`${button.icon} w-5 h-5`} />
 								</button>
@@ -1869,6 +1879,7 @@ export default function VoxelTerrainEditor({
 								type="button"
 								className={`btn btn-sm join-item ${granularity === "tactical" ? "btn-primary" : "btn-outline"}`}
 								onClick={() => setGranularity("tactical")}
+								title="Tile Brush (1)"
 							>
 								Tile Brush
 							</button>
@@ -1876,6 +1887,7 @@ export default function VoxelTerrainEditor({
 								type="button"
 								className={`btn btn-sm join-item ${granularity === "voxel" ? "btn-primary" : "btn-outline"}`}
 								onClick={() => setGranularity("voxel")}
+								title="Voxel Brush (2)"
 							>
 								Voxel Brush
 							</button>
@@ -1887,8 +1899,8 @@ export default function VoxelTerrainEditor({
 								className="btn btn-square btn-sm join-item btn-outline"
 								onClick={undo}
 								disabled={undoStack.length === 0 || readOnly}
-								title="Undo"
-								aria-label="Undo"
+								title={`Undo (${MOD_KEY_LABEL}+Z)`}
+								aria-label={`Undo (${MOD_KEY_LABEL}+Z)`}
 							>
 								<span className="icon-[mdi--undo] w-5 h-5" />
 							</button>
@@ -1897,11 +1909,114 @@ export default function VoxelTerrainEditor({
 								className="btn btn-square btn-sm join-item btn-outline"
 								onClick={redo}
 								disabled={redoStack.length === 0 || readOnly}
-								title="Redo"
-								aria-label="Redo"
+								title={`Redo (${MOD_KEY_LABEL}+Shift+Z or ${MOD_KEY_LABEL}+Y)`}
+								aria-label={`Redo (${MOD_KEY_LABEL}+Shift+Z or ${MOD_KEY_LABEL}+Y)`}
 							>
 								<span className="icon-[mdi--redo] w-5 h-5" />
 							</button>
+						</div>
+
+						<div className="dropdown dropdown-bottom dropdown-end">
+							<div
+								tabIndex={0}
+								role="button"
+								className="btn btn-square btn-sm btn-outline"
+								title="Keyboard shortcuts"
+								aria-label="Keyboard shortcuts"
+							>
+								<span className="icon-[mdi--help-circle-outline] w-5 h-5" />
+							</div>
+							<div
+								tabIndex={0}
+								className="dropdown-content z-50 mt-2 w-80 rounded-box border border-base-300 bg-base-100 p-3 shadow-lg text-sm"
+							>
+								<div className="font-semibold mb-2">Tools</div>
+								<table className="w-full">
+									<tbody>
+										<tr>
+											<td className="opacity-70 py-0.5">Place</td>
+											<td className="text-right"><kbd className="kbd kbd-sm">P</kbd></td>
+										</tr>
+										<tr>
+											<td className="opacity-70 py-0.5">Erase</td>
+											<td className="text-right"><kbd className="kbd kbd-sm">R</kbd></td>
+										</tr>
+										<tr>
+											<td className="opacity-70 py-0.5">Paint</td>
+											<td className="text-right"><kbd className="kbd kbd-sm">G</kbd></td>
+										</tr>
+										<tr>
+											<td className="opacity-70 py-0.5">Sample (eyedropper)</td>
+											<td className="text-right"><kbd className="kbd kbd-sm">I</kbd></td>
+										</tr>
+										<tr>
+											<td className="opacity-70 py-0.5">Tile brush</td>
+											<td className="text-right"><kbd className="kbd kbd-sm">1</kbd></td>
+										</tr>
+										<tr>
+											<td className="opacity-70 py-0.5">Voxel brush</td>
+											<td className="text-right"><kbd className="kbd kbd-sm">2</kbd></td>
+										</tr>
+										<tr>
+											<td className="opacity-70 py-0.5">Undo</td>
+											<td className="text-right whitespace-nowrap">
+												<kbd className="kbd kbd-sm">{MOD_KEY_LABEL}</kbd>
+												<span className="mx-1 opacity-50">+</span>
+												<kbd className="kbd kbd-sm">Z</kbd>
+											</td>
+										</tr>
+										<tr>
+											<td className="opacity-70 py-0.5">Redo</td>
+											<td className="text-right whitespace-nowrap">
+												<kbd className="kbd kbd-sm">{MOD_KEY_LABEL}</kbd>
+												<span className="mx-1 opacity-50">+</span>
+												<kbd className="kbd kbd-sm">Y</kbd>
+											</td>
+										</tr>
+									</tbody>
+								</table>
+
+								<div className="mt-3 pt-2 border-t border-base-300">
+									<div className="font-semibold mb-2">Camera</div>
+									<table className="w-full">
+										<tbody>
+											<tr>
+												<td className="opacity-70 py-0.5">Paint / pick</td>
+												<td className="text-right whitespace-nowrap">
+													<kbd className="kbd kbd-sm">Left&nbsp;click</kbd>
+												</td>
+											</tr>
+											<tr>
+												<td className="opacity-70 py-0.5">Orbit / rotate</td>
+												<td className="text-right whitespace-nowrap">
+													<kbd className="kbd kbd-sm">Middle&nbsp;drag</kbd>
+												</td>
+											</tr>
+											<tr>
+												<td className="opacity-70 py-0.5">Pan</td>
+												<td className="text-right whitespace-nowrap">
+													<kbd className="kbd kbd-sm">Right&nbsp;drag</kbd>
+												</td>
+											</tr>
+											<tr>
+												<td className="opacity-70 py-0.5">Zoom</td>
+												<td className="text-right whitespace-nowrap">
+													<kbd className="kbd kbd-sm">Scroll</kbd>
+												</td>
+											</tr>
+										</tbody>
+									</table>
+								</div>
+
+								<div className="mt-3 pt-2 border-t border-base-300 text-xs leading-relaxed">
+									<div className="font-semibold mb-1">Mid-stroke modifier</div>
+									<div className="opacity-80">
+										While dragging a stroke, hold{" "}
+										<kbd className="kbd kbd-xs">Shift</kbd> to break out of the
+										locked plane and paint across faces.
+									</div>
+								</div>
+							</div>
 						</div>
 					</div>
 
