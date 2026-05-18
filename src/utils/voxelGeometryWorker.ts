@@ -3,8 +3,7 @@
 // Protocol
 // --------
 // Incoming:  { buildId: number; terrain: VoxelTerrain }
-// Outgoing:  { buildId, positions, normals, colors, tileCoords, tileHeights,
-//              highlightStrengths, indices, bvhRoots, bvhVersion }
+// Outgoing:  { buildId, positions, normals, colors, indices, bvhRoots, bvhVersion }
 //            All TypedArray/ArrayBuffer values are transferred (zero-copy).
 //
 // The main thread reconstructs THREE.BufferGeometry from the transferred arrays
@@ -65,9 +64,6 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 		getTransferableBuffer(buf.positions),
 		getTransferableBuffer(buf.normals),
 		getTransferableBuffer(buf.colors),
-		getTransferableBuffer(buf.tileCoords),
-		getTransferableBuffer(buf.tileHeights),
-		getTransferableBuffer(buf.highlightStrengths),
 		getTransferableBuffer(buf.indices),
 		...serialized.roots,
 	];
@@ -75,15 +71,12 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 	(self as unknown as Worker).postMessage(
 		{
 			buildId,
-			positions:          buf.positions,
-			normals:            buf.normals,
-			colors:             buf.colors,
-			tileCoords:         buf.tileCoords,
-			tileHeights:        buf.tileHeights,
-			highlightStrengths: buf.highlightStrengths,
-			indices:            buf.indices,
-			bvhRoots:           serialized.roots,
-			bvhVersion:         serialized.version,
+			positions:  buf.positions,
+			normals:    buf.normals,
+			colors:     buf.colors,
+			indices:    buf.indices,
+			bvhRoots:   serialized.roots,
+			bvhVersion: serialized.version,
 		},
 		transferList
 	);

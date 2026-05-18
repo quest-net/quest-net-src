@@ -21,9 +21,12 @@ function worldPointToRulesHeight(
 	worldNormal?: THREE.Vector3 | null
 ): number {
 	const resolution = getVoxelTerrainResolution(terrain);
-	const adjustedY = worldNormal
-		? point.y - worldNormal.y * HEIGHT_PICK_EPSILON
-		: point.y - HEIGHT_PICK_EPSILON;
+	// Bias the sample point a hair *into* the voxel that owns the hit face.
+	// Top faces and side faces want the sample pulled down (so a hit on the
+	// top edge of a side face -- where worldNormal.y is 0 -- doesn't round
+	// into the voxel above); bottom faces want it pulled up.
+	const bias = worldNormal && worldNormal.y < 0 ? -HEIGHT_PICK_EPSILON : HEIGHT_PICK_EPSILON;
+	const adjustedY = point.y - bias;
 	const voxelY = Math.floor((adjustedY + 0.5) * resolution);
 	return Math.floor((voxelY + 1) / resolution);
 }
@@ -40,8 +43,9 @@ function worldPointToRulesHeight(
  * coordinate lands inside the cube whose face was hit.
  *
  * The tactical height is derived from the hit point itself. Greedy-meshed
- * terrain may combine many voxels into one face, so a single per-face
- * tileHeight attribute is no longer a reliable source of clicked height.
+ * terrain combines many voxels into a single face, so a per-face tileHeight
+ * attribute can't represent the clicked height correctly -- we read world Y
+ * directly and snap it back to the voxel grid.
  */
 export function worldPointToVoxelTile(
 	terrain: VoxelTerrain,

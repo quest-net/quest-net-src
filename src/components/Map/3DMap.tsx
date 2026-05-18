@@ -176,8 +176,6 @@ function installMovementHighlightShader(
 				"#include <common>",
 				"uniform vec2 movementHighlightSize;",
 				"uniform float movementHighlightHeightLevels;",
-				"attribute float highlightStrength;",
-				"varying float vMovementHighlightStrength;",
 				"varying vec3 vMovementWorldPosition;",
 				"varying vec3 vMovementWorldNormal;",
 			].join("\n")
@@ -186,7 +184,6 @@ function installMovementHighlightShader(
 			"#include <begin_vertex>",
 			[
 				"#include <begin_vertex>",
-				"vMovementHighlightStrength = highlightStrength;",
 				"vMovementWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;",
 				"vMovementWorldNormal = normalize(mat3(modelMatrix) * normal);",
 			].join("\n")
@@ -199,7 +196,6 @@ function installMovementHighlightShader(
 				"uniform vec2 movementHighlightSize;",
 				"uniform float movementHighlightHeightLevels;",
 				"uniform float movementHighlightResolution;",
-				"varying float vMovementHighlightStrength;",
 				"varying vec3 vMovementWorldPosition;",
 				"varying vec3 vMovementWorldNormal;",
 			].join("\n")
@@ -207,6 +203,9 @@ function installMovementHighlightShader(
 		shader.fragmentShader = shader.fragmentShader.replace(
 			"#include <dithering_fragment>",
 			[
+				// Top faces get full strength; everything else (sides, bottoms) is dim.
+				// Derived from the world-space normal so we don't pay a per-vertex attribute.
+				"float movementHighlightStrength = vMovementWorldNormal.y > 0.5 ? 1.0 : 0.28;",
 				"vec3 movementSamplePoint = vMovementWorldPosition - vMovementWorldNormal * 0.001;",
 				"vec2 movementTileCoord = floor(movementSamplePoint.xz + movementHighlightSize * 0.5);",
 				"float movementVoxelY = floor((movementSamplePoint.y + 0.5) * movementHighlightResolution - 0.0001);",
@@ -217,19 +216,19 @@ function installMovementHighlightShader(
 				"	(movementTileCoord.y + 0.5) / movementHighlightSize.y",
 				");",
 				"vec4 movementHighlight = texture(movementHighlightMap, movementHighlightUvw);",
-				"if (movementHighlight.a > 0.0 && vMovementHighlightStrength > 0.0) {",
+				"if (movementHighlight.a > 0.0 && movementHighlightStrength > 0.0) {",
 				"	vec3 baseColor = gl_FragColor.rgb;",
 				"	float baseLuma = dot(baseColor, vec3(0.2126, 0.7152, 0.0722));",
 				"	vec2 tileLocal = fract(vMovementWorldPosition.xz + movementHighlightSize * 0.5);",
 				"	float edgeDistance = min(min(tileLocal.x, 1.0 - tileLocal.x), min(tileLocal.y, 1.0 - tileLocal.y));",
 				"	float edgeBand = 1.0 - smoothstep(0.025, 0.11, edgeDistance);",
-				"	float markAlpha = clamp(movementHighlight.a * (1.35 + edgeBand * 0.75) * vMovementHighlightStrength, 0.0, 0.92);",
+				"	float markAlpha = clamp(movementHighlight.a * (1.35 + edgeBand * 0.75) * movementHighlightStrength, 0.0, 0.92);",
 				"	vec3 screened = 1.0 - (1.0 - baseColor) * (1.0 - movementHighlight.rgb * 0.85);",
 				"	vec3 marked = mix(baseColor, screened, markAlpha);",
-				"	marked = max(marked, movementHighlight.rgb * movementHighlight.a * (0.65 + 0.55 * vMovementHighlightStrength));",
+				"	marked = max(marked, movementHighlight.rgb * movementHighlight.a * (0.65 + 0.55 * movementHighlightStrength));",
 				"	vec3 contrastEdge = mix(vec3(1.0), vec3(0.035), step(0.58, baseLuma));",
 				"	vec3 edgeColor = mix(movementHighlight.rgb, contrastEdge, 0.45);",
-				"	gl_FragColor.rgb = mix(marked, edgeColor, edgeBand * movementHighlight.a * 0.7 * vMovementHighlightStrength);",
+				"	gl_FragColor.rgb = mix(marked, edgeColor, edgeBand * movementHighlight.a * 0.7 * movementHighlightStrength);",
 				"}",
 				"#include <dithering_fragment>",
 			].join("\n")
@@ -317,6 +316,7 @@ export default function ThreeDMap({
 		return ids;
 	}, [campaign]);
 	const terrainSignature = useMemo(() => createTerrainSignature(terrain), [terrain]);
+	const terrainResolution = terrain ? getVoxelTerrainResolution(terrain) : 1;
 	const terrainGeometry = useVoxelTerrainGeometryWorker(
 		terrain,
 		terrainSignature,
@@ -749,7 +749,7 @@ export default function ThreeDMap({
 		installMovementHighlightShader(
 			material,
 			movementHighlight,
-			terrain ? getVoxelTerrainResolution(terrain) : 1
+			terrainResolution
 		);
 		const mesh = new THREE.Mesh(terrainGeometry.geometry, material);
 		mesh.raycast = acceleratedRaycast;
@@ -774,7 +774,7 @@ export default function ThreeDMap({
 			material,
 			movementHighlight,
 		};
-	}, [terrain, terrainGeometry]);
+	}, [terrainResolution, terrainGeometry]);
 
 	return (
 		<div className="relative w-full h-full">

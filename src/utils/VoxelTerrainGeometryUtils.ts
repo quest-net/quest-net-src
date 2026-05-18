@@ -1,10 +1,7 @@
 import * as THREE from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 import type { Voxel, VoxelTerrain } from '../domains/VoxelTerrain/VoxelTerrain';
-import {
-	getVoxelTerrainResolution,
-	voxelTopToRulesHeight,
-} from './VoxelTerrainUtils';
+import { getVoxelTerrainResolution } from './VoxelTerrainUtils';
 import { VOXEL_AO_CURVE, VOXEL_FACE_DEFINITIONS } from './VoxelTerrainGeometryConstants';
 import { decodeVoxels } from './VoxelDataUtils';
 
@@ -30,16 +27,12 @@ interface GreedyFaceCell {
 	u: number;
 	v: number;
 	corner0: GridCoordinate;
-	layout: FaceLayout;
+	layoutIndex: number;
 	r: number;
 	g: number;
 	b: number;
-	tileX: number;
-	tileY: number;
-	tileH: number;
-	highlightStrength: number;
 	aoValues: readonly [number, number, number, number];
-	mergeKey: string;
+	mergeKey: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -50,9 +43,6 @@ export interface VoxelTerrainBuffers {
 	positions: Float32Array;
 	normals: Float32Array;
 	colors: Float32Array;
-	tileCoords: Float32Array;
-	tileHeights: Float32Array;
-	highlightStrengths: Float32Array;
 	indices: Uint32Array;
 }
 
@@ -109,6 +99,23 @@ const FACE_LAYOUTS: FaceLayout[] = VOXEL_FACE_DEFINITIONS.map((face) => {
 		vVector,
 	};
 });
+
+// Numeric-key encodings used inside the per-voxel hot loops. Strings would
+// otherwise allocate millions of objects per terrain rebuild.
+//
+// greedyCell key: (u, v) integers packed with a 2^20 stride so adjacent cells
+//   in u and v never collide as long as |u|, |v| < 524288, which is well above
+//   any practical terrain (voxels per axis ~= terrain dim * resolution <= 1024).
+// plane key: (faceIndex 0-5) and the normal-axis coordinate of the face plane,
+//   packed with the same stride.
+// merge key: voxel color (palette index 0-255, 8 bits) plus the four AO values
+//   (0-3 each, 2 bits each). Total 16 bits -- fits in a 32-bit int.
+const GREEDY_KEY_STRIDE = 1 << 20;
+const PLANE_KEY_STRIDE = 1 << 20;
+
+function greedyCellKey(u: number, v: number): number {
+	return u * GREEDY_KEY_STRIDE + v;
+}
 
 function trimFloat32Buffer(
 	buffer: Float32Array,
@@ -172,37 +179,6 @@ function vertexAO(
 	return 3 - (side1 + side2 + corner);
 }
 
-function greedyCellKey(u: number, v: number): string {
-	return `${u},${v}`;
-}
-
-function addScaledGridCoordinate(
-	base: GridCoordinate,
-	a: GridCoordinate,
-	aScale: number,
-	b?: GridCoordinate,
-	bScale = 0
-): GridCoordinate {
-	return [
-		base[0] + a[0] * aScale + (b?.[0] ?? 0) * bScale,
-		base[1] + a[1] * aScale + (b?.[1] ?? 0) * bScale,
-		base[2] + a[2] * aScale + (b?.[2] ?? 0) * bScale,
-	];
-}
-
-function writeGridPosition(
-	positions: Float32Array,
-	vertexIndex: number,
-	corner: GridCoordinate,
-	resolution: number,
-	terrain: VoxelTerrain
-): void {
-	const p3 = vertexIndex * 3;
-	positions[p3]     = corner[0] / resolution - terrain.Width / 2;
-	positions[p3 + 1] = corner[1] / resolution - 0.5;
-	positions[p3 + 2] = corner[2] / resolution - terrain.Length / 2;
-}
-
 // ---------------------------------------------------------------------------
 // Core buffer builder -- no Three.js objects created, safe to run in a worker.
 // Returns properly-sized (sliced) TypedArrays ready for transfer.
@@ -221,13 +197,10 @@ export function buildVoxelTerrainBuffers(
 	const maxVertices = voxelCount * 6 * 4;
 	const maxIndices  = voxelCount * 6 * 6;
 
-	const positions          = new Float32Array(maxVertices * 3);
-	const normals            = new Float32Array(maxVertices * 3);
-	const colors             = new Float32Array(maxVertices * 3);
-	const tileCoords         = new Float32Array(maxVertices * 2);
-	const tileHeights        = new Float32Array(maxVertices);
-	const highlightStrengths = new Float32Array(maxVertices);
-	const indices            = new Uint32Array(maxIndices);
+	const positions = new Float32Array(maxVertices * 3);
+	const normals   = new Float32Array(maxVertices * 3);
+	const colors    = new Float32Array(maxVertices * 3);
+	const indices   = new Uint32Array(maxIndices);
 
 	let vp = 0; // vertex pointer (one unit = one vertex)
 	let ip = 0; // index pointer
@@ -237,25 +210,23 @@ export function buildVoxelTerrainBuffers(
 		occupied.add(voxelKey(voxel.x, voxel.y, voxel.z));
 	}
 
-	const cellsByPlane = new Map<string, GreedyFaceCell[]>();
+	const cellsByPlane = new Map<number, GreedyFaceCell[]>();
 
 	for (const voxel of voxels) {
 		const { x: vx, y: vy, z: vz } = voxel;
-		const tileX   = Math.floor(vx / resolution);
-		const tileY   = Math.floor(vz / resolution);
-		const tileH   = voxelTopToRulesHeight(vy, resolution);
 
 		const baseColor = createVoxelColor(voxel);
 		const bcr = baseColor.r;
 		const bcg = baseColor.g;
 		const bcb = baseColor.b;
+		const colorIndex = voxel.color & 0xff;
 
-		for (const layout of FACE_LAYOUTS) {
+		for (let layoutIndex = 0; layoutIndex < FACE_LAYOUTS.length; layoutIndex++) {
+			const layout = FACE_LAYOUTS[layoutIndex];
 			const [dx, dy, dz] = layout.neighborOffset;
 			if (occupied.has(voxelKey(vx + dx, vy + dy, vz + dz))) continue;
 
 			const [nx, ny, nz] = layout.normal;
-			const strength = ny > 0.5 ? 1 : 0.28;
 
 			const ao0 = vertexAO(vx, vy, vz, nx, ny, nz, layout.corners[0][0], layout.corners[0][1], layout.corners[0][2], occupied);
 			const ao1 = vertexAO(vx, vy, vz, nx, ny, nz, layout.corners[1][0], layout.corners[1][1], layout.corners[1][2], occupied);
@@ -267,8 +238,9 @@ export function buildVoxelTerrainBuffers(
 			const u = corner0[layout.uAxis] * layout.uSign;
 			const v = corner0[layout.vAxis] * layout.vSign;
 			const plane = corner0[layout.normalAxis];
-			const planeKey = `${layout.normal[0]},${layout.normal[1]},${layout.normal[2]}:${plane}`;
-			const mergeKey = `${voxel.color & 0xff}:${ao0}:${ao1}:${ao2}:${ao3}`;
+			const planeKey = layoutIndex * PLANE_KEY_STRIDE + plane;
+			// 8-bit color + 2 bits per AO corner. Stays well within int32.
+			const mergeKey = colorIndex | (ao0 << 8) | (ao1 << 10) | (ao2 << 12) | (ao3 << 14);
 			let planeCells = cellsByPlane.get(planeKey);
 			if (!planeCells) {
 				planeCells = [];
@@ -278,51 +250,49 @@ export function buildVoxelTerrainBuffers(
 				u,
 				v,
 				corner0,
-				layout,
+				layoutIndex,
 				r: bcr,
 				g: bcg,
 				b: bcb,
-				tileX,
-				tileY,
-				tileH,
-				highlightStrength: strength,
 				aoValues,
 				mergeKey,
 			});
 		}
 	}
 
+	const halfWidth  = terrain.Width / 2;
+	const halfLength = terrain.Length / 2;
+	const invResolution = 1 / resolution;
+
 	for (const planeCells of cellsByPlane.values()) {
-		const cellMap = new Map<string, GreedyFaceCell>();
+		const cellMap = new Map<number, GreedyFaceCell>();
 		for (const cell of planeCells) {
 			cellMap.set(greedyCellKey(cell.u, cell.v), cell);
 		}
 
-		const visited = new Set<string>();
+		const visited = new Set<number>();
 		const sortedCells = planeCells.slice().sort((a, b) => a.v - b.v || a.u - b.u);
 		for (const startCell of sortedCells) {
 			const startKey = greedyCellKey(startCell.u, startCell.v);
 			if (visited.has(startKey)) continue;
 
+			// Grow width in +u. Sort order guarantees cells with the same v and
+			// larger u haven't been processed yet, so no visited check is needed.
 			let width = 1;
 			while (true) {
-				const nextKey = greedyCellKey(startCell.u + width, startCell.v);
-				const nextCell = cellMap.get(nextKey);
-				if (!nextCell || visited.has(nextKey) || nextCell.mergeKey !== startCell.mergeKey) {
-					break;
-				}
+				const nextCell = cellMap.get(greedyCellKey(startCell.u + width, startCell.v));
+				if (!nextCell || nextCell.mergeKey !== startCell.mergeKey) break;
 				width++;
 			}
 
+			// Grow height in +v. Same reasoning: cells at v > startCell.v haven't
+			// been claimed yet by any earlier iteration.
 			let height = 1;
 			heightScan:
 			while (true) {
 				for (let dx = 0; dx < width; dx++) {
-					const nextKey = greedyCellKey(startCell.u + dx, startCell.v + height);
-					const nextCell = cellMap.get(nextKey);
-					if (!nextCell || visited.has(nextKey) || nextCell.mergeKey !== startCell.mergeKey) {
-						break heightScan;
-					}
+					const nextCell = cellMap.get(greedyCellKey(startCell.u + dx, startCell.v + height));
+					if (!nextCell || nextCell.mergeKey !== startCell.mergeKey) break heightScan;
 				}
 				height++;
 			}
@@ -334,30 +304,49 @@ export function buildVoxelTerrainBuffers(
 			}
 
 			const faceStartVertex = vp;
-			const { layout } = startCell;
+			const layout = FACE_LAYOUTS[startCell.layoutIndex];
 			const [nx, ny, nz] = layout.normal;
-			const quadCorners = [
-				startCell.corner0,
-				addScaledGridCoordinate(startCell.corner0, layout.vVector, height),
-				addScaledGridCoordinate(startCell.corner0, layout.vVector, height, layout.uVector, width),
-				addScaledGridCoordinate(startCell.corner0, layout.uVector, width),
-			] as const;
+			const [c0x, c0y, c0z] = startCell.corner0;
+			const [uvx, uvy, uvz] = layout.uVector;
+			const [vvx, vvy, vvz] = layout.vVector;
+
+			// Quad corners, in (u, v) parameter space:
+			//   0 = (0, 0)              base corner
+			//   1 = (0, height)         step along v
+			//   2 = (width, height)     step along u and v
+			//   3 = (width, 0)          step along u
+			// Inlined to avoid allocating three GridCoordinate arrays per quad.
+			const cornerX = [
+				c0x,
+				c0x + vvx * height,
+				c0x + vvx * height + uvx * width,
+				c0x + uvx * width,
+			];
+			const cornerY = [
+				c0y,
+				c0y + vvy * height,
+				c0y + vvy * height + uvy * width,
+				c0y + uvy * width,
+			];
+			const cornerZ = [
+				c0z,
+				c0z + vvz * height,
+				c0z + vvz * height + uvz * width,
+				c0z + uvz * width,
+			];
 
 			for (let ci = 0; ci < 4; ci++) {
 				const aoFactor = VOXEL_AO_CURVE[startCell.aoValues[ci]];
 				const p3 = vp * 3;
-				const p2 = vp * 2;
-				writeGridPosition(positions, vp, quadCorners[ci], resolution, terrain);
+				positions[p3]     = cornerX[ci] * invResolution - halfWidth;
+				positions[p3 + 1] = cornerY[ci] * invResolution - 0.5;
+				positions[p3 + 2] = cornerZ[ci] * invResolution - halfLength;
 				normals[p3]       = nx;
 				normals[p3 + 1]   = ny;
 				normals[p3 + 2]   = nz;
 				colors[p3]        = startCell.r * aoFactor;
 				colors[p3 + 1]    = startCell.g * aoFactor;
 				colors[p3 + 2]    = startCell.b * aoFactor;
-				tileCoords[p2]    = startCell.tileX;
-				tileCoords[p2 + 1] = startCell.tileY;
-				tileHeights[vp]         = startCell.tileH;
-				highlightStrengths[vp]  = startCell.highlightStrength;
 				vp++;
 			}
 
@@ -389,13 +378,10 @@ export function buildVoxelTerrainBuffers(
 	}
 
 	return {
-		positions:          trimFloat32Buffer(positions, vp * 3, transferSafe),
-		normals:            trimFloat32Buffer(normals, vp * 3, transferSafe),
-		colors:             trimFloat32Buffer(colors, vp * 3, transferSafe),
-		tileCoords:         trimFloat32Buffer(tileCoords, vp * 2, transferSafe),
-		tileHeights:        trimFloat32Buffer(tileHeights, vp, transferSafe),
-		highlightStrengths: trimFloat32Buffer(highlightStrengths, vp, transferSafe),
-		indices:            trimUint32Buffer(indices, ip, transferSafe),
+		positions: trimFloat32Buffer(positions, vp * 3, transferSafe),
+		normals:   trimFloat32Buffer(normals, vp * 3, transferSafe),
+		colors:    trimFloat32Buffer(colors, vp * 3, transferSafe),
+		indices:   trimUint32Buffer(indices, ip, transferSafe),
 	};
 }
 
@@ -411,12 +397,9 @@ export function createVoxelTerrainGeometry(
 	const buf = buildVoxelTerrainBuffers(terrain, createVoxelColor);
 
 	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute('position',          new THREE.BufferAttribute(buf.positions, 3));
-	geometry.setAttribute('normal',            new THREE.BufferAttribute(buf.normals, 3));
-	geometry.setAttribute('color',             new THREE.BufferAttribute(buf.colors, 3));
-	geometry.setAttribute('tileCoord',         new THREE.BufferAttribute(buf.tileCoords, 2));
-	geometry.setAttribute('tileHeight',        new THREE.BufferAttribute(buf.tileHeights, 1));
-	geometry.setAttribute('highlightStrength', new THREE.BufferAttribute(buf.highlightStrengths, 1));
+	geometry.setAttribute('position', new THREE.BufferAttribute(buf.positions, 3));
+	geometry.setAttribute('normal',   new THREE.BufferAttribute(buf.normals, 3));
+	geometry.setAttribute('color',    new THREE.BufferAttribute(buf.colors, 3));
 	geometry.setIndex(new THREE.BufferAttribute(buf.indices, 1));
 	geometry.computeBoundingBox();
 	geometry.computeBoundingSphere();

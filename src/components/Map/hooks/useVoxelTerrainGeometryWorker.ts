@@ -10,9 +10,6 @@ interface VoxelGeometryWorkerResponse {
 	positions: Float32Array;
 	normals: Float32Array;
 	colors: Float32Array;
-	tileCoords: Float32Array;
-	tileHeights: Float32Array;
-	highlightStrengths: Float32Array;
 	indices: Uint32Array;
 	bvhRoots: ArrayBuffer[];
 	bvhVersion: number;
@@ -50,9 +47,6 @@ function createGeometryFromWorkerResponse(
 		positions,
 		normals,
 		colors,
-		tileCoords,
-		tileHeights,
-		highlightStrengths,
 		indices,
 		bvhRoots,
 		bvhVersion,
@@ -62,12 +56,6 @@ function createGeometryFromWorkerResponse(
 	geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
 	geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
 	geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-	geometry.setAttribute("tileCoord", new THREE.BufferAttribute(tileCoords, 2));
-	geometry.setAttribute("tileHeight", new THREE.BufferAttribute(tileHeights, 1));
-	geometry.setAttribute(
-		"highlightStrength",
-		new THREE.BufferAttribute(highlightStrengths, 1)
-	);
 	geometry.setIndex(new THREE.BufferAttribute(indices, 1));
 	geometry.computeBoundingBox();
 	geometry.computeBoundingSphere();
