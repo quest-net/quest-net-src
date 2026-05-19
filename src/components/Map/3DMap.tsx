@@ -66,14 +66,11 @@ interface ThreeDMapCameraState {
 
 interface TerrainRenderResources {
 	mesh: THREE.Mesh;
-	geometry: THREE.BufferGeometry;
 	material: THREE.MeshStandardMaterial;
 	movementHighlight: ReturnType<typeof createMovementHighlightTexture>;
 }
 
 function disposeTerrainResources(resources: TerrainRenderResources): void {
-	resources.geometry.boundsTree = undefined;
-	resources.geometry.dispose();
 	resources.material.dispose();
 	resources.movementHighlight.texture.dispose();
 }
@@ -770,7 +767,6 @@ export default function ThreeDMap({
 		resources.movementHighlight = movementHighlight;
 		terrainResourcesRef.current = {
 			mesh,
-			geometry: terrainGeometry.geometry,
 			material,
 			movementHighlight,
 		};

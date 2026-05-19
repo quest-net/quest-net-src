@@ -27,6 +27,85 @@ export interface VoxelTerrainGeometryResult {
 	height: number;
 }
 
+type TerrainGeometrySubscriber = (result: VoxelTerrainGeometryResult) => void;
+
+interface VoxelTerrainGeometryCacheEntry {
+	signature: string;
+	result: VoxelTerrainGeometryResult | null;
+	worker: Worker | null;
+	subscribers: Set<TerrainGeometrySubscriber>;
+	retainCount: number;
+	releaseTimer: ReturnType<typeof setTimeout> | null;
+	lastUsedAt: number;
+}
+
+const GEOMETRY_CACHE_IDLE_MS = 120_000;
+const GEOMETRY_CACHE_MAX_ENTRIES = 3;
+const terrainGeometryCache = new Map<string, VoxelTerrainGeometryCacheEntry>();
+
+function disposeGeometryResult(result: VoxelTerrainGeometryResult): void {
+	result.geometry.boundsTree = undefined;
+	result.geometry.dispose();
+}
+
+function disposeCacheEntry(entry: VoxelTerrainGeometryCacheEntry): void {
+	if (entry.releaseTimer) {
+		clearTimeout(entry.releaseTimer);
+		entry.releaseTimer = null;
+	}
+	entry.worker?.terminate();
+	entry.worker = null;
+	if (entry.result) {
+		disposeGeometryResult(entry.result);
+		entry.result = null;
+	}
+	entry.subscribers.clear();
+}
+
+function trimGeometryCache(): void {
+	const disposableEntries = Array.from(terrainGeometryCache.values())
+		.filter((entry) => entry.retainCount === 0)
+		.sort((a, b) => a.lastUsedAt - b.lastUsedAt);
+
+	while (terrainGeometryCache.size > GEOMETRY_CACHE_MAX_ENTRIES) {
+		const entry = disposableEntries.shift();
+		if (!entry) return;
+
+		terrainGeometryCache.delete(entry.signature);
+		disposeCacheEntry(entry);
+	}
+}
+
+function scheduleCacheRelease(entry: VoxelTerrainGeometryCacheEntry): void {
+	if (entry.retainCount > 0 || entry.releaseTimer) return;
+
+	entry.lastUsedAt = Date.now();
+	entry.releaseTimer = setTimeout(() => {
+		if (entry.retainCount > 0) return;
+		if (terrainGeometryCache.get(entry.signature) !== entry) return;
+
+		terrainGeometryCache.delete(entry.signature);
+		disposeCacheEntry(entry);
+	}, GEOMETRY_CACHE_IDLE_MS);
+}
+
+function retainCacheEntry(entry: VoxelTerrainGeometryCacheEntry): void {
+	entry.retainCount++;
+	entry.lastUsedAt = Date.now();
+	if (entry.releaseTimer) {
+		clearTimeout(entry.releaseTimer);
+		entry.releaseTimer = null;
+	}
+}
+
+function releaseCacheEntry(entry: VoxelTerrainGeometryCacheEntry): void {
+	entry.retainCount = Math.max(0, entry.retainCount - 1);
+	if (entry.retainCount === 0) {
+		scheduleCacheRelease(entry);
+		trimGeometryCache();
+	}
+}
+
 export function createTerrainSignature(terrain?: VoxelTerrain | null): string {
 	if (!terrain) return "none";
 
@@ -73,6 +152,70 @@ function createGeometryFromWorkerResponse(
 	return geometry;
 }
 
+function startGeometryBuild(
+	entry: VoxelTerrainGeometryCacheEntry,
+	terrain: VoxelTerrain
+): void {
+	const worker = new Worker(
+		new URL("../../../utils/voxelGeometryWorker.ts", import.meta.url),
+		{ type: "module" }
+	);
+	const buildId = 1;
+	const width = terrain.Width;
+	const length = terrain.Length;
+	const height = terrain.Height;
+
+	const onMessage = (event: MessageEvent<VoxelGeometryWorkerResponse>) => {
+		if (event.data.buildId !== buildId) return;
+		if (entry.worker !== worker) return;
+		worker.removeEventListener("message", onMessage);
+		worker.terminate();
+		entry.worker = null;
+
+		const geometry = createGeometryFromWorkerResponse(event.data);
+		entry.result = {
+			geometry,
+			width,
+			length,
+			height,
+		};
+		entry.lastUsedAt = Date.now();
+
+		for (const subscriber of entry.subscribers) {
+			subscriber(entry.result);
+		}
+
+		if (entry.retainCount === 0) {
+			scheduleCacheRelease(entry);
+		}
+	};
+
+	worker.addEventListener("message", onMessage);
+	entry.worker = worker;
+	worker.postMessage({ buildId, terrain });
+}
+
+function getOrCreateCacheEntry(
+	terrain: VoxelTerrain,
+	terrainSignature: string
+): VoxelTerrainGeometryCacheEntry {
+	const existing = terrainGeometryCache.get(terrainSignature);
+	if (existing) return existing;
+
+	const entry: VoxelTerrainGeometryCacheEntry = {
+		signature: terrainSignature,
+		result: null,
+		worker: null,
+		subscribers: new Set(),
+		retainCount: 0,
+		releaseTimer: null,
+		lastUsedAt: Date.now(),
+	};
+	terrainGeometryCache.set(terrainSignature, entry);
+	startGeometryBuild(entry, terrain);
+	return entry;
+}
+
 export function useVoxelTerrainGeometryWorker(
 	terrain: VoxelTerrain | null | undefined,
 	terrainSignature: string,
@@ -91,34 +234,24 @@ export function useVoxelTerrainGeometryWorker(
 			return;
 		}
 
-		const worker = new Worker(
-			new URL("../../../utils/voxelGeometryWorker.ts", import.meta.url),
-			{ type: "module" }
-		);
-		const buildId = 1;
-		const width = terrain.Width;
-		const length = terrain.Length;
-		const height = terrain.Height;
+		const entry = getOrCreateCacheEntry(terrain, terrainSignature);
+		retainCacheEntry(entry);
+		trimGeometryCache();
 
-		const onMessage = (event: MessageEvent<VoxelGeometryWorkerResponse>) => {
-			if (event.data.buildId !== buildId) return;
-			worker.removeEventListener("message", onMessage);
-			worker.terminate();
+		if (entry.result) {
+			setResult(entry.result);
+		} else {
+			setResult(null);
+		}
 
-			const geometry = createGeometryFromWorkerResponse(event.data);
-			setResult({
-				geometry,
-				width,
-				length,
-				height,
-			});
+		const onResult = (nextResult: VoxelTerrainGeometryResult) => {
+			setResult(nextResult);
 		};
-
-		worker.addEventListener("message", onMessage);
-		worker.postMessage({ buildId, terrain });
+		entry.subscribers.add(onResult);
 
 		return () => {
-			worker.terminate();
+			entry.subscribers.delete(onResult);
+			releaseCacheEntry(entry);
 		};
 		// terrain is intentionally represented by terrainSignature; peers can
 		// replace the terrain object without changing its voxel content.

@@ -17,13 +17,10 @@ import {
 
 interface TerrainRenderResources {
 	mesh: THREE.Mesh;
-	geometry: THREE.BufferGeometry;
 	material: THREE.MeshStandardMaterial;
 }
 
 function disposeTerrainResources(resources: TerrainRenderResources): void {
-	resources.geometry.boundsTree = undefined;
-	resources.geometry.dispose();
 	resources.material.dispose();
 }
 
@@ -147,7 +144,6 @@ export function useFirstPersonTerrain(
 		resources.occlusionTargets.push(mesh);
 		terrainResourcesRef.current = {
 			mesh,
-			geometry: terrainGeometry.geometry,
 			material,
 		};
 	}, [resources, terrainGeometry]);
