@@ -210,6 +210,7 @@ export default function ThreeDMap({
 	const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const statsRef = useRef<any>(null);
+	const triangleStatsRef = useRef<HTMLDivElement | null>(null);
 	const controlsRef = useRef<OrbitControls | null>(null);
 	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
 	const terrainResourcesRef = useRef<TerrainRenderResources | null>(null);
@@ -336,7 +337,11 @@ export default function ThreeDMap({
 			if (e.key === '`' && !e.ctrlKey && !e.metaKey && !e.altKey) {
 				const stats = statsRef.current;
 				if (!stats) return;
-				stats.dom.style.display = stats.dom.style.display === 'none' ? 'block' : 'none';
+				const nextDisplay = stats.dom.style.display === 'none' ? 'block' : 'none';
+				stats.dom.style.display = nextDisplay;
+				if (triangleStatsRef.current) {
+					triangleStatsRef.current.style.display = nextDisplay;
+				}
 			}
 		};
 		window.addEventListener('keydown', onKey);
@@ -448,6 +453,23 @@ export default function ThreeDMap({
 		container.appendChild(stats.dom);
 		statsRef.current = stats;
 
+		const triangleStats = document.createElement('div');
+		triangleStats.style.position = 'absolute';
+		triangleStats.style.top = '48px';
+		triangleStats.style.left = '0px';
+		triangleStats.style.width = '80px';
+		triangleStats.style.boxSizing = 'border-box';
+		triangleStats.style.padding = '2px 3px';
+		triangleStats.style.background = 'rgba(0, 0, 0, 0.8)';
+		triangleStats.style.color = '#0ff';
+		triangleStats.style.font = 'bold 9px Helvetica, Arial, sans-serif';
+		triangleStats.style.lineHeight = '11px';
+		triangleStats.style.pointerEvents = 'none';
+		triangleStats.style.display = 'none';
+		triangleStats.textContent = 'TRIS 0';
+		container.appendChild(triangleStats);
+		triangleStatsRef.current = triangleStats;
+
 		const scene = new THREE.Scene();
 		scene.background = null;
 
@@ -516,6 +538,9 @@ export default function ThreeDMap({
 			controls.update();
 			stats.begin();
 			renderer.render(scene, camera);
+			if (triangleStats.style.display !== 'none') {
+				triangleStats.textContent = `TRIS ${renderer.info.render.triangles.toLocaleString()}`;
+			}
 			stats.end();
 		};
 		animate();
@@ -567,7 +592,11 @@ export default function ThreeDMap({
 			if (statsRef.current?.dom?.parentElement === container) {
 				container.removeChild(statsRef.current.dom);
 			}
+			if (triangleStatsRef.current?.parentElement === container) {
+				container.removeChild(triangleStatsRef.current);
+			}
 			statsRef.current = null;
+			triangleStatsRef.current = null;
 		};
 	}, []);
 
