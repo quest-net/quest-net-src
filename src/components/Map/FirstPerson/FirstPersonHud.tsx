@@ -33,28 +33,28 @@ export function FirstPersonHud({
 				{isPointerLocked && (
 					<div className="badge badge-neutral gap-2 whitespace-nowrap">
 						<span className="flex items-center gap-1">
-							<kbd className="kbd kbd-xs">W</kbd>
-							<kbd className="kbd kbd-xs">A</kbd>
-							<kbd className="kbd kbd-xs">S</kbd>
-							<kbd className="kbd kbd-xs">D</kbd>
+							<kbd className="kbd kbd-xs text-neutral">W</kbd>
+							<kbd className="kbd kbd-xs text-neutral">A</kbd>
+							<kbd className="kbd kbd-xs text-neutral">S</kbd>
+							<kbd className="kbd kbd-xs text-neutral">D</kbd>
 							<span className="opacity-80">move</span>
 						</span>
 						<span className="opacity-50">·</span>
 						{canFly ? (
 							<>
 								<span className="flex items-center gap-1">
-									<kbd className="kbd kbd-xs">Space</kbd>
+									<kbd className="kbd kbd-xs text-neutral">Space</kbd>
 									<span className="opacity-80">up</span>
 								</span>
 								<span className="opacity-50">·</span>
 								<span className="flex items-center gap-1">
-									<kbd className="kbd kbd-xs">Shift</kbd>
+									<kbd className="kbd kbd-xs text-neutral">Shift</kbd>
 									<span className="opacity-80">down</span>
 								</span>
 							</>
 						) : (
 							<span className="flex items-center gap-1">
-								<kbd className="kbd kbd-xs">Space</kbd>
+								<kbd className="kbd kbd-xs text-neutral">Space</kbd>
 								<span className="opacity-80">jump</span>
 							</span>
 						)}
