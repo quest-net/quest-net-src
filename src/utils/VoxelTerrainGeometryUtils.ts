@@ -100,10 +100,11 @@ export function buildVoxelTerrainBuffers(
 	createVoxelColor: VoxelColorFactory,
 	options: VoxelTerrainBufferOptions = {}
 ): VoxelTerrainBuffers {
-	const index = buildVoxelTerrainIndex(terrain);
+	// Decode once, share with the index so it doesn't re-decode for occupancy.
+	const voxels = Array.from(decodeVoxels(terrain.Voxels));
+	const index = buildVoxelTerrainIndex(terrain, voxels);
 	const { resolution, voxelSize, voxelCount } = index;
 	const halfVoxelSize = voxelSize / 2;
-	const voxels = Array.from(decodeVoxels(terrain.Voxels));
 	const transferSafe = options.transferSafe ?? false;
 
 	// Pre-allocate at worst-case size: every voxel fully exposed (6 faces, 4 vertices, 6 indices).

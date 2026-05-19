@@ -17,7 +17,7 @@
 import {
 	DEFAULT_TERRAIN_RESOLUTION,
 } from "../domains/VoxelTerrain/voxelTerrainConstants";
-import type { VoxelTerrain } from "../domains/VoxelTerrain/VoxelTerrain";
+import type { Voxel, VoxelTerrain } from "../domains/VoxelTerrain/VoxelTerrain";
 import { decodeVoxels } from "./VoxelDataUtils";
 
 // ---------------------------------------------------------------------------
@@ -120,8 +120,15 @@ function tacticalToCenterVoxel(
 	return candidate;
 }
 
-/** Builds an index without touching the cache. Use this in workers. */
-export function buildVoxelTerrainIndex(terrain: VoxelTerrain): VoxelTerrainIndex {
+/**
+ * Builds an index without touching the cache. Use this in workers, or pass
+ * `decodedVoxels` to skip a redundant decode when the caller already has the
+ * voxel array on hand (e.g. the geometry builder needs colors too).
+ */
+export function buildVoxelTerrainIndex(
+	terrain: VoxelTerrain,
+	decodedVoxels?: readonly Voxel[]
+): VoxelTerrainIndex {
 	const resolution = getVoxelTerrainResolution(terrain);
 	const voxelWidth = terrain.Width * resolution;
 	const voxelLength = terrain.Length * resolution;
@@ -134,7 +141,7 @@ export function buildVoxelTerrainIndex(terrain: VoxelTerrain): VoxelTerrainIndex
 	let maxVoxelY = -1;
 
 	// Single decode pass: build occupancy, track per-column maxima.
-	const voxels = Array.from(decodeVoxels(terrain.Voxels));
+	const voxels = decodedVoxels ?? Array.from(decodeVoxels(terrain.Voxels));
 	for (const voxel of voxels) {
 		occupied.add(packVoxelKey(voxel.x, voxel.y, voxel.z));
 		if (
