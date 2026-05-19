@@ -28,13 +28,12 @@ import {
 } from "./actor";
 import {
 	createFirstPersonCapsuleState,
-	createVoxelCollisionData,
 	firstPersonCapsuleToRulesPosition,
 	isFirstPersonCapsuleSettled,
 	stepFirstPersonCapsuleController,
 	type FirstPersonCapsuleState,
-	type VoxelCollisionData,
 } from "./capsuleController";
+import { getVoxelTerrainIndex, type VoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
 import {
 	FIRST_PERSON_CAMERA,
 	FIRST_PERSON_CONTROLS,
@@ -93,7 +92,7 @@ export default function FirstPersonMap({
 	const activeActorRef = useRef<FirstPersonActor | null>(null);
 	const actionServiceRef = useRef<ReturnType<typeof useActionService>["actionService"]>(null);
 	const terrainRef = useRef(terrain);
-	const voxelCollisionDataRef = useRef<VoxelCollisionData | null>(null);
+	const voxelTerrainIndexRef = useRef<VoxelTerrainIndex | null>(null);
 	const movementCostLookupRef = useRef<Map<string, number> | null>(null);
 	const canControlFirstPersonActorRef = useRef(false);
 	const isCombatActiveRef = useRef(false);
@@ -149,9 +148,12 @@ export default function FirstPersonMap({
 	const actorTurnStartH = actor?.actor.TurnStartPosition?.h;
 	const isCombatActive = campaign.GameState.CombatState?.isActive ?? false;
 	const canControlFirstPersonActor = actor ? canAccessActor(actor.id) : false;
-	const voxelCollisionData = useMemo(
-		() => (terrain ? createVoxelCollisionData(terrain) : null),
-		[terrain, terrainSignature]
+	const voxelTerrainIndex = useMemo(
+		() => (terrain ? getVoxelTerrainIndex(terrain) : null),
+		// terrainSignature is the value-equal identity for the terrain's voxel
+		// content; terrain reference can change without content changing.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[terrainSignature]
 	);
 
 	const movementCostLookup = useMemo(() => {
@@ -224,8 +226,8 @@ export default function FirstPersonMap({
 	}, [entities]);
 
 	useEffect(() => {
-		voxelCollisionDataRef.current = voxelCollisionData;
-	}, [voxelCollisionData]);
+		voxelTerrainIndexRef.current = voxelTerrainIndex;
+	}, [voxelTerrainIndex]);
 
 	useEffect(() => {
 		movementCostLookupRef.current = movementCostLookup;
@@ -444,7 +446,7 @@ export default function FirstPersonMap({
 		(now: number, dt: number, input: FirstPersonFrameInput) => {
 			const currentTerrain = terrainRef.current;
 			const currentActor = activeActorRef.current;
-			const collision = voxelCollisionDataRef.current;
+			const index = voxelTerrainIndexRef.current;
 			let cameraSmoothing: number = FIRST_PERSON_CAMERA.POSITION_SMOOTHING;
 			if (currentTerrain && currentActor) {
 				const lastSent = lastSentPositionRef.current;
@@ -472,7 +474,7 @@ export default function FirstPersonMap({
 
 			if (
 				currentTerrain &&
-				collision &&
+				index &&
 				currentActor &&
 				canControlFirstPersonActorRef.current
 			) {
@@ -521,7 +523,7 @@ export default function FirstPersonMap({
 					cameraSmoothing = FIRST_PERSON_CAMERA.ACTIVE_POSITION_SMOOTHING;
 					stepFirstPersonCapsuleController(
 						currentTerrain,
-						collision,
+						index,
 						currentActor,
 						state,
 						{

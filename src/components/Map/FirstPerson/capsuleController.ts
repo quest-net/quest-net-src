@@ -1,8 +1,7 @@
 import * as THREE from "three";
 import type { Position } from "../../../domains/Actor/Actor";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { decodeVoxels } from "../../../utils/VoxelDataUtils";
-import { getVoxelTerrainResolution } from "../../../utils/VoxelTerrainUtils";
+import type { VoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
 import {
 	ACTOR_TOKEN_DESCRIPTOR_DEFAULTS,
 	ACTOR_TOKEN_PLACEMENT,
@@ -13,15 +12,6 @@ import {
 	FIRST_PERSON_PHYSICS,
 } from "./constants";
 import type { FirstPersonActor } from "./types";
-
-export interface VoxelCollisionData {
-	resolution: number;
-	voxelSize: number;
-	voxelWidth: number;
-	voxelHeight: number;
-	voxelLength: number;
-	occupied: Set<string>;
-}
 
 export interface FirstPersonCapsuleState {
 	position: THREE.Vector3;
@@ -45,10 +35,6 @@ interface CapsuleFrameInput {
 
 interface AxisMoveResult {
 	blocked: boolean;
-}
-
-function voxelCollisionKey(x: number, y: number, z: number): string {
-	return `${x},${y},${z}`;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -122,10 +108,10 @@ function getHorizontalBounds(
 	};
 }
 
-function getStepHeight(collision: VoxelCollisionData): number {
+function getStepHeight(index: VoxelTerrainIndex): number {
 	return Math.min(
 		FIRST_PERSON_PHYSICS.STEP_HEIGHT,
-		collision.voxelSize + FIRST_PERSON_PHYSICS.STEP_HEIGHT_MARGIN
+		index.voxelSize + FIRST_PERSON_PHYSICS.STEP_HEIGHT_MARGIN
 	);
 }
 
@@ -176,7 +162,7 @@ function capsuleIntersectsAabb(
 
 function capsuleIntersectsTerrain(
 	terrain: VoxelTerrain,
-	collision: VoxelCollisionData,
+	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
 	position: THREE.Vector3
 ): boolean {
@@ -189,27 +175,27 @@ function capsuleIntersectsTerrain(
 	const maxZ = position.z + radius;
 	const startVoxelX = Math.max(
 		0,
-		Math.floor((minX + terrain.Width / 2) * collision.resolution)
+		Math.floor((minX + terrain.Width / 2) * index.resolution)
 	);
 	const endVoxelX = Math.min(
-		collision.voxelWidth - 1,
-		Math.floor((maxX + terrain.Width / 2) * collision.resolution)
+		index.voxelWidth - 1,
+		Math.floor((maxX + terrain.Width / 2) * index.resolution)
 	);
 	const startVoxelY = Math.max(
 		0,
-		Math.floor((minY + 0.5) * collision.resolution)
+		Math.floor((minY + 0.5) * index.resolution)
 	);
 	const endVoxelY = Math.min(
-		collision.voxelHeight - 1,
-		Math.floor((maxY + 0.5) * collision.resolution)
+		index.voxelHeight - 1,
+		Math.floor((maxY + 0.5) * index.resolution)
 	);
 	const startVoxelZ = Math.max(
 		0,
-		Math.floor((minZ + terrain.Length / 2) * collision.resolution)
+		Math.floor((minZ + terrain.Length / 2) * index.resolution)
 	);
 	const endVoxelZ = Math.min(
-		collision.voxelLength - 1,
-		Math.floor((maxZ + terrain.Length / 2) * collision.resolution)
+		index.voxelLength - 1,
+		Math.floor((maxZ + terrain.Length / 2) * index.resolution)
 	);
 
 	if (
@@ -223,16 +209,16 @@ function capsuleIntersectsTerrain(
 	for (let voxelY = startVoxelY; voxelY <= endVoxelY; voxelY++) {
 		for (let voxelZ = startVoxelZ; voxelZ <= endVoxelZ; voxelZ++) {
 			for (let voxelX = startVoxelX; voxelX <= endVoxelX; voxelX++) {
-				if (!collision.occupied.has(voxelCollisionKey(voxelX, voxelY, voxelZ))) {
+				if (!index.hasVoxel(voxelX, voxelY, voxelZ)) {
 					continue;
 				}
 
-				const voxelMinX = voxelX / collision.resolution - terrain.Width / 2;
-				const voxelMaxX = voxelMinX + collision.voxelSize;
-				const voxelMinY = voxelY / collision.resolution - 0.5;
-				const voxelMaxY = voxelMinY + collision.voxelSize;
-				const voxelMinZ = voxelZ / collision.resolution - terrain.Length / 2;
-				const voxelMaxZ = voxelMinZ + collision.voxelSize;
+				const voxelMinX = voxelX / index.resolution - terrain.Width / 2;
+				const voxelMaxX = voxelMinX + index.voxelSize;
+				const voxelMinY = voxelY / index.resolution - 0.5;
+				const voxelMaxY = voxelMinY + index.voxelSize;
+				const voxelMinZ = voxelZ / index.resolution - terrain.Length / 2;
+				const voxelMaxZ = voxelMinZ + index.voxelSize;
 				if (
 					capsuleIntersectsAabb(
 						position,
@@ -256,17 +242,17 @@ function capsuleIntersectsTerrain(
 
 function liftOutOfTerrain(
 	terrain: VoxelTerrain,
-	collision: VoxelCollisionData,
+	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
 	state: FirstPersonCapsuleState
 ): void {
-	if (!capsuleIntersectsTerrain(terrain, collision, dimensions, state.position)) {
+	if (!capsuleIntersectsTerrain(terrain, index, dimensions, state.position)) {
 		return;
 	}
 
 	for (let attempt = 0; attempt < 48; attempt++) {
 		state.position.y += 0.05;
-		if (!capsuleIntersectsTerrain(terrain, collision, dimensions, state.position)) {
+		if (!capsuleIntersectsTerrain(terrain, index, dimensions, state.position)) {
 			state.velocity.y = Math.max(0, state.velocity.y);
 			state.grounded = false;
 			return;
@@ -276,7 +262,7 @@ function liftOutOfTerrain(
 
 function moveAxis(
 	terrain: VoxelTerrain,
-	collision: VoxelCollisionData,
+	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
 	state: FirstPersonCapsuleState,
 	axis: "x" | "y" | "z",
@@ -305,7 +291,7 @@ function moveAxis(
 
 	const actualDelta = target - original;
 	state.position[axis] = target;
-	if (!capsuleIntersectsTerrain(terrain, collision, dimensions, state.position)) {
+	if (!capsuleIntersectsTerrain(terrain, index, dimensions, state.position)) {
 		if (hitBounds) {
 			state.velocity[axis] = 0;
 		}
@@ -318,7 +304,7 @@ function moveAxis(
 	for (let iteration = 0; iteration < 12; iteration++) {
 		const mid = (low + high) / 2;
 		state.position[axis] = original + actualDelta * mid;
-		if (capsuleIntersectsTerrain(terrain, collision, dimensions, state.position)) {
+		if (capsuleIntersectsTerrain(terrain, index, dimensions, state.position)) {
 			high = mid;
 		} else {
 			low = mid;
@@ -332,7 +318,7 @@ function moveAxis(
 
 function moveHorizontalAxes(
 	terrain: VoxelTerrain,
-	collision: VoxelCollisionData,
+	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
 	state: FirstPersonCapsuleState,
 	deltaX: number,
@@ -345,7 +331,7 @@ function moveHorizontalAxes(
 	const secondDelta = xFirst ? deltaZ : deltaX;
 	const firstResult = moveAxis(
 		terrain,
-		collision,
+		index,
 		dimensions,
 		state,
 		first,
@@ -353,7 +339,7 @@ function moveHorizontalAxes(
 	);
 	const secondResult = moveAxis(
 		terrain,
-		collision,
+		index,
 		dimensions,
 		state,
 		second,
@@ -364,19 +350,19 @@ function moveHorizontalAxes(
 
 function findGroundBelow(
 	terrain: VoxelTerrain,
-	collision: VoxelCollisionData,
+	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
 	position: THREE.Vector3,
 	maxDistance: number
 ): number | null {
-	if (capsuleIntersectsTerrain(terrain, collision, dimensions, position)) {
+	if (capsuleIntersectsTerrain(terrain, index, dimensions, position)) {
 		return null;
 	}
 
 	const startY = position.y;
 	const probe = position.clone();
 	probe.y = startY - maxDistance;
-	if (!capsuleIntersectsTerrain(terrain, collision, dimensions, probe)) {
+	if (!capsuleIntersectsTerrain(terrain, index, dimensions, probe)) {
 		return null;
 	}
 
@@ -385,7 +371,7 @@ function findGroundBelow(
 	for (let iteration = 0; iteration < 14; iteration++) {
 		const mid = (low + high) / 2;
 		probe.y = mid;
-		if (capsuleIntersectsTerrain(terrain, collision, dimensions, probe)) {
+		if (capsuleIntersectsTerrain(terrain, index, dimensions, probe)) {
 			low = mid;
 		} else {
 			high = mid;
@@ -397,14 +383,14 @@ function findGroundBelow(
 
 function snapToGround(
 	terrain: VoxelTerrain,
-	collision: VoxelCollisionData,
+	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
 	state: FirstPersonCapsuleState,
 	maxDistance: number
 ): boolean {
 	const groundY = findGroundBelow(
 		terrain,
-		collision,
+		index,
 		dimensions,
 		state.position,
 		maxDistance
@@ -429,7 +415,7 @@ function horizontalProgress(
 
 function tryGroundedEndpointMove(
 	terrain: VoxelTerrain,
-	collision: VoxelCollisionData,
+	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
 	state: FirstPersonCapsuleState,
 	deltaX: number,
@@ -441,13 +427,13 @@ function tryGroundedEndpointMove(
 	probe.y += stepHeight;
 	probe.z += deltaZ;
 
-	if (capsuleIntersectsTerrain(terrain, collision, dimensions, probe)) {
+	if (capsuleIntersectsTerrain(terrain, index, dimensions, probe)) {
 		return false;
 	}
 
 	const groundY = findGroundBelow(
 		terrain,
-		collision,
+		index,
 		dimensions,
 		probe,
 		stepHeight + FIRST_PERSON_PHYSICS.STEP_DOWN_SNAP_DISTANCE
@@ -463,7 +449,7 @@ function tryGroundedEndpointMove(
 	}
 
 	probe.y = groundY;
-	if (capsuleIntersectsTerrain(terrain, collision, dimensions, probe)) {
+	if (capsuleIntersectsTerrain(terrain, index, dimensions, probe)) {
 		return false;
 	}
 
@@ -475,7 +461,7 @@ function tryGroundedEndpointMove(
 
 function applyHorizontalMoveWithStep(
 	terrain: VoxelTerrain,
-	collision: VoxelCollisionData,
+	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
 	state: FirstPersonCapsuleState,
 	deltaX: number,
@@ -490,7 +476,7 @@ function applyHorizontalMoveWithStep(
 	};
 	const normalResult = moveHorizontalAxes(
 		terrain,
-		collision,
+		index,
 		dimensions,
 		normalState,
 		deltaX,
@@ -507,11 +493,11 @@ function applyHorizontalMoveWithStep(
 		return;
 	}
 
-	const stepHeight = getStepHeight(collision);
+	const stepHeight = getStepHeight(index);
 	if (
 		tryGroundedEndpointMove(
 			terrain,
-			collision,
+			index,
 			dimensions,
 			state,
 			deltaX,
@@ -529,7 +515,7 @@ function applyHorizontalMoveWithStep(
 		velocity: originalVelocity.clone(),
 		grounded: false,
 	};
-	if (capsuleIntersectsTerrain(terrain, collision, dimensions, stepState.position)) {
+	if (capsuleIntersectsTerrain(terrain, index, dimensions, stepState.position)) {
 		state.position.copy(normalState.position);
 		state.velocity.copy(normalState.velocity);
 		return;
@@ -537,7 +523,7 @@ function applyHorizontalMoveWithStep(
 
 	moveHorizontalAxes(
 		terrain,
-		collision,
+		index,
 		dimensions,
 		stepState,
 		deltaX,
@@ -545,7 +531,7 @@ function applyHorizontalMoveWithStep(
 	);
 	const groundY = findGroundBelow(
 		terrain,
-		collision,
+		index,
 		dimensions,
 		stepState.position,
 		stepHeight + FIRST_PERSON_PHYSICS.GROUND_SNAP_DISTANCE
@@ -561,7 +547,7 @@ function applyHorizontalMoveWithStep(
 	}
 
 	stepState.position.y = groundY;
-	if (capsuleIntersectsTerrain(terrain, collision, dimensions, stepState.position)) {
+	if (capsuleIntersectsTerrain(terrain, index, dimensions, stepState.position)) {
 		state.position.copy(normalState.position);
 		state.velocity.copy(normalState.velocity);
 		return;
@@ -698,25 +684,6 @@ function getWishDirection(input: CapsuleFrameInput): THREE.Vector3 {
 	return wish;
 }
 
-export function createVoxelCollisionData(
-	terrain: VoxelTerrain
-): VoxelCollisionData {
-	const resolution = getVoxelTerrainResolution(terrain);
-	const occupied = new Set<string>();
-	for (const voxel of decodeVoxels(terrain.Voxels)) {
-		occupied.add(voxelCollisionKey(voxel.x, voxel.y, voxel.z));
-	}
-
-	return {
-		resolution,
-		voxelSize: 1 / resolution,
-		voxelWidth: terrain.Width * resolution,
-		voxelHeight: terrain.Height * resolution,
-		voxelLength: terrain.Length * resolution,
-		occupied,
-	};
-}
-
 export function createFirstPersonCapsuleState(
 	actor: FirstPersonActor,
 	terrain: VoxelTerrain
@@ -730,7 +697,7 @@ export function createFirstPersonCapsuleState(
 
 export function stepFirstPersonCapsuleController(
 	terrain: VoxelTerrain,
-	collision: VoxelCollisionData,
+	index: VoxelTerrainIndex,
 	actor: FirstPersonActor,
 	state: FirstPersonCapsuleState,
 	input: CapsuleFrameInput
@@ -740,7 +707,7 @@ export function stepFirstPersonCapsuleController(
 
 	const dimensions = getCapsuleDimensions(actor);
 	clampPositionToBounds(terrain, dimensions, state.position);
-	liftOutOfTerrain(terrain, collision, dimensions, state);
+	liftOutOfTerrain(terrain, index, dimensions, state);
 
 	const wish = getWishDirection(input);
 	const canFly = actor.actor.CanFly ?? false;
@@ -776,14 +743,14 @@ export function stepFirstPersonCapsuleController(
 		const deltaZ = state.velocity.z * subDt;
 
 		if (canFly) {
-			moveHorizontalAxes(terrain, collision, dimensions, state, deltaX, deltaZ);
-			moveAxis(terrain, collision, dimensions, state, "y", deltaY);
+			moveHorizontalAxes(terrain, index, dimensions, state, deltaX, deltaZ);
+			moveAxis(terrain, index, dimensions, state, "y", deltaY);
 			continue;
 		}
 
 		applyHorizontalMoveWithStep(
 			terrain,
-			collision,
+			index,
 			dimensions,
 			state,
 			deltaX,
@@ -793,7 +760,7 @@ export function stepFirstPersonCapsuleController(
 		const wasMovingDown = deltaY <= 0;
 		const verticalResult = moveAxis(
 			terrain,
-			collision,
+			index,
 			dimensions,
 			state,
 			"y",
@@ -811,7 +778,7 @@ export function stepFirstPersonCapsuleController(
 				: FIRST_PERSON_PHYSICS.GROUND_SNAP_DISTANCE;
 			state.grounded = snapToGround(
 				terrain,
-				collision,
+				index,
 				dimensions,
 				state,
 				snapDistance

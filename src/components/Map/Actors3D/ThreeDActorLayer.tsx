@@ -8,8 +8,8 @@ import type { LiveActorPose } from "../../../services/ActorPoseService";
 import {
 	getMaxVoxelSurfaceHeight,
 	getVoxelRulesSurfaceHeight,
-	getVoxelTerrainSurfaceData,
 } from "../../../utils/VoxelTerrainUtils";
+import { getVoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
 import type { SelectedActor } from "../MapStateProvider";
 import type { ActorTokenDescriptor, ThreeDSceneResources } from "./actorTokenTypes";
 import {
@@ -765,7 +765,7 @@ function getActorHeightRange(actor: ActorTokenDescriptor, terrain: VoxelTerrain)
 	max: number;
 } {
 	const surfaces =
-		getVoxelTerrainSurfaceData(terrain).allSurfaces.get(
+		getVoxelTerrainIndex(terrain).allSurfaces.get(
 			`${actor.position.x},${actor.position.y}`
 		) ?? [];
 	const min =

@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { MeshBVH } from "three-mesh-bvh";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCount } from "../../../utils/VoxelDataUtils";
-import { getVoxelTerrainResolution } from "../../../utils/VoxelTerrainUtils";
+import { createTerrainRevision } from "../../../utils/VoxelTerrainIndex";
 
 interface VoxelGeometryWorkerResponse {
 	buildId: number;
@@ -30,18 +30,12 @@ export interface VoxelTerrainGeometryResult {
 	height: number;
 }
 
-export function createTerrainSignature(terrain?: VoxelTerrain | null): string {
-	if (!terrain) return "none";
-
-	return [
-		terrain.Id,
-		terrain.Width,
-		terrain.Length,
-		terrain.Height,
-		getVoxelTerrainResolution(terrain),
-		terrain.Voxels,
-	].join(":");
-}
+/**
+ * Back-compat alias: `createTerrainRevision` is the canonical name (lives in
+ * VoxelTerrainIndex). Keep the old name re-exported so existing call sites
+ * (3DMap, FirstPersonMap, FirstPerson/terrain.ts) don't churn.
+ */
+export const createTerrainSignature = createTerrainRevision;
 
 function createGeometryFromWorkerResponse(
 	data: VoxelGeometryWorkerResponse

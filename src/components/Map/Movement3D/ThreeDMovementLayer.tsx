@@ -4,7 +4,7 @@ import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
 import { isItemEntity } from "../../../domains/Item/ItemDropUtils";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { getVoxelTerrainSurfaceData } from "../../../utils/VoxelTerrainUtils";
+import { getVoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
 import {
 	canOccupyVoxelTile,
 	getVoxelTileHeightKey,
@@ -128,7 +128,7 @@ function getTileFromPointerEvent(
 	if (x < 0 || x >= terrain.Width || y < 0 || y >= terrain.Length) {
 		return null;
 	}
-	if (getVoxelTerrainSurfaceData(terrain).allSurfaces.get(`${x},${y}`)?.includes(0)) {
+	if (getVoxelTerrainIndex(terrain).allSurfaces.get(`${x},${y}`)?.includes(0)) {
 		return null;
 	}
 
@@ -147,7 +147,7 @@ function resolveMoveTargetHeight(
 
 	const originH = Math.round(actorObject.Position.h);
 	const surfaces =
-		getVoxelTerrainSurfaceData(terrain).allSurfaces.get(`${tile.x},${tile.y}`) ??
+		getVoxelTerrainIndex(terrain).allSurfaces.get(`${tile.x},${tile.y}`) ??
 		[];
 	const hasTerrainAtOrAboveOrigin = surfaces.some((surfaceH) => surfaceH >= originH);
 
@@ -160,7 +160,7 @@ function isVirtualGroundHighlightTile(
 ): boolean {
 	if (tile.h !== 0) return false;
 	return !(
-		getVoxelTerrainSurfaceData(terrain).allSurfaces.get(`${tile.x},${tile.y}`) ??
+		getVoxelTerrainIndex(terrain).allSurfaces.get(`${tile.x},${tile.y}`) ??
 		[]
 	).includes(0);
 }

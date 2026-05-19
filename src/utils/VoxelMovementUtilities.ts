@@ -5,9 +5,9 @@ import type { MovementSettings } from "../domains/CampaignSetting/CampaignSettin
 import type { VoxelTerrain } from "../domains/VoxelTerrain/VoxelTerrain";
 import { isItemEntity } from "../domains/Item/ItemDropUtils";
 import {
-	getVoxelTerrainSurfaceData,
-	type VoxelTerrainSurfaceData,
-} from "./VoxelTerrainUtils";
+	getVoxelTerrainIndex,
+	type VoxelTerrainIndex,
+} from "./VoxelTerrainIndex";
 
 export interface VoxelMovementTile {
 	x: number;
@@ -116,11 +116,11 @@ export function isVoxelTileInBounds(
  * pre-computed surface data.  An empty array means the column has no voxels.
  */
 function getSurfacesAtTile(
-	surfaceData: VoxelTerrainSurfaceData,
+	index: VoxelTerrainIndex,
 	tileX: number,
 	tileY: number
-): number[] {
-	return surfaceData.allSurfaces.get(`${tileX},${tileY}`) ?? [];
+): readonly number[] {
+	return index.allSurfaces.get(`${tileX},${tileY}`) ?? [];
 }
 
 export function isVoxelTileOccupiedAtHeight(
@@ -203,7 +203,7 @@ export function calculateVoxelMovementRange(
 		return { tiles: [], costs };
 	}
 
-	const surfaceData = getVoxelTerrainSurfaceData(terrain);
+	const index = getVoxelTerrainIndex(terrain);
 
 	const addBestTile = (x: number, y: number, h: number, cost: number) => {
 		const key = getVoxelTileHeightKey(x, y, h);
@@ -253,7 +253,7 @@ export function calculateVoxelMovementRange(
 			if (!isVoxelTileInBounds(terrain, nx, ny)) continue;
 
 			// All walkable surface heights at the neighbour tile.
-			const surfaceList = getSurfacesAtTile(surfaceData, nx, ny);
+			const surfaceList = getSurfacesAtTile(index, nx, ny);
 
 			// Candidate destination heights: all surfaces the actor can stand on.
 			// Flying actors also retain the option of hovering at their current

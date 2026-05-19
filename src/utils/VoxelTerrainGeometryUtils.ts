@@ -1,13 +1,13 @@
-import * as THREE from 'three';
-import { MeshBVH } from 'three-mesh-bvh';
 import type { Voxel, VoxelTerrain } from '../domains/VoxelTerrain/VoxelTerrain';
-import {
-	getVoxelSize,
-	getVoxelTerrainResolution,
-	voxelTopToRulesHeight,
-} from './VoxelTerrainUtils';
-import { VOXEL_AO_CURVE, VOXEL_FACE_DEFINITIONS } from './VoxelTerrainGeometryConstants';
 import { decodeVoxels } from './VoxelDataUtils';
+import { VOXEL_AO_CURVE, VOXEL_FACE_DEFINITIONS } from './VoxelTerrainGeometryConstants';
+import {
+	buildVoxelTerrainIndex,
+	voxelTopToRulesHeight,
+	type VoxelTerrainIndex,
+} from './VoxelTerrainIndex';
+
+import * as THREE from 'three';
 
 export type VoxelColorFactory = (voxel: Voxel) => THREE.Color;
 
@@ -27,10 +27,6 @@ export interface VoxelTerrainBuffers {
 
 interface VoxelTerrainBufferOptions {
 	transferSafe?: boolean;
-}
-
-function voxelKey(x: number, y: number, z: number): number {
-	return x + y * 256 + z * 65536;
 }
 
 function trimFloat32Buffer(
@@ -66,7 +62,7 @@ function vertexAO(
 	vx: number, vy: number, vz: number,
 	nx: number, ny: number, nz: number,
 	cx: number, cy: number, cz: number,
-	occupied: Set<number>
+	index: VoxelTerrainIndex
 ): number {
 	// Tangent step per axis: 0 for the normal axis, sign of corner component otherwise.
 	const tx = nx !== 0 ? 0 : (cx > 0 ? 1 : -1);
@@ -88,10 +84,10 @@ function vertexAO(
 		d2x = 0; d2y = 0;  d2z = tz;
 	}
 
-	const side1  = occupied.has(voxelKey(vx + nx + d1x,       vy + ny + d1y,       vz + nz + d1z      )) ? 1 : 0;
-	const side2  = occupied.has(voxelKey(vx + nx + d2x,       vy + ny + d2y,       vz + nz + d2z      )) ? 1 : 0;
+	const side1  = index.hasVoxel(vx + nx + d1x,       vy + ny + d1y,       vz + nz + d1z      ) ? 1 : 0;
+	const side2  = index.hasVoxel(vx + nx + d2x,       vy + ny + d2y,       vz + nz + d2z      ) ? 1 : 0;
 	if (side1 === 1 && side2 === 1) return 0; // maximally occluded -- corner check is irrelevant
-	const corner = occupied.has(voxelKey(vx + nx + d1x + d2x, vy + ny + d1y + d2y, vz + nz + d1z + d2z)) ? 1 : 0;
+	const corner = index.hasVoxel(vx + nx + d1x + d2x, vy + ny + d1y + d2y, vz + nz + d1z + d2z) ? 1 : 0;
 	return 3 - (side1 + side2 + corner);
 }
 
@@ -104,11 +100,10 @@ export function buildVoxelTerrainBuffers(
 	createVoxelColor: VoxelColorFactory,
 	options: VoxelTerrainBufferOptions = {}
 ): VoxelTerrainBuffers {
-	const voxelSize = getVoxelSize(terrain);
+	const index = buildVoxelTerrainIndex(terrain);
+	const { resolution, voxelSize, voxelCount } = index;
 	const halfVoxelSize = voxelSize / 2;
-	const resolution = getVoxelTerrainResolution(terrain);
 	const voxels = Array.from(decodeVoxels(terrain.Voxels));
-	const voxelCount = voxels.length;
 	const transferSafe = options.transferSafe ?? false;
 
 	// Pre-allocate at worst-case size: every voxel fully exposed (6 faces, 4 vertices, 6 indices).
@@ -126,11 +121,6 @@ export function buildVoxelTerrainBuffers(
 	let vp = 0; // vertex pointer (one unit = one vertex)
 	let ip = 0; // index pointer
 
-	const occupied = new Set<number>();
-	for (const voxel of voxels) {
-		occupied.add(voxelKey(voxel.x, voxel.y, voxel.z));
-	}
-
 	for (const voxel of voxels) {
 		const { x: vx, y: vy, z: vz } = voxel;
 		const tileX   = Math.floor(vx / resolution);
@@ -147,17 +137,17 @@ export function buildVoxelTerrainBuffers(
 
 		for (const face of VOXEL_FACE_DEFINITIONS) {
 			const [dx, dy, dz] = face.neighborOffset;
-			if (occupied.has(voxelKey(vx + dx, vy + dy, vz + dz))) continue;
+			if (index.hasVoxel(vx + dx, vy + dy, vz + dz)) continue;
 
 			const [nx, ny, nz] = face.normal;
 			const strength = ny > 0.5 ? 1 : 0.28;
 
 			// Compute AO for all four corners before writing vertex data,
 			// because the quad-flip decision depends on all four values.
-			const ao0 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[0][0], face.corners[0][1], face.corners[0][2], occupied);
-			const ao1 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[1][0], face.corners[1][1], face.corners[1][2], occupied);
-			const ao2 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[2][0], face.corners[2][1], face.corners[2][2], occupied);
-			const ao3 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[3][0], face.corners[3][1], face.corners[3][2], occupied);
+			const ao0 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[0][0], face.corners[0][1], face.corners[0][2], index);
+			const ao1 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[1][0], face.corners[1][1], face.corners[1][2], index);
+			const ao2 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[2][0], face.corners[2][1], face.corners[2][2], index);
+			const ao3 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[3][0], face.corners[3][1], face.corners[3][2], index);
 			const aoValues = [ao0, ao1, ao2, ao3] as const;
 
 			const faceStartVertex = vp;
@@ -219,30 +209,4 @@ export function buildVoxelTerrainBuffers(
 		highlightStrengths: trimFloat32Buffer(highlightStrengths, vp, transferSafe),
 		indices:            trimUint32Buffer(indices, ip, transferSafe),
 	};
-}
-
-// ---------------------------------------------------------------------------
-// Convenience wrapper that constructs a BufferGeometry + BVH on the caller's
-// thread. Used by editor previews and any path that doesn't need off-thread
-// building.
-// ---------------------------------------------------------------------------
-export function createVoxelTerrainGeometry(
-	terrain: VoxelTerrain,
-	createVoxelColor: VoxelColorFactory
-): THREE.BufferGeometry {
-	const buf = buildVoxelTerrainBuffers(terrain, createVoxelColor);
-
-	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute('position',          new THREE.BufferAttribute(buf.positions, 3));
-	geometry.setAttribute('normal',            new THREE.BufferAttribute(buf.normals, 3));
-	geometry.setAttribute('color',             new THREE.BufferAttribute(buf.colors, 3));
-	geometry.setAttribute('tileCoord',         new THREE.BufferAttribute(buf.tileCoords, 2));
-	geometry.setAttribute('tileHeight',        new THREE.BufferAttribute(buf.tileHeights, 1));
-	geometry.setAttribute('highlightStrength', new THREE.BufferAttribute(buf.highlightStrengths, 1));
-	geometry.setIndex(new THREE.BufferAttribute(buf.indices, 1));
-	geometry.computeBoundingBox();
-	geometry.computeBoundingSphere();
-	geometry.boundsTree = new MeshBVH(geometry);
-
-	return geometry;
 }
