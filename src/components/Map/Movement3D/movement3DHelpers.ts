@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { getVoxelTerrainResolution } from "../../../utils/VoxelTerrainUtils";
 
 export interface PickedVoxelTile {
 	x: number;
@@ -13,23 +12,6 @@ export interface PickedVoxelTile {
 // boundary (e.g. a +X wall face at world x = 0) is attributed to the tile
 // that owns the wall, not the tile on the other side of it.
 const TILE_PICK_INSET = 1e-3;
-const HEIGHT_PICK_EPSILON = 1e-4;
-
-function worldPointToRulesHeight(
-	terrain: VoxelTerrain,
-	point: THREE.Vector3,
-	worldNormal?: THREE.Vector3 | null
-): number {
-	const resolution = getVoxelTerrainResolution(terrain);
-	// Bias the sample point a hair *into* the voxel that owns the hit face.
-	// Top faces and side faces want the sample pulled down (so a hit on the
-	// top edge of a side face -- where worldNormal.y is 0 -- doesn't round
-	// into the voxel above); bottom faces want it pulled up.
-	const bias = worldNormal && worldNormal.y < 0 ? -HEIGHT_PICK_EPSILON : HEIGHT_PICK_EPSILON;
-	const adjustedY = point.y - bias;
-	const voxelY = Math.floor((adjustedY + 0.5) * resolution);
-	return Math.floor((voxelY + 1) / resolution);
-}
 
 /**
  * Map a terrain raycast hit point to the tactical tile that owns the face,
@@ -42,15 +24,17 @@ function worldPointToRulesHeight(
  * by stepping a tiny amount along the inverse face normal so the rounded
  * coordinate lands inside the cube whose face was hit.
  *
- * The tactical height is derived from the hit point itself. Greedy-meshed
- * terrain combines many voxels into a single face, so a per-face tileHeight
- * attribute can't represent the clicked height correctly -- we read world Y
- * directly and snap it back to the voxel grid.
+ * The tactical height is read from the tileHeight vertex attribute stored
+ * on the terrain geometry.  This allows the caller to distinguish between
+ * two surfaces in the same (x,y) column -- e.g. ground under a staircase
+ * vs. the top of the staircase.
  */
 export function worldPointToVoxelTile(
 	terrain: VoxelTerrain,
 	point: THREE.Vector3,
-	worldNormal?: THREE.Vector3 | null
+	worldNormal?: THREE.Vector3 | null,
+	hitFace?: THREE.Face | null,
+	hitObject?: THREE.Object3D | null
 ): PickedVoxelTile | null {
 	const offsetX = (terrain.Width - 1) / 2;
 	const offsetZ = (terrain.Length - 1) / 2;
@@ -67,7 +51,17 @@ export function worldPointToVoxelTile(
 		return null;
 	}
 
-	const h = worldPointToRulesHeight(terrain, point, worldNormal);
+	// Read the pre-computed tileHeight attribute from the hit face's geometry.
+	// This is floor((voxelY + 1) / resolution) stored per vertex in
+	// VoxelTerrainGeometryUtils.  Using Math.round guards against float
+	// precision drift since the values are whole tactical-unit integers.
+	let h = 0;
+	if (hitFace && hitObject instanceof THREE.Mesh) {
+		const attr = hitObject.geometry.attributes['tileHeight'] as THREE.BufferAttribute | undefined;
+		if (attr) {
+			h = Math.round(attr.getX(hitFace.a));
+		}
+	}
 
 	return { x, y, h };
 }

@@ -14,10 +14,7 @@ import { useQuestContext } from '../../domains/Context/ContextProvider';
 import { useActionService } from '../../services/Actions/ActionServiceProvider';
 import { CampaignActions } from '../../domains/Campaign/CampaignActions';
 import { AppSettingActions } from '../../domains/AppSetting/AppSettingActions';
-import {
-	getMaxVoxelSurfaceHeight,
-	getVoxelTerrainResolution,
-} from '../../utils/VoxelTerrainUtils';
+import { getMaxVoxelSurfaceHeight } from '../../utils/VoxelTerrainUtils';
 import { getVoxelCount } from '../../utils/VoxelDataUtils';
 import {
 	calculateVoxelMovementRange,
@@ -66,57 +63,16 @@ interface ThreeDMapCameraState {
 
 interface TerrainRenderResources {
 	mesh: THREE.Mesh;
+	geometry: THREE.BufferGeometry;
 	material: THREE.MeshStandardMaterial;
 	movementHighlight: ReturnType<typeof createMovementHighlightTexture>;
 }
 
 function disposeTerrainResources(resources: TerrainRenderResources): void {
+	resources.geometry.boundsTree = undefined;
+	resources.geometry.dispose();
 	resources.material.dispose();
 	resources.movementHighlight.texture.dispose();
-}
-
-function getGeometryTriangleCount(geometry: THREE.BufferGeometry): number {
-	if (geometry.index) return geometry.index.count / 3;
-
-	const position = geometry.getAttribute("position");
-	return position ? position.count / 3 : 0;
-}
-
-function hasVisibleMaterial(material: THREE.Material | THREE.Material[]): boolean {
-	if (Array.isArray(material)) {
-		return material.some((entry) => entry.visible);
-	}
-
-	return material.visible;
-}
-
-function isVisibleInHierarchy(object: THREE.Object3D): boolean {
-	let current: THREE.Object3D | null = object;
-	while (current) {
-		if (!current.visible) return false;
-		current = current.parent;
-	}
-	return true;
-}
-
-function countVisibleSceneTriangles(scene: THREE.Scene, camera: THREE.Camera): number {
-	let triangles = 0;
-
-	scene.traverse((object) => {
-		if (!(object instanceof THREE.Mesh)) return;
-		if (!isVisibleInHierarchy(object)) return;
-		if (!object.layers.test(camera.layers)) return;
-		if (!hasVisibleMaterial(object.material)) return;
-
-		const instanceCount = object instanceof THREE.InstancedMesh ? object.count : 1;
-		triangles += getGeometryTriangleCount(object.geometry) * instanceCount;
-	});
-
-	return triangles;
-}
-
-function formatTriangleCount(triangles: number): string {
-	return Math.round(triangles).toLocaleString();
 }
 
 function getPanLimitRadius(width: number, length: number, maxElevation: number): number {
@@ -156,8 +112,7 @@ function createMovementHighlightTexture(width: number, heightLevels: number, len
 
 function installMovementHighlightShader(
 	material: THREE.MeshStandardMaterial,
-	highlight: ReturnType<typeof createMovementHighlightTexture>,
-	resolution: number
+	highlight: ReturnType<typeof createMovementHighlightTexture>
 ): void {
 	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
 	const heightLevels = highlight.heightLevels;
@@ -166,23 +121,31 @@ function installMovementHighlightShader(
 		shader.uniforms.movementHighlightMap = { value: highlight.texture };
 		shader.uniforms.movementHighlightSize = { value: highlightSize };
 		shader.uniforms.movementHighlightHeightLevels = { value: heightLevels };
-		shader.uniforms.movementHighlightResolution = { value: resolution };
 		shader.vertexShader = shader.vertexShader.replace(
 			"#include <common>",
 			[
 				"#include <common>",
 				"uniform vec2 movementHighlightSize;",
 				"uniform float movementHighlightHeightLevels;",
+				"attribute vec2 tileCoord;",
+				"attribute float tileHeight;",
+				"attribute float highlightStrength;",
+				"varying vec3 vMovementHighlightUvw;",
+				"varying float vMovementHighlightStrength;",
 				"varying vec3 vMovementWorldPosition;",
-				"varying vec3 vMovementWorldNormal;",
 			].join("\n")
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			"#include <begin_vertex>",
 			[
 				"#include <begin_vertex>",
+				"vMovementHighlightUvw = vec3(",
+				"    (tileCoord.x + 0.5) / movementHighlightSize.x,",
+				"    (tileHeight + 0.5) / movementHighlightHeightLevels,",
+				"    (tileCoord.y + 0.5) / movementHighlightSize.y",
+				");",
+				"vMovementHighlightStrength = highlightStrength;",
 				"vMovementWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;",
-				"vMovementWorldNormal = normalize(mat3(modelMatrix) * normal);",
 			].join("\n")
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
@@ -191,41 +154,28 @@ function installMovementHighlightShader(
 				"#include <common>",
 				"uniform highp sampler3D movementHighlightMap;",
 				"uniform vec2 movementHighlightSize;",
-				"uniform float movementHighlightHeightLevels;",
-				"uniform float movementHighlightResolution;",
+				"varying vec3 vMovementHighlightUvw;",
+				"varying float vMovementHighlightStrength;",
 				"varying vec3 vMovementWorldPosition;",
-				"varying vec3 vMovementWorldNormal;",
 			].join("\n")
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			"#include <dithering_fragment>",
 			[
-				// Top faces get full strength; everything else (sides, bottoms) is dim.
-				// Derived from the world-space normal so we don't pay a per-vertex attribute.
-				"float movementHighlightStrength = vMovementWorldNormal.y > 0.5 ? 1.0 : 0.28;",
-				"vec3 movementSamplePoint = vMovementWorldPosition - vMovementWorldNormal * 0.001;",
-				"vec2 movementTileCoord = floor(movementSamplePoint.xz + movementHighlightSize * 0.5);",
-				"float movementVoxelY = floor((movementSamplePoint.y + 0.5) * movementHighlightResolution - 0.0001);",
-				"float movementTileHeight = floor((movementVoxelY + 1.0) / movementHighlightResolution);",
-				"vec3 movementHighlightUvw = vec3(",
-				"	(movementTileCoord.x + 0.5) / movementHighlightSize.x,",
-				"	(movementTileHeight + 0.5) / movementHighlightHeightLevels,",
-				"	(movementTileCoord.y + 0.5) / movementHighlightSize.y",
-				");",
-				"vec4 movementHighlight = texture(movementHighlightMap, movementHighlightUvw);",
-				"if (movementHighlight.a > 0.0 && movementHighlightStrength > 0.0) {",
+				"vec4 movementHighlight = texture(movementHighlightMap, vMovementHighlightUvw);",
+				"if (movementHighlight.a > 0.0 && vMovementHighlightStrength > 0.0) {",
 				"	vec3 baseColor = gl_FragColor.rgb;",
 				"	float baseLuma = dot(baseColor, vec3(0.2126, 0.7152, 0.0722));",
 				"	vec2 tileLocal = fract(vMovementWorldPosition.xz + movementHighlightSize * 0.5);",
 				"	float edgeDistance = min(min(tileLocal.x, 1.0 - tileLocal.x), min(tileLocal.y, 1.0 - tileLocal.y));",
 				"	float edgeBand = 1.0 - smoothstep(0.025, 0.11, edgeDistance);",
-				"	float markAlpha = clamp(movementHighlight.a * (1.35 + edgeBand * 0.75) * movementHighlightStrength, 0.0, 0.92);",
+				"	float markAlpha = clamp(movementHighlight.a * (1.35 + edgeBand * 0.75) * vMovementHighlightStrength, 0.0, 0.92);",
 				"	vec3 screened = 1.0 - (1.0 - baseColor) * (1.0 - movementHighlight.rgb * 0.85);",
 				"	vec3 marked = mix(baseColor, screened, markAlpha);",
-				"	marked = max(marked, movementHighlight.rgb * movementHighlight.a * (0.65 + 0.55 * movementHighlightStrength));",
+				"	marked = max(marked, movementHighlight.rgb * movementHighlight.a * (0.65 + 0.55 * vMovementHighlightStrength));",
 				"	vec3 contrastEdge = mix(vec3(1.0), vec3(0.035), step(0.58, baseLuma));",
 				"	vec3 edgeColor = mix(movementHighlight.rgb, contrastEdge, 0.45);",
-				"	gl_FragColor.rgb = mix(marked, edgeColor, edgeBand * movementHighlight.a * 0.7 * movementHighlightStrength);",
+				"	gl_FragColor.rgb = mix(marked, edgeColor, edgeBand * movementHighlight.a * 0.7 * vMovementHighlightStrength);",
 				"}",
 				"#include <dithering_fragment>",
 			].join("\n")
@@ -260,7 +210,6 @@ export default function ThreeDMap({
 	const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const statsRef = useRef<any>(null);
-	const triangleStatsRef = useRef<HTMLDivElement | null>(null);
 	const controlsRef = useRef<OrbitControls | null>(null);
 	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
 	const terrainResourcesRef = useRef<TerrainRenderResources | null>(null);
@@ -313,7 +262,6 @@ export default function ThreeDMap({
 		return ids;
 	}, [campaign]);
 	const terrainSignature = useMemo(() => createTerrainSignature(terrain), [terrain]);
-	const terrainResolution = terrain ? getVoxelTerrainResolution(terrain) : 1;
 	const terrainGeometry = useVoxelTerrainGeometryWorker(
 		terrain,
 		terrainSignature,
@@ -388,11 +336,7 @@ export default function ThreeDMap({
 			if (e.key === '`' && !e.ctrlKey && !e.metaKey && !e.altKey) {
 				const stats = statsRef.current;
 				if (!stats) return;
-				const nextDisplay = stats.dom.style.display === 'none' ? 'block' : 'none';
-				stats.dom.style.display = nextDisplay;
-				if (triangleStatsRef.current) {
-					triangleStatsRef.current.style.display = nextDisplay;
-				}
+				stats.dom.style.display = stats.dom.style.display === 'none' ? 'block' : 'none';
 			}
 		};
 		window.addEventListener('keydown', onKey);
@@ -504,23 +448,6 @@ export default function ThreeDMap({
 		container.appendChild(stats.dom);
 		statsRef.current = stats;
 
-		const triangleStats = document.createElement('div');
-		triangleStats.style.position = 'absolute';
-		triangleStats.style.top = '48px';
-		triangleStats.style.left = '0px';
-		triangleStats.style.width = '80px';
-		triangleStats.style.boxSizing = 'border-box';
-		triangleStats.style.padding = '2px 3px';
-		triangleStats.style.background = 'rgba(0, 0, 0, 0.8)';
-		triangleStats.style.color = '#0ff';
-		triangleStats.style.font = 'bold 9px Helvetica, Arial, sans-serif';
-		triangleStats.style.lineHeight = '11px';
-		triangleStats.style.pointerEvents = 'none';
-		triangleStats.style.display = 'none';
-		triangleStats.textContent = 'TRIS 0';
-		container.appendChild(triangleStats);
-		triangleStatsRef.current = triangleStats;
-
 		const scene = new THREE.Scene();
 		scene.background = null;
 
@@ -589,11 +516,6 @@ export default function ThreeDMap({
 			controls.update();
 			stats.begin();
 			renderer.render(scene, camera);
-			if (triangleStats.style.display !== 'none') {
-				triangleStats.textContent = `TRIS ${formatTriangleCount(
-					countVisibleSceneTriangles(scene, camera)
-				)}`;
-			}
 			stats.end();
 		};
 		animate();
@@ -645,11 +567,7 @@ export default function ThreeDMap({
 			if (statsRef.current?.dom?.parentElement === container) {
 				container.removeChild(statsRef.current.dom);
 			}
-			if (triangleStatsRef.current?.parentElement === container) {
-				container.removeChild(triangleStatsRef.current);
-			}
 			statsRef.current = null;
-			triangleStatsRef.current = null;
 		};
 	}, []);
 
@@ -743,11 +661,7 @@ export default function ThreeDMap({
 			metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
 			vertexColors: true,
 		});
-		installMovementHighlightShader(
-			material,
-			movementHighlight,
-			terrainResolution
-		);
+		installMovementHighlightShader(material, movementHighlight);
 		const mesh = new THREE.Mesh(terrainGeometry.geometry, material);
 		mesh.raycast = acceleratedRaycast;
 		mesh.castShadow = true;
@@ -767,10 +681,11 @@ export default function ThreeDMap({
 		resources.movementHighlight = movementHighlight;
 		terrainResourcesRef.current = {
 			mesh,
+			geometry: terrainGeometry.geometry,
 			material,
 			movementHighlight,
 		};
-	}, [terrainResolution, terrainGeometry]);
+	}, [terrainGeometry]);
 
 	return (
 		<div className="relative w-full h-full">
