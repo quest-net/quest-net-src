@@ -1,14 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
-import { acceleratedRaycast, MeshBVH } from "three-mesh-bvh";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type { Voxel, VoxelTerrain } from "../../domains/VoxelTerrain/VoxelTerrain";
+import type { VoxelTerrain } from "../../domains/VoxelTerrain/VoxelTerrain";
 import { terrainHeightToWorldY } from "../Map/Actors3D/actorTokenPlacement";
 import { VOXEL_FACE_DEFINITIONS } from "../../utils/VoxelTerrainGeometryConstants";
-import {
-	buildVoxelTerrainBuffers,
-	createVoxelTerrainBufferGeometry,
-} from "../../utils/VoxelTerrainGeometryUtils";
 import {
 	decodeVoxels,
 	encodeVoxels,
@@ -37,6 +32,7 @@ import {
 	type VoxParseResult,
 	type VoxResolutionOption,
 } from "../../utils/VoxImportUtils";
+import { raycastVoxelGrid } from "../../utils/VoxelRaycast";
 import ThreeDMap from "../Map/3DMap";
 import { MapStateProvider } from "../Map/MapStateProvider";
 
@@ -89,14 +85,31 @@ interface EditorSceneResources {
 	camera: THREE.OrthographicCamera;
 	renderer: THREE.WebGLRenderer;
 	controls: OrbitControls;
-	raycaster: THREE.Raycaster;
 	gridGroup: THREE.Group;
 	hoverGroup: THREE.Group;
-	terrainMesh: THREE.Mesh | null;
+	chunkGroup: THREE.Group;
 	terrainMaterial: THREE.MeshStandardMaterial;
 }
 
-// VOX import ----------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Voxel chunk dimensions
+// ---------------------------------------------------------------------------
+
+interface ChunkDims {
+	chunksX: number;
+	chunksY: number;
+	chunksZ: number;
+	vW: number;        // voxel grid width
+	vH: number;        // voxel grid height
+	vL: number;        // voxel grid length
+	resolution: number;
+	tW: number;        // terrain width (tactical units)
+	tL: number;        // terrain length (tactical units)
+}
+
+// ---------------------------------------------------------------------------
+// VOX import modal
+// ---------------------------------------------------------------------------
 
 type VoxImportModal =
 	| { kind: "pick"; parsed: VoxParseResult; options: VoxResolutionOption[]; selected: number }
@@ -109,6 +122,8 @@ const VOX_RESOLUTION_LABELS: Record<number, string> = {
 };
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 const UNDO_LIMIT = 50;
 const MIN_BRUSH_SIZE = 1;
@@ -120,9 +135,11 @@ const INITIAL_CAMERA_HALF_SIZE = 14;
 const CAMERA_DISTANCE_MULTIPLIER = 1.65;
 const STROKE_DRAG_THRESHOLD_PX = 5;
 const EDITOR_PIXEL_RATIO = 1;
-// Lift the actor-overlay dot slightly above the tactical surface so it
-// reads cleanly against the terrain.
 const ACTOR_OVERLAY_FLOAT_Y = 0.2;
+
+// Chunk size in voxels per axis. 8^3 = 512 voxels max per chunk, giving
+// ~80 chunks for a 40x40x16 voxel grid. A single-voxel edit touches 1-2 chunks.
+const CHUNK_SIZE = 8;
 
 const TOOL_BUTTONS: Array<{
 	id: EditorTool;
@@ -130,33 +147,12 @@ const TOOL_BUTTONS: Array<{
 	icon: string;
 	shortcut: string;
 }> = [
-	{
-		id: "place",
-		label: "Place",
-		icon: "icon-[mdi--cube-outline]",
-		shortcut: "P",
-	},
-	{
-		id: "erase",
-		label: "Erase",
-		icon: "icon-[mdi--eraser]",
-		shortcut: "R",
-	},
-	{
-		id: "paint",
-		label: "Paint",
-		icon: "icon-[mdi--palette]",
-		shortcut: "G",
-	},
-	{
-		id: "sample",
-		label: "Sample",
-		icon: "icon-[mdi--eyedropper]",
-		shortcut: "I",
-	},
+	{ id: "place",  label: "Place",  icon: "icon-[mdi--cube-outline]", shortcut: "P" },
+	{ id: "erase",  label: "Erase",  icon: "icon-[mdi--eraser]",       shortcut: "R" },
+	{ id: "paint",  label: "Paint",  icon: "icon-[mdi--palette]",       shortcut: "G" },
+	{ id: "sample", label: "Sample", icon: "icon-[mdi--eyedropper]",    shortcut: "I" },
 ];
 
-// Detect Mac for showing the right modifier glyph in tooltips.
 const IS_MAC =
 	typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
 const MOD_KEY_LABEL = IS_MAC ? "⌘" : "Ctrl";
@@ -166,67 +162,254 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Mid-stroke overlay
+// Edit grid -- flat Uint8Array (replaces the old overlay + base64 roundtrip)
 //
-// The editor's canonical state is the encoded `VoxelTerrain.Voxels` string.
-// `getVoxelTerrainIndex(terrain)` exposes hasVoxel / getVoxelColor queries
-// for that committed state.
+// Encoding: index = vx + vz * vW + vy * vW * vL
+//   0        = empty
+//   color+1  = occupied with palette index `color` (0..254)
 //
-// During a brush stroke we accumulate pending changes in a small overlay
-// (`Map<packedKey, color | null>`, where `null` means "this voxel was deleted
-// in this stroke"). Queries check the overlay first, then fall back to the
-// index. On rAF flush the overlay is folded into the terrain and cleared.
+// Reads and writes are O(1). The grid is decoded from terrain.Voxels once on
+// mount (or on shape change) and re-encoded to base64 only at stroke end.
 // ---------------------------------------------------------------------------
 
-type VoxelOverlay = Map<number, number | null>;
+type EditGrid = Uint8Array;
 
-function peekHasVoxel(
-	index: VoxelTerrainIndex,
-	overlay: VoxelOverlay,
-	vx: number,
-	vy: number,
-	vz: number
+function editGridIndex(vx: number, vy: number, vz: number, vW: number, vL: number): number {
+	return vx + vz * vW + vy * vW * vL;
+}
+
+function editGridHasVoxel(
+	grid: EditGrid,
+	vx: number, vy: number, vz: number,
+	vW: number, vH: number, vL: number,
 ): boolean {
-	const key = packVoxelKey(vx, vy, vz);
-	if (overlay.has(key)) return overlay.get(key) !== null;
-	return index.hasVoxel(vx, vy, vz);
+	if (vx < 0 || vx >= vW || vy < 0 || vy >= vH || vz < 0 || vz >= vL) return false;
+	return grid[editGridIndex(vx, vy, vz, vW, vL)] !== 0;
 }
 
-function peekVoxelColor(
-	index: VoxelTerrainIndex,
-	overlay: VoxelOverlay,
-	vx: number,
-	vy: number,
-	vz: number
+function editGridGetColor(
+	grid: EditGrid,
+	vx: number, vy: number, vz: number,
+	vW: number, vH: number, vL: number,
 ): number | null {
-	const key = packVoxelKey(vx, vy, vz);
-	if (overlay.has(key)) {
-		const value = overlay.get(key);
-		return value === undefined ? null : value;
-	}
-	return index.getVoxelColor(vx, vy, vz);
+	if (vx < 0 || vx >= vW || vy < 0 || vy >= vH || vz < 0 || vz >= vL) return null;
+	const val = grid[editGridIndex(vx, vy, vz, vW, vL)];
+	return val === 0 ? null : val - 1;
 }
 
-/** Fold an overlay's pending edits into `base` and return the new terrain. */
-function commitOverlayToTerrain(base: VoxelTerrain, overlay: VoxelOverlay): VoxelTerrain {
-	if (overlay.size === 0) return base;
-	const voxels: Voxel[] = [];
-	// Keep base voxels that aren't touched by the overlay.
-	for (const voxel of decodeVoxels(base.Voxels)) {
-		const key = packVoxelKey(voxel.x, voxel.y, voxel.z);
-		if (!overlay.has(key)) voxels.push(voxel);
+function buildEditGrid(terrain: VoxelTerrain, index: VoxelTerrainIndex): EditGrid {
+	const { voxelWidth: vW, voxelHeight: vH, voxelLength: vL } = index;
+	const grid = new Uint8Array(vW * vH * vL);
+	for (const v of decodeVoxels(terrain.Voxels)) {
+		if (v.x < 0 || v.x >= vW || v.y < 0 || v.y >= vH || v.z < 0 || v.z >= vL) continue;
+		grid[editGridIndex(v.x, v.y, v.z, vW, vL)] = normalizeVoxelPaletteIndex(v.color) + 1;
 	}
-	// Add overlay placements (skip deletes).
-	for (const [key, color] of overlay) {
-		if (color === null) continue;
-		const { x, y, z } = unpackVoxelKey(key);
-		voxels.push({ x, y, z, color });
+	return grid;
+}
+
+function encodeEditGrid(grid: EditGrid, vW: number, vH: number, vL: number): string {
+	const voxels = [];
+	for (let y = 0; y < vH; y++) {
+		for (let z = 0; z < vL; z++) {
+			for (let x = 0; x < vW; x++) {
+				const val = grid[editGridIndex(x, y, z, vW, vL)];
+				if (val !== 0) voxels.push({ x, y, z, color: val - 1 });
+			}
+		}
 	}
-	return { ...base, Voxels: encodeVoxels(voxels) };
+	return encodeVoxels(voxels);
 }
 
 // ---------------------------------------------------------------------------
-// Geometry helpers (bounds checks, coordinate conversions, brush expansion)
+// Chunk system
+// ---------------------------------------------------------------------------
+
+function computeChunkDims(index: VoxelTerrainIndex): ChunkDims {
+	return {
+		chunksX:    Math.ceil(index.voxelWidth  / CHUNK_SIZE),
+		chunksY:    Math.ceil(index.voxelHeight / CHUNK_SIZE),
+		chunksZ:    Math.ceil(index.voxelLength / CHUNK_SIZE),
+		vW:         index.voxelWidth,
+		vH:         index.voxelHeight,
+		vL:         index.voxelLength,
+		resolution: index.resolution,
+		tW:         index.width,
+		tL:         index.length,
+	};
+}
+
+function markAllChunksDirty(dirtyChunks: Set<number>, dims: ChunkDims): void {
+	const { chunksX, chunksY, chunksZ } = dims;
+	for (let cy = 0; cy < chunksY; cy++) {
+		for (let cz = 0; cz < chunksZ; cz++) {
+			for (let cx = 0; cx < chunksX; cx++) {
+				dirtyChunks.add(cx + cz * chunksX + cy * chunksX * chunksZ);
+			}
+		}
+	}
+}
+
+function markVoxelDirtyChunks(
+	vx: number, vy: number, vz: number,
+	dirtyChunks: Set<number>,
+	dims: ChunkDims,
+): void {
+	const { chunksX, chunksY, chunksZ } = dims;
+
+	const addIfValid = (cx: number, cy: number, cz: number) => {
+		if (cx >= 0 && cx < chunksX && cy >= 0 && cy < chunksY && cz >= 0 && cz < chunksZ) {
+			dirtyChunks.add(cx + cz * chunksX + cy * chunksX * chunksZ);
+		}
+	};
+
+	const mainCx = Math.floor(vx / CHUNK_SIZE);
+	const mainCy = Math.floor(vy / CHUNK_SIZE);
+	const mainCz = Math.floor(vz / CHUNK_SIZE);
+	addIfValid(mainCx, mainCy, mainCz);
+
+	// When a voxel sits on a chunk boundary, the adjacent chunk's face culling
+	// is also affected. Mark it dirty so it rebuilds on the next rAF frame.
+	if (vx % CHUNK_SIZE === 0)          addIfValid(mainCx - 1, mainCy, mainCz);
+	if ((vx + 1) % CHUNK_SIZE === 0)    addIfValid(mainCx + 1, mainCy, mainCz);
+	if (vy % CHUNK_SIZE === 0)          addIfValid(mainCx, mainCy - 1, mainCz);
+	if ((vy + 1) % CHUNK_SIZE === 0)    addIfValid(mainCx, mainCy + 1, mainCz);
+	if (vz % CHUNK_SIZE === 0)          addIfValid(mainCx, mainCy, mainCz - 1);
+	if ((vz + 1) % CHUNK_SIZE === 0)    addIfValid(mainCx, mainCy, mainCz + 1);
+}
+
+// Reused across buildChunkGeometry calls to avoid per-voxel Color allocations.
+const CHUNK_VOXEL_COLOR = new THREE.Color();
+
+function buildChunkGeometry(
+	grid: EditGrid,
+	dims: ChunkDims,
+	chunkX: number,
+	chunkY: number,
+	chunkZ: number,
+): THREE.BufferGeometry | null {
+	const { vW, vH, vL, resolution, tW, tL } = dims;
+	const halfW = tW / 2;
+	const halfL = tL / 2;
+	const voxelSize = 1 / resolution;
+	const halfVoxelSize = voxelSize / 2;
+
+	const positions: number[] = [];
+	const normals:   number[] = [];
+	const colors:    number[] = [];
+	const indices:   number[] = [];
+
+	const startX = chunkX * CHUNK_SIZE;
+	const startY = chunkY * CHUNK_SIZE;
+	const startZ = chunkZ * CHUNK_SIZE;
+	const endX = Math.min(startX + CHUNK_SIZE, vW);
+	const endY = Math.min(startY + CHUNK_SIZE, vH);
+	const endZ = Math.min(startZ + CHUNK_SIZE, vL);
+
+	for (let vy = startY; vy < endY; vy++) {
+		for (let vz = startZ; vz < endZ; vz++) {
+			for (let vx = startX; vx < endX; vx++) {
+				const val = grid[editGridIndex(vx, vy, vz, vW, vL)];
+				if (val === 0) continue;
+
+				CHUNK_VOXEL_COLOR.set(
+					terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(val - 1))
+				);
+
+				// Center of this voxel in world space.
+				const cx = vx / resolution - halfW + halfVoxelSize;
+				const cy = (vy + 0.5) / resolution - 0.5;
+				const cz = vz / resolution - halfL + halfVoxelSize;
+
+				for (const face of VOXEL_FACE_DEFINITIONS) {
+					const [dnx, dny, dnz] = face.neighborOffset;
+					const nx2 = vx + dnx;
+					const ny2 = vy + dny;
+					const nz2 = vz + dnz;
+
+					// Cull face if neighbor is occupied (or out-of-bounds = no face).
+					const neighborOccupied =
+						nx2 >= 0 && nx2 < vW && ny2 >= 0 && ny2 < vH && nz2 >= 0 && nz2 < vL &&
+						grid[editGridIndex(nx2, ny2, nz2, vW, vL)] !== 0;
+					if (neighborOccupied) continue;
+
+					const vertexIndex = positions.length / 3;
+					const [fnx, fny, fnz] = face.normal;
+
+					for (const [fcx, fcy, fcz] of face.corners) {
+						positions.push(
+							cx + fcx * voxelSize,
+							cy + fcy * voxelSize,
+							cz + fcz * voxelSize,
+						);
+						normals.push(fnx, fny, fnz);
+						colors.push(CHUNK_VOXEL_COLOR.r, CHUNK_VOXEL_COLOR.g, CHUNK_VOXEL_COLOR.b);
+					}
+
+					indices.push(
+						vertexIndex,
+						vertexIndex + 1,
+						vertexIndex + 2,
+						vertexIndex,
+						vertexIndex + 2,
+						vertexIndex + 3,
+					);
+				}
+			}
+		}
+	}
+
+	if (positions.length === 0) return null;
+
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+	geometry.setAttribute("normal",   new THREE.Float32BufferAttribute(normals,   3));
+	geometry.setAttribute("color",    new THREE.Float32BufferAttribute(colors,    3));
+	geometry.setIndex(indices);
+	geometry.computeBoundingSphere();
+	return geometry;
+}
+
+function rebuildChunk(
+	chunkIdx: number,
+	cx: number, cy: number, cz: number,
+	grid: EditGrid,
+	dims: ChunkDims,
+	chunkGroup: THREE.Group,
+	material: THREE.MeshStandardMaterial,
+	chunkMeshes: Map<number, THREE.Mesh | null>,
+): void {
+	const old = chunkMeshes.get(chunkIdx);
+	if (old) {
+		chunkGroup.remove(old);
+		old.geometry.dispose();
+	}
+
+	const geometry = buildChunkGeometry(grid, dims, cx, cy, cz);
+	if (!geometry) {
+		chunkMeshes.set(chunkIdx, null);
+		return;
+	}
+
+	const mesh = new THREE.Mesh(geometry, material);
+	chunkGroup.add(mesh);
+	chunkMeshes.set(chunkIdx, mesh);
+}
+
+function clearAllChunkMeshes(
+	chunkGroup: THREE.Group,
+	chunkMeshes: Map<number, THREE.Mesh | null>,
+): void {
+	for (const mesh of chunkMeshes.values()) {
+		if (mesh) {
+			chunkGroup.remove(mesh);
+			mesh.geometry.dispose();
+		}
+	}
+	chunkMeshes.clear();
+}
+
+// ---------------------------------------------------------------------------
+// Geometry helpers
 // ---------------------------------------------------------------------------
 
 function isVoxelInBounds(index: VoxelTerrainIndex, coord: VoxelCoord): boolean {
@@ -237,40 +420,27 @@ function isVoxelInBounds(index: VoxelTerrainIndex, coord: VoxelCoord): boolean {
 	);
 }
 
-function pointToVoxelCoord(
-	point: THREE.Vector3,
-	index: VoxelTerrainIndex
-): VoxelCoord {
+function pointToVoxelCoord(point: THREE.Vector3, index: VoxelTerrainIndex): VoxelCoord {
 	return {
-		x: Math.floor((point.x + index.width / 2) * index.resolution),
-		y: Math.floor((point.y + 0.5) * index.resolution),
+		x: Math.floor((point.x + index.width  / 2) * index.resolution),
+		y: Math.floor((point.y + 0.5)          * index.resolution),
 		z: Math.floor((point.z + index.length / 2) * index.resolution),
-	};
-}
-
-function normalToCoord(normal: THREE.Vector3): VoxelCoord {
-	return {
-		x: Math.round(normal.x),
-		y: Math.round(normal.y),
-		z: Math.round(normal.z),
 	};
 }
 
 function getBrushOffsets(size: number): number[] {
 	const safeSize = clamp(Math.floor(size) || MIN_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE);
 	const start = -Math.floor((safeSize - 1) / 2);
-
-	return Array.from({ length: safeSize }, (_, index) => start + index);
+	return Array.from({ length: safeSize }, (_, i) => start + i);
 }
 
 function getPlaneBrushCoords(
 	origin: VoxelCoord,
 	normal: VoxelCoord,
-	brushSize: number
+	brushSize: number,
 ): VoxelCoord[] {
 	const offsets = getBrushOffsets(brushSize);
 	const coords: VoxelCoord[] = [];
-
 	for (const a of offsets) {
 		for (const b of offsets) {
 			if (normal.y !== 0) {
@@ -282,7 +452,6 @@ function getPlaneBrushCoords(
 			}
 		}
 	}
-
 	return coords;
 }
 
@@ -290,11 +459,10 @@ function getTacticalBrushUnits(
 	origin: VoxelCoord,
 	normal: VoxelCoord,
 	brushSize: number,
-	index: VoxelTerrainIndex
+	index: VoxelTerrainIndex,
 ): VoxelCoord[] {
 	const offsets = getBrushOffsets(brushSize);
 	const units: VoxelCoord[] = [];
-
 	for (const a of offsets) {
 		for (const b of offsets) {
 			let unit: VoxelCoord;
@@ -305,7 +473,6 @@ function getTacticalBrushUnits(
 			} else {
 				unit = { x: origin.x + a, y: origin.y + b, z: origin.z };
 			}
-
 			if (
 				unit.x >= 0 && unit.x < index.width &&
 				unit.y >= 0 && unit.y < index.height &&
@@ -315,7 +482,6 @@ function getTacticalBrushUnits(
 			}
 		}
 	}
-
 	return units;
 }
 
@@ -332,7 +498,6 @@ function getTacticalBlockCoords(unit: VoxelCoord, index: VoxelTerrainIndex): Vox
 	const startX = unit.x * index.resolution;
 	const startY = unit.y * index.resolution;
 	const startZ = unit.z * index.resolution;
-
 	for (let z = startZ; z < startZ + index.resolution; z++) {
 		for (let y = startY; y < startY + index.resolution; y++) {
 			for (let x = startX; x < startX + index.resolution; x++) {
@@ -341,7 +506,6 @@ function getTacticalBlockCoords(unit: VoxelCoord, index: VoxelTerrainIndex): Vox
 			}
 		}
 	}
-
 	return coords;
 }
 
@@ -350,7 +514,7 @@ function collectAffectedCoords(
 	pick: PickInfo,
 	tool: EditorTool,
 	granularity: EditGranularity,
-	brushSize: number
+	brushSize: number,
 ): VoxelCoord[] {
 	if (granularity === "voxel") {
 		const origin =
@@ -362,9 +526,8 @@ function collectAffectedCoords(
 				}
 				: pick.voxel;
 		const normal = pick.ground ? { x: 0, y: 1, z: 0 } : pick.normal;
-
-		return getPlaneBrushCoords(origin, normal, brushSize).filter((coord) =>
-			isVoxelInBounds(index, coord)
+		return getPlaneBrushCoords(origin, normal, brushSize).filter((c) =>
+			isVoxelInBounds(index, c)
 		);
 	}
 
@@ -379,94 +542,77 @@ function collectAffectedCoords(
 			: baseUnit;
 	const normal = pick.ground ? { x: 0, y: 1, z: 0 } : pick.normal;
 	const units = getTacticalBrushUnits(origin, normal, brushSize, index);
-
 	return units.flatMap((unit) => getTacticalBlockCoords(unit, index));
 }
 
+// ---------------------------------------------------------------------------
+// Apply edit -- writes directly to the editGrid (O(1) per voxel)
+// ---------------------------------------------------------------------------
+
 function applyVoxelEdit(
+	grid: EditGrid,
 	index: VoxelTerrainIndex,
-	overlay: VoxelOverlay,
+	dirtyChunks: Set<number>,
+	dims: ChunkDims,
 	pick: PickInfo,
 	tool: EditorTool,
 	granularity: EditGranularity,
 	brushSize: number,
-	colorIndex: number
+	colorIndex: number,
 ): { changed: boolean; sampledColor: number | null } {
-	const coords =
-		tool === "sample"
-			? [pick.voxel]
-			: collectAffectedCoords(index, pick, tool, granularity, brushSize);
-	let changed = false;
-	let sampledColor: number | null = null;
+	const { vW, vH, vL } = dims;
 
 	if (tool === "sample") {
-		for (const coord of coords) {
-			const color = peekVoxelColor(index, overlay, coord.x, coord.y, coord.z);
-			if (color !== null) {
-				sampledColor = color;
-				break;
-			}
-		}
-
+		const sampledColor = editGridGetColor(grid, pick.voxel.x, pick.voxel.y, pick.voxel.z, vW, vH, vL);
 		return { changed: false, sampledColor };
 	}
 
-	for (const coord of coords) {
-		const key = packVoxelKey(coord.x, coord.y, coord.z);
+	const coords = collectAffectedCoords(index, pick, tool, granularity, brushSize);
+	let changed = false;
+
+	for (const { x, y, z } of coords) {
+		if (x < 0 || x >= vW || y < 0 || y >= vH || z < 0 || z >= vL) continue;
+		const gIdx = editGridIndex(x, y, z, vW, vL);
 
 		if (tool === "erase") {
-			if (peekHasVoxel(index, overlay, coord.x, coord.y, coord.z)) {
-				overlay.set(key, null);
+			if (grid[gIdx] !== 0) {
+				grid[gIdx] = 0;
+				markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 				changed = true;
 			}
 			continue;
 		}
 
 		if (tool === "paint") {
-			const current = peekVoxelColor(index, overlay, coord.x, coord.y, coord.z);
-			if (current !== null && current !== colorIndex) {
-				overlay.set(key, colorIndex);
+			const cur = grid[gIdx];
+			if (cur !== 0 && cur - 1 !== colorIndex) {
+				grid[gIdx] = colorIndex + 1;
+				markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 				changed = true;
 			}
 			continue;
 		}
 
 		// place
-		if (!peekHasVoxel(index, overlay, coord.x, coord.y, coord.z)) {
-			overlay.set(key, colorIndex);
+		if (grid[gIdx] === 0) {
+			grid[gIdx] = colorIndex + 1;
+			markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 			changed = true;
 		}
 	}
 
-	return {
-		changed,
-		sampledColor: null,
-	};
+	return { changed, sampledColor: null };
 }
 
-// Cached THREE.Color instance reused for every voxel as it streams through the
-// shared geometry builder. The builder copies the .r/.g/.b values into a
-// Float32Array, so a single Color object is enough.
-const EDITOR_VOXEL_COLOR = new THREE.Color();
-
-function buildEditorTerrainGeometry(terrain: VoxelTerrain): THREE.BufferGeometry {
-	const buffers = buildVoxelTerrainBuffers(terrain, (voxel) => {
-		EDITOR_VOXEL_COLOR.set(
-			terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(voxel.color))
-		);
-		return EDITOR_VOXEL_COLOR;
-	});
-	const geometry = createVoxelTerrainBufferGeometry(buffers);
-	geometry.boundsTree = new MeshBVH(geometry);
-	return geometry;
-}
+// ---------------------------------------------------------------------------
+// Three.js scene helpers
+// ---------------------------------------------------------------------------
 
 function disposeMaterial(material: THREE.Material | THREE.Material[]): void {
 	if (Array.isArray(material)) {
-		for (const entry of material) entry.dispose();
+		for (const m of material) m.dispose();
 		return;
 	}
-
 	material.dispose();
 }
 
@@ -486,72 +632,50 @@ function clearObjectGroup(group: THREE.Group): void {
 function createGridLineSegments(
 	points: number[],
 	color: number,
-	opacity: number
+	opacity: number,
 ): THREE.LineSegments {
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
-
 	const material = new THREE.LineBasicMaterial({
 		color,
 		transparent: true,
 		opacity,
 		depthWrite: false,
 	});
-
 	return new THREE.LineSegments(geometry, material);
 }
 
 function createBoundsFrame(
-	index: VoxelTerrainIndex,
+	tW: number,
+	tH: number,
+	tL: number,
 	color: number,
-	opacity: number
+	opacity: number,
 ): THREE.LineSegments {
-	const minX = -index.width / 2;
-	const maxX = index.width / 2;
-	const minY = -0.5;
-	const maxY = index.height - 0.5;
-	const minZ = -index.length / 2;
-	const maxZ = index.length / 2;
+	const minX = -tW / 2, maxX = tW / 2;
+	const minY = -0.5,    maxY = tH - 0.5;
+	const minZ = -tL / 2, maxZ = tL / 2;
 	const corners = [
-		[minX, minY, minZ],
-		[maxX, minY, minZ],
-		[maxX, minY, maxZ],
-		[minX, minY, maxZ],
-		[minX, maxY, minZ],
-		[maxX, maxY, minZ],
-		[maxX, maxY, maxZ],
-		[minX, maxY, maxZ],
+		[minX, minY, minZ], [maxX, minY, minZ], [maxX, minY, maxZ], [minX, minY, maxZ],
+		[minX, maxY, minZ], [maxX, maxY, minZ], [maxX, maxY, maxZ], [minX, maxY, maxZ],
 	];
 	const edges = [
-		[0, 1],
-		[1, 2],
-		[2, 3],
-		[3, 0],
-		[4, 5],
-		[5, 6],
-		[6, 7],
-		[7, 4],
-		[0, 4],
-		[1, 5],
-		[2, 6],
-		[3, 7],
+		[0,1],[1,2],[2,3],[3,0],
+		[4,5],[5,6],[6,7],[7,4],
+		[0,4],[1,5],[2,6],[3,7],
 	];
 	const points: number[] = [];
-
 	for (const [a, b] of edges) {
 		points.push(...corners[a], ...corners[b]);
 	}
-
 	return createGridLineSegments(points, color, opacity);
 }
 
 function addTopRectangle(
 	points: number[],
-	minX: number,
-	maxX: number,
+	minX: number, maxX: number,
 	y: number,
-	minZ: number,
-	maxZ: number
+	minZ: number, maxZ: number,
 ): void {
 	points.push(minX, y, minZ, maxX, y, minZ);
 	points.push(maxX, y, minZ, maxX, y, maxZ);
@@ -559,38 +683,41 @@ function addTopRectangle(
 	points.push(minX, y, maxZ, minX, y, minZ);
 }
 
-// Iterate the terrain's top-exposed voxels (the ones whose +Y neighbor is
-// empty). Used by both grid builders. The index drives the "above me empty"
-// check; we still decode the terrain to walk every voxel because the index
-// doesn't expose per-voxel positions (only per-tile surface heights).
+// Iterate voxels whose +Y neighbor is empty (top-exposed surfaces).
 function* iterateTopExposedVoxels(
-	terrain: VoxelTerrain,
-	index: VoxelTerrainIndex
-): Generator<Voxel> {
-	for (const voxel of decodeVoxels(terrain.Voxels)) {
-		if (index.hasVoxel(voxel.x, voxel.y + 1, voxel.z)) continue;
-		yield voxel;
+	grid: EditGrid,
+	dims: ChunkDims,
+): Generator<{ x: number; y: number; z: number }> {
+	const { vW, vH, vL } = dims;
+	for (let y = 0; y < vH; y++) {
+		for (let z = 0; z < vL; z++) {
+			for (let x = 0; x < vW; x++) {
+				if (grid[editGridIndex(x, y, z, vW, vL)] === 0) continue;
+				const atTop = y + 1 >= vH || grid[editGridIndex(x, y + 1, z, vW, vL)] === 0;
+				if (atTop) yield { x, y, z };
+			}
+		}
 	}
 }
 
 function createVoxelSurfaceGrid(
-	terrain: VoxelTerrain,
-	index: VoxelTerrainIndex,
+	grid: EditGrid,
+	dims: ChunkDims,
 	color: number,
-	opacity: number
+	opacity: number,
 ): THREE.LineSegments | null {
+	const { resolution: r, tW, tL } = dims;
+	const halfW = tW / 2;
+	const halfL = tL / 2;
 	const points: number[] = [];
-	const r = index.resolution;
-	const halfW = index.width / 2;
-	const halfL = index.length / 2;
 
-	for (const voxel of iterateTopExposedVoxels(terrain, index)) {
-		const minX = voxel.x / r - halfW;
-		const maxX = (voxel.x + 1) / r - halfW;
-		const y = (voxel.y + 1) / r - 0.5 + GRID_LINE_OFFSET;
-		const minZ = voxel.z / r - halfL;
-		const maxZ = (voxel.z + 1) / r - halfL;
-		addTopRectangle(points, minX, maxX, y, minZ, maxZ);
+	for (const { x, y, z } of iterateTopExposedVoxels(grid, dims)) {
+		const minX = x / r - halfW;
+		const maxX = (x + 1) / r - halfW;
+		const yy   = (y + 1) / r - 0.5 + GRID_LINE_OFFSET;
+		const minZ = z / r - halfL;
+		const maxZ = (z + 1) / r - halfL;
+		addTopRectangle(points, minX, maxX, yy, minZ, maxZ);
 	}
 
 	if (points.length === 0) return null;
@@ -598,35 +725,27 @@ function createVoxelSurfaceGrid(
 }
 
 function createTacticalSurfaceGrid(
-	terrain: VoxelTerrain,
-	index: VoxelTerrainIndex,
+	grid: EditGrid,
+	dims: ChunkDims,
 	color: number,
-	opacity: number
+	opacity: number,
 ): THREE.LineSegments | null {
+	const { resolution: r, tW, tL } = dims;
+	const halfW = tW / 2;
+	const halfL = tL / 2;
 	const points: number[] = [];
-	const r = index.resolution;
-	const halfW = index.width / 2;
-	const halfL = index.length / 2;
 
-	for (const voxel of iterateTopExposedVoxels(terrain, index)) {
-		const minX = voxel.x / r - halfW;
-		const maxX = (voxel.x + 1) / r - halfW;
-		const y = (voxel.y + 1) / r - 0.5 + GRID_LINE_OFFSET * 2;
-		const minZ = voxel.z / r - halfL;
-		const maxZ = (voxel.z + 1) / r - halfL;
+	for (const { x, y, z } of iterateTopExposedVoxels(grid, dims)) {
+		const minX = x / r - halfW;
+		const maxX = (x + 1) / r - halfW;
+		const yy   = (y + 1) / r - 0.5 + GRID_LINE_OFFSET * 2;
+		const minZ = z / r - halfL;
+		const maxZ = (z + 1) / r - halfL;
 
-		if (voxel.x % r === 0) {
-			points.push(minX, y, minZ, minX, y, maxZ);
-		}
-		if ((voxel.x + 1) % r === 0) {
-			points.push(maxX, y, minZ, maxX, y, maxZ);
-		}
-		if (voxel.z % r === 0) {
-			points.push(minX, y, minZ, maxX, y, minZ);
-		}
-		if ((voxel.z + 1) % r === 0) {
-			points.push(minX, y, maxZ, maxX, y, maxZ);
-		}
+		if (x % r === 0)       points.push(minX, yy, minZ, minX, yy, maxZ);
+		if ((x + 1) % r === 0) points.push(maxX, yy, minZ, maxX, yy, maxZ);
+		if (z % r === 0)       points.push(minX, yy, minZ, maxX, yy, minZ);
+		if ((z + 1) % r === 0) points.push(minX, yy, maxZ, maxX, yy, maxZ);
 	}
 
 	if (points.length === 0) return null;
@@ -635,36 +754,38 @@ function createTacticalSurfaceGrid(
 
 function rebuildGrid(
 	resources: EditorSceneResources,
-	terrain: VoxelTerrain,
+	grid: EditGrid,
+	dims: ChunkDims,
 	showTacticalGrid: boolean,
-	showVoxelGrid: boolean
+	showVoxelGrid: boolean,
 ): void {
 	clearObjectGroup(resources.gridGroup);
 
-	const index = getVoxelTerrainIndex(terrain);
-
-	if (showVoxelGrid && index.resolution > 1) {
-		const voxelGrid = createVoxelSurfaceGrid(terrain, index, 0xf59e0b, 0.38);
+	if (showVoxelGrid && dims.resolution > 1) {
+		const voxelGrid = createVoxelSurfaceGrid(grid, dims, 0xf59e0b, 0.38);
 		if (voxelGrid) resources.gridGroup.add(voxelGrid);
 	}
 
 	if (showTacticalGrid) {
-		const tacticalGrid = createTacticalSurfaceGrid(terrain, index, 0x14b8a6, 0.68);
+		const tacticalGrid = createTacticalSurfaceGrid(grid, dims, 0x14b8a6, 0.68);
 		if (tacticalGrid) resources.gridGroup.add(tacticalGrid);
 	}
 
-	resources.gridGroup.add(createBoundsFrame(index, 0xe5e7eb, 0.32));
+	resources.gridGroup.add(
+		createBoundsFrame(dims.tW, dims.vH / dims.resolution, dims.tL, 0xe5e7eb, 0.32)
+	);
 }
 
-function getVoxelWorldCenter(
-	index: VoxelTerrainIndex,
-	voxel: VoxelCoord
-): THREE.Vector3 {
-	const halfVoxelSize = index.voxelSize / 2;
+// ---------------------------------------------------------------------------
+// Hover indicator geometry
+// ---------------------------------------------------------------------------
+
+function getVoxelWorldCenter(index: VoxelTerrainIndex, voxel: VoxelCoord): THREE.Vector3 {
+	const half = index.voxelSize / 2;
 	return new THREE.Vector3(
-		voxel.x / index.resolution - index.width / 2 + halfVoxelSize,
+		voxel.x / index.resolution - index.width  / 2 + half,
 		(voxel.y + 0.5) / index.resolution - 0.5,
-		voxel.z / index.resolution - index.length / 2 + halfVoxelSize
+		voxel.z / index.resolution - index.length / 2 + half,
 	);
 }
 
@@ -672,13 +793,10 @@ function getHoverColor(colorIndex: number): THREE.Color {
 	const color = new THREE.Color(
 		terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(colorIndex))
 	);
-	const luminance = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
-
-	if (luminance > 0.62) {
-		return color.multiplyScalar(0.48);
-	}
-
-	return color.lerp(new THREE.Color(0xffffff), 0.5);
+	const lum = 0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b;
+	return lum > 0.62
+		? color.multiplyScalar(0.48)
+		: color.lerp(new THREE.Color(0xffffff), 0.5);
 }
 
 function addVoxelFaceToGeometry(
@@ -689,137 +807,112 @@ function addVoxelFaceToGeometry(
 	voxelSize: number,
 	face: (typeof VOXEL_FACE_DEFINITIONS)[number],
 	color: THREE.Color,
-	offset: number
+	offset: number,
 ): void {
 	const vertexIndex = positions.length / 3;
 	const [nx, ny, nz] = face.normal;
-
 	for (const [cx, cy, cz] of face.corners) {
 		positions.push(
 			center.x + cx * voxelSize + nx * offset,
 			center.y + cy * voxelSize + ny * offset,
-			center.z + cz * voxelSize + nz * offset
+			center.z + cz * voxelSize + nz * offset,
 		);
 		colors.push(color.r, color.g, color.b);
 	}
-
 	indices.push(
-		vertexIndex,
-		vertexIndex + 1,
-		vertexIndex + 2,
-		vertexIndex,
-		vertexIndex + 2,
-		vertexIndex + 3
+		vertexIndex, vertexIndex + 1, vertexIndex + 2,
+		vertexIndex, vertexIndex + 2, vertexIndex + 3,
 	);
 }
 
 function createHoverSurfaceGeometry(
+	grid: EditGrid,
+	dims: ChunkDims,
 	index: VoxelTerrainIndex,
-	overlay: VoxelOverlay,
-	coords: VoxelCoord[]
+	coords: VoxelCoord[],
 ): THREE.BufferGeometry | null {
+	const { vW, vH, vL } = dims;
 	const positions: number[] = [];
-	const colors: number[] = [];
-	const indices: number[] = [];
+	const colors:    number[] = [];
+	const indices:   number[] = [];
 	const selectedKeys = new Set(coords.map((c) => packVoxelKey(c.x, c.y, c.z)));
 
 	for (const key of selectedKeys) {
 		const { x, y, z } = unpackVoxelKey(key);
-		const colorIndex = peekVoxelColor(index, overlay, x, y, z);
+		const colorIndex = editGridGetColor(grid, x, y, z, vW, vH, vL);
 		if (colorIndex === null) continue;
 
 		const center = getVoxelWorldCenter(index, { x, y, z });
-		const color = getHoverColor(colorIndex);
+		const color  = getHoverColor(colorIndex);
 
 		for (const face of VOXEL_FACE_DEFINITIONS) {
 			const [dx, dy, dz] = face.neighborOffset;
-			if (peekHasVoxel(index, overlay, x + dx, y + dy, z + dz)) continue;
-
-			addVoxelFaceToGeometry(
-				positions,
-				colors,
-				indices,
-				center,
-				index.voxelSize,
-				face,
-				color,
-				HOVER_FACE_OFFSET
-			);
+			if (editGridHasVoxel(grid, x + dx, y + dy, z + dz, vW, vH, vL)) continue;
+			addVoxelFaceToGeometry(positions, colors, indices, center, index.voxelSize, face, color, HOVER_FACE_OFFSET);
 		}
 	}
 
 	if (positions.length === 0) return null;
 
-	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-	geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-	geometry.setIndex(indices);
-	geometry.computeBoundingSphere();
-
-	return geometry;
+	const geo = new THREE.BufferGeometry();
+	geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+	geo.setAttribute("color",    new THREE.Float32BufferAttribute(colors, 3));
+	geo.setIndex(indices);
+	geo.computeBoundingSphere();
+	return geo;
 }
 
 function createPlaceGhostGeometry(
+	grid: EditGrid,
+	dims: ChunkDims,
 	index: VoxelTerrainIndex,
-	overlay: VoxelOverlay,
-	coords: VoxelCoord[]
+	coords: VoxelCoord[],
 ): THREE.BufferGeometry | null {
+	const { vW, vH, vL } = dims;
 	const positions: number[] = [];
-	const colors: number[] = [];
-	const indices: number[] = [];
+	const colors:    number[] = [];
+	const indices:   number[] = [];
 	const ghostKeys = new Set<number>();
 
 	for (const coord of coords) {
 		if (!isVoxelInBounds(index, coord)) continue;
-		if (peekHasVoxel(index, overlay, coord.x, coord.y, coord.z)) continue;
+		if (editGridHasVoxel(grid, coord.x, coord.y, coord.z, vW, vH, vL)) continue;
 		ghostKeys.add(packVoxelKey(coord.x, coord.y, coord.z));
 	}
 
-	const color = new THREE.Color(0xffffff);
+	const white = new THREE.Color(0xffffff);
 	for (const key of ghostKeys) {
 		const { x, y, z } = unpackVoxelKey(key);
 		const center = getVoxelWorldCenter(index, { x, y, z });
-
 		for (const face of VOXEL_FACE_DEFINITIONS) {
 			const [dx, dy, dz] = face.neighborOffset;
 			const neighborKey = packVoxelKey(x + dx, y + dy, z + dz);
-			// Cull faces against either an existing voxel or another ghost in the same brush.
 			if (ghostKeys.has(neighborKey)) continue;
-			if (peekHasVoxel(index, overlay, x + dx, y + dy, z + dz)) continue;
-
-			addVoxelFaceToGeometry(
-				positions,
-				colors,
-				indices,
-				center,
-				index.voxelSize,
-				face,
-				color,
-				0
-			);
+			if (editGridHasVoxel(grid, x + dx, y + dy, z + dz, vW, vH, vL)) continue;
+			addVoxelFaceToGeometry(positions, colors, indices, center, index.voxelSize, face, white, 0);
 		}
 	}
 
 	if (positions.length === 0) return null;
 
-	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-	geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-	geometry.setIndex(indices);
-	geometry.computeBoundingSphere();
-
-	return geometry;
+	const geo = new THREE.BufferGeometry();
+	geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+	geo.setAttribute("color",    new THREE.Float32BufferAttribute(colors, 3));
+	geo.setIndex(indices);
+	geo.computeBoundingSphere();
+	return geo;
 }
 
 function updateHoverIndicator(
 	resources: EditorSceneResources,
+	grid: EditGrid,
+	dims: ChunkDims,
 	index: VoxelTerrainIndex,
-	overlay: VoxelOverlay,
 	pick: PickInfo | null,
 	tool: EditorTool,
 	granularity: EditGranularity,
 	brushSize: number,
-	colorIndex: number
+	colorIndex: number,
 ): void {
 	clearObjectGroup(resources.hoverGroup);
 	if (!pick) return;
@@ -828,10 +921,11 @@ function updateHoverIndicator(
 		tool === "sample"
 			? [pick.voxel]
 			: collectAffectedCoords(index, pick, tool, granularity, brushSize);
+
 	const geometry =
 		tool === "place"
-			? createPlaceGhostGeometry(index, overlay, coords)
-			: createHoverSurfaceGeometry(index, overlay, coords);
+			? createPlaceGhostGeometry(grid, dims, index, coords)
+			: createHoverSurfaceGeometry(grid, dims, index, coords);
 
 	if (!geometry) return;
 
@@ -855,14 +949,17 @@ function updateHoverIndicator(
 	resources.hoverGroup.add(mesh);
 }
 
+// ---------------------------------------------------------------------------
+// Camera / renderer helpers
+// ---------------------------------------------------------------------------
+
 function resizeRenderer(resources: EditorSceneResources, container: HTMLDivElement): void {
-	const width = container.clientWidth || 1;
+	const width  = container.clientWidth  || 1;
 	const height = container.clientHeight || 1;
 	const aspect = width / height;
 	const halfSize = resources.camera.top;
-
-	resources.camera.left = -halfSize * aspect;
-	resources.camera.right = halfSize * aspect;
+	resources.camera.left  = -halfSize * aspect;
+	resources.camera.right =  halfSize * aspect;
 	resources.camera.updateProjectionMatrix();
 	resources.renderer.setSize(width, height);
 }
@@ -870,43 +967,41 @@ function resizeRenderer(resources: EditorSceneResources, container: HTMLDivEleme
 function frameCamera(
 	resources: EditorSceneResources,
 	terrain: VoxelTerrain,
-	container: HTMLDivElement
+	container: HTMLDivElement,
 ): void {
 	const halfSize = Math.max(
 		6,
 		((terrain.Width + terrain.Length) / Math.SQRT2 / 2) * 1.15,
-		terrain.Height * 0.9
+		terrain.Height * 0.9,
 	);
 	const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
-	const camera = resources.camera;
+	const camera   = resources.camera;
 	const controls = resources.controls;
-	const terrainCenterY = Math.max(0, terrain.Height / 2 - 0.5);
-	const cameraDistance = halfSize * CAMERA_DISTANCE_MULTIPLIER;
+	const centerY  = Math.max(0, terrain.Height / 2 - 0.5);
+	const dist     = halfSize * CAMERA_DISTANCE_MULTIPLIER;
 
-	camera.left = -halfSize * aspect;
-	camera.right = halfSize * aspect;
-	camera.top = halfSize;
+	camera.left   = -halfSize * aspect;
+	camera.right  =  halfSize * aspect;
+	camera.top    =  halfSize;
 	camera.bottom = -halfSize;
-	camera.position.set(cameraDistance, cameraDistance, cameraDistance);
+	camera.position.set(dist, dist, dist);
 	camera.zoom = 1;
 	camera.updateProjectionMatrix();
-	controls.target.set(0, terrainCenterY, 0);
-	controls.cursor.set(0, terrainCenterY, 0);
+	controls.target.set(0, centerY, 0);
+	controls.cursor.set(0, centerY, 0);
 	controls.maxTargetRadius = Math.max(8, Math.sqrt(terrain.Width ** 2 + terrain.Length ** 2));
 	controls.update();
 }
 
 function isTextInputTarget(target: EventTarget | null): boolean {
 	if (!(target instanceof HTMLElement)) return false;
-	const tagName = target.tagName.toLowerCase();
-
-	return (
-		tagName === "input" ||
-		tagName === "textarea" ||
-		tagName === "select" ||
-		target.isContentEditable
-	);
+	const tag = target.tagName.toLowerCase();
+	return tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable;
 }
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export default function VoxelTerrainEditor({
 	terrain,
@@ -914,71 +1009,101 @@ export default function VoxelTerrainEditor({
 	readOnly = false,
 	actors,
 }: VoxelTerrainEditorProps) {
-	const containerRef = useRef<HTMLDivElement>(null);
-	const resourcesRef = useRef<EditorSceneResources | null>(null);
-	// Canonical committed terrain for the editor session. Updated on rAF flush
-	// (stroke commit), undo/redo, and external prop changes.
-	const terrainRef = useRef(terrain);
-	// Pending stroke edits not yet folded into terrainRef. Cleared on rAF flush.
-	const inflightOverlayRef = useRef<VoxelOverlay>(new Map());
-	const toolRef = useRef<EditorTool>("place");
-	const granularityRef = useRef<EditGranularity>("tactical");
-	const brushSizeRef = useRef(1);
+	const containerRef   = useRef<HTMLDivElement>(null);
+	const resourcesRef   = useRef<EditorSceneResources | null>(null);
+	// Canonical committed terrain. Updated at stroke end, undo/redo, external prop.
+	const terrainRef     = useRef(terrain);
+	// Live voxel state. Written per-voxel during editing; never re-encoded mid-stroke.
+	const editGridRef    = useRef<EditGrid>(new Uint8Array(0));
+	// Chunk system: meshes + pending rebuild set.
+	const chunkMeshesRef = useRef<Map<number, THREE.Mesh | null>>(new Map());
+	const dirtyChunksRef = useRef<Set<number>>(new Set());
+	const chunkDimsRef   = useRef<ChunkDims | null>(null);
+	// Undo history stored as flat-array snapshots (~25 KB each at 40x40x16 voxels).
+	const undoStackRef   = useRef<Uint8Array[]>([]);
+	const redoStackRef   = useRef<Uint8Array[]>([]);
+	// Tool/brush state mirrors kept as refs for the event-handler hot path.
+	const toolRef          = useRef<EditorTool>("place");
+	const granularityRef   = useRef<EditGranularity>("tactical");
+	const brushSizeRef     = useRef(1);
 	const selectedColorRef = useRef(DEFAULT_TERRAIN_COLOR_INDEX);
-	const readOnlyRef = useRef(readOnly);
-	const actorsRef = useRef<ActorOverlayInfo[]>(actors ?? []);
-	const showActorsRef = useRef(true);
+	const readOnlyRef      = useRef(readOnly);
+	const actorsRef        = useRef<ActorOverlayInfo[]>(actors ?? []);
+	const showActorsRef    = useRef(true);
 	const actorMarkerElemsRef = useRef<Map<string, HTMLDivElement>>(new Map());
-	const actorOverlayRef = useRef<HTMLDivElement>(null);
-	const activeStrokeRef = useRef<ActiveStroke | null>(null);
-	const strokeStartedRef = useRef(false);
-	const strokeStartVoxelsRef = useRef<string | null>(null);
-	const lastEditKeyRef = useRef<string | null>(null);
-	const lastShapeSignatureRef = useRef<string | null>(null);
-	const pendingChangeFrameRef = useRef<number | null>(null);
-	const hasPendingVoxelChangeRef = useRef(false);
-	// Last terrain.Voxels we emitted via onChange. Used to recognise our own
-	// echo in the terrain prop useEffect (so we don't re-adopt our own emit).
-	const lastEmittedVoxelsRef = useRef(terrain.Voxels);
+	const actorOverlayRef  = useRef<HTMLDivElement>(null);
+	// Stroke state.
+	const activeStrokeRef         = useRef<ActiveStroke | null>(null);
+	const strokeStartedRef        = useRef(false);
+	const strokeStartSnapshotRef  = useRef<Uint8Array | null>(null);
+	const lastEditKeyRef          = useRef<string | null>(null);
+	// Shape change detection for camera framing.
+	const lastShapeSignatureRef   = useRef<string | null>(null);
+	// Tracks the last Voxels string we emitted so we can ignore our own echoes
+	// when the terrain prop bounces back from the parent after onChange.
+	const lastEmittedVoxelsRef    = useRef(terrain.Voxels);
+	// Stable onChange ref so event-handler closures don't stale-capture the prop.
+	const onChangeRef = useRef(onChange);
 
-	const [activeView, setActiveView] = useState<EditorView>("edit");
-	const [tool, setTool] = useState<EditorTool>("place");
-	const [granularity, setGranularity] = useState<EditGranularity>("tactical");
-	const [brushSize, setBrushSize] = useState(1);
+	// -------------------------------------------------------------------------
+	// React state
+	// -------------------------------------------------------------------------
+
+	const [activeView,        setActiveView]        = useState<EditorView>("edit");
+	const [tool,              setTool]              = useState<EditorTool>("place");
+	const [granularity,       setGranularity]       = useState<EditGranularity>("tactical");
+	const [brushSize,         setBrushSize]         = useState(1);
 	const [selectedColorIndex, setSelectedColorIndex] = useState(DEFAULT_TERRAIN_COLOR_INDEX);
-	const [showTacticalGrid, setShowTacticalGrid] = useState(true);
-	const [showVoxelGrid, setShowVoxelGrid] = useState(true);
-	const [showActors, setShowActors] = useState(true);
-	const [undoStack, setUndoStack] = useState<string[]>([]);
-	const [redoStack, setRedoStack] = useState<string[]>([]);
-	const [voxImportModal, setVoxImportModal] = useState<VoxImportModal | null>(null);
+	const [showTacticalGrid,  setShowTacticalGrid]  = useState(true);
+	const [showVoxelGrid,     setShowVoxelGrid]      = useState(true);
+	const [showActors,        setShowActors]         = useState(true);
+	const [undoDepth,         setUndoDepth]          = useState(0);
+	const [redoDepth,         setRedoDepth]          = useState(0);
+	const [voxImportModal,    setVoxImportModal]     = useState<VoxImportModal | null>(null);
 	const voxFileInputRef = useRef<HTMLInputElement>(null);
-	// editGen ticks whenever terrainRef.current changes (stroke commit, undo,
-	// redo, external prop). Geometry + grid useEffects key on it. Refs alone
-	// would be invisible to React; this is the single change-trigger.
+	// editGen ticks on stroke end, undo/redo, and external prop changes.
+	// It gates React-visible updates (sidebar voxel count, grid lines, camera framing).
+	// It is NEVER bumped per-voxel; Three.js geometry updates happen in the rAF loop.
 	const [editGen, setEditGen] = useState(0);
 	const bumpEditGen = useCallback(() => setEditGen((g) => g + 1), []);
 
-	// terrainRef.current is the committed terrain. The sidebar reflects it
-	// (overlay-in-progress voxels appear after the next rAF flush, at most a
-	// frame later -- the same cadence the editor used previously).
-	// `editGen` is read here purely to opt this expression into React's
-	// re-render cycle whenever the terrain changes.
+	// Sidebar reads terrainRef for voxel count and dimensions. editGen opts the
+	// expression into React's re-render cycle without re-encoding.
 	void editGen;
-	const displayedTerrain = terrainRef.current;
-	const voxelCount = getVoxelTerrainIndex(displayedTerrain).voxelCount;
-	const selectedTool = TOOL_BUTTONS.find((button) => button.id === tool) ?? TOOL_BUTTONS[0];
-	const resolution = getVoxelTerrainResolution(displayedTerrain);
-	const tileDimensions = `${displayedTerrain.Width} x ${displayedTerrain.Length} x ${displayedTerrain.Height}`;
-	const voxelDimensions = `${displayedTerrain.Width * resolution} x ${displayedTerrain.Length * resolution} x ${
-		displayedTerrain.Height * resolution
-	}`;
-	const brushModeLabel = granularity === "tactical" ? "Tile Brush" : "Voxel Brush";
+	const displayedTerrain  = terrainRef.current;
+	const voxelCount        = getVoxelTerrainIndex(displayedTerrain).voxelCount;
+	const selectedTool      = TOOL_BUTTONS.find((b) => b.id === tool) ?? TOOL_BUTTONS[0];
+	const resolution        = getVoxelTerrainResolution(displayedTerrain);
+	const tileDimensions    = `${displayedTerrain.Width} x ${displayedTerrain.Length} x ${displayedTerrain.Height}`;
+	const voxelDimensions   =
+		`${displayedTerrain.Width * resolution} x ${displayedTerrain.Length * resolution} x ` +
+		`${displayedTerrain.Height * resolution}`;
+	const brushModeLabel    = granularity === "tactical" ? "Tile Brush" : "Voxel Brush";
+
+	// -------------------------------------------------------------------------
+	// Sync refs from props/state
+	// -------------------------------------------------------------------------
+
+	useEffect(() => { onChangeRef.current = onChange; }, [onChange]);
 
 	useEffect(() => {
-		// Adopt the prop only when it's a genuinely external change. After our
-		// own rAF flush, terrain.Voxels === lastEmittedVoxelsRef.current and the
-		// shape signature matches terrainRef -- skip then.
+		toolRef.current          = tool;
+		granularityRef.current   = granularity;
+		brushSizeRef.current     = brushSize;
+		selectedColorRef.current = selectedColorIndex;
+		readOnlyRef.current      = readOnly;
+	}, [tool, granularity, brushSize, selectedColorIndex, readOnly]);
+
+	useEffect(() => { actorsRef.current    = actors ?? []; }, [actors]);
+	useEffect(() => { showActorsRef.current = showActors;  }, [showActors]);
+
+	// -------------------------------------------------------------------------
+	// Terrain prop adoption
+	// -------------------------------------------------------------------------
+
+	useEffect(() => {
+		// Skip our own echo: the parent re-renders after our onChange call and
+		// passes back the same Voxels string we just emitted.
 		if (
 			createTerrainRevision(terrain) === createTerrainRevision(terrainRef.current) &&
 			terrain.Voxels === lastEmittedVoxelsRef.current
@@ -986,265 +1111,147 @@ export default function VoxelTerrainEditor({
 			return;
 		}
 
-		// External change (resize, VOX import, initial mount on prop swap):
-		// drop any pending stroke and adopt the new terrain.
-		if (pendingChangeFrameRef.current !== null) {
-			cancelAnimationFrame(pendingChangeFrameRef.current);
-			pendingChangeFrameRef.current = null;
-		}
-		hasPendingVoxelChangeRef.current = false;
-		inflightOverlayRef.current.clear();
+		// External change (network sync, resize, VOX import, initial mount swap).
 		terrainRef.current = terrain;
 		lastEmittedVoxelsRef.current = terrain.Voxels;
+
+		const index = getVoxelTerrainIndex(terrain);
+		const newDims = computeChunkDims(index);
+		const oldDims = chunkDimsRef.current;
+		const shapeChanged =
+			!oldDims ||
+			oldDims.vW !== newDims.vW ||
+			oldDims.vH !== newDims.vH ||
+			oldDims.vL !== newDims.vL;
+
+		chunkDimsRef.current = newDims;
+
+		// Rebuild editGrid (or resize it if grid dimensions changed).
+		const newGrid = buildEditGrid(terrain, index);
+		if (editGridRef.current.length === newGrid.length) {
+			editGridRef.current.set(newGrid);
+		} else {
+			editGridRef.current = newGrid;
+		}
+
+		const resources = resourcesRef.current;
+		if (shapeChanged && resources) {
+			clearAllChunkMeshes(resources.chunkGroup, chunkMeshesRef.current);
+			clearObjectGroup(resources.hoverGroup);
+			const container = containerRef.current;
+			if (container) frameCamera(resources, terrain, container);
+		}
+
+		markAllChunksDirty(dirtyChunksRef.current, newDims);
 		bumpEditGen();
 	}, [terrain, bumpEditGen]);
 
+	// Clear undo history when switching to a different terrain entirely.
 	useEffect(() => {
-		toolRef.current = tool;
-		granularityRef.current = granularity;
-		brushSizeRef.current = brushSize;
-		selectedColorRef.current = selectedColorIndex;
-		readOnlyRef.current = readOnly;
-	}, [tool, granularity, brushSize, selectedColorIndex, readOnly]);
-
-	useEffect(() => { actorsRef.current = actors ?? []; }, [actors]);
-	useEffect(() => { showActorsRef.current = showActors; }, [showActors]);
-
-	useEffect(() => {
-		setUndoStack([]);
-		setRedoStack([]);
+		undoStackRef.current = [];
+		redoStackRef.current = [];
+		setUndoDepth(0);
+		setRedoDepth(0);
 		lastShapeSignatureRef.current = null;
 	}, [terrain.Id]);
 
-	const recordUndo = useCallback((voxels: string) => {
-		setUndoStack((current) => [...current.slice(-(UNDO_LIMIT - 1)), voxels]);
-		setRedoStack([]);
-	}, []);
+	// -------------------------------------------------------------------------
+	// Encode and emit (called once at stroke end -- never per-rAF)
+	// -------------------------------------------------------------------------
 
-	const flushPendingTerrainChange = useCallback(() => {
-		if (pendingChangeFrameRef.current !== null) {
-			cancelAnimationFrame(pendingChangeFrameRef.current);
-			pendingChangeFrameRef.current = null;
-		}
-		if (!hasPendingVoxelChangeRef.current) return;
-
-		hasPendingVoxelChangeRef.current = false;
-		const nextTerrain = commitOverlayToTerrain(
-			terrainRef.current,
-			inflightOverlayRef.current
-		);
-		inflightOverlayRef.current.clear();
-		terrainRef.current = nextTerrain;
-		lastEmittedVoxelsRef.current = nextTerrain.Voxels;
+	const encodeAndEmit = useCallback(() => {
+		const dims = chunkDimsRef.current;
+		if (!dims) return;
+		const nextVoxels  = encodeEditGrid(editGridRef.current, dims.vW, dims.vH, dims.vL);
+		const nextTerrain = { ...terrainRef.current, Voxels: nextVoxels };
+		terrainRef.current        = nextTerrain;
+		lastEmittedVoxelsRef.current = nextVoxels;
 		bumpEditGen();
-		onChange(nextTerrain);
-	}, [bumpEditGen, onChange]);
+		onChangeRef.current(nextTerrain);
+	}, [bumpEditGen]);
 
-	const schedulePendingTerrainChange = useCallback(() => {
-		hasPendingVoxelChangeRef.current = true;
-		if (pendingChangeFrameRef.current !== null) return;
+	// -------------------------------------------------------------------------
+	// Undo / Redo
+	// -------------------------------------------------------------------------
 
-		pendingChangeFrameRef.current = requestAnimationFrame(() => {
-			pendingChangeFrameRef.current = null;
-			flushPendingTerrainChange();
-		});
-	}, [flushPendingTerrainChange]);
+	const recordUndo = useCallback(() => {
+		const snapshot = strokeStartSnapshotRef.current;
+		if (!snapshot) return;
+		undoStackRef.current = [...undoStackRef.current.slice(-(UNDO_LIMIT - 1)), snapshot];
+		redoStackRef.current = [];
+		setUndoDepth(undoStackRef.current.length);
+		setRedoDepth(0);
+	}, []);
 
 	const undo = useCallback(() => {
-		if (undoStack.length === 0) return;
-		flushPendingTerrainChange();
-		const currentTerrain = terrainRef.current;
-		const previousVoxels = undoStack[undoStack.length - 1];
-		const nextTerrain = { ...currentTerrain, Voxels: previousVoxels };
+		if (undoStackRef.current.length === 0) return;
+		const dims = chunkDimsRef.current;
+		if (!dims) return;
 
-		inflightOverlayRef.current.clear();
-		terrainRef.current = nextTerrain;
-		lastEmittedVoxelsRef.current = previousVoxels;
-		setUndoStack((current) => current.slice(0, -1));
-		setRedoStack((current) => [currentTerrain.Voxels, ...current].slice(0, UNDO_LIMIT));
+		const currentSnapshot  = editGridRef.current.slice();
+		const previousSnapshot = undoStackRef.current[undoStackRef.current.length - 1];
+
+		redoStackRef.current = [currentSnapshot, ...redoStackRef.current].slice(0, UNDO_LIMIT);
+		undoStackRef.current = undoStackRef.current.slice(0, -1);
+		setUndoDepth(undoStackRef.current.length);
+		setRedoDepth(redoStackRef.current.length);
+
+		editGridRef.current.set(previousSnapshot);
+		markAllChunksDirty(dirtyChunksRef.current, dims);
+
+		const nextVoxels  = encodeEditGrid(previousSnapshot, dims.vW, dims.vH, dims.vL);
+		const nextTerrain = { ...terrainRef.current, Voxels: nextVoxels };
+		terrainRef.current        = nextTerrain;
+		lastEmittedVoxelsRef.current = nextVoxels;
 		bumpEditGen();
-		onChange(nextTerrain);
-	}, [bumpEditGen, flushPendingTerrainChange, onChange, undoStack]);
+		onChangeRef.current(nextTerrain);
+	}, [bumpEditGen]);
 
 	const redo = useCallback(() => {
-		if (redoStack.length === 0) return;
-		flushPendingTerrainChange();
-		const currentTerrain = terrainRef.current;
-		const nextVoxels = redoStack[0];
-		const nextTerrain = { ...currentTerrain, Voxels: nextVoxels };
+		if (redoStackRef.current.length === 0) return;
+		const dims = chunkDimsRef.current;
+		if (!dims) return;
 
-		inflightOverlayRef.current.clear();
-		terrainRef.current = nextTerrain;
+		const currentSnapshot = editGridRef.current.slice();
+		const nextSnapshot    = redoStackRef.current[0];
+
+		undoStackRef.current = [...undoStackRef.current.slice(-(UNDO_LIMIT - 1)), currentSnapshot];
+		redoStackRef.current = redoStackRef.current.slice(1);
+		setUndoDepth(undoStackRef.current.length);
+		setRedoDepth(redoStackRef.current.length);
+
+		editGridRef.current.set(nextSnapshot);
+		markAllChunksDirty(dirtyChunksRef.current, dims);
+
+		const nextVoxels  = encodeEditGrid(nextSnapshot, dims.vW, dims.vH, dims.vL);
+		const nextTerrain = { ...terrainRef.current, Voxels: nextVoxels };
+		terrainRef.current        = nextTerrain;
 		lastEmittedVoxelsRef.current = nextVoxels;
-		setRedoStack((current) => current.slice(1));
-		setUndoStack((current) => [...current.slice(-(UNDO_LIMIT - 1)), currentTerrain.Voxels]);
 		bumpEditGen();
-		onChange(nextTerrain);
-	}, [bumpEditGen, flushPendingTerrainChange, onChange, redoStack]);
+		onChangeRef.current(nextTerrain);
+	}, [bumpEditGen]);
 
-	// Rebuild imperative actor marker elements whenever the actors list changes.
-	// Position updates happen in the rAF loop (updateActorMarkers) so React
-	// re-renders are not needed at 60 fps.
-	useEffect(() => {
-		const overlay = actorOverlayRef.current;
-		if (!overlay) return;
-
-		while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
-		const newMap = new Map<string, HTMLDivElement>();
-
-		for (const actor of actors ?? []) {
-			const wrapper = document.createElement("div");
-			// DaisyUI tooltip: show actor name on hover without any extra JS
-			wrapper.className = "tooltip tooltip-top";
-			wrapper.setAttribute("data-tip", actor.name);
-			wrapper.style.position = "absolute";
-			wrapper.style.left = "0";
-			wrapper.style.top = "0";
-			wrapper.style.display = "none";
-			// allow hover for the tooltip but keep the dot small so it
-			// rarely blocks editing clicks
-			wrapper.style.pointerEvents = "auto";
-			wrapper.style.zIndex = "10";
-
-			const dot = document.createElement("div");
-			dot.style.width = "14px";
-			dot.style.height = "14px";
-			dot.style.borderRadius = "50%";
-			dot.style.background = "rgba(167, 139, 250, 0.65)";
-			dot.style.border = "1.5px solid rgba(167, 139, 250, 0.9)";
-			dot.style.boxShadow = "0 1px 3px rgba(0,0,0,0.45)";
-
-			wrapper.appendChild(dot);
-			overlay.appendChild(wrapper);
-			newMap.set(actor.id, wrapper);
-		}
-
-		actorMarkerElemsRef.current = newMap;
-	}, [actors]);
-
-	const getPickInfo = useCallback((event: PointerEvent): PickInfo | null => {
-		const resources = resourcesRef.current;
-		const container = containerRef.current;
-		if (!resources || !container) return null;
-
-		const index = getVoxelTerrainIndex(terrainRef.current);
-
-		const rect = resources.renderer.domElement.getBoundingClientRect();
-		const mouse = new THREE.Vector2(
-			((event.clientX - rect.left) / rect.width) * 2 - 1,
-			-((event.clientY - rect.top) / rect.height) * 2 + 1
-		);
-
-		resources.raycaster.setFromCamera(mouse, resources.camera);
-
-		if (resources.terrainMesh) {
-			const intersections = resources.raycaster.intersectObject(resources.terrainMesh, false);
-			const hit = intersections[0];
-
-			if (hit?.face) {
-				const normal = hit.face.normal.clone().normalize();
-				const insidePoint = hit.point
-					.clone()
-					.addScaledVector(normal, -PICK_EPSILON);
-				const voxel = pointToVoxelCoord(insidePoint, index);
-
-				if (isVoxelInBounds(index, voxel)) {
-					return {
-						voxel,
-						normal: normalToCoord(normal),
-						ground: false,
-						plane: new THREE.Plane().setFromNormalAndCoplanarPoint(normal, hit.point),
-					};
-				}
-			}
-		}
-
-		const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.5);
-		const groundPoint = new THREE.Vector3();
-		if (!resources.raycaster.ray.intersectPlane(groundPlane, groundPoint)) {
-			return null;
-		}
-
-		const voxel = {
-			x: Math.floor((groundPoint.x + index.width / 2) * index.resolution),
-			y: 0,
-			z: Math.floor((groundPoint.z + index.length / 2) * index.resolution),
-		};
-
-		if (!isVoxelInBounds(index, voxel)) return null;
-
-		return {
-			voxel,
-			normal: { x: 0, y: 1, z: 0 },
-			ground: true,
-			plane: groundPlane.clone(),
-		};
-	}, []);
-
-	const getLockedPlanePickInfo = useCallback((
-		event: PointerEvent,
-		lockedPlane: LockedStrokePlane
-	): PickInfo | null => {
-		const resources = resourcesRef.current;
-		if (!resources) return null;
-
-		const index = getVoxelTerrainIndex(terrainRef.current);
-
-		const rect = resources.renderer.domElement.getBoundingClientRect();
-		const mouse = new THREE.Vector2(
-			((event.clientX - rect.left) / rect.width) * 2 - 1,
-			-((event.clientY - rect.top) / rect.height) * 2 + 1
-		);
-
-		resources.raycaster.setFromCamera(mouse, resources.camera);
-
-		const intersectionPoint = new THREE.Vector3();
-		if (!resources.raycaster.ray.intersectPlane(lockedPlane.plane, intersectionPoint)) {
-			return null;
-		}
-
-		const voxel = lockedPlane.ground
-			? {
-				x: Math.floor((intersectionPoint.x + index.width / 2) * index.resolution),
-				y: 0,
-				z: Math.floor((intersectionPoint.z + index.length / 2) * index.resolution),
-			}
-			: pointToVoxelCoord(
-				intersectionPoint
-					.clone()
-					.addScaledVector(
-						new THREE.Vector3(
-							lockedPlane.normal.x,
-							lockedPlane.normal.y,
-							lockedPlane.normal.z
-						).normalize(),
-						-PICK_EPSILON
-					),
-				index
-			);
-
-		if (!isVoxelInBounds(index, voxel)) return null;
-
-		return {
-			voxel,
-			normal: { ...lockedPlane.normal },
-			ground: lockedPlane.ground,
-			plane: lockedPlane.plane.clone(),
-		};
-	}, []);
+	// -------------------------------------------------------------------------
+	// Apply edit (writes directly to editGrid -- no React, no encode)
+	// -------------------------------------------------------------------------
 
 	const applyEdit = useCallback((pick: PickInfo): boolean => {
 		if (readOnlyRef.current) return false;
 
-		const currentTerrain = terrainRef.current;
+		const index = getVoxelTerrainIndex(terrainRef.current);
+		const dims  = chunkDimsRef.current;
+		if (!dims) return false;
+
 		const result = applyVoxelEdit(
-			getVoxelTerrainIndex(currentTerrain),
-			inflightOverlayRef.current,
+			editGridRef.current,
+			index,
+			dirtyChunksRef.current,
+			dims,
 			pick,
 			toolRef.current,
 			granularityRef.current,
 			brushSizeRef.current,
-			selectedColorRef.current
+			selectedColorRef.current,
 		);
 
 		if (result.sampledColor !== null) {
@@ -1258,32 +1265,169 @@ export default function VoxelTerrainEditor({
 		if (!result.changed) return false;
 
 		if (!strokeStartedRef.current) {
-			recordUndo(strokeStartVoxelsRef.current ?? currentTerrain.Voxels);
+			recordUndo();
 			strokeStartedRef.current = true;
 		}
 
-		schedulePendingTerrainChange();
+		// No schedulePendingTerrainChange here. The rAF loop rebuilds dirty chunks
+		// automatically; onChange fires once at stroke end via encodeAndEmit.
 		return true;
-	}, [recordUndo, schedulePendingTerrainChange]);
+	}, [recordUndo]);
 
 	const getEditKey = useCallback((pick: PickInfo): string => {
 		return [
 			toolRef.current,
 			granularityRef.current,
 			brushSizeRef.current,
-			pick.voxel.x,
-			pick.voxel.y,
-			pick.voxel.z,
-			pick.normal.x,
-			pick.normal.y,
-			pick.normal.z,
+			pick.voxel.x, pick.voxel.y, pick.voxel.z,
+			pick.normal.x, pick.normal.y, pick.normal.z,
 		].join(":");
 	}, []);
+
+	// -------------------------------------------------------------------------
+	// Picking -- DDA raycasting replaces BVH mesh intersection
+	// -------------------------------------------------------------------------
+
+	const getPickInfo = useCallback((event: PointerEvent): PickInfo | null => {
+		const resources = resourcesRef.current;
+		if (!resources) return null;
+
+		const dims = chunkDimsRef.current;
+		if (!dims) return null;
+
+		const rect = resources.renderer.domElement.getBoundingClientRect();
+		const mouse = new THREE.Vector2(
+			((event.clientX - rect.left) / rect.width)  *  2 - 1,
+			-((event.clientY - rect.top)  / rect.height) *  2 + 1,
+		);
+
+		const raycaster = new THREE.Raycaster();
+		raycaster.setFromCamera(mouse, resources.camera);
+
+		const hit = raycastVoxelGrid(
+			raycaster.ray,
+			editGridRef.current,
+			dims.vW, dims.vH, dims.vL,
+			dims.resolution,
+			dims.tW, dims.tL,
+		);
+
+		if (hit) {
+			const { vx, vy, vz, nx, ny, nz } = hit;
+			const normal = new THREE.Vector3(nx, ny, nz);
+			const voxelCenter = new THREE.Vector3(
+				(vx + 0.5) / dims.resolution - dims.tW / 2,
+				(vy + 0.5) / dims.resolution - 0.5,
+				(vz + 0.5) / dims.resolution - dims.tL / 2,
+			);
+			const facePoint = voxelCenter.clone().addScaledVector(normal, 0.5 / dims.resolution);
+			return {
+				voxel:  { x: vx, y: vy, z: vz },
+				normal: { x: nx, y: ny, z: nz },
+				ground: false,
+				plane:  new THREE.Plane().setFromNormalAndCoplanarPoint(normal, facePoint),
+			};
+		}
+
+		// Fall back to ground plane hit.
+		const index = getVoxelTerrainIndex(terrainRef.current);
+		const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.5);
+		const groundPoint = new THREE.Vector3();
+		if (!raycaster.ray.intersectPlane(groundPlane, groundPoint)) return null;
+
+		const voxel = {
+			x: Math.floor((groundPoint.x + index.width  / 2) * index.resolution),
+			y: 0,
+			z: Math.floor((groundPoint.z + index.length / 2) * index.resolution),
+		};
+		if (!isVoxelInBounds(index, voxel)) return null;
+
+		return {
+			voxel,
+			normal: { x: 0, y: 1, z: 0 },
+			ground: true,
+			plane:  groundPlane.clone(),
+		};
+	}, []);
+
+	const getLockedPlanePickInfo = useCallback((
+		event: PointerEvent,
+		lockedPlane: LockedStrokePlane,
+	): PickInfo | null => {
+		const resources = resourcesRef.current;
+		if (!resources) return null;
+
+		const index = getVoxelTerrainIndex(terrainRef.current);
+		const rect  = resources.renderer.domElement.getBoundingClientRect();
+		const mouse = new THREE.Vector2(
+			((event.clientX - rect.left) / rect.width)  *  2 - 1,
+			-((event.clientY - rect.top)  / rect.height) *  2 + 1,
+		);
+
+		const raycaster = new THREE.Raycaster();
+		raycaster.setFromCamera(mouse, resources.camera);
+
+		const pt = new THREE.Vector3();
+		if (!raycaster.ray.intersectPlane(lockedPlane.plane, pt)) return null;
+
+		const voxel = lockedPlane.ground
+			? {
+				x: Math.floor((pt.x + index.width  / 2) * index.resolution),
+				y: 0,
+				z: Math.floor((pt.z + index.length / 2) * index.resolution),
+			}
+			: pointToVoxelCoord(
+				pt.clone().addScaledVector(
+					new THREE.Vector3(lockedPlane.normal.x, lockedPlane.normal.y, lockedPlane.normal.z).normalize(),
+					-PICK_EPSILON,
+				),
+				index,
+			);
+
+		if (!isVoxelInBounds(index, voxel)) return null;
+
+		return {
+			voxel,
+			normal: { ...lockedPlane.normal },
+			ground: lockedPlane.ground,
+			plane:  lockedPlane.plane.clone(),
+		};
+	}, []);
+
+	// -------------------------------------------------------------------------
+	// Imperative actor overlay
+	// -------------------------------------------------------------------------
+
+	useEffect(() => {
+		const overlay = actorOverlayRef.current;
+		if (!overlay) return;
+		while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
+		const newMap = new Map<string, HTMLDivElement>();
+		for (const actor of actors ?? []) {
+			const wrapper = document.createElement("div");
+			wrapper.className = "tooltip tooltip-top";
+			wrapper.setAttribute("data-tip", actor.name);
+			wrapper.style.cssText = "position:absolute;left:0;top:0;display:none;pointer-events:auto;z-index:10";
+			const dot = document.createElement("div");
+			dot.style.cssText =
+				"width:14px;height:14px;border-radius:50%;background:rgba(167,139,250,0.65);" +
+				"border:1.5px solid rgba(167,139,250,0.9);box-shadow:0 1px 3px rgba(0,0,0,0.45)";
+			wrapper.appendChild(dot);
+			overlay.appendChild(wrapper);
+			newMap.set(actor.id, wrapper);
+		}
+		actorMarkerElemsRef.current = newMap;
+	}, [actors]);
+
+	// -------------------------------------------------------------------------
+	// Three.js mount (runs once)
+	// -------------------------------------------------------------------------
 
 	useEffect(() => {
 		const container = containerRef.current;
 		if (!container) return;
 
+		// --- Renderer ---
 		const renderer = new THREE.WebGLRenderer({
 			antialias: false,
 			alpha: true,
@@ -1296,43 +1440,44 @@ export default function VoxelTerrainEditor({
 		renderer.domElement.style.cursor = readOnlyRef.current ? "default" : "crosshair";
 		container.appendChild(renderer.domElement);
 
+		// --- Scene ---
 		const scene = new THREE.Scene();
 		scene.background = null;
 
+		// --- Camera ---
 		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
 		const camera = new THREE.OrthographicCamera(
 			-INITIAL_CAMERA_HALF_SIZE * aspect,
-			INITIAL_CAMERA_HALF_SIZE * aspect,
-			INITIAL_CAMERA_HALF_SIZE,
+			 INITIAL_CAMERA_HALF_SIZE * aspect,
+			 INITIAL_CAMERA_HALF_SIZE,
 			-INITIAL_CAMERA_HALF_SIZE,
-			-100,
-			1000
+			-100, 1000,
 		);
-		const initialDistance = INITIAL_CAMERA_HALF_SIZE * CAMERA_DISTANCE_MULTIPLIER;
-		camera.position.set(initialDistance, initialDistance, initialDistance);
+		const initialDist = INITIAL_CAMERA_HALF_SIZE * CAMERA_DISTANCE_MULTIPLIER;
+		camera.position.set(initialDist, initialDist, initialDist);
 
-		const hemi = new THREE.HemisphereLight(0xffffff, 0x94a3b8, Math.PI * 0.75);
-		scene.add(hemi);
-
+		// --- Lighting ---
+		scene.add(new THREE.HemisphereLight(0xffffff, 0x94a3b8, Math.PI * 0.75));
 		const directional = new THREE.DirectionalLight(0xffffff, Math.PI * 1.6);
 		directional.position.set(18, 32, 22);
 		scene.add(directional);
 
+		// --- Controls ---
 		const controls = new OrbitControls(camera, renderer.domElement);
 		controls.enableDamping = true;
 		controls.dampingFactor = 0.08;
 		controls.minZoom = 0.4;
 		controls.maxZoom = 10;
-		controls.mouseButtons.LEFT = null as unknown as THREE.MOUSE;
+		controls.mouseButtons.LEFT   = null as unknown as THREE.MOUSE;
 		controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
-		controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+		controls.mouseButtons.RIGHT  = THREE.MOUSE.PAN;
 		controls.update();
 
-		const gridGroup = new THREE.Group();
-		scene.add(gridGroup);
-
+		// --- Scene groups ---
+		const gridGroup  = new THREE.Group();
 		const hoverGroup = new THREE.Group();
-		scene.add(hoverGroup);
+		const chunkGroup = new THREE.Group();
+		scene.add(gridGroup, hoverGroup, chunkGroup);
 
 		const terrainMaterial = new THREE.MeshStandardMaterial({
 			roughness: 0.78,
@@ -1341,126 +1486,143 @@ export default function VoxelTerrainEditor({
 		});
 
 		const resources: EditorSceneResources = {
-			scene,
-			camera,
-			renderer,
-			controls,
-			raycaster: new THREE.Raycaster(),
-			gridGroup,
-			hoverGroup,
-			terrainMesh: null,
+			scene, camera, renderer, controls,
+			gridGroup, hoverGroup, chunkGroup,
 			terrainMaterial,
 		};
 		resourcesRef.current = resources;
 
-		// Projects actor world positions to screen space and moves the
-		// imperative marker elements. Called every rAF frame so they track
-		// camera orbits and zooms with no React re-renders.
-		const updateActorMarkers = () => {
-			const overlay = actorOverlayRef.current;
-			const markerElems = actorMarkerElemsRef.current;
-			const currentActors = actorsRef.current;
-			const shouldShow = showActorsRef.current;
+		// --- Initialize edit grid and chunk system from current terrain ---
+		const initTerrain = terrainRef.current;
+		const initIndex   = getVoxelTerrainIndex(initTerrain);
+		const initDims    = computeChunkDims(initIndex);
+		chunkDimsRef.current  = initDims;
+		editGridRef.current   = buildEditGrid(initTerrain, initIndex);
+		markAllChunksDirty(dirtyChunksRef.current, initDims);
+		frameCamera(resources, initTerrain, container);
+		lastShapeSignatureRef.current =
+			`${initIndex.width}:${initIndex.length}:${initIndex.height}:${initIndex.resolution}`;
 
+		// --- Actor marker projection (rAF, imperative) ---
+		const updateActorMarkers = () => {
+			const overlay     = actorOverlayRef.current;
+			const markerElems = actorMarkerElemsRef.current;
+			const currActors  = actorsRef.current;
+			const shouldShow  = showActorsRef.current;
 			if (!overlay || markerElems.size === 0) return;
 
 			if (!shouldShow) {
-				markerElems.forEach(el => { el.style.display = "none"; });
+				markerElems.forEach((el) => { el.style.display = "none"; });
 				return;
 			}
 
-			const currentTerrain = terrainRef.current;
-			const canvasW = renderer.domElement.clientWidth || 1;
+			const currTerrain = terrainRef.current;
+			const canvasW = renderer.domElement.clientWidth  || 1;
 			const canvasH = renderer.domElement.clientHeight || 1;
 
-			for (const actor of currentActors) {
+			for (const actor of currActors) {
 				const el = markerElems.get(actor.id);
 				if (!el) continue;
-
-				// Convert tactical coords to world space. Position.x/y are tile
-				// col/row; h is tactical height level. Use the same helper the
-				// main 3D map uses so we stay in sync with future offset changes.
-				const worldX = actor.position.x + 0.5 - currentTerrain.Width / 2;
-				const worldZ = actor.position.y + 0.5 - currentTerrain.Length / 2;
+				const worldX = actor.position.x + 0.5 - currTerrain.Width  / 2;
+				const worldZ = actor.position.y + 0.5 - currTerrain.Length / 2;
 				const worldY = terrainHeightToWorldY(actor.position.h) + ACTOR_OVERLAY_FLOAT_Y;
-
 				const vec = new THREE.Vector3(worldX, worldY, worldZ);
 				vec.project(camera);
-
-				// Behind the near plane - hide
-				if (vec.z > 1) {
-					el.style.display = "none";
-					continue;
-				}
-
-				const screenX = ((vec.x + 1) / 2) * canvasW;
-				const screenY = ((-vec.y + 1) / 2) * canvasH;
-
+				if (vec.z > 1) { el.style.display = "none"; continue; }
+				const sx = ((vec.x + 1) / 2) * canvasW;
+				const sy = ((-vec.y + 1) / 2) * canvasH;
 				el.style.display = "";
-				el.style.transform = `translate(calc(${screenX}px - 50%), calc(${screenY}px - 50%))`;
+				el.style.transform = `translate(calc(${sx}px - 50%), calc(${sy}px - 50%))`;
 			}
 		};
 
+		// --- rAF loop: rebuild dirty chunks, then render ---
 		let rafId = 0;
 		const animate = () => {
 			rafId = requestAnimationFrame(animate);
+
+			// Rebuild any chunks dirtied by edits this frame.
+			const dirty = dirtyChunksRef.current;
+			if (dirty.size > 0) {
+				const grid = editGridRef.current;
+				const dims = chunkDimsRef.current;
+				if (dims) {
+					for (const idx of dirty) {
+						const cx =  idx % dims.chunksX;
+						const rem = Math.floor(idx / dims.chunksX);
+						const cz = rem % dims.chunksZ;
+						const cy = Math.floor(rem / dims.chunksZ);
+						rebuildChunk(
+							idx, cx, cy, cz,
+							grid, dims,
+							chunkGroup, terrainMaterial,
+							chunkMeshesRef.current,
+						);
+					}
+					dirty.clear();
+				}
+			}
+
 			controls.update();
 			renderer.render(scene, camera);
 			updateActorMarkers();
 		};
 		animate();
 
+		// --- Resize observer ---
 		const resizeObserver = new ResizeObserver(() => {
 			resizeRenderer(resources, container);
 		});
 		resizeObserver.observe(container);
 
+		// --- Shared hover refresh helper ---
 		const refreshHover = (pick: PickInfo | null) => {
+			const dims = chunkDimsRef.current;
+			if (!dims) return;
 			updateHoverIndicator(
 				resources,
+				editGridRef.current,
+				dims,
 				getVoxelTerrainIndex(terrainRef.current),
-				inflightOverlayRef.current,
 				pick,
 				toolRef.current,
 				granularityRef.current,
 				brushSizeRef.current,
-				selectedColorRef.current
+				selectedColorRef.current,
 			);
 		};
 
 		const getPickForStroke = (
 			event: PointerEvent,
-			activeStroke: ActiveStroke | null
+			activeStroke: ActiveStroke | null,
 		): PickInfo | null => {
 			if (activeStroke && !event.shiftKey) {
 				return getLockedPlanePickInfo(event, activeStroke.lockedPlane);
 			}
-
 			return getPickInfo(event);
 		};
 
 		const hasMovedPastDragThreshold = (
 			event: PointerEvent,
-			activeStroke: ActiveStroke
+			stroke: ActiveStroke,
 		): boolean => {
-			const dx = event.clientX - activeStroke.startClientX;
-			const dy = event.clientY - activeStroke.startClientY;
-
+			const dx = event.clientX - stroke.startClientX;
+			const dy = event.clientY - stroke.startClientY;
 			return dx * dx + dy * dy >= STROKE_DRAG_THRESHOLD_PX ** 2;
 		};
 
 		const clearStrokeState = () => {
-			activeStrokeRef.current = null;
-			strokeStartedRef.current = false;
-			strokeStartVoxelsRef.current = null;
-			lastEditKeyRef.current = null;
+			activeStrokeRef.current        = null;
+			strokeStartedRef.current       = false;
+			strokeStartSnapshotRef.current = null;
+			lastEditKeyRef.current         = null;
 		};
 
+		// --- Pointer handlers ---
 		const handlePointerMove = (event: PointerEvent) => {
 			const activeStroke =
 				activeStrokeRef.current?.pointerId === event.pointerId
-					? activeStrokeRef.current
-					: null;
+					? activeStrokeRef.current : null;
 			const pick = getPickForStroke(event, activeStroke);
 			refreshHover(pick);
 			if (!activeStroke || !pick || toolRef.current === "sample") return;
@@ -1479,36 +1641,32 @@ export default function VoxelTerrainEditor({
 		};
 
 		const handlePointerDown = (event: PointerEvent) => {
-			if (event.button === 1) {
-				event.preventDefault();
-				return;
-			}
+			if (event.button === 1) { event.preventDefault(); return; }
 			if (event.button !== 0 || readOnlyRef.current) return;
-
 			event.preventDefault();
-			flushPendingTerrainChange();
+
 			const pick = getPickInfo(event);
 			if (!pick) return;
 
 			renderer.domElement.setPointerCapture(event.pointerId);
+
 			const activeStroke: ActiveStroke = {
-				pointerId: event.pointerId,
+				pointerId:    event.pointerId,
 				startClientX: event.clientX,
 				startClientY: event.clientY,
-				dragStarted: false,
+				dragStarted:  false,
 				lockedPlane: {
-					plane: pick.plane.clone(),
+					plane:  pick.plane.clone(),
 					normal: { ...pick.normal },
 					ground: pick.ground,
 				},
 			};
-			activeStrokeRef.current = activeStroke;
-			strokeStartedRef.current = false;
-			strokeStartVoxelsRef.current = terrainRef.current.Voxels;
-			lastEditKeyRef.current = null;
+			activeStrokeRef.current        = activeStroke;
+			strokeStartedRef.current       = false;
+			strokeStartSnapshotRef.current = editGridRef.current.slice();
+			lastEditKeyRef.current         = getEditKey(pick);
 
 			const wasSampleTool = toolRef.current === "sample";
-			lastEditKeyRef.current = getEditKey(pick);
 			applyEdit(pick);
 			refreshHover(getPickForStroke(event, activeStroke));
 			if (wasSampleTool) {
@@ -1524,51 +1682,45 @@ export default function VoxelTerrainEditor({
 			) {
 				return;
 			}
-
 			if (renderer.domElement.hasPointerCapture(event.pointerId)) {
 				renderer.domElement.releasePointerCapture(event.pointerId);
 			}
-
-			flushPendingTerrainChange();
+			// Encode editGrid and notify parent exactly once per stroke.
+			if (strokeStartedRef.current) {
+				encodeAndEmit();
+			}
 			clearStrokeState();
 		};
 
 		const handlePointerLeave = () => {
-			if (!activeStrokeRef.current) {
-				refreshHover(null);
-			}
+			if (!activeStrokeRef.current) refreshHover(null);
 		};
 
-		const preventContextMenu = (event: MouseEvent) => event.preventDefault();
-		const preventMiddleMouseScroll = (event: MouseEvent) => {
-			if (event.button === 1) event.preventDefault();
-		};
+		const preventContextMenu       = (e: MouseEvent) => e.preventDefault();
+		const preventMiddleMouseScroll = (e: MouseEvent) => { if (e.button === 1) e.preventDefault(); };
 
-		renderer.domElement.addEventListener("pointermove", handlePointerMove);
-		renderer.domElement.addEventListener("pointerdown", handlePointerDown, true);
-		renderer.domElement.addEventListener("pointerup", finishStroke);
+		renderer.domElement.addEventListener("pointermove",  handlePointerMove);
+		renderer.domElement.addEventListener("pointerdown",  handlePointerDown, true);
+		renderer.domElement.addEventListener("pointerup",    finishStroke);
 		renderer.domElement.addEventListener("pointercancel", finishStroke);
 		renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
-		renderer.domElement.addEventListener("mousedown", preventMiddleMouseScroll, true);
-		renderer.domElement.addEventListener("auxclick", preventMiddleMouseScroll);
-		renderer.domElement.addEventListener("contextmenu", preventContextMenu);
+		renderer.domElement.addEventListener("mousedown",    preventMiddleMouseScroll, true);
+		renderer.domElement.addEventListener("auxclick",     preventMiddleMouseScroll);
+		renderer.domElement.addEventListener("contextmenu",  preventContextMenu);
 
 		return () => {
 			cancelAnimationFrame(rafId);
 			resizeObserver.disconnect();
-			renderer.domElement.removeEventListener("pointermove", handlePointerMove);
-			renderer.domElement.removeEventListener("pointerdown", handlePointerDown, true);
-			renderer.domElement.removeEventListener("pointerup", finishStroke);
+			renderer.domElement.removeEventListener("pointermove",   handlePointerMove);
+			renderer.domElement.removeEventListener("pointerdown",   handlePointerDown, true);
+			renderer.domElement.removeEventListener("pointerup",     finishStroke);
 			renderer.domElement.removeEventListener("pointercancel", finishStroke);
-			renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
-			renderer.domElement.removeEventListener("mousedown", preventMiddleMouseScroll, true);
-			renderer.domElement.removeEventListener("auxclick", preventMiddleMouseScroll);
-			renderer.domElement.removeEventListener("contextmenu", preventContextMenu);
+			renderer.domElement.removeEventListener("pointerleave",  handlePointerLeave);
+			renderer.domElement.removeEventListener("mousedown",     preventMiddleMouseScroll, true);
+			renderer.domElement.removeEventListener("auxclick",      preventMiddleMouseScroll);
+			renderer.domElement.removeEventListener("contextmenu",   preventContextMenu);
 			controls.dispose();
-			if (resources.terrainMesh) {
-				resources.scene.remove(resources.terrainMesh);
-				resources.terrainMesh.geometry.dispose();
-			}
+			clearAllChunkMeshes(chunkGroup, chunkMeshesRef.current);
 			terrainMaterial.dispose();
 			disposeObjectTree(gridGroup);
 			disposeObjectTree(hoverGroup);
@@ -1576,58 +1728,36 @@ export default function VoxelTerrainEditor({
 			if (renderer.domElement.parentElement === container) {
 				container.removeChild(renderer.domElement);
 			}
-			if (pendingChangeFrameRef.current !== null) {
-				cancelAnimationFrame(pendingChangeFrameRef.current);
-				pendingChangeFrameRef.current = null;
-			}
 			activeStrokeRef.current = null;
-			resourcesRef.current = null;
+			resourcesRef.current    = null;
 		};
-	}, [applyEdit, flushPendingTerrainChange, getEditKey, getLockedPlanePickInfo, getPickInfo]);
+	}, [applyEdit, encodeAndEmit, getEditKey, getLockedPlanePickInfo, getPickInfo]);
+
+	// -------------------------------------------------------------------------
+	// editGen effects (React-visible changes: camera framing, grid lines)
+	// -------------------------------------------------------------------------
 
 	useEffect(() => {
 		const resources = resourcesRef.current;
 		const container = containerRef.current;
 		if (!resources || !container) return;
 
-		const terrain = terrainRef.current;
-		const index = getVoxelTerrainIndex(terrain);
-		const shapeSignature = `${index.width}:${index.length}:${index.height}:${index.resolution}`;
-		const shapeChanged = lastShapeSignatureRef.current !== shapeSignature;
+		const t = terrainRef.current;
+		const index = getVoxelTerrainIndex(t);
+		const sig = `${index.width}:${index.length}:${index.height}:${index.resolution}`;
 
-		if (shapeChanged) {
+		if (lastShapeSignatureRef.current !== sig) {
 			clearObjectGroup(resources.hoverGroup);
-		}
-
-		if (resources.terrainMesh) {
-			resources.scene.remove(resources.terrainMesh);
-			resources.terrainMesh.geometry.dispose();
-			resources.terrainMesh = null;
-		}
-
-		if (index.voxelCount > 0) {
-			const geometry = buildEditorTerrainGeometry(terrain);
-			const mesh = new THREE.Mesh(geometry, resources.terrainMaterial);
-			mesh.raycast = acceleratedRaycast;
-			resources.scene.add(mesh);
-			resources.terrainMesh = mesh;
-		}
-
-		if (shapeChanged) {
-			frameCamera(resources, terrain, container);
-			lastShapeSignatureRef.current = shapeSignature;
+			frameCamera(resources, t, container);
+			lastShapeSignatureRef.current = sig;
 		}
 	}, [editGen]);
 
 	useEffect(() => {
 		const resources = resourcesRef.current;
-		if (!resources) return;
-		rebuildGrid(
-			resources,
-			terrainRef.current,
-			showTacticalGrid,
-			showVoxelGrid
-		);
+		const dims = chunkDimsRef.current;
+		if (!resources || !dims) return;
+		rebuildGrid(resources, editGridRef.current, dims, showTacticalGrid, showVoxelGrid);
 	}, [editGen, showTacticalGrid, showVoxelGrid]);
 
 	useEffect(() => {
@@ -1643,92 +1773,67 @@ export default function VoxelTerrainEditor({
 		resources.renderer.domElement.style.cursor = readOnly ? "default" : "crosshair";
 	}, [readOnly]);
 
+	// -------------------------------------------------------------------------
+	// Keyboard shortcuts
+	// -------------------------------------------------------------------------
+
 	useEffect(() => {
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if (isTextInputTarget(event.target)) return;
 
 			if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
 				event.preventDefault();
-				if (event.shiftKey) redo();
-				else undo();
+				if (event.shiftKey) redo(); else undo();
 				return;
 			}
-
 			if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") {
 				event.preventDefault();
 				redo();
 				return;
 			}
-
 			if (event.ctrlKey || event.metaKey || event.altKey) return;
 
 			switch (event.key.toLowerCase()) {
-				case "p":
-				case "t":
-					setTool("place");
-					break;
-				case "r":
-					setTool("erase");
-					break;
-				case "g":
-					setTool("paint");
-					break;
-				case "i":
-					setTool("sample");
-					break;
-				case "1":
-					setGranularity("tactical");
-					break;
-				case "2":
-					setGranularity("voxel");
-					break;
+				case "p": case "t": setTool("place");  break;
+				case "r":           setTool("erase");  break;
+				case "g":           setTool("paint");  break;
+				case "i":           setTool("sample"); break;
+				case "1":           setGranularity("tactical"); break;
+				case "2":           setGranularity("voxel");    break;
 			}
 		};
-
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [redo, undo]);
+
+	// -------------------------------------------------------------------------
+	// VOX import
+	// -------------------------------------------------------------------------
 
 	const handleBrushSizeChange = (value: number) => {
 		setBrushSize(clamp(Math.floor(value) || MIN_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE));
 	};
 
-	// VOX import handlers -----------------------------------------------------
-
-	const handleVoxImportClick = () => {
-		voxFileInputRef.current?.click();
-	};
+	const handleVoxImportClick = () => { voxFileInputRef.current?.click(); };
 
 	const handleVoxFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0];
 		if (!file) return;
-		e.target.value = ""; // allow re-selecting the same file
-
+		e.target.value = "";
 		try {
-			const buffer = await file.arrayBuffer();
-			const parsed = parseVoxFile(buffer);
+			const buffer  = await file.arrayBuffer();
+			const parsed  = parseVoxFile(buffer);
 			const options = getVoxResolutionOptions(parsed);
-			const validOptions = options.filter((o) => o.fits);
-
-			if (validOptions.length === 0) {
+			const valid   = options.filter((o) => o.fits);
+			if (valid.length === 0) {
 				setVoxImportModal({
 					kind: "error",
-					message: `This file's dimensions (${parsed.voxWidth}×${parsed.voxLength}×${parsed.voxHeight} voxels) are too large to import at any resolution. Maximum terrain size is 64×64×64 tactical units.`,
+					message: `This file's dimensions (${parsed.voxWidth}x${parsed.voxLength}x${parsed.voxHeight} voxels) are too large to import at any resolution. Maximum terrain size is 64x64x64 tactical units.`,
 				});
 				return;
 			}
-
-			if (validOptions.length === 1) {
-				applyVoxImport(parsed, validOptions[0].resolution);
-				return;
-			}
-
-			setVoxImportModal({
-				kind: "pick",
-				parsed,
-				options,
-				selected: validOptions[0].resolution,
-			});
+			if (valid.length === 1) { applyVoxImport(parsed, valid[0].resolution); return; }
+			setVoxImportModal({ kind: "pick", parsed, options, selected: valid[0].resolution });
 		} catch (err) {
 			setVoxImportModal({
 				kind: "error",
@@ -1738,17 +1843,21 @@ export default function VoxelTerrainEditor({
 	};
 
 	const applyVoxImport = useCallback(
-		(parsed: VoxParseResult, resolution: number) => {
-			const result = buildTerrainFromVox(parsed, resolution);
+		(parsed: VoxParseResult, res: number) => {
+			const result     = buildTerrainFromVox(parsed, res);
 			const nextTerrain = { ...terrainRef.current, ...result };
-			setUndoStack([]);
-			setRedoStack([]);
+			undoStackRef.current = [];
+			redoStackRef.current = [];
+			setUndoDepth(0);
+			setRedoDepth(0);
 			setVoxImportModal(null);
-			onChange(nextTerrain);
+			onChangeRef.current(nextTerrain);
 		},
-		[onChange],
+		[],
 	);
 
+	// -------------------------------------------------------------------------
+	// Render
 	// -------------------------------------------------------------------------
 
 	return (
@@ -1779,7 +1888,7 @@ export default function VoxelTerrainEditor({
 								min={MIN_BRUSH_SIZE}
 								max={MAX_BRUSH_SIZE}
 								value={brushSize}
-								onChange={(event) => handleBrushSizeChange(Number(event.target.value))}
+								onChange={(e) => handleBrushSizeChange(Number(e.target.value))}
 								className="range range-sm range-primary w-28"
 								disabled={readOnly}
 								title="Brush size"
@@ -1789,7 +1898,7 @@ export default function VoxelTerrainEditor({
 								min={MIN_BRUSH_SIZE}
 								max={MAX_BRUSH_SIZE}
 								value={brushSize}
-								onChange={(event) => handleBrushSizeChange(Number(event.target.value))}
+								onChange={(e) => handleBrushSizeChange(Number(e.target.value))}
 								className="input input-bordered input-sm w-14"
 								disabled={readOnly}
 								readOnly={readOnly}
@@ -1821,7 +1930,7 @@ export default function VoxelTerrainEditor({
 								type="button"
 								className="btn btn-square btn-sm join-item btn-outline"
 								onClick={undo}
-								disabled={undoStack.length === 0 || readOnly}
+								disabled={undoDepth === 0 || readOnly}
 								title={`Undo (${MOD_KEY_LABEL}+Z)`}
 								aria-label={`Undo (${MOD_KEY_LABEL}+Z)`}
 							>
@@ -1831,7 +1940,7 @@ export default function VoxelTerrainEditor({
 								type="button"
 								className="btn btn-square btn-sm join-item btn-outline"
 								onClick={redo}
-								disabled={redoStack.length === 0 || readOnly}
+								disabled={redoDepth === 0 || readOnly}
 								title={`Redo (${MOD_KEY_LABEL}+Shift+Z or ${MOD_KEY_LABEL}+Y)`}
 								aria-label={`Redo (${MOD_KEY_LABEL}+Shift+Z or ${MOD_KEY_LABEL}+Y)`}
 							>
@@ -1856,30 +1965,12 @@ export default function VoxelTerrainEditor({
 								<div className="font-semibold mb-2">Tools</div>
 								<table className="w-full">
 									<tbody>
-										<tr>
-											<td className="opacity-70 py-0.5">Place</td>
-											<td className="text-right"><kbd className="kbd kbd-sm">P</kbd></td>
-										</tr>
-										<tr>
-											<td className="opacity-70 py-0.5">Erase</td>
-											<td className="text-right"><kbd className="kbd kbd-sm">R</kbd></td>
-										</tr>
-										<tr>
-											<td className="opacity-70 py-0.5">Paint</td>
-											<td className="text-right"><kbd className="kbd kbd-sm">G</kbd></td>
-										</tr>
-										<tr>
-											<td className="opacity-70 py-0.5">Sample (eyedropper)</td>
-											<td className="text-right"><kbd className="kbd kbd-sm">I</kbd></td>
-										</tr>
-										<tr>
-											<td className="opacity-70 py-0.5">Tile brush</td>
-											<td className="text-right"><kbd className="kbd kbd-sm">1</kbd></td>
-										</tr>
-										<tr>
-											<td className="opacity-70 py-0.5">Voxel brush</td>
-											<td className="text-right"><kbd className="kbd kbd-sm">2</kbd></td>
-										</tr>
+										<tr><td className="opacity-70 py-0.5">Place</td><td className="text-right"><kbd className="kbd kbd-sm">P</kbd></td></tr>
+										<tr><td className="opacity-70 py-0.5">Erase</td><td className="text-right"><kbd className="kbd kbd-sm">R</kbd></td></tr>
+										<tr><td className="opacity-70 py-0.5">Paint</td><td className="text-right"><kbd className="kbd kbd-sm">G</kbd></td></tr>
+										<tr><td className="opacity-70 py-0.5">Sample (eyedropper)</td><td className="text-right"><kbd className="kbd kbd-sm">I</kbd></td></tr>
+										<tr><td className="opacity-70 py-0.5">Tile brush</td><td className="text-right"><kbd className="kbd kbd-sm">1</kbd></td></tr>
+										<tr><td className="opacity-70 py-0.5">Voxel brush</td><td className="text-right"><kbd className="kbd kbd-sm">2</kbd></td></tr>
 										<tr>
 											<td className="opacity-70 py-0.5">Undo</td>
 											<td className="text-right whitespace-nowrap">
@@ -1903,30 +1994,10 @@ export default function VoxelTerrainEditor({
 									<div className="font-semibold mb-2">Camera</div>
 									<table className="w-full">
 										<tbody>
-											<tr>
-												<td className="opacity-70 py-0.5">Paint / pick</td>
-												<td className="text-right whitespace-nowrap">
-													<kbd className="kbd kbd-sm">Left&nbsp;click</kbd>
-												</td>
-											</tr>
-											<tr>
-												<td className="opacity-70 py-0.5">Orbit / rotate</td>
-												<td className="text-right whitespace-nowrap">
-													<kbd className="kbd kbd-sm">Middle&nbsp;drag</kbd>
-												</td>
-											</tr>
-											<tr>
-												<td className="opacity-70 py-0.5">Pan</td>
-												<td className="text-right whitespace-nowrap">
-													<kbd className="kbd kbd-sm">Right&nbsp;drag</kbd>
-												</td>
-											</tr>
-											<tr>
-												<td className="opacity-70 py-0.5">Zoom</td>
-												<td className="text-right whitespace-nowrap">
-													<kbd className="kbd kbd-sm">Scroll</kbd>
-												</td>
-											</tr>
+											<tr><td className="opacity-70 py-0.5">Paint / pick</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Left&nbsp;click</kbd></td></tr>
+											<tr><td className="opacity-70 py-0.5">Orbit / rotate</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Middle&nbsp;drag</kbd></td></tr>
+											<tr><td className="opacity-70 py-0.5">Pan</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Right&nbsp;drag</kbd></td></tr>
+											<tr><td className="opacity-70 py-0.5">Zoom</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Scroll</kbd></td></tr>
 										</tbody>
 									</table>
 								</div>
@@ -1986,7 +2057,6 @@ export default function VoxelTerrainEditor({
 				<div className="relative flex-1 min-h-0 bg-base-200">
 					<div className={activeView === "edit" ? "absolute inset-0" : "hidden"}>
 						<div ref={containerRef} className="absolute inset-0" />
-						{/* Actor overlay: markers are injected imperatively in the rAF loop */}
 						<div ref={actorOverlayRef} className="absolute inset-0 pointer-events-none overflow-hidden" />
 					</div>
 					{activeView === "preview" && (
@@ -2010,9 +2080,7 @@ export default function VoxelTerrainEditor({
 							</div>
 							<div className="flex justify-between gap-3">
 								<span>Brush</span>
-								<span className="font-medium text-base-content">
-									{brushModeLabel} {brushSize}
-								</span>
+								<span className="font-medium text-base-content">{brushModeLabel} {brushSize}</span>
 							</div>
 							<div className="flex justify-between gap-3">
 								<span>Tiles W x L x H</span>
@@ -2037,15 +2105,15 @@ export default function VoxelTerrainEditor({
 							className="grid"
 							style={{ gridTemplateColumns: `repeat(${TERRAIN_PALETTE_ROWS}, 1fr)` }}
 						>
-							{TERRAIN_PALETTE.map((color, index) => (
+							{TERRAIN_PALETTE.map((color, idx) => (
 								<button
-									key={index}
+									key={idx}
 									type="button"
-									className={`aspect-square${selectedColorIndex === index ? " ring-2 ring-base-content ring-inset" : ""}`}
+									className={`aspect-square${selectedColorIndex === idx ? " ring-2 ring-base-content ring-inset" : ""}`}
 									style={{ backgroundColor: color }}
-									onClick={() => setSelectedColorIndex(index)}
-									title={`Color ${index}`}
-									aria-label={`Color ${index}`}
+									onClick={() => setSelectedColorIndex(idx)}
+									title={`Color ${idx}`}
+									aria-label={`Color ${idx}`}
 								/>
 							))}
 						</div>
@@ -2060,7 +2128,7 @@ export default function VoxelTerrainEditor({
 									type="checkbox"
 									className="toggle toggle-sm toggle-primary"
 									checked={showTacticalGrid}
-									onChange={(event) => setShowTacticalGrid(event.target.checked)}
+									onChange={(e) => setShowTacticalGrid(e.target.checked)}
 								/>
 							</label>
 							<label className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2">
@@ -2069,7 +2137,7 @@ export default function VoxelTerrainEditor({
 									type="checkbox"
 									className="toggle toggle-sm toggle-warning"
 									checked={showVoxelGrid}
-									onChange={(event) => setShowVoxelGrid(event.target.checked)}
+									onChange={(e) => setShowVoxelGrid(e.target.checked)}
 								/>
 							</label>
 						</div>
@@ -2085,7 +2153,7 @@ export default function VoxelTerrainEditor({
 										type="checkbox"
 										className="toggle toggle-sm toggle-secondary"
 										checked={showActors}
-										onChange={(event) => setShowActors(event.target.checked)}
+										onChange={(e) => setShowActors(e.target.checked)}
 									/>
 								</label>
 							</div>
@@ -2095,93 +2163,83 @@ export default function VoxelTerrainEditor({
 			</div>
 		</div>
 
-			{/* VOX import modal */}
-			{voxImportModal && (
-				<dialog className="modal modal-open">
-					<div className="modal-box max-w-md">
-						{voxImportModal.kind === "error" ? (
-							<>
-								<h3 className="font-bold text-lg mb-3">Import .vox — Error</h3>
-								<p className="text-sm text-error">{voxImportModal.message}</p>
-								<div className="modal-action">
+		{voxImportModal && (
+			<dialog className="modal modal-open">
+				<div className="modal-box max-w-md">
+					{voxImportModal.kind === "error" ? (
+						<>
+							<h3 className="font-bold text-lg mb-3">Import .vox — Error</h3>
+							<p className="text-sm text-error">{voxImportModal.message}</p>
+							<div className="modal-action">
+								<button type="button" className="btn" onClick={() => setVoxImportModal(null)}>
+									Close
+								</button>
+							</div>
+						</>
+					) : (
+						<>
+							<h3 className="font-bold text-lg mb-1">Import .vox</h3>
+							<p className="text-sm text-base-content/60 mb-4">
+								File dimensions:{" "}
+								<span className="font-medium text-base-content">
+									{voxImportModal.parsed.voxWidth}x{voxImportModal.parsed.voxLength}x{voxImportModal.parsed.voxHeight} voxels
+								</span>
+								. Choose a world scale:
+							</p>
+							<div className="flex flex-col gap-2">
+								{voxImportModal.options.map((opt) => (
 									<button
+										key={opt.resolution}
 										type="button"
-										className="btn"
-										onClick={() => setVoxImportModal(null)}
-									>
-										Close
-									</button>
-								</div>
-							</>
-						) : (
-							<>
-								<h3 className="font-bold text-lg mb-1">Import .vox</h3>
-								<p className="text-sm text-base-content/60 mb-4">
-									File dimensions:{" "}
-									<span className="font-medium text-base-content">
-										{voxImportModal.parsed.voxWidth}×{voxImportModal.parsed.voxLength}×{voxImportModal.parsed.voxHeight} voxels
-									</span>
-									. Choose a world scale:
-								</p>
-								<div className="flex flex-col gap-2">
-									{voxImportModal.options.map((opt) => (
-										<button
-											key={opt.resolution}
-											type="button"
-											disabled={!opt.fits}
-											onClick={() =>
-												setVoxImportModal({ ...voxImportModal, selected: opt.resolution })
-											}
-											className={[
-												"btn btn-sm w-full justify-between text-left normal-case",
-												!opt.fits
-													? "btn-disabled opacity-40"
-													: opt.resolution === voxImportModal.selected
-													? "btn-primary"
-													: "btn-outline",
-											].join(" ")}
-										>
-											<span className="font-semibold">
-												{VOX_RESOLUTION_LABELS[opt.resolution] ?? `Resolution ${opt.resolution}`}
-											</span>
-											<span className="text-xs opacity-75">
-												{opt.fits
-													? `${opt.tacticalWidth}×${opt.tacticalLength}×${opt.tacticalHeight} tiles`
-													: "Too large"}
-											</span>
-										</button>
-									))}
-								</div>
-								<p className="text-xs text-base-content/50 mt-3">
-									This will replace the current terrain. The previous state is saved to undo.
-								</p>
-								<div className="modal-action">
-									<button
-										type="button"
-										className="btn btn-ghost"
-										onClick={() => setVoxImportModal(null)}
-									>
-										Cancel
-									</button>
-									<button
-										type="button"
-										className="btn btn-primary"
+										disabled={!opt.fits}
 										onClick={() =>
-											applyVoxImport(voxImportModal.parsed, voxImportModal.selected)
+											setVoxImportModal({ ...voxImportModal, selected: opt.resolution })
 										}
+										className={[
+											"btn btn-sm w-full justify-between text-left normal-case",
+											!opt.fits
+												? "btn-disabled opacity-40"
+												: opt.resolution === voxImportModal.selected
+												? "btn-primary"
+												: "btn-outline",
+										].join(" ")}
 									>
-										Import
+										<span className="font-semibold">
+											{VOX_RESOLUTION_LABELS[opt.resolution] ?? `Resolution ${opt.resolution}`}
+										</span>
+										<span className="text-xs opacity-75">
+											{opt.fits
+												? `${opt.tacticalWidth}x${opt.tacticalLength}x${opt.tacticalHeight} tiles`
+												: "Too large"}
+										</span>
 									</button>
-								</div>
-							</>
-						)}
-					</div>
-					<div
-						className="modal-backdrop"
-						onClick={() => setVoxImportModal(null)}
-					/>
-				</dialog>
-			)}
+								))}
+							</div>
+							<p className="text-xs text-base-content/50 mt-3">
+								This will replace the current terrain. The previous state is saved to undo.
+							</p>
+							<div className="modal-action">
+								<button
+									type="button"
+									className="btn btn-ghost"
+									onClick={() => setVoxImportModal(null)}
+								>
+									Cancel
+								</button>
+								<button
+									type="button"
+									className="btn btn-primary"
+									onClick={() => applyVoxImport(voxImportModal.parsed, voxImportModal.selected)}
+								>
+									Import
+								</button>
+							</div>
+						</>
+					)}
+				</div>
+				<div className="modal-backdrop" onClick={() => setVoxImportModal(null)} />
+			</dialog>
+		)}
 		</>
 	);
 }
