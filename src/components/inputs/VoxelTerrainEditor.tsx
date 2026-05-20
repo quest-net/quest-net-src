@@ -1029,7 +1029,9 @@ export default function VoxelTerrainEditor({
 	const selectedColorRef = useRef(DEFAULT_TERRAIN_COLOR_INDEX);
 	const readOnlyRef      = useRef(readOnly);
 	const actorsRef        = useRef<ActorOverlayInfo[]>(actors ?? []);
-	const showActorsRef    = useRef(true);
+	const showActorsRef        = useRef(true);
+	const showTacticalGridRef  = useRef(true);
+	const showVoxelGridRef     = useRef(true);
 	const actorMarkerElemsRef = useRef<Map<string, HTMLDivElement>>(new Map());
 	const actorOverlayRef  = useRef<HTMLDivElement>(null);
 	// Stroke state.
@@ -1096,6 +1098,8 @@ export default function VoxelTerrainEditor({
 
 	useEffect(() => { actorsRef.current    = actors ?? []; }, [actors]);
 	useEffect(() => { showActorsRef.current = showActors;  }, [showActors]);
+	useEffect(() => { showTacticalGridRef.current = showTacticalGrid; }, [showTacticalGrid]);
+	useEffect(() => { showVoxelGridRef.current    = showVoxelGrid;    }, [showVoxelGrid]);
 
 	// -------------------------------------------------------------------------
 	// Terrain prop adoption
@@ -1560,6 +1564,14 @@ export default function VoxelTerrainEditor({
 						);
 					}
 					dirty.clear();
+					// Grid lines follow the same dirty cadence as chunks so they stay
+					// flush with the terrain surface during a stroke, not floating at
+					// the last-committed state.
+					rebuildGrid(
+						resources, grid, dims,
+						showTacticalGridRef.current,
+						showVoxelGridRef.current,
+					);
 				}
 			}
 
@@ -1758,7 +1770,7 @@ export default function VoxelTerrainEditor({
 		const dims = chunkDimsRef.current;
 		if (!resources || !dims) return;
 		rebuildGrid(resources, editGridRef.current, dims, showTacticalGrid, showVoxelGrid);
-	}, [editGen, showTacticalGrid, showVoxelGrid]);
+	}, [showTacticalGrid, showVoxelGrid]);
 
 	useEffect(() => {
 		const resources = resourcesRef.current;
