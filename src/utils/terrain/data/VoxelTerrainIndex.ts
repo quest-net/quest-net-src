@@ -17,8 +17,8 @@
 
 import {
 	DEFAULT_TERRAIN_RESOLUTION,
-} from "../domains/VoxelTerrain/voxelTerrainConstants";
-import type { Voxel, VoxelTerrain } from "../domains/VoxelTerrain/VoxelTerrain";
+} from "../../../domains/VoxelTerrain/voxelTerrainConstants";
+import type { Voxel, VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { decodeVoxels } from "./VoxelDataUtils";
 
 // ---------------------------------------------------------------------------

@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import * as THREE from "three";
-import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { getVoxelCount } from "../../../utils/VoxelDataUtils";
-import { createVoxelTerrainBufferGeometry } from "../../../utils/VoxelTerrainGeometryUtils";
-import { createTerrainRevision } from "../../../utils/VoxelTerrainIndex";
+import type { VoxelTerrain } from "../../../../domains/VoxelTerrain/VoxelTerrain";
+import { getVoxelCount } from "../../../../utils/terrain/data/VoxelDataUtils";
+import { createVoxelTerrainBufferGeometry } from "../geometry/VoxelTerrainGeometryUtils";
+import { createTerrainRevision } from "../../../../utils/terrain/data/VoxelTerrainIndex";
 
 interface VoxelGeometryWorkerResponse {
 	buildId: number;
@@ -63,7 +63,7 @@ export function useVoxelTerrainGeometryWorker(
 		}
 
 		const worker = new Worker(
-			new URL("../../../utils/voxelGeometryWorker.ts", import.meta.url),
+			new URL("../geometry/voxelGeometryWorker.ts", import.meta.url),
 			{ type: "module" }
 		);
 		const buildId = 1;

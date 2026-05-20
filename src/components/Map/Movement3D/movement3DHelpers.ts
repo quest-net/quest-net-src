@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import type { VoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
-import { raycastVoxelIndex } from "../../../utils/VoxelRaycast";
+import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import { raycastVoxelIndex } from "../../../utils/terrain/raycast/VoxelRaycast";
 
 export interface PickedVoxelTile {
 	x: number;

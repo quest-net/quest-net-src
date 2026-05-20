@@ -6,7 +6,7 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { EntityActions } from "../Entity/EntityActions";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
-import { getActiveVoxelTerrain } from "../../utils/VoxelTerrainUtils";
+import { getActiveVoxelTerrain } from "../../utils/terrain/data/VoxelTerrainUtils";
 
 /**
  * Scenario action handlers

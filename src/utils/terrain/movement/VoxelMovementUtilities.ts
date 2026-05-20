@@ -1,13 +1,13 @@
-import type { Position } from "../domains/Actor/Actor";
-import type { Character } from "../domains/Character/Character";
-import type { Entity } from "../domains/Entity/Entity";
-import type { MovementSettings } from "../domains/CampaignSetting/CampaignSetting";
-import type { VoxelTerrain } from "../domains/VoxelTerrain/VoxelTerrain";
-import { isItemEntity } from "../domains/Item/ItemDropUtils";
+import type { Position } from "../../../domains/Actor/Actor";
+import type { Character } from "../../../domains/Character/Character";
+import type { Entity } from "../../../domains/Entity/Entity";
+import type { MovementSettings } from "../../../domains/CampaignSetting/CampaignSetting";
+import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import { isItemEntity } from "../../../domains/Item/ItemDropUtils";
 import {
 	getVoxelTerrainIndex,
 	type VoxelTerrainIndex,
-} from "./VoxelTerrainIndex";
+} from "../data/VoxelTerrainIndex";
 
 export interface VoxelMovementTile {
 	x: number;

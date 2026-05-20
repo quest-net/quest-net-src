@@ -6,12 +6,12 @@ import { useQuestContext } from "../../../domains/Context/ContextProvider";
 import { PING_DURATION_MS } from "../../../domains/Ping/Ping";
 import { usePeerTracking } from "../../../hooks/usePeerTracking";
 import { useActionService } from "../../../services/Actions/ActionServiceProvider";
-import { getVoxelCount } from "../../../utils/VoxelDataUtils";
+import { getVoxelCount } from "../../../utils/terrain/data/VoxelDataUtils";
 import {
 	canOccupyVoxelTile,
 	getVoxelTileHeightKey,
 	normalizeVoxelPosition,
-} from "../../../utils/VoxelMovementUtilities";
+} from "../../../utils/terrain/movement/VoxelMovementUtilities";
 import {
 	ACTOR_TOKEN_DESCRIPTOR_DEFAULTS,
 } from "../Actors3D/actorTokenConstants";
@@ -33,7 +33,7 @@ import {
 	stepFirstPersonCapsuleController,
 	type FirstPersonCapsuleState,
 } from "./capsuleController";
-import { getVoxelTerrainIndex, type VoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
+import { getVoxelTerrainIndex, type VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	FIRST_PERSON_CAMERA,
 	FIRST_PERSON_CONTROLS,

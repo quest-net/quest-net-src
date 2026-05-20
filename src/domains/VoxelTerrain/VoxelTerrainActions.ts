@@ -11,12 +11,12 @@ import {
 	getActiveVoxelTerrain,
 	getMaxVoxelSurfaceHeight,
 	getVoxelRulesSurfaceHeight,
-} from "../../utils/VoxelTerrainUtils";
+} from "../../utils/terrain/data/VoxelTerrainUtils";
 import {
 	getVoxelTerrainIndex,
 	type VoxelTerrainIndex,
-} from "../../utils/VoxelTerrainIndex";
-import { createFlatVoxelTerrain } from "../../utils/VoxelTerrainEditorUtils";
+} from "../../utils/terrain/data/VoxelTerrainIndex";
+import { createFlatVoxelTerrain } from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
 import type { VoxelTerrain } from "./VoxelTerrain";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 

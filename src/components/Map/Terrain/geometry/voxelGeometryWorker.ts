@@ -8,12 +8,12 @@
 //            All TypedArray/ArrayBuffer values are transferred (zero-copy).
 
 import * as THREE from 'three';
-import type { VoxelTerrain } from '../domains/VoxelTerrain/VoxelTerrain';
+import type { VoxelTerrain } from '../../../../domains/VoxelTerrain/VoxelTerrain';
 import { buildVoxelTerrainBuffers } from './VoxelTerrainGeometryUtils';
 import {
 	normalizeVoxelPaletteIndex,
 	terrainPaletteIndexToVoxelColor,
-} from './VoxelTerrainEditorUtils';
+} from '../../../../utils/terrain/editor/VoxelTerrainEditorUtils';
 
 function getTransferableBuffer(view: ArrayBufferView): ArrayBuffer {
 	const { buffer } = view;

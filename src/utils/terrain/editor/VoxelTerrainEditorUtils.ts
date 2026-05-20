@@ -1,11 +1,11 @@
-import { MAX_HEIGHT, type Voxel, type VoxelTerrain } from "../domains/VoxelTerrain/VoxelTerrain";
+import { MAX_HEIGHT, type Voxel, type VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import {
 	DEFAULT_TERRAIN_COLOR_INDEX,
 	TERRAIN_PALETTE,
 	getTerrainColorByIndex,
-} from "./TerrainPaletteUtils";
-import { decodeVoxels, encodeVoxels } from "./VoxelDataUtils";
-import { getVoxelTerrainResolution } from "./VoxelTerrainUtils";
+} from "../palette/TerrainPaletteUtils";
+import { decodeVoxels, encodeVoxels } from "../data/VoxelDataUtils";
+import { getVoxelTerrainResolution } from "../data/VoxelTerrainUtils";
 
 export const MAX_VOXEL_TERRAIN_WIDTH = 64;
 export const MAX_VOXEL_TERRAIN_LENGTH = 64;

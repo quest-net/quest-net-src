@@ -2,10 +2,10 @@
 // owns the runtime data (occupancy, surface heights, walkable surfaces); this
 // file owns the small domain helpers callers across the app rely on.
 
-import type { Position } from "../domains/Actor/Actor";
-import type { Campaign } from "../domains/Campaign/Campaign";
-import type { VoxelTerrain } from "../domains/VoxelTerrain/VoxelTerrain";
-import { FLYING_SPAWN_ELEVATION } from "../domains/VoxelTerrain/voxelTerrainConstants";
+import type { Position } from "../../../domains/Actor/Actor";
+import type { Campaign } from "../../../domains/Campaign/Campaign";
+import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import { FLYING_SPAWN_ELEVATION } from "../../../domains/VoxelTerrain/voxelTerrainConstants";
 import { getVoxelTerrainIndex } from "./VoxelTerrainIndex";
 
 // Re-export coordinate primitives so existing imports keep working unchanged.

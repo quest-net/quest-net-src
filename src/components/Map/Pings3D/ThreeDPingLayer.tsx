@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { PING_DURATION_MS } from "../../../domains/Ping/Ping";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { getVoxelSurfaceHeight } from "../../../utils/VoxelTerrainUtils";
+import { getVoxelSurfaceHeight } from "../../../utils/terrain/data/VoxelTerrainUtils";
 import type { ActivePing } from "../hooks/useActivePings";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import { terrainHeightToWorldY } from "../Actors3D/actorTokenPlacement";
 import { raycastTerrainDDA } from "../Movement3D/movement3DHelpers";
-import { getVoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
+import { getVoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	THREE_D_PING_INPUT,
 	THREE_D_PING_MARKER,

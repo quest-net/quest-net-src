@@ -7,7 +7,7 @@ import { LogActions } from "../Log/LogActions";
 import { ActorActions } from "../Actor/ActorActions";
 import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
 import { createDefaultStatSlots, createDefaultActionSlots, createDefaultAttributeSlots } from "../../utils/ActorResolvers";
-import { getActiveVoxelSpawnPosition, getActiveVoxelTerrain } from "../../utils/VoxelTerrainUtils";
+import { getActiveVoxelSpawnPosition, getActiveVoxelTerrain } from "../../utils/terrain/data/VoxelTerrainUtils";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 
 /**

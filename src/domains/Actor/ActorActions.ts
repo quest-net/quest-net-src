@@ -2,7 +2,7 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { Context } from "../Context/Context";
 import { LogActions } from "../Log/LogActions";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
-import { getActiveVoxelTerrain } from "../../utils/VoxelTerrainUtils";
+import { getActiveVoxelTerrain } from "../../utils/terrain/data/VoxelTerrainUtils";
 import { Actor, Position } from "./Actor";
 
 function isValidPosition(position: Position): boolean {

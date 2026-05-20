@@ -1,11 +1,11 @@
-import type { Voxel, VoxelTerrain } from '../domains/VoxelTerrain/VoxelTerrain';
-import { decodeVoxels } from './VoxelDataUtils';
+import type { Voxel, VoxelTerrain } from '../../../../domains/VoxelTerrain/VoxelTerrain';
+import { decodeVoxels } from '../../../../utils/terrain/data/VoxelDataUtils';
 import { VOXEL_AO_CURVE, VOXEL_FACE_DEFINITIONS } from './VoxelTerrainGeometryConstants';
 import {
 	buildVoxelTerrainIndex,
 	voxelTopToRulesHeight,
 	type VoxelTerrainIndex,
-} from './VoxelTerrainIndex';
+} from '../../../../utils/terrain/data/VoxelTerrainIndex';
 
 import * as THREE from 'three';
 

@@ -3,20 +3,20 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { VoxelTerrain } from "../../domains/VoxelTerrain/VoxelTerrain";
 import { terrainHeightToWorldY } from "../Map/Actors3D/actorTokenPlacement";
-import { VOXEL_FACE_DEFINITIONS } from "../../utils/VoxelTerrainGeometryConstants";
+import { VOXEL_FACE_DEFINITIONS } from "../Map/Terrain/geometry/VoxelTerrainGeometryConstants";
 import {
 	decodeVoxels,
 	encodeVoxels,
-} from "../../utils/VoxelDataUtils";
+} from "../../utils/terrain/data/VoxelDataUtils";
 import {
 	DEFAULT_TERRAIN_COLOR_INDEX,
 	TERRAIN_PALETTE,
 	TERRAIN_PALETTE_ROWS,
-} from "../../utils/TerrainPaletteUtils";
+} from "../../utils/terrain/palette/TerrainPaletteUtils";
 import {
 	normalizeVoxelPaletteIndex,
 	terrainPaletteIndexToVoxelColor,
-} from "../../utils/VoxelTerrainEditorUtils";
+} from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
 import {
 	createTerrainRevision,
 	getVoxelTerrainIndex,
@@ -24,15 +24,15 @@ import {
 	packVoxelKey,
 	unpackVoxelKey,
 	type VoxelTerrainIndex,
-} from "../../utils/VoxelTerrainIndex";
+} from "../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	buildTerrainFromVox,
 	getVoxResolutionOptions,
 	parseVoxFile,
 	type VoxParseResult,
 	type VoxResolutionOption,
-} from "../../utils/VoxImportUtils";
-import { raycastVoxelGrid } from "../../utils/VoxelRaycast";
+} from "../../utils/terrain/import/VoxImportUtils";
+import { raycastVoxelGrid } from "../../utils/terrain/raycast/VoxelRaycast";
 import ThreeDMap from "../Map/3DMap";
 import { MapStateProvider } from "../Map/MapStateProvider";
 

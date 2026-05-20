@@ -4,12 +4,12 @@ import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
 import { isItemEntity } from "../../../domains/Item/ItemDropUtils";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { getVoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
+import { getVoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	canOccupyVoxelTile,
 	getVoxelTileHeightKey,
 	type VoxelMovementTile,
-} from "../../../utils/VoxelMovementUtilities";
+} from "../../../utils/terrain/movement/VoxelMovementUtilities";
 import type { HoveredTile, SelectedActor } from "../MapStateProvider";
 import { THREE_D_MOVEMENT_HIGHLIGHT } from "../threeDMapConstants";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";

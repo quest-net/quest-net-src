@@ -2,7 +2,7 @@ import { useState } from "react";
 import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { replacePathTag } from "../../utils/FolderUtils";
-import { getMostCommonVoxelTerrainColor } from "../../utils/VoxelTerrainEditorUtils";
+import { getMostCommonVoxelTerrainColor } from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { useQuestContext } from "../Context/ContextProvider";
 import { TerrainEdit } from "./Edit";

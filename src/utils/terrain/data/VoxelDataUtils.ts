@@ -11,7 +11,7 @@
 // to sorting voxels by (z, y, x). This enables O(log n) position lookups
 // via binary search and guarantees a stable, deterministic encoding.
 
-import type { Voxel } from "../domains/VoxelTerrain/VoxelTerrain";
+import type { Voxel } from "../../../domains/VoxelTerrain/VoxelTerrain";
 
 // --- Internal codec ---------------------------------------------------------
 

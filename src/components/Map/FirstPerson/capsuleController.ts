@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { Position } from "../../../domains/Actor/Actor";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import type { VoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
+import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	ACTOR_TOKEN_DESCRIPTOR_DEFAULTS,
 	ACTOR_TOKEN_PLACEMENT,

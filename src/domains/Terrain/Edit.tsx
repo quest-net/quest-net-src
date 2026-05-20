@@ -16,7 +16,7 @@ import {
 	clampVoxelTerrainHeight,
 	clampVoxelTerrainResolution,
 	reshapeVoxelTerrainForEditor,
-} from "../../utils/VoxelTerrainEditorUtils";
+} from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
 
 const TERRAIN_RESOLUTION_OPTIONS = [
 	{ value: 1, label: "Basic" },

@@ -1,6 +1,6 @@
 import type { MovementSettings } from "../../../domains/CampaignSetting/CampaignSetting";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { calculateVoxelMovementRange } from "../../../utils/VoxelMovementUtilities";
+import { calculateVoxelMovementRange } from "../../../utils/terrain/movement/VoxelMovementUtilities";
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants";
 import type { FirstPersonActor } from "./types";
 

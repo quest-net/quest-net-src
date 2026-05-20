@@ -31,7 +31,7 @@
 // -------------------------------------------------------------------------
 
 import * as THREE from 'three';
-import type { VoxelTerrainIndex } from './VoxelTerrainIndex';
+import type { VoxelTerrainIndex } from '../data/VoxelTerrainIndex';
 
 export interface VoxelRayHit {
 	/** Grid coordinates of the hit voxel. */

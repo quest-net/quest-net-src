@@ -7,7 +7,7 @@
 // application source; TerrainPaletteUtils no longer exports it.
 
 import type { Migration } from "./types";
-import { DEFAULT_TERRAIN_COLOR_INDEX, TERRAIN_PALETTE } from "../utils/TerrainPaletteUtils";
+import { DEFAULT_TERRAIN_COLOR_INDEX, TERRAIN_PALETTE } from "../utils/terrain/palette/TerrainPaletteUtils";
 
 // --- Old palette v1 (65 colors: 13 families x 5 lightness levels) -----------
 //

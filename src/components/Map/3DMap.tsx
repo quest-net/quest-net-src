@@ -13,12 +13,12 @@ import { useQuestContext } from '../../domains/Context/ContextProvider';
 import { useActionService } from '../../services/Actions/ActionServiceProvider';
 import { CampaignActions } from '../../domains/Campaign/CampaignActions';
 import { AppSettingActions } from '../../domains/AppSetting/AppSettingActions';
-import { getMaxVoxelSurfaceHeight } from '../../utils/VoxelTerrainUtils';
-import { getVoxelCount } from '../../utils/VoxelDataUtils';
+import { getMaxVoxelSurfaceHeight } from '../../utils/terrain/data/VoxelTerrainUtils';
+import { getVoxelCount } from '../../utils/terrain/data/VoxelDataUtils';
 import {
 	calculateVoxelMovementRange,
 	calculateVoxelRemainingMovementRange,
-} from '../../utils/VoxelMovementUtilities';
+} from '../../utils/terrain/movement/VoxelMovementUtilities';
 import type { VoxelTerrain } from '../../domains/VoxelTerrain/VoxelTerrain';
 import { useMapState } from './MapStateProvider';
 import { ThreeDActorLayer } from './Actors3D/ThreeDActorLayer';
@@ -44,7 +44,7 @@ import {
 import {
 	createTerrainSignature,
 	useVoxelTerrainGeometryWorker,
-} from './hooks/useVoxelTerrainGeometryWorker';
+} from './Terrain/hooks/useVoxelTerrainGeometryWorker';
 
 interface ThreeDMapProps {
 	terrain?: VoxelTerrain | null;

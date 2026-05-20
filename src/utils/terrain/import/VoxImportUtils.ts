@@ -24,9 +24,9 @@
 //   (offset += contentSize + childrenSize), so nested scene-graph chunks
 //   in v200 files (nTRN, nGRP, nSHP, MATL, ...) are safely bypassed.
 
-import type { VoxelTerrain } from "../domains/VoxelTerrain/VoxelTerrain";
-import { DEFAULT_TERRAIN_COLOR_INDEX } from "./TerrainPaletteUtils";
-import { encodeVoxels } from "./VoxelDataUtils";
+import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import { DEFAULT_TERRAIN_COLOR_INDEX } from "../palette/TerrainPaletteUtils";
+import { encodeVoxels } from "../data/VoxelDataUtils";
 import {
 	MAX_VOXEL_TERRAIN_HEIGHT,
 	MAX_VOXEL_TERRAIN_LENGTH,
@@ -34,7 +34,7 @@ import {
 	MAX_VOXEL_TERRAIN_RESOLUTION,
 	MIN_VOXEL_TERRAIN_RESOLUTION,
 	voxelColorToTerrainPaletteIndex,
-} from "./VoxelTerrainEditorUtils";
+} from "../editor/VoxelTerrainEditorUtils";
 
 // ---------------------------------------------------------------------------
 // Types

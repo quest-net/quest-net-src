@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { getVoxelRulesSurfaceHeight } from "../../../utils/VoxelTerrainUtils";
-import { getVoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
+import { getVoxelRulesSurfaceHeight } from "../../../utils/terrain/data/VoxelTerrainUtils";
+import { getVoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	ACTOR_TOKEN_BASE,
 	ACTOR_TOKEN_PLACEMENT,

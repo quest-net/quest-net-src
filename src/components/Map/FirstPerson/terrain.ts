@@ -1,13 +1,13 @@
 import { useEffect, useRef, type RefObject } from "react";
 import * as THREE from "three";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { getVoxelCount } from "../../../utils/VoxelDataUtils";
-import { getMaxVoxelSurfaceHeight } from "../../../utils/VoxelTerrainUtils";
+import { getVoxelCount } from "../../../utils/terrain/data/VoxelDataUtils";
+import { getMaxVoxelSurfaceHeight } from "../../../utils/terrain/data/VoxelTerrainUtils";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import {
 	createTerrainSignature,
 	useVoxelTerrainGeometryWorker,
-} from "../hooks/useVoxelTerrainGeometryWorker";
+} from "../Terrain/hooks/useVoxelTerrainGeometryWorker";
 import { getShadowCameraBounds } from "../shadowCameraBounds";
 import {
 	THREE_D_MAP_LIGHTING,

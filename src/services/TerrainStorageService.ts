@@ -4,8 +4,8 @@ import {
 	IndexedDBUtilities,
 	VOXEL_TERRAINS_STORE_NAME,
 } from "../utils/IndexedDBUtilities";
-import { getMostCommonVoxelTerrainColor } from "../utils/VoxelTerrainEditorUtils";
-import { getVoxelCount } from "../utils/VoxelDataUtils";
+import { getMostCommonVoxelTerrainColor } from "../utils/terrain/editor/VoxelTerrainEditorUtils";
+import { getVoxelCount } from "../utils/terrain/data/VoxelDataUtils";
 
 interface StoredVoxelTerrainRecord {
 	Key: string;

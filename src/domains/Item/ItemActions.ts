@@ -15,7 +15,7 @@ import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import {
 	getActiveVoxelSpawnPosition,
 	getActiveVoxelTerrain,
-} from "../../utils/VoxelTerrainUtils";
+} from "../../utils/terrain/data/VoxelTerrainUtils";
 
 /**
  * Item action handlers

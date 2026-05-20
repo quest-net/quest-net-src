@@ -8,8 +8,8 @@ import type { LiveActorPose } from "../../../services/ActorPoseService";
 import {
 	getMaxVoxelSurfaceHeight,
 	getVoxelRulesSurfaceHeight,
-} from "../../../utils/VoxelTerrainUtils";
-import { getVoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
+} from "../../../utils/terrain/data/VoxelTerrainUtils";
+import { getVoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import type { SelectedActor } from "../MapStateProvider";
 import type { ActorTokenDescriptor, ThreeDSceneResources } from "./actorTokenTypes";
 import {
