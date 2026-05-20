@@ -16,6 +16,17 @@ export interface Voxel {
 	color: number; // terrain palette index (0-255)
 }
 
+export interface VoxelTerrainLighting {
+	Color: string;      // CSS hex color for the directional light
+	Intensity: number;  // renderer intensity multiplier
+	Rotation: number;   // degrees around the map; user-facing azimuth
+	Elevation: number;  // degrees above the horizon
+}
+
+export interface VoxelTerrainBackground {
+	Color?: string; // unset means transparent
+}
+
 /**
  * A voxel-based terrain stored as a compact base64-encoded Uint32Array.
  * See VoxelDataUtils for encoding details.
@@ -31,6 +42,24 @@ export interface Voxel {
  */
 export const MAX_HEIGHT = 64;
 
+export const DEFAULT_VOXEL_TERRAIN_LIGHTING: VoxelTerrainLighting = {
+	Color: "#ffffff",
+	Intensity: 1.15,
+	Rotation: 321,
+	Elevation: 51,
+};
+
+export const DEFAULT_VOXEL_TERRAIN_BACKGROUND: VoxelTerrainBackground = {};
+export const DEFAULT_VOXEL_TERRAIN_BACKGROUND_COLOR = "#0f172a";
+
+export function createDefaultVoxelTerrainLighting(): VoxelTerrainLighting {
+	return { ...DEFAULT_VOXEL_TERRAIN_LIGHTING };
+}
+
+export function createDefaultVoxelTerrainBackground(): VoxelTerrainBackground {
+	return { ...DEFAULT_VOXEL_TERRAIN_BACKGROUND };
+}
+
 export interface VoxelTerrain {
 	Id: string;
 	Name: string;
@@ -42,6 +71,8 @@ export interface VoxelTerrain {
 	VoxelsLoaded?: boolean;
 	VoxelStorageKey?: string;
 	VoxelCount?: number;
+	Lighting: VoxelTerrainLighting;
+	Background: VoxelTerrainBackground;
 	PreviewColor?: string;
 	Tags?: string[];
 }

@@ -1,4 +1,10 @@
-import { MAX_HEIGHT, type Voxel, type VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import {
+	MAX_HEIGHT,
+	createDefaultVoxelTerrainBackground,
+	createDefaultVoxelTerrainLighting,
+	type Voxel,
+	type VoxelTerrain,
+} from "../../../domains/VoxelTerrain/VoxelTerrain";
 import {
 	DEFAULT_TERRAIN_COLOR_INDEX,
 	TERRAIN_PALETTE,
@@ -241,6 +247,8 @@ export function createFlatVoxelTerrain(params: {
 		Resolution: 1,
 		Voxels: encodeVoxels(voxels),
 		VoxelsLoaded: true,
+		Lighting: createDefaultVoxelTerrainLighting(),
+		Background: createDefaultVoxelTerrainBackground(),
 		Tags: params.tags,
 	};
 }

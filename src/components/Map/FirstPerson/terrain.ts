@@ -9,10 +9,11 @@ import {
 	useVoxelTerrainGeometryWorker,
 } from "../Terrain/hooks/useVoxelTerrainGeometryWorker";
 import { getShadowCameraBounds } from "../shadowCameraBounds";
+import { THREE_D_TERRAIN_MATERIAL } from "../threeDMapConstants";
 import {
-	THREE_D_MAP_LIGHTING,
-	THREE_D_TERRAIN_MATERIAL,
-} from "../threeDMapConstants";
+	applyVoxelTerrainBackground,
+	applyVoxelTerrainDirectionalLight,
+} from "../terrainEnvironment";
 
 interface TerrainRenderResources {
 	mesh: THREE.Mesh;
@@ -50,6 +51,8 @@ export function useFirstPersonTerrain(
 ): void {
 	const terrainResourcesRef = useRef<TerrainRenderResources | null>(null);
 	const resourcesRef = useRef<ThreeDSceneResources | null>(null);
+	const terrainLighting = terrain?.Lighting;
+	const terrainBackgroundColor = terrain?.Background.Color;
 	const terrainGeometry = useVoxelTerrainGeometryWorker(
 		terrain,
 		terrainSignature,
@@ -75,24 +78,24 @@ export function useFirstPersonTerrain(
 	);
 
 	useEffect(() => {
+		if (!resources) return;
+
+		applyVoxelTerrainBackground(resources.scene, terrain);
+	}, [resources, terrain, terrainBackgroundColor]);
+
+	useEffect(() => {
 		const dirLight = directionalLightRef.current;
 		if (!resources || !dirLight) return;
 		if (!terrain || getVoxelCount(terrain.Voxels) === 0) return;
 
 		const maxSurfaceHeight = getMaxVoxelSurfaceHeight(terrain);
 		const terrainCenterY = (maxSurfaceHeight - 1) / 2;
-		const terrainMaxExtent = Math.max(
-			terrain.Width,
-			terrain.Length,
-			maxSurfaceHeight
+		applyVoxelTerrainDirectionalLight(
+			dirLight,
+			terrain,
+			maxSurfaceHeight,
+			terrainCenterY
 		);
-		dirLight.position.set(
-			terrainMaxExtent * THREE_D_MAP_LIGHTING.DIRECTIONAL_POSITION_X_SCALE,
-			terrainMaxExtent * THREE_D_MAP_LIGHTING.DIRECTIONAL_POSITION_Y_SCALE +
-				maxSurfaceHeight,
-			terrainMaxExtent * THREE_D_MAP_LIGHTING.DIRECTIONAL_POSITION_Z_SCALE
-		);
-		dirLight.target.position.set(0, terrainCenterY, 0);
 		const shadowCamera = getShadowCameraBounds(
 			terrain.Width,
 			terrain.Length,
@@ -105,10 +108,16 @@ export function useFirstPersonTerrain(
 		dirLight.shadow.camera.near = shadowCamera.near;
 		dirLight.shadow.camera.far = shadowCamera.far;
 		dirLight.shadow.camera.updateProjectionMatrix();
-		// `terrain` intentionally omitted from deps: terrainSignature is the
-		// value-equal identity for terrain geometry and lighting.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [resources, terrainSignature, directionalLightRef]);
+	}, [
+		resources,
+		terrain,
+		terrainSignature,
+		directionalLightRef,
+		terrainLighting?.Color,
+		terrainLighting?.Intensity,
+		terrainLighting?.Rotation,
+		terrainLighting?.Elevation,
+	]);
 
 	useEffect(() => {
 		if (!resources) return;

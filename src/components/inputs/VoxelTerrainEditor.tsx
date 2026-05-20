@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type { VoxelTerrain } from "../../domains/VoxelTerrain/VoxelTerrain";
+import {
+	DEFAULT_VOXEL_TERRAIN_BACKGROUND_COLOR,
+	type VoxelTerrain,
+	type VoxelTerrainBackground,
+	type VoxelTerrainLighting,
+} from "../../domains/VoxelTerrain/VoxelTerrain";
 import { terrainHeightToWorldY } from "../Map/Actors3D/actorTokenPlacement";
 import { VOXEL_FACE_DEFINITIONS } from "../Map/Terrain/geometry/VoxelTerrainGeometryConstants";
 import {
@@ -136,6 +141,22 @@ const CAMERA_DISTANCE_MULTIPLIER = 1.65;
 const STROKE_DRAG_THRESHOLD_PX = 5;
 const EDITOR_PIXEL_RATIO = 1;
 const ACTOR_OVERLAY_FLOAT_Y = 0.2;
+const LIGHTING_INTENSITY_MIN = 0;
+const LIGHTING_INTENSITY_MAX = 3;
+const LIGHTING_INTENSITY_STEP = 0.05;
+const LIGHTING_ROTATION_MIN = 0;
+const LIGHTING_ROTATION_MAX = 360;
+const LIGHTING_ELEVATION_MIN = 0;
+const LIGHTING_ELEVATION_MAX = 90;
+
+function clampNumber(value: number, min: number, max: number): number {
+	return Math.max(min, Math.min(max, value));
+}
+
+function numberInputValue(value: string, fallback: number): number {
+	const parsed = Number(value);
+	return Number.isFinite(parsed) ? parsed : fallback;
+}
 
 // Chunk size in voxels per axis. 8^3 = 512 voxels max per chunk, giving
 // ~80 chunks for a 40x40x16 voxel grid. A single-voxel edit touches 1-2 chunks.
@@ -1081,6 +1102,34 @@ export default function VoxelTerrainEditor({
 		`${displayedTerrain.Width * resolution} x ${displayedTerrain.Length * resolution} x ` +
 		`${displayedTerrain.Height * resolution}`;
 	const brushModeLabel    = granularity === "tactical" ? "Tile Brush" : "Voxel Brush";
+	const lighting = terrain.Lighting;
+	const background = terrain.Background;
+	const backgroundColor = background.Color ?? DEFAULT_VOXEL_TERRAIN_BACKGROUND_COLOR;
+
+	const emitTerrainUpdate = (nextTerrain: VoxelTerrain) => {
+		terrainRef.current = nextTerrain;
+		lastEmittedVoxelsRef.current = nextTerrain.Voxels;
+		onChangeRef.current(nextTerrain);
+	};
+
+	const updateLighting = (updates: Partial<VoxelTerrainLighting>) => {
+		if (readOnly) return;
+		emitTerrainUpdate({
+			...terrain,
+			Lighting: {
+				...lighting,
+				...updates,
+			},
+		});
+	};
+
+	const updateBackground = (updates: VoxelTerrainBackground) => {
+		if (readOnly) return;
+		emitTerrainUpdate({
+			...terrain,
+			Background: updates,
+		});
+	};
 
 	// -------------------------------------------------------------------------
 	// Sync refs from props/state
@@ -1112,6 +1161,7 @@ export default function VoxelTerrainEditor({
 			createTerrainRevision(terrain) === createTerrainRevision(terrainRef.current) &&
 			terrain.Voxels === lastEmittedVoxelsRef.current
 		) {
+			terrainRef.current = terrain;
 			return;
 		}
 
@@ -2083,6 +2133,133 @@ export default function VoxelTerrainEditor({
 
 			<div className="w-64 shrink-0 border-l-2 bg-base-100 p-3 overflow-y-auto">
 				<div className="space-y-5">
+					{activeView === "preview" ? (
+						<>
+							<div>
+								<div className="text-sm font-semibold mb-2">Lighting</div>
+								<div className="space-y-3">
+									<label className="flex items-center justify-between gap-3">
+										<span className="label-text">Color</span>
+										<input
+											type="color"
+											className="h-9 w-12 cursor-pointer rounded border border-base-300 bg-base-100 p-1"
+											value={lighting.Color}
+											onChange={(e) => updateLighting({ Color: e.target.value })}
+											disabled={readOnly}
+										/>
+									</label>
+									<label className="block">
+										<div className="mb-1 flex items-center justify-between gap-3">
+											<span className="label-text">Intensity</span>
+											<span className="text-xs tabular-nums text-base-content/70">
+												{lighting.Intensity.toFixed(2)}
+											</span>
+										</div>
+										<input
+											type="range"
+											className="range range-sm"
+											min={LIGHTING_INTENSITY_MIN}
+											max={LIGHTING_INTENSITY_MAX}
+											step={LIGHTING_INTENSITY_STEP}
+											value={lighting.Intensity}
+											onChange={(e) =>
+												updateLighting({
+													Intensity: clampNumber(
+														numberInputValue(e.target.value, lighting.Intensity),
+														LIGHTING_INTENSITY_MIN,
+														LIGHTING_INTENSITY_MAX
+													),
+												})
+											}
+											disabled={readOnly}
+										/>
+									</label>
+									<label className="block">
+										<div className="mb-1 flex items-center justify-between gap-3">
+											<span className="label-text">Rotation</span>
+											<span className="text-xs tabular-nums text-base-content/70">
+												{Math.round(lighting.Rotation)} deg
+											</span>
+										</div>
+										<input
+											type="range"
+											className="range range-sm"
+											min={LIGHTING_ROTATION_MIN}
+											max={LIGHTING_ROTATION_MAX}
+											step={1}
+											value={lighting.Rotation}
+											onChange={(e) =>
+												updateLighting({
+													Rotation: clampNumber(
+														numberInputValue(e.target.value, lighting.Rotation),
+														LIGHTING_ROTATION_MIN,
+														LIGHTING_ROTATION_MAX
+													),
+												})
+											}
+											disabled={readOnly}
+										/>
+									</label>
+									<label className="block">
+										<div className="mb-1 flex items-center justify-between gap-3">
+											<span className="label-text">Elevation</span>
+											<span className="text-xs tabular-nums text-base-content/70">
+												{Math.round(lighting.Elevation)} deg
+											</span>
+										</div>
+										<input
+											type="range"
+											className="range range-sm"
+											min={LIGHTING_ELEVATION_MIN}
+											max={LIGHTING_ELEVATION_MAX}
+											step={1}
+											value={lighting.Elevation}
+											onChange={(e) =>
+												updateLighting({
+													Elevation: clampNumber(
+														numberInputValue(e.target.value, lighting.Elevation),
+														LIGHTING_ELEVATION_MIN,
+														LIGHTING_ELEVATION_MAX
+													),
+												})
+											}
+											disabled={readOnly}
+										/>
+									</label>
+								</div>
+							</div>
+
+							<div>
+								<div className="text-sm font-semibold mb-2">Background</div>
+								<div className="space-y-3">
+									<label className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2">
+										<span className="label-text">Color</span>
+										<input
+											type="checkbox"
+											className="toggle toggle-sm toggle-primary"
+											checked={!!background.Color}
+											onChange={(e) =>
+												updateBackground(
+													e.target.checked
+														? { Color: backgroundColor }
+														: {}
+												)
+											}
+											disabled={readOnly}
+										/>
+									</label>
+									<input
+										type="color"
+										className="h-10 w-full cursor-pointer rounded border border-base-300 bg-base-100 p-1 disabled:cursor-not-allowed disabled:opacity-50"
+										value={backgroundColor}
+										onChange={(e) => updateBackground({ Color: e.target.value })}
+										disabled={readOnly || !background.Color}
+									/>
+								</div>
+							</div>
+						</>
+					) : (
+						<>
 					<div>
 						<div className="text-sm font-semibold mb-2">Info</div>
 						<div className="space-y-1 text-xs text-base-content/75">
@@ -2170,6 +2347,8 @@ export default function VoxelTerrainEditor({
 								</label>
 							</div>
 						</div>
+					)}
+						</>
 					)}
 				</div>
 			</div>

@@ -34,6 +34,10 @@ import { PING_DURATION_MS } from '../../domains/Ping/Ping';
 import { usePeerTracking } from '../../hooks/usePeerTracking';
 import { getShadowCameraBounds } from './shadowCameraBounds';
 import {
+	applyVoxelTerrainBackground,
+	applyVoxelTerrainDirectionalLight,
+} from './terrainEnvironment';
+import {
 	THREE_D_MAP_CAMERA,
 	THREE_D_MAP_CONTROLS,
 	THREE_D_MAP_LIGHTING,
@@ -271,6 +275,8 @@ export default function ThreeDMap({
 		return ids;
 	}, [campaign]);
 	const terrainSignature = useMemo(() => createTerrainSignature(terrain), [terrain]);
+	const terrainLighting = terrain?.Lighting;
+	const terrainBackgroundColor = terrain?.Background.Color;
 	const terrainGeometry = useVoxelTerrainGeometryWorker(
 		terrain,
 		terrainSignature,
@@ -610,6 +616,13 @@ export default function ThreeDMap({
 
 	useEffect(() => {
 		const resources = sceneResourcesRef.current;
+		if (!resources) return;
+
+		applyVoxelTerrainBackground(resources.scene, terrain);
+	}, [terrain, terrainBackgroundColor]);
+
+	useEffect(() => {
+		const resources = sceneResourcesRef.current;
 		const container = containerRef.current;
 		const controls = controlsRef.current;
 		const dirLight = directionalLightRef.current;
@@ -631,14 +644,13 @@ export default function ThreeDMap({
 		camera.bottom = -halfSize;
 		camera.updateProjectionMatrix();
 
-		const terrainMaxExtent = Math.max(W, L, maxSurfaceHeight);
 		const shadowCamera = getShadowCameraBounds(W, L, maxSurfaceHeight);
-		dirLight.position.set(
-			terrainMaxExtent * THREE_D_MAP_LIGHTING.DIRECTIONAL_POSITION_X_SCALE,
-			terrainMaxExtent * THREE_D_MAP_LIGHTING.DIRECTIONAL_POSITION_Y_SCALE + maxSurfaceHeight,
-			terrainMaxExtent * THREE_D_MAP_LIGHTING.DIRECTIONAL_POSITION_Z_SCALE
+		applyVoxelTerrainDirectionalLight(
+			dirLight,
+			terrain,
+			maxSurfaceHeight,
+			terrainCenterY
 		);
-		dirLight.target.position.set(0, terrainCenterY, 0);
 		dirLight.shadow.camera.left = shadowCamera.left;
 		dirLight.shadow.camera.right = shadowCamera.right;
 		dirLight.shadow.camera.top = shadowCamera.top;
@@ -670,7 +682,13 @@ export default function ThreeDMap({
 			hasFramedTerrainRef.current = true;
 		}
 
-	}, [terrainSignature]);
+	}, [
+		terrainSignature,
+		terrainLighting?.Color,
+		terrainLighting?.Intensity,
+		terrainLighting?.Rotation,
+		terrainLighting?.Elevation,
+	]);
 
 	useEffect(() => {
 		const resources = sceneResourcesRef.current;
