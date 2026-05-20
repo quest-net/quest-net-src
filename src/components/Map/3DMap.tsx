@@ -124,26 +124,22 @@ function installMovementHighlightShader(
 			[
 				"#include <common>",
 				"uniform vec2 movementHighlightSize;",
-				"uniform float movementHighlightHeightLevels;",
-				"attribute vec2 tileCoord;",
 				"attribute float tileHeight;",
 				"attribute float highlightStrength;",
-				"varying vec3 vMovementHighlightUvw;",
+				"varying float vMovementHighlightHeight;",
 				"varying float vMovementHighlightStrength;",
 				"varying vec3 vMovementWorldPosition;",
+				"varying vec3 vMovementWorldNormal;",
 			].join("\n")
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			"#include <begin_vertex>",
 			[
 				"#include <begin_vertex>",
-				"vMovementHighlightUvw = vec3(",
-				"    (tileCoord.x + 0.5) / movementHighlightSize.x,",
-				"    (tileHeight + 0.5) / movementHighlightHeightLevels,",
-				"    (tileCoord.y + 0.5) / movementHighlightSize.y",
-				");",
+				"vMovementHighlightHeight = tileHeight;",
 				"vMovementHighlightStrength = highlightStrength;",
 				"vMovementWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;",
+				"vMovementWorldNormal = normalize(mat3(modelMatrix) * normal);",
 			].join("\n")
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
@@ -152,19 +148,33 @@ function installMovementHighlightShader(
 				"#include <common>",
 				"uniform highp sampler3D movementHighlightMap;",
 				"uniform vec2 movementHighlightSize;",
-				"varying vec3 vMovementHighlightUvw;",
+				"uniform float movementHighlightHeightLevels;",
+				"varying float vMovementHighlightHeight;",
 				"varying float vMovementHighlightStrength;",
 				"varying vec3 vMovementWorldPosition;",
+				"varying vec3 vMovementWorldNormal;",
 			].join("\n")
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			"#include <dithering_fragment>",
 			[
-				"vec4 movementHighlight = texture(movementHighlightMap, vMovementHighlightUvw);",
+				"vec3 movementOwnerPosition = vMovementWorldPosition - vMovementWorldNormal * 0.002;",
+				"vec2 movementTileCoord = clamp(",
+				"	floor(movementOwnerPosition.xz + movementHighlightSize * 0.5),",
+				"	vec2(0.0),",
+				"	movementHighlightSize - vec2(1.0)",
+				");",
+				"float movementTileHeight = clamp(vMovementHighlightHeight, 0.0, movementHighlightHeightLevels - 1.0);",
+				"vec3 movementHighlightUvw = vec3(",
+				"	(movementTileCoord.x + 0.5) / movementHighlightSize.x,",
+				"	(movementTileHeight + 0.5) / movementHighlightHeightLevels,",
+				"	(movementTileCoord.y + 0.5) / movementHighlightSize.y",
+				");",
+				"vec4 movementHighlight = texture(movementHighlightMap, movementHighlightUvw);",
 				"if (movementHighlight.a > 0.0 && vMovementHighlightStrength > 0.0) {",
 				"	vec3 baseColor = gl_FragColor.rgb;",
 				"	float baseLuma = dot(baseColor, vec3(0.2126, 0.7152, 0.0722));",
-				"	vec2 tileLocal = fract(vMovementWorldPosition.xz + movementHighlightSize * 0.5);",
+				"	vec2 tileLocal = fract(movementOwnerPosition.xz + movementHighlightSize * 0.5);",
 				"	float edgeDistance = min(min(tileLocal.x, 1.0 - tileLocal.x), min(tileLocal.y, 1.0 - tileLocal.y));",
 				"	float edgeBand = 1.0 - smoothstep(0.025, 0.11, edgeDistance);",
 				"	float markAlpha = clamp(movementHighlight.a * (1.35 + edgeBand * 0.75) * vMovementHighlightStrength, 0.0, 0.92);",

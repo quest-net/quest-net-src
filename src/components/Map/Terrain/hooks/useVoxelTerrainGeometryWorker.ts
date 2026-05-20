@@ -16,12 +16,25 @@ interface VoxelGeometryWorkerResponse {
 	indices: Uint32Array;
 }
 
+interface VoxelGeometryBufferPayload {
+	positions: Float32Array;
+	normals: Float32Array;
+	colors: Float32Array;
+	tileCoords: Float32Array;
+	tileHeights: Float32Array;
+	highlightStrengths: Float32Array;
+	indices: Uint32Array;
+}
+
 export interface VoxelTerrainGeometryResult {
 	geometry: THREE.BufferGeometry;
 	width: number;
 	length: number;
 	height: number;
 }
+
+const GEOMETRY_BUFFER_CACHE_LIMIT = 4;
+const geometryBufferCache = new Map<string, VoxelGeometryBufferPayload>();
 
 /**
  * Back-compat alias: `createTerrainRevision` is the canonical name (lives in
@@ -30,10 +43,32 @@ export interface VoxelTerrainGeometryResult {
  */
 export const createTerrainSignature = createTerrainRevision;
 
-function createGeometryFromWorkerResponse(
+function getCachedGeometryBuffers(
+	terrainSignature: string
+): VoxelGeometryBufferPayload | null {
+	const cached = geometryBufferCache.get(terrainSignature);
+	if (!cached) return null;
+	geometryBufferCache.delete(terrainSignature);
+	geometryBufferCache.set(terrainSignature, cached);
+	return cached;
+}
+
+function cacheGeometryBuffers(
+	terrainSignature: string,
+	payload: VoxelGeometryBufferPayload
+): void {
+	geometryBufferCache.set(terrainSignature, payload);
+	while (geometryBufferCache.size > GEOMETRY_BUFFER_CACHE_LIMIT) {
+		const oldest = geometryBufferCache.keys().next().value;
+		if (oldest === undefined) break;
+		geometryBufferCache.delete(oldest);
+	}
+}
+
+function payloadFromWorkerResponse(
 	data: VoxelGeometryWorkerResponse
-): THREE.BufferGeometry {
-	return createVoxelTerrainBufferGeometry({
+): VoxelGeometryBufferPayload {
+	return {
 		positions:          data.positions,
 		normals:            data.normals,
 		colors:             data.colors,
@@ -41,7 +76,13 @@ function createGeometryFromWorkerResponse(
 		tileHeights:        data.tileHeights,
 		highlightStrengths: data.highlightStrengths,
 		indices:            data.indices,
-	});
+	};
+}
+
+function createGeometryFromPayload(
+	payload: VoxelGeometryBufferPayload
+): THREE.BufferGeometry {
+	return createVoxelTerrainBufferGeometry(payload);
 }
 
 export function useVoxelTerrainGeometryWorker(
@@ -62,21 +103,34 @@ export function useVoxelTerrainGeometryWorker(
 			return;
 		}
 
+		const width = terrain.Width;
+		const length = terrain.Length;
+		const height = terrain.Height;
+		const cachedPayload = getCachedGeometryBuffers(terrainSignature);
+		if (cachedPayload) {
+			setResult({
+				geometry: createGeometryFromPayload(cachedPayload),
+				width,
+				length,
+				height,
+			});
+			return;
+		}
+
 		const worker = new Worker(
 			new URL("../geometry/voxelGeometryWorker.ts", import.meta.url),
 			{ type: "module" }
 		);
 		const buildId = 1;
-		const width = terrain.Width;
-		const length = terrain.Length;
-		const height = terrain.Height;
 
 		const onMessage = (event: MessageEvent<VoxelGeometryWorkerResponse>) => {
 			if (event.data.buildId !== buildId) return;
 			worker.removeEventListener("message", onMessage);
 			worker.terminate();
 
-			const geometry = createGeometryFromWorkerResponse(event.data);
+			const payload = payloadFromWorkerResponse(event.data);
+			cacheGeometryBuffers(terrainSignature, payload);
+			const geometry = createGeometryFromPayload(payload);
 			setResult({
 				geometry,
 				width,
