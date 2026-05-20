@@ -3,7 +3,12 @@ import * as THREE from "three";
 import { acceleratedRaycast, MeshBVH } from "three-mesh-bvh";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { Voxel, VoxelTerrain } from "../../domains/VoxelTerrain/VoxelTerrain";
+import { terrainHeightToWorldY } from "../Map/Actors3D/actorTokenPlacement";
 import { VOXEL_FACE_DEFINITIONS } from "../../utils/VoxelTerrainGeometryConstants";
+import {
+	buildVoxelTerrainBuffers,
+	createVoxelTerrainBufferGeometry,
+} from "../../utils/VoxelTerrainGeometryUtils";
 import {
 	decodeVoxels,
 	encodeVoxels,
@@ -17,7 +22,14 @@ import {
 	normalizeVoxelPaletteIndex,
 	terrainPaletteIndexToVoxelColor,
 } from "../../utils/VoxelTerrainEditorUtils";
-import { getVoxelTerrainResolution } from "../../utils/VoxelTerrainUtils";
+import {
+	createTerrainRevision,
+	getVoxelTerrainIndex,
+	getVoxelTerrainResolution,
+	packVoxelKey,
+	unpackVoxelKey,
+	type VoxelTerrainIndex,
+} from "../../utils/VoxelTerrainIndex";
 import {
 	buildTerrainFromVox,
 	getVoxResolutionOptions,
@@ -49,13 +61,6 @@ interface VoxelCoord {
 	x: number;
 	y: number;
 	z: number;
-}
-
-interface TerrainBounds {
-	resolution: number;
-	resolvedWidth: number;
-	resolvedLength: number;
-	resolvedHeight: number;
 }
 
 interface PickInfo {
@@ -91,11 +96,6 @@ interface EditorSceneResources {
 	terrainMaterial: THREE.MeshStandardMaterial;
 }
 
-interface EditorRenderState {
-	terrain: VoxelTerrain;
-	map: Map<number, number>;
-}
-
 // VOX import ----------------------------------------------------------------
 
 type VoxImportModal =
@@ -120,6 +120,9 @@ const INITIAL_CAMERA_HALF_SIZE = 14;
 const CAMERA_DISTANCE_MULTIPLIER = 1.65;
 const STROKE_DRAG_THRESHOLD_PX = 5;
 const EDITOR_PIXEL_RATIO = 1;
+// Lift the actor-overlay dot slightly above the tactical surface so it
+// reads cleanly against the terrain.
+const ACTOR_OVERLAY_FLOAT_Y = 0.2;
 
 const TOOL_BUTTONS: Array<{
 	id: EditorTool;
@@ -162,85 +165,86 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
-function voxelKey(x: number, y: number, z: number): number {
-	return x + y * 256 + z * 65536;
+// ---------------------------------------------------------------------------
+// Mid-stroke overlay
+//
+// The editor's canonical state is the encoded `VoxelTerrain.Voxels` string.
+// `getVoxelTerrainIndex(terrain)` exposes hasVoxel / getVoxelColor queries
+// for that committed state.
+//
+// During a brush stroke we accumulate pending changes in a small overlay
+// (`Map<packedKey, color | null>`, where `null` means "this voxel was deleted
+// in this stroke"). Queries check the overlay first, then fall back to the
+// index. On rAF flush the overlay is folded into the terrain and cleared.
+// ---------------------------------------------------------------------------
+
+type VoxelOverlay = Map<number, number | null>;
+
+function peekHasVoxel(
+	index: VoxelTerrainIndex,
+	overlay: VoxelOverlay,
+	vx: number,
+	vy: number,
+	vz: number
+): boolean {
+	const key = packVoxelKey(vx, vy, vz);
+	if (overlay.has(key)) return overlay.get(key) !== null;
+	return index.hasVoxel(vx, vy, vz);
 }
 
-function unpackVoxelPositionKey(key: number): VoxelCoord {
-	return {
-		x: key & 0xff,
-		y: (key >>> 8) & 0xff,
-		z: (key >>> 16) & 0xff,
-	};
-}
-
-function createVoxelMap(encoded: string): Map<number, number> {
-	const map = new Map<number, number>();
-
-	for (const voxel of decodeVoxels(encoded)) {
-		map.set(voxelKey(voxel.x, voxel.y, voxel.z), normalizeVoxelPaletteIndex(voxel.color));
+function peekVoxelColor(
+	index: VoxelTerrainIndex,
+	overlay: VoxelOverlay,
+	vx: number,
+	vy: number,
+	vz: number
+): number | null {
+	const key = packVoxelKey(vx, vy, vz);
+	if (overlay.has(key)) {
+		const value = overlay.get(key);
+		return value === undefined ? null : value;
 	}
-
-	return map;
+	return index.getVoxelColor(vx, vy, vz);
 }
 
-function voxelMapToEncoded(map: Map<number, number>): string {
+/** Fold an overlay's pending edits into `base` and return the new terrain. */
+function commitOverlayToTerrain(base: VoxelTerrain, overlay: VoxelOverlay): VoxelTerrain {
+	if (overlay.size === 0) return base;
 	const voxels: Voxel[] = [];
-
-	for (const [key, color] of map) {
-		const voxel = unpackVoxelPositionKey(key);
-		voxels.push({
-			x: voxel.x,
-			y: voxel.y,
-			z: voxel.z,
-			color,
-		});
+	// Keep base voxels that aren't touched by the overlay.
+	for (const voxel of decodeVoxels(base.Voxels)) {
+		const key = packVoxelKey(voxel.x, voxel.y, voxel.z);
+		if (!overlay.has(key)) voxels.push(voxel);
 	}
-
-	return encodeVoxels(voxels);
+	// Add overlay placements (skip deletes).
+	for (const [key, color] of overlay) {
+		if (color === null) continue;
+		const { x, y, z } = unpackVoxelKey(key);
+		voxels.push({ x, y, z, color });
+	}
+	return { ...base, Voxels: encodeVoxels(voxels) };
 }
 
-function getTerrainBounds(terrain: VoxelTerrain): TerrainBounds {
-	const resolution = getVoxelTerrainResolution(terrain);
+// ---------------------------------------------------------------------------
+// Geometry helpers (bounds checks, coordinate conversions, brush expansion)
+// ---------------------------------------------------------------------------
 
-	return {
-		resolution,
-		resolvedWidth: terrain.Width * resolution,
-		resolvedLength: terrain.Length * resolution,
-		resolvedHeight: terrain.Height * resolution,
-	};
-}
-
-function getTerrainShapeSignature(terrain: VoxelTerrain): string {
-	return [
-		terrain.Id,
-		terrain.Width,
-		terrain.Length,
-		terrain.Height,
-		getVoxelTerrainResolution(terrain),
-	].join(":");
-}
-
-function isInBounds(coord: VoxelCoord, bounds: TerrainBounds): boolean {
+function isVoxelInBounds(index: VoxelTerrainIndex, coord: VoxelCoord): boolean {
 	return (
-		coord.x >= 0 &&
-		coord.x < bounds.resolvedWidth &&
-		coord.y >= 0 &&
-		coord.y < bounds.resolvedHeight &&
-		coord.z >= 0 &&
-		coord.z < bounds.resolvedLength
+		coord.x >= 0 && coord.x < index.voxelWidth &&
+		coord.y >= 0 && coord.y < index.voxelHeight &&
+		coord.z >= 0 && coord.z < index.voxelLength
 	);
 }
 
 function pointToVoxelCoord(
 	point: THREE.Vector3,
-	terrain: VoxelTerrain,
-	bounds: TerrainBounds
+	index: VoxelTerrainIndex
 ): VoxelCoord {
 	return {
-		x: Math.floor((point.x + terrain.Width / 2) * bounds.resolution),
-		y: Math.floor((point.y + 0.5) * bounds.resolution),
-		z: Math.floor((point.z + terrain.Length / 2) * bounds.resolution),
+		x: Math.floor((point.x + index.width / 2) * index.resolution),
+		y: Math.floor((point.y + 0.5) * index.resolution),
+		z: Math.floor((point.z + index.length / 2) * index.resolution),
 	};
 }
 
@@ -286,7 +290,7 @@ function getTacticalBrushUnits(
 	origin: VoxelCoord,
 	normal: VoxelCoord,
 	brushSize: number,
-	terrain: VoxelTerrain
+	index: VoxelTerrainIndex
 ): VoxelCoord[] {
 	const offsets = getBrushOffsets(brushSize);
 	const units: VoxelCoord[] = [];
@@ -303,12 +307,9 @@ function getTacticalBrushUnits(
 			}
 
 			if (
-				unit.x >= 0 &&
-				unit.x < terrain.Width &&
-				unit.y >= 0 &&
-				unit.y < terrain.Height &&
-				unit.z >= 0 &&
-				unit.z < terrain.Length
+				unit.x >= 0 && unit.x < index.width &&
+				unit.y >= 0 && unit.y < index.height &&
+				unit.z >= 0 && unit.z < index.length
 			) {
 				units.push(unit);
 			}
@@ -318,25 +319,25 @@ function getTacticalBrushUnits(
 	return units;
 }
 
-function getTacticalUnitFromVoxel(coord: VoxelCoord, bounds: TerrainBounds): VoxelCoord {
+function getTacticalUnitFromVoxel(coord: VoxelCoord, index: VoxelTerrainIndex): VoxelCoord {
 	return {
-		x: Math.floor(coord.x / bounds.resolution),
-		y: Math.floor(coord.y / bounds.resolution),
-		z: Math.floor(coord.z / bounds.resolution),
+		x: Math.floor(coord.x / index.resolution),
+		y: Math.floor(coord.y / index.resolution),
+		z: Math.floor(coord.z / index.resolution),
 	};
 }
 
-function getTacticalBlockCoords(unit: VoxelCoord, bounds: TerrainBounds): VoxelCoord[] {
+function getTacticalBlockCoords(unit: VoxelCoord, index: VoxelTerrainIndex): VoxelCoord[] {
 	const coords: VoxelCoord[] = [];
-	const startX = unit.x * bounds.resolution;
-	const startY = unit.y * bounds.resolution;
-	const startZ = unit.z * bounds.resolution;
+	const startX = unit.x * index.resolution;
+	const startY = unit.y * index.resolution;
+	const startZ = unit.z * index.resolution;
 
-	for (let z = startZ; z < startZ + bounds.resolution; z++) {
-		for (let y = startY; y < startY + bounds.resolution; y++) {
-			for (let x = startX; x < startX + bounds.resolution; x++) {
+	for (let z = startZ; z < startZ + index.resolution; z++) {
+		for (let y = startY; y < startY + index.resolution; y++) {
+			for (let x = startX; x < startX + index.resolution; x++) {
 				const coord = { x, y, z };
-				if (isInBounds(coord, bounds)) coords.push(coord);
+				if (isVoxelInBounds(index, coord)) coords.push(coord);
 			}
 		}
 	}
@@ -345,14 +346,12 @@ function getTacticalBlockCoords(unit: VoxelCoord, bounds: TerrainBounds): VoxelC
 }
 
 function collectAffectedCoords(
-	terrain: VoxelTerrain,
+	index: VoxelTerrainIndex,
 	pick: PickInfo,
 	tool: EditorTool,
 	granularity: EditGranularity,
 	brushSize: number
 ): VoxelCoord[] {
-	const bounds = getTerrainBounds(terrain);
-
 	if (granularity === "voxel") {
 		const origin =
 			tool === "place" && !pick.ground
@@ -365,11 +364,11 @@ function collectAffectedCoords(
 		const normal = pick.ground ? { x: 0, y: 1, z: 0 } : pick.normal;
 
 		return getPlaneBrushCoords(origin, normal, brushSize).filter((coord) =>
-			isInBounds(coord, bounds)
+			isVoxelInBounds(index, coord)
 		);
 	}
 
-	const baseUnit = getTacticalUnitFromVoxel(pick.voxel, bounds);
+	const baseUnit = getTacticalUnitFromVoxel(pick.voxel, index);
 	const origin =
 		tool === "place" && !pick.ground
 			? {
@@ -379,14 +378,14 @@ function collectAffectedCoords(
 			}
 			: baseUnit;
 	const normal = pick.ground ? { x: 0, y: 1, z: 0 } : pick.normal;
-	const units = getTacticalBrushUnits(origin, normal, brushSize, terrain);
+	const units = getTacticalBrushUnits(origin, normal, brushSize, index);
 
-	return units.flatMap((unit) => getTacticalBlockCoords(unit, bounds));
+	return units.flatMap((unit) => getTacticalBlockCoords(unit, index));
 }
 
 function applyVoxelEdit(
-	terrain: VoxelTerrain,
-	map: Map<number, number>,
+	index: VoxelTerrainIndex,
+	overlay: VoxelOverlay,
 	pick: PickInfo,
 	tool: EditorTool,
 	granularity: EditGranularity,
@@ -396,14 +395,14 @@ function applyVoxelEdit(
 	const coords =
 		tool === "sample"
 			? [pick.voxel]
-			: collectAffectedCoords(terrain, pick, tool, granularity, brushSize);
+			: collectAffectedCoords(index, pick, tool, granularity, brushSize);
 	let changed = false;
 	let sampledColor: number | null = null;
 
 	if (tool === "sample") {
 		for (const coord of coords) {
-			const color = map.get(voxelKey(coord.x, coord.y, coord.z));
-			if (color !== undefined) {
+			const color = peekVoxelColor(index, overlay, coord.x, coord.y, coord.z);
+			if (color !== null) {
 				sampledColor = color;
 				break;
 			}
@@ -413,23 +412,28 @@ function applyVoxelEdit(
 	}
 
 	for (const coord of coords) {
-		const key = voxelKey(coord.x, coord.y, coord.z);
+		const key = packVoxelKey(coord.x, coord.y, coord.z);
 
 		if (tool === "erase") {
-			if (map.delete(key)) changed = true;
-			continue;
-		}
-
-		if (tool === "paint") {
-			if (map.has(key) && map.get(key) !== colorIndex) {
-				map.set(key, colorIndex);
+			if (peekHasVoxel(index, overlay, coord.x, coord.y, coord.z)) {
+				overlay.set(key, null);
 				changed = true;
 			}
 			continue;
 		}
 
-		if (!map.has(key)) {
-			map.set(key, colorIndex);
+		if (tool === "paint") {
+			const current = peekVoxelColor(index, overlay, coord.x, coord.y, coord.z);
+			if (current !== null && current !== colorIndex) {
+				overlay.set(key, colorIndex);
+				changed = true;
+			}
+			continue;
+		}
+
+		// place
+		if (!peekHasVoxel(index, overlay, coord.x, coord.y, coord.z)) {
+			overlay.set(key, colorIndex);
 			changed = true;
 		}
 	}
@@ -440,77 +444,20 @@ function applyVoxelEdit(
 	};
 }
 
-const editorTerrainColorCache = new Map<number, { top: THREE.Color; side: THREE.Color }>();
+// Cached THREE.Color instance reused for every voxel as it streams through the
+// shared geometry builder. The builder copies the .r/.g/.b values into a
+// Float32Array, so a single Color object is enough.
+const EDITOR_VOXEL_COLOR = new THREE.Color();
 
-function getEditorTerrainColor(colorIndex: number, isTopFace: boolean): THREE.Color {
-	const normalizedIndex = normalizeVoxelPaletteIndex(colorIndex);
-	let cached = editorTerrainColorCache.get(normalizedIndex);
-	if (!cached) {
-		const top = new THREE.Color(terrainPaletteIndexToVoxelColor(normalizedIndex));
-		cached = {
-			top,
-			side: top.clone().multiplyScalar(0.78),
-		};
-		editorTerrainColorCache.set(normalizedIndex, cached);
-	}
-
-	return isTopFace ? cached.top : cached.side;
-}
-
-function createEditorTerrainGeometry(
-	terrain: VoxelTerrain,
-	map: Map<number, number>
-): THREE.BufferGeometry {
-	const positions: number[] = [];
-	const normals: number[] = [];
-	const colors: number[] = [];
-	const indices: number[] = [];
-	const bounds = getTerrainBounds(terrain);
-	const voxelSize = 1 / bounds.resolution;
-	const halfVoxelSize = voxelSize / 2;
-
-	for (const [key, colorIndex] of map) {
-		const voxel = unpackVoxelPositionKey(key);
-		const centerX = voxel.x / bounds.resolution - terrain.Width / 2 + halfVoxelSize;
-		const centerY = (voxel.y + 0.5) / bounds.resolution - 0.5;
-		const centerZ = voxel.z / bounds.resolution - terrain.Length / 2 + halfVoxelSize;
-
-		for (const face of VOXEL_FACE_DEFINITIONS) {
-			const [dx, dy, dz] = face.neighborOffset;
-			if (map.has(voxelKey(voxel.x + dx, voxel.y + dy, voxel.z + dz))) continue;
-
-			const color = getEditorTerrainColor(colorIndex, face.normal[1] > 0.5);
-			const vertexIndex = positions.length / 3;
-			for (const [cx, cy, cz] of face.corners) {
-				positions.push(
-					centerX + cx * voxelSize,
-					centerY + cy * voxelSize,
-					centerZ + cz * voxelSize
-				);
-				normals.push(...face.normal);
-				colors.push(color.r, color.g, color.b);
-			}
-
-			indices.push(
-				vertexIndex,
-				vertexIndex + 1,
-				vertexIndex + 2,
-				vertexIndex,
-				vertexIndex + 2,
-				vertexIndex + 3
-			);
-		}
-	}
-
-	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-	geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-	geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-	geometry.setIndex(indices);
-	geometry.computeBoundingBox();
-	geometry.computeBoundingSphere();
+function buildEditorTerrainGeometry(terrain: VoxelTerrain): THREE.BufferGeometry {
+	const buffers = buildVoxelTerrainBuffers(terrain, (voxel) => {
+		EDITOR_VOXEL_COLOR.set(
+			terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(voxel.color))
+		);
+		return EDITOR_VOXEL_COLOR;
+	});
+	const geometry = createVoxelTerrainBufferGeometry(buffers);
 	geometry.boundsTree = new MeshBVH(geometry);
-
 	return geometry;
 }
 
@@ -555,16 +502,16 @@ function createGridLineSegments(
 }
 
 function createBoundsFrame(
-	terrain: VoxelTerrain,
+	index: VoxelTerrainIndex,
 	color: number,
 	opacity: number
 ): THREE.LineSegments {
-	const minX = -terrain.Width / 2;
-	const maxX = terrain.Width / 2;
+	const minX = -index.width / 2;
+	const maxX = index.width / 2;
 	const minY = -0.5;
-	const maxY = terrain.Height - 0.5;
-	const minZ = -terrain.Length / 2;
-	const maxZ = terrain.Length / 2;
+	const maxY = index.height - 0.5;
+	const minZ = -index.length / 2;
+	const maxZ = index.length / 2;
 	const corners = [
 		[minX, minY, minZ],
 		[maxX, minY, minZ],
@@ -612,24 +559,37 @@ function addTopRectangle(
 	points.push(minX, y, maxZ, minX, y, minZ);
 }
 
+// Iterate the terrain's top-exposed voxels (the ones whose +Y neighbor is
+// empty). Used by both grid builders. The index drives the "above me empty"
+// check; we still decode the terrain to walk every voxel because the index
+// doesn't expose per-voxel positions (only per-tile surface heights).
+function* iterateTopExposedVoxels(
+	terrain: VoxelTerrain,
+	index: VoxelTerrainIndex
+): Generator<Voxel> {
+	for (const voxel of decodeVoxels(terrain.Voxels)) {
+		if (index.hasVoxel(voxel.x, voxel.y + 1, voxel.z)) continue;
+		yield voxel;
+	}
+}
+
 function createVoxelSurfaceGrid(
 	terrain: VoxelTerrain,
-	bounds: TerrainBounds,
-	map: Map<number, number>,
+	index: VoxelTerrainIndex,
 	color: number,
 	opacity: number
 ): THREE.LineSegments | null {
 	const points: number[] = [];
+	const r = index.resolution;
+	const halfW = index.width / 2;
+	const halfL = index.length / 2;
 
-	for (const key of map.keys()) {
-		const voxel = unpackVoxelPositionKey(key);
-		if (map.has(voxelKey(voxel.x, voxel.y + 1, voxel.z))) continue;
-
-		const minX = voxel.x / bounds.resolution - terrain.Width / 2;
-		const maxX = (voxel.x + 1) / bounds.resolution - terrain.Width / 2;
-		const y = (voxel.y + 1) / bounds.resolution - 0.5 + GRID_LINE_OFFSET;
-		const minZ = voxel.z / bounds.resolution - terrain.Length / 2;
-		const maxZ = (voxel.z + 1) / bounds.resolution - terrain.Length / 2;
+	for (const voxel of iterateTopExposedVoxels(terrain, index)) {
+		const minX = voxel.x / r - halfW;
+		const maxX = (voxel.x + 1) / r - halfW;
+		const y = (voxel.y + 1) / r - 0.5 + GRID_LINE_OFFSET;
+		const minZ = voxel.z / r - halfL;
+		const maxZ = (voxel.z + 1) / r - halfL;
 		addTopRectangle(points, minX, maxX, y, minZ, maxZ);
 	}
 
@@ -639,33 +599,32 @@ function createVoxelSurfaceGrid(
 
 function createTacticalSurfaceGrid(
 	terrain: VoxelTerrain,
-	bounds: TerrainBounds,
-	map: Map<number, number>,
+	index: VoxelTerrainIndex,
 	color: number,
 	opacity: number
 ): THREE.LineSegments | null {
 	const points: number[] = [];
+	const r = index.resolution;
+	const halfW = index.width / 2;
+	const halfL = index.length / 2;
 
-	for (const key of map.keys()) {
-		const voxel = unpackVoxelPositionKey(key);
-		if (map.has(voxelKey(voxel.x, voxel.y + 1, voxel.z))) continue;
+	for (const voxel of iterateTopExposedVoxels(terrain, index)) {
+		const minX = voxel.x / r - halfW;
+		const maxX = (voxel.x + 1) / r - halfW;
+		const y = (voxel.y + 1) / r - 0.5 + GRID_LINE_OFFSET * 2;
+		const minZ = voxel.z / r - halfL;
+		const maxZ = (voxel.z + 1) / r - halfL;
 
-		const minX = voxel.x / bounds.resolution - terrain.Width / 2;
-		const maxX = (voxel.x + 1) / bounds.resolution - terrain.Width / 2;
-		const y = (voxel.y + 1) / bounds.resolution - 0.5 + GRID_LINE_OFFSET * 2;
-		const minZ = voxel.z / bounds.resolution - terrain.Length / 2;
-		const maxZ = (voxel.z + 1) / bounds.resolution - terrain.Length / 2;
-
-		if (voxel.x % bounds.resolution === 0) {
+		if (voxel.x % r === 0) {
 			points.push(minX, y, minZ, minX, y, maxZ);
 		}
-		if ((voxel.x + 1) % bounds.resolution === 0) {
+		if ((voxel.x + 1) % r === 0) {
 			points.push(maxX, y, minZ, maxX, y, maxZ);
 		}
-		if (voxel.z % bounds.resolution === 0) {
+		if (voxel.z % r === 0) {
 			points.push(minX, y, minZ, maxX, y, minZ);
 		}
-		if ((voxel.z + 1) % bounds.resolution === 0) {
+		if ((voxel.z + 1) % r === 0) {
 			points.push(minX, y, maxZ, maxX, y, maxZ);
 		}
 	}
@@ -677,39 +636,35 @@ function createTacticalSurfaceGrid(
 function rebuildGrid(
 	resources: EditorSceneResources,
 	terrain: VoxelTerrain,
-	map: Map<number, number>,
 	showTacticalGrid: boolean,
 	showVoxelGrid: boolean
 ): void {
 	clearObjectGroup(resources.gridGroup);
 
-	const bounds = getTerrainBounds(terrain);
+	const index = getVoxelTerrainIndex(terrain);
 
-	if (showVoxelGrid && bounds.resolution > 1) {
-		const voxelGrid = createVoxelSurfaceGrid(terrain, bounds, map, 0xf59e0b, 0.38);
+	if (showVoxelGrid && index.resolution > 1) {
+		const voxelGrid = createVoxelSurfaceGrid(terrain, index, 0xf59e0b, 0.38);
 		if (voxelGrid) resources.gridGroup.add(voxelGrid);
 	}
 
 	if (showTacticalGrid) {
-		const tacticalGrid = createTacticalSurfaceGrid(terrain, bounds, map, 0x14b8a6, 0.68);
+		const tacticalGrid = createTacticalSurfaceGrid(terrain, index, 0x14b8a6, 0.68);
 		if (tacticalGrid) resources.gridGroup.add(tacticalGrid);
 	}
 
-	resources.gridGroup.add(createBoundsFrame(terrain, 0xe5e7eb, 0.32));
+	resources.gridGroup.add(createBoundsFrame(index, 0xe5e7eb, 0.32));
 }
 
 function getVoxelWorldCenter(
-	terrain: VoxelTerrain,
-	bounds: TerrainBounds,
+	index: VoxelTerrainIndex,
 	voxel: VoxelCoord
 ): THREE.Vector3 {
-	const voxelSize = 1 / bounds.resolution;
-	const halfVoxelSize = voxelSize / 2;
-
+	const halfVoxelSize = index.voxelSize / 2;
 	return new THREE.Vector3(
-		voxel.x / bounds.resolution - terrain.Width / 2 + halfVoxelSize,
-		(voxel.y + 0.5) / bounds.resolution - 0.5,
-		voxel.z / bounds.resolution - terrain.Length / 2 + halfVoxelSize
+		voxel.x / index.resolution - index.width / 2 + halfVoxelSize,
+		(voxel.y + 0.5) / index.resolution - 0.5,
+		voxel.z / index.resolution - index.length / 2 + halfVoxelSize
 	);
 }
 
@@ -759,35 +714,33 @@ function addVoxelFaceToGeometry(
 }
 
 function createHoverSurfaceGeometry(
-	terrain: VoxelTerrain,
-	bounds: TerrainBounds,
-	map: Map<number, number>,
+	index: VoxelTerrainIndex,
+	overlay: VoxelOverlay,
 	coords: VoxelCoord[]
 ): THREE.BufferGeometry | null {
 	const positions: number[] = [];
 	const colors: number[] = [];
 	const indices: number[] = [];
-	const voxelSize = 1 / bounds.resolution;
-	const selectedKeys = new Set(coords.map((coord) => voxelKey(coord.x, coord.y, coord.z)));
+	const selectedKeys = new Set(coords.map((c) => packVoxelKey(c.x, c.y, c.z)));
 
 	for (const key of selectedKeys) {
-		const colorIndex = map.get(key);
-		if (colorIndex === undefined) continue;
+		const { x, y, z } = unpackVoxelKey(key);
+		const colorIndex = peekVoxelColor(index, overlay, x, y, z);
+		if (colorIndex === null) continue;
 
-		const voxel = unpackVoxelPositionKey(key);
-		const center = getVoxelWorldCenter(terrain, bounds, voxel);
+		const center = getVoxelWorldCenter(index, { x, y, z });
 		const color = getHoverColor(colorIndex);
 
 		for (const face of VOXEL_FACE_DEFINITIONS) {
 			const [dx, dy, dz] = face.neighborOffset;
-			if (map.has(voxelKey(voxel.x + dx, voxel.y + dy, voxel.z + dz))) continue;
+			if (peekHasVoxel(index, overlay, x + dx, y + dy, z + dz)) continue;
 
 			addVoxelFaceToGeometry(
 				positions,
 				colors,
 				indices,
 				center,
-				voxelSize,
+				index.voxelSize,
 				face,
 				color,
 				HOVER_FACE_OFFSET
@@ -807,45 +760,39 @@ function createHoverSurfaceGeometry(
 }
 
 function createPlaceGhostGeometry(
-	terrain: VoxelTerrain,
-	bounds: TerrainBounds,
-	map: Map<number, number>,
+	index: VoxelTerrainIndex,
+	overlay: VoxelOverlay,
 	coords: VoxelCoord[]
 ): THREE.BufferGeometry | null {
 	const positions: number[] = [];
 	const colors: number[] = [];
 	const indices: number[] = [];
-	const voxelSize = 1 / bounds.resolution;
 	const ghostKeys = new Set<number>();
 
 	for (const coord of coords) {
-		const key = voxelKey(coord.x, coord.y, coord.z);
-		if (!isInBounds(coord, bounds) || map.has(key)) continue;
-		ghostKeys.add(key);
-	}
-
-	const occupiedOrGhost = new Set<number>(map.keys());
-	for (const key of ghostKeys) {
-		occupiedOrGhost.add(key);
+		if (!isVoxelInBounds(index, coord)) continue;
+		if (peekHasVoxel(index, overlay, coord.x, coord.y, coord.z)) continue;
+		ghostKeys.add(packVoxelKey(coord.x, coord.y, coord.z));
 	}
 
 	const color = new THREE.Color(0xffffff);
 	for (const key of ghostKeys) {
-		const voxel = unpackVoxelPositionKey(key);
-		const center = getVoxelWorldCenter(terrain, bounds, voxel);
+		const { x, y, z } = unpackVoxelKey(key);
+		const center = getVoxelWorldCenter(index, { x, y, z });
 
 		for (const face of VOXEL_FACE_DEFINITIONS) {
 			const [dx, dy, dz] = face.neighborOffset;
-			if (occupiedOrGhost.has(voxelKey(voxel.x + dx, voxel.y + dy, voxel.z + dz))) {
-				continue;
-			}
+			const neighborKey = packVoxelKey(x + dx, y + dy, z + dz);
+			// Cull faces against either an existing voxel or another ghost in the same brush.
+			if (ghostKeys.has(neighborKey)) continue;
+			if (peekHasVoxel(index, overlay, x + dx, y + dy, z + dz)) continue;
 
 			addVoxelFaceToGeometry(
 				positions,
 				colors,
 				indices,
 				center,
-				voxelSize,
+				index.voxelSize,
 				face,
 				color,
 				0
@@ -866,8 +813,8 @@ function createPlaceGhostGeometry(
 
 function updateHoverIndicator(
 	resources: EditorSceneResources,
-	terrain: VoxelTerrain,
-	map: Map<number, number>,
+	index: VoxelTerrainIndex,
+	overlay: VoxelOverlay,
 	pick: PickInfo | null,
 	tool: EditorTool,
 	granularity: EditGranularity,
@@ -877,15 +824,14 @@ function updateHoverIndicator(
 	clearObjectGroup(resources.hoverGroup);
 	if (!pick) return;
 
-	const bounds = getTerrainBounds(terrain);
 	const coords =
 		tool === "sample"
 			? [pick.voxel]
-			: collectAffectedCoords(terrain, pick, tool, granularity, brushSize);
+			: collectAffectedCoords(index, pick, tool, granularity, brushSize);
 	const geometry =
 		tool === "place"
-			? createPlaceGhostGeometry(terrain, bounds, map, coords)
-			: createHoverSurfaceGeometry(terrain, bounds, map, coords);
+			? createPlaceGhostGeometry(index, overlay, coords)
+			: createHoverSurfaceGeometry(index, overlay, coords);
 
 	if (!geometry) return;
 
@@ -970,8 +916,11 @@ export default function VoxelTerrainEditor({
 }: VoxelTerrainEditorProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const resourcesRef = useRef<EditorSceneResources | null>(null);
+	// Canonical committed terrain for the editor session. Updated on rAF flush
+	// (stroke commit), undo/redo, and external prop changes.
 	const terrainRef = useRef(terrain);
-	const voxelMapRef = useRef(createVoxelMap(terrain.Voxels));
+	// Pending stroke edits not yet folded into terrainRef. Cleared on rAF flush.
+	const inflightOverlayRef = useRef<VoxelOverlay>(new Map());
 	const toolRef = useRef<EditorTool>("place");
 	const granularityRef = useRef<EditGranularity>("tactical");
 	const brushSizeRef = useRef(1);
@@ -988,8 +937,8 @@ export default function VoxelTerrainEditor({
 	const lastShapeSignatureRef = useRef<string | null>(null);
 	const pendingChangeFrameRef = useRef<number | null>(null);
 	const hasPendingVoxelChangeRef = useRef(false);
-	const editGenerationRef = useRef(0);
-	const emittedGenerationRef = useRef(0);
+	// Last terrain.Voxels we emitted via onChange. Used to recognise our own
+	// echo in the terrain prop useEffect (so we don't re-adopt our own emit).
 	const lastEmittedVoxelsRef = useRef(terrain.Voxels);
 
 	const [activeView, setActiveView] = useState<EditorView>("edit");
@@ -1004,69 +953,51 @@ export default function VoxelTerrainEditor({
 	const [redoStack, setRedoStack] = useState<string[]>([]);
 	const [voxImportModal, setVoxImportModal] = useState<VoxImportModal | null>(null);
 	const voxFileInputRef = useRef<HTMLInputElement>(null);
-	const [renderState, setRenderState] = useState<EditorRenderState>(() => ({
-		terrain,
-		map: createVoxelMap(terrain.Voxels),
-	}));
-	const renderStateRef = useRef<EditorRenderState | null>(null);
-	if (renderStateRef.current === null) {
-		renderStateRef.current = renderState;
-	}
+	// editGen ticks whenever terrainRef.current changes (stroke commit, undo,
+	// redo, external prop). Geometry + grid useEffects key on it. Refs alone
+	// would be invisible to React; this is the single change-trigger.
+	const [editGen, setEditGen] = useState(0);
+	const bumpEditGen = useCallback(() => setEditGen((g) => g + 1), []);
 
-	const voxelCount = renderState.map.size;
+	// terrainRef.current is the committed terrain. The sidebar reflects it
+	// (overlay-in-progress voxels appear after the next rAF flush, at most a
+	// frame later -- the same cadence the editor used previously).
+	// `editGen` is read here purely to opt this expression into React's
+	// re-render cycle whenever the terrain changes.
+	void editGen;
+	const displayedTerrain = terrainRef.current;
+	const voxelCount = getVoxelTerrainIndex(displayedTerrain).voxelCount;
 	const selectedTool = TOOL_BUTTONS.find((button) => button.id === tool) ?? TOOL_BUTTONS[0];
-	const resolution = getVoxelTerrainResolution(terrain);
-	const tileDimensions = `${terrain.Width} x ${terrain.Length} x ${terrain.Height}`;
-	const voxelDimensions = `${terrain.Width * resolution} x ${terrain.Length * resolution} x ${
-		terrain.Height * resolution
+	const resolution = getVoxelTerrainResolution(displayedTerrain);
+	const tileDimensions = `${displayedTerrain.Width} x ${displayedTerrain.Length} x ${displayedTerrain.Height}`;
+	const voxelDimensions = `${displayedTerrain.Width * resolution} x ${displayedTerrain.Length * resolution} x ${
+		displayedTerrain.Height * resolution
 	}`;
 	const brushModeLabel = granularity === "tactical" ? "Tile Brush" : "Voxel Brush";
 
-	const setEditorRenderState = useCallback((nextTerrain: VoxelTerrain, nextMap: Map<number, number>) => {
-		const nextState = {
-			terrain: nextTerrain,
-			map: new Map(nextMap),
-		};
-		renderStateRef.current = nextState;
-		setRenderState(nextState);
-	}, []);
-
 	useEffect(() => {
-		const incomingShapeSignature = getTerrainShapeSignature(terrain);
-		const currentShapeSignature = getTerrainShapeSignature(terrainRef.current);
-		const hasNewerLocalEdits = editGenerationRef.current > emittedGenerationRef.current;
-		const isStaleOwnEcho =
-			hasNewerLocalEdits &&
-			incomingShapeSignature === currentShapeSignature &&
-			terrain.Voxels === lastEmittedVoxelsRef.current;
-
-		if (isStaleOwnEcho) return;
-
-		const shapeChanged = incomingShapeSignature !== currentShapeSignature;
-		if (shapeChanged && pendingChangeFrameRef.current !== null) {
-			cancelAnimationFrame(pendingChangeFrameRef.current);
-			pendingChangeFrameRef.current = null;
-			hasPendingVoxelChangeRef.current = false;
-			emittedGenerationRef.current = editGenerationRef.current;
-		}
-
-		const rendered = renderStateRef.current;
+		// Adopt the prop only when it's a genuinely external change. After our
+		// own rAF flush, terrain.Voxels === lastEmittedVoxelsRef.current and the
+		// shape signature matches terrainRef -- skip then.
 		if (
-			rendered &&
-			rendered.terrain.Voxels === terrain.Voxels &&
-			getTerrainShapeSignature(rendered.terrain) === incomingShapeSignature
+			createTerrainRevision(terrain) === createTerrainRevision(terrainRef.current) &&
+			terrain.Voxels === lastEmittedVoxelsRef.current
 		) {
-			terrainRef.current = terrain;
-			lastEmittedVoxelsRef.current = terrain.Voxels;
 			return;
 		}
 
-		const nextMap = createVoxelMap(terrain.Voxels);
+		// External change (resize, VOX import, initial mount on prop swap):
+		// drop any pending stroke and adopt the new terrain.
+		if (pendingChangeFrameRef.current !== null) {
+			cancelAnimationFrame(pendingChangeFrameRef.current);
+			pendingChangeFrameRef.current = null;
+		}
+		hasPendingVoxelChangeRef.current = false;
+		inflightOverlayRef.current.clear();
 		terrainRef.current = terrain;
-		voxelMapRef.current = nextMap;
 		lastEmittedVoxelsRef.current = terrain.Voxels;
-		setEditorRenderState(terrain, nextMap);
-	}, [terrain, setEditorRenderState]);
+		bumpEditGen();
+	}, [terrain, bumpEditGen]);
 
 	useEffect(() => {
 		toolRef.current = tool;
@@ -1098,14 +1029,16 @@ export default function VoxelTerrainEditor({
 		if (!hasPendingVoxelChangeRef.current) return;
 
 		hasPendingVoxelChangeRef.current = false;
-		const nextVoxels = voxelMapToEncoded(voxelMapRef.current);
-		const nextTerrain = { ...terrainRef.current, Voxels: nextVoxels };
+		const nextTerrain = commitOverlayToTerrain(
+			terrainRef.current,
+			inflightOverlayRef.current
+		);
+		inflightOverlayRef.current.clear();
 		terrainRef.current = nextTerrain;
-		lastEmittedVoxelsRef.current = nextVoxels;
-		emittedGenerationRef.current = editGenerationRef.current;
-		setEditorRenderState(nextTerrain, voxelMapRef.current);
+		lastEmittedVoxelsRef.current = nextTerrain.Voxels;
+		bumpEditGen();
 		onChange(nextTerrain);
-	}, [onChange, setEditorRenderState]);
+	}, [bumpEditGen, onChange]);
 
 	const schedulePendingTerrainChange = useCallback(() => {
 		hasPendingVoxelChangeRef.current = true;
@@ -1123,17 +1056,15 @@ export default function VoxelTerrainEditor({
 		const currentTerrain = terrainRef.current;
 		const previousVoxels = undoStack[undoStack.length - 1];
 		const nextTerrain = { ...currentTerrain, Voxels: previousVoxels };
-		const nextMap = createVoxelMap(previousVoxels);
 
+		inflightOverlayRef.current.clear();
 		terrainRef.current = nextTerrain;
-		voxelMapRef.current = nextMap;
 		lastEmittedVoxelsRef.current = previousVoxels;
-		emittedGenerationRef.current = editGenerationRef.current;
-		setEditorRenderState(nextTerrain, nextMap);
 		setUndoStack((current) => current.slice(0, -1));
 		setRedoStack((current) => [currentTerrain.Voxels, ...current].slice(0, UNDO_LIMIT));
+		bumpEditGen();
 		onChange(nextTerrain);
-	}, [flushPendingTerrainChange, onChange, setEditorRenderState, undoStack]);
+	}, [bumpEditGen, flushPendingTerrainChange, onChange, undoStack]);
 
 	const redo = useCallback(() => {
 		if (redoStack.length === 0) return;
@@ -1141,17 +1072,15 @@ export default function VoxelTerrainEditor({
 		const currentTerrain = terrainRef.current;
 		const nextVoxels = redoStack[0];
 		const nextTerrain = { ...currentTerrain, Voxels: nextVoxels };
-		const nextMap = createVoxelMap(nextVoxels);
 
+		inflightOverlayRef.current.clear();
 		terrainRef.current = nextTerrain;
-		voxelMapRef.current = nextMap;
 		lastEmittedVoxelsRef.current = nextVoxels;
-		emittedGenerationRef.current = editGenerationRef.current;
-		setEditorRenderState(nextTerrain, nextMap);
 		setRedoStack((current) => current.slice(1));
 		setUndoStack((current) => [...current.slice(-(UNDO_LIMIT - 1)), currentTerrain.Voxels]);
+		bumpEditGen();
 		onChange(nextTerrain);
-	}, [flushPendingTerrainChange, onChange, redoStack, setEditorRenderState]);
+	}, [bumpEditGen, flushPendingTerrainChange, onChange, redoStack]);
 
 	// Rebuild imperative actor marker elements whenever the actors list changes.
 	// Position updates happen in the rAF loop (updateActorMarkers) so React
@@ -1195,9 +1124,10 @@ export default function VoxelTerrainEditor({
 
 	const getPickInfo = useCallback((event: PointerEvent): PickInfo | null => {
 		const resources = resourcesRef.current;
-		const currentTerrain = terrainRef.current;
 		const container = containerRef.current;
 		if (!resources || !container) return null;
+
+		const index = getVoxelTerrainIndex(terrainRef.current);
 
 		const rect = resources.renderer.domElement.getBoundingClientRect();
 		const mouse = new THREE.Vector2(
@@ -1216,10 +1146,9 @@ export default function VoxelTerrainEditor({
 				const insidePoint = hit.point
 					.clone()
 					.addScaledVector(normal, -PICK_EPSILON);
-				const bounds = getTerrainBounds(currentTerrain);
-				const voxel = pointToVoxelCoord(insidePoint, currentTerrain, bounds);
+				const voxel = pointToVoxelCoord(insidePoint, index);
 
-				if (isInBounds(voxel, bounds)) {
+				if (isVoxelInBounds(index, voxel)) {
 					return {
 						voxel,
 						normal: normalToCoord(normal),
@@ -1236,14 +1165,13 @@ export default function VoxelTerrainEditor({
 			return null;
 		}
 
-		const bounds = getTerrainBounds(currentTerrain);
 		const voxel = {
-			x: Math.floor((groundPoint.x + currentTerrain.Width / 2) * bounds.resolution),
+			x: Math.floor((groundPoint.x + index.width / 2) * index.resolution),
 			y: 0,
-			z: Math.floor((groundPoint.z + currentTerrain.Length / 2) * bounds.resolution),
+			z: Math.floor((groundPoint.z + index.length / 2) * index.resolution),
 		};
 
-		if (!isInBounds(voxel, bounds)) return null;
+		if (!isVoxelInBounds(index, voxel)) return null;
 
 		return {
 			voxel,
@@ -1258,8 +1186,9 @@ export default function VoxelTerrainEditor({
 		lockedPlane: LockedStrokePlane
 	): PickInfo | null => {
 		const resources = resourcesRef.current;
-		const currentTerrain = terrainRef.current;
 		if (!resources) return null;
+
+		const index = getVoxelTerrainIndex(terrainRef.current);
 
 		const rect = resources.renderer.domElement.getBoundingClientRect();
 		const mouse = new THREE.Vector2(
@@ -1274,12 +1203,11 @@ export default function VoxelTerrainEditor({
 			return null;
 		}
 
-		const bounds = getTerrainBounds(currentTerrain);
 		const voxel = lockedPlane.ground
 			? {
-				x: Math.floor((intersectionPoint.x + currentTerrain.Width / 2) * bounds.resolution),
+				x: Math.floor((intersectionPoint.x + index.width / 2) * index.resolution),
 				y: 0,
-				z: Math.floor((intersectionPoint.z + currentTerrain.Length / 2) * bounds.resolution),
+				z: Math.floor((intersectionPoint.z + index.length / 2) * index.resolution),
 			}
 			: pointToVoxelCoord(
 				intersectionPoint
@@ -1292,11 +1220,10 @@ export default function VoxelTerrainEditor({
 						).normalize(),
 						-PICK_EPSILON
 					),
-				currentTerrain,
-				bounds
+				index
 			);
 
-		if (!isInBounds(voxel, bounds)) return null;
+		if (!isVoxelInBounds(index, voxel)) return null;
 
 		return {
 			voxel,
@@ -1310,10 +1237,9 @@ export default function VoxelTerrainEditor({
 		if (readOnlyRef.current) return false;
 
 		const currentTerrain = terrainRef.current;
-		const currentMap = voxelMapRef.current;
 		const result = applyVoxelEdit(
-			currentTerrain,
-			currentMap,
+			getVoxelTerrainIndex(currentTerrain),
+			inflightOverlayRef.current,
 			pick,
 			toolRef.current,
 			granularityRef.current,
@@ -1336,7 +1262,6 @@ export default function VoxelTerrainEditor({
 			strokeStartedRef.current = true;
 		}
 
-		editGenerationRef.current += 1;
 		schedulePendingTerrainChange();
 		return true;
 	}, [recordUndo, schedulePendingTerrainChange]);
@@ -1452,13 +1377,12 @@ export default function VoxelTerrainEditor({
 				const el = markerElems.get(actor.id);
 				if (!el) continue;
 
-				// Convert tactical coords to world space.
-				// Position.x/y are tile col/row; h is tactical height level.
-				// terrainHeightToWorldY uses TERRAIN_WORLD_Y_OFFSET = -0.5,
-				// so worldY = h - 0.5. We add 0.2 to float the dot above the surface.
+				// Convert tactical coords to world space. Position.x/y are tile
+				// col/row; h is tactical height level. Use the same helper the
+				// main 3D map uses so we stay in sync with future offset changes.
 				const worldX = actor.position.x + 0.5 - currentTerrain.Width / 2;
 				const worldZ = actor.position.y + 0.5 - currentTerrain.Length / 2;
-				const worldY = actor.position.h - 0.3;
+				const worldY = terrainHeightToWorldY(actor.position.h) + ACTOR_OVERLAY_FLOAT_Y;
 
 				const vec = new THREE.Vector3(worldX, worldY, worldZ);
 				vec.project(camera);
@@ -1494,8 +1418,8 @@ export default function VoxelTerrainEditor({
 		const refreshHover = (pick: PickInfo | null) => {
 			updateHoverIndicator(
 				resources,
-				terrainRef.current,
-				voxelMapRef.current,
+				getVoxelTerrainIndex(terrainRef.current),
+				inflightOverlayRef.current,
 				pick,
 				toolRef.current,
 				granularityRef.current,
@@ -1666,9 +1590,9 @@ export default function VoxelTerrainEditor({
 		const container = containerRef.current;
 		if (!resources || !container) return;
 
-		const terrain = renderState.terrain;
-		const map = renderState.map;
-		const shapeSignature = getTerrainShapeSignature(terrain);
+		const terrain = terrainRef.current;
+		const index = getVoxelTerrainIndex(terrain);
+		const shapeSignature = `${index.width}:${index.length}:${index.height}:${index.resolution}`;
 		const shapeChanged = lastShapeSignatureRef.current !== shapeSignature;
 
 		if (shapeChanged) {
@@ -1681,8 +1605,8 @@ export default function VoxelTerrainEditor({
 			resources.terrainMesh = null;
 		}
 
-		if (map.size > 0) {
-			const geometry = createEditorTerrainGeometry(terrain, map);
+		if (index.voxelCount > 0) {
+			const geometry = buildEditorTerrainGeometry(terrain);
 			const mesh = new THREE.Mesh(geometry, resources.terrainMaterial);
 			mesh.raycast = acceleratedRaycast;
 			resources.scene.add(mesh);
@@ -1693,19 +1617,18 @@ export default function VoxelTerrainEditor({
 			frameCamera(resources, terrain, container);
 			lastShapeSignatureRef.current = shapeSignature;
 		}
-	}, [renderState]);
+	}, [editGen]);
 
 	useEffect(() => {
 		const resources = resourcesRef.current;
 		if (!resources) return;
 		rebuildGrid(
 			resources,
-			renderState.terrain,
-			renderState.map,
+			terrainRef.current,
 			showTacticalGrid,
 			showVoxelGrid
 		);
-	}, [renderState, showTacticalGrid, showVoxelGrid]);
+	}, [editGen, showTacticalGrid, showVoxelGrid]);
 
 	useEffect(() => {
 		const resources = resourcesRef.current;

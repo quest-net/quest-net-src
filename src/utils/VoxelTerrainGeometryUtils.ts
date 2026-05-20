@@ -211,3 +211,31 @@ export function buildVoxelTerrainBuffers(
 		indices:            trimUint32Buffer(indices, ip, transferSafe),
 	};
 }
+
+// ---------------------------------------------------------------------------
+// Main-thread helper: assemble a BufferGeometry from the buffer struct. Used
+// by both the worker hook (after receiving transferred buffers) and the
+// editor (which builds buffers + geometry synchronously per stroke flush).
+//
+// BVH construction is left to the caller. The worker path deserializes a
+// transferred BVH via MeshBVH.deserialize; main-thread callers build one
+// directly with new MeshBVH(geometry).
+// ---------------------------------------------------------------------------
+export function createVoxelTerrainBufferGeometry(
+	buffers: VoxelTerrainBuffers
+): THREE.BufferGeometry {
+	const geometry = new THREE.BufferGeometry();
+	geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
+	geometry.setAttribute('normal',   new THREE.BufferAttribute(buffers.normals, 3));
+	geometry.setAttribute('color',    new THREE.BufferAttribute(buffers.colors, 3));
+	geometry.setAttribute('tileCoord', new THREE.BufferAttribute(buffers.tileCoords, 2));
+	geometry.setAttribute('tileHeight', new THREE.BufferAttribute(buffers.tileHeights, 1));
+	geometry.setAttribute(
+		'highlightStrength',
+		new THREE.BufferAttribute(buffers.highlightStrengths, 1)
+	);
+	geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
+	geometry.computeBoundingBox();
+	geometry.computeBoundingSphere();
+	return geometry;
+}

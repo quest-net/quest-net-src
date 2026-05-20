@@ -4,6 +4,7 @@
 // string once per revision and exposes the queries used by collision, geometry
 // building, movement, actor placement, and the editor:
 //   - hasVoxel(x, y, z)               -- collision / face culling / AO
+//   - getVoxelColor(x, y, z)          -- palette index at a voxel, or null
 //   - isVoxelOccupiedAtTile(...)      -- actor flight clearance
 //   - allSurfaces / allSurfaceHeights -- per-tactical-tile walkable surfaces
 //   - columnSurfaceHeight(x, z)       -- "where's the ground" fallback
@@ -69,6 +70,11 @@ export interface VoxelTerrainIndex {
 	readonly allSurfaces: ReadonlyMap<string, readonly number[]>;
 	readonly allSurfaceHeights: ReadonlyMap<string, readonly number[]>;
 	hasVoxel(vx: number, vy: number, vz: number): boolean;
+	/**
+	 * Palette index (0..255) of the voxel at (vx, vy, vz), or null if no voxel
+	 * occupies that cell. Used by the editor for sample / paint / hover lookups.
+	 */
+	getVoxelColor(vx: number, vy: number, vz: number): number | null;
 	isVoxelOccupiedAtTile(tileX: number, tileY: number, voxelY: number): boolean;
 	/**
 	 * Exact top-of-terrain height in the center sub-voxel column of tactical
@@ -98,8 +104,17 @@ export function createTerrainRevision(
 
 // Pack (x, y, z) into one 32-bit integer. Matches VoxelDataUtils encoding
 // modulo the trailing color byte. x/y/z are 0..255.
-function packVoxelKey(x: number, y: number, z: number): number {
+export function packVoxelKey(x: number, y: number, z: number): number {
 	return x + (y << 8) + (z << 16);
+}
+
+/** Inverse of packVoxelKey. */
+export function unpackVoxelKey(key: number): { x: number; y: number; z: number } {
+	return {
+		x: key & 0xff,
+		y: (key >>> 8) & 0xff,
+		z: (key >>> 16) & 0xff,
+	};
 }
 
 function tileKey(tileX: number, tileY: number): string {
@@ -136,14 +151,17 @@ export function buildVoxelTerrainIndex(
 	const revision = createTerrainRevision(terrain);
 
 	const occupied = new Set<number>();
+	const colors = new Map<number, number>();
 	const maxVoxelYs = new Int16Array(voxelWidth * voxelLength);
 	maxVoxelYs.fill(-1);
 	let maxVoxelY = -1;
 
-	// Single decode pass: build occupancy, track per-column maxima.
+	// Single decode pass: build occupancy + colors, track per-column maxima.
 	const voxels = decodedVoxels ?? Array.from(decodeVoxels(terrain.Voxels));
 	for (const voxel of voxels) {
-		occupied.add(packVoxelKey(voxel.x, voxel.y, voxel.z));
+		const key = packVoxelKey(voxel.x, voxel.y, voxel.z);
+		occupied.add(key);
+		colors.set(key, voxel.color);
 		if (
 			voxel.x < 0 || voxel.z < 0 ||
 			voxel.x >= voxelWidth || voxel.z >= voxelLength
@@ -217,6 +235,10 @@ export function buildVoxelTerrainIndex(
 		allSurfaceHeights,
 		hasVoxel(vx, vy, vz) {
 			return occupied.has(packVoxelKey(vx, vy, vz));
+		},
+		getVoxelColor(vx, vy, vz) {
+			const color = colors.get(packVoxelKey(vx, vy, vz));
+			return color === undefined ? null : color;
 		},
 		isVoxelOccupiedAtTile(tileX, tileY, voxelY) {
 			const startX = tileX * resolution;

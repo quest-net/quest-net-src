@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { MeshBVH } from "three-mesh-bvh";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCount } from "../../../utils/VoxelDataUtils";
+import { createVoxelTerrainBufferGeometry } from "../../../utils/VoxelTerrainGeometryUtils";
 import { createTerrainRevision } from "../../../utils/VoxelTerrainIndex";
 
 interface VoxelGeometryWorkerResponse {
@@ -40,36 +41,20 @@ export const createTerrainSignature = createTerrainRevision;
 function createGeometryFromWorkerResponse(
 	data: VoxelGeometryWorkerResponse
 ): THREE.BufferGeometry {
-	const {
-		positions,
-		normals,
-		colors,
-		tileCoords,
-		tileHeights,
-		highlightStrengths,
-		indices,
-		bvhRoots,
-		bvhVersion,
-	} = data;
-
-	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-	geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
-	geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-	geometry.setAttribute("tileCoord", new THREE.BufferAttribute(tileCoords, 2));
-	geometry.setAttribute("tileHeight", new THREE.BufferAttribute(tileHeights, 1));
-	geometry.setAttribute(
-		"highlightStrength",
-		new THREE.BufferAttribute(highlightStrengths, 1)
-	);
-	geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-	geometry.computeBoundingBox();
-	geometry.computeBoundingSphere();
+	const geometry = createVoxelTerrainBufferGeometry({
+		positions:          data.positions,
+		normals:            data.normals,
+		colors:             data.colors,
+		tileCoords:         data.tileCoords,
+		tileHeights:        data.tileHeights,
+		highlightStrengths: data.highlightStrengths,
+		indices:            data.indices,
+	});
 
 	const serializedBvh: RuntimeSerializedBVH = {
-		version: bvhVersion,
-		roots: bvhRoots,
-		index: indices,
+		version: data.bvhVersion,
+		roots: data.bvhRoots,
+		index: data.indices,
 		indirectBuffer: null,
 	};
 	geometry.boundsTree = MeshBVH.deserialize(serializedBvh, geometry, {
