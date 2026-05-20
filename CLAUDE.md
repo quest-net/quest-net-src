@@ -90,7 +90,7 @@ Each domain typically has a model file (`Domain.ts`), an actions file (`DomainAc
 - **ThreeDStickerLayer** — Emoji stickers placed on terrain surfaces
 - **ThreeDPingLayer** — Animated ping markers
 
-Supporting utilities: `VoxelTerrainGeometryUtils` (BufferGeometry + BVH building, face culling), `VoxelTerrainUtils` (surface height, resolution conversion), `VoxelDataUtils` (base64 encode/decode, binary search), `VoxelMovementUtilities` (Dijkstra with climbing costs), `TerrainPaletteUtils` (65-color OKLch palette), `threeDMapConstants` (camera, lighting, shadow, controls, and material tuning constants).
+Supporting utilities: `VoxelTerrainGeometryUtils` (BufferGeometry + BVH building, face culling), `VoxelTerrainUtils` (surface height, resolution conversion), `VoxelDataUtils` (base64 encode/decode, binary search), `VoxelMovementUtilities` (Dijkstra with climbing costs), `TerrainPaletteUtils` (240-color OKLch palette), `threeDMapConstants` (camera, lighting, shadow, controls, and material tuning constants).
 
 ### FormWrapper (`src/components/Form/`)
 
