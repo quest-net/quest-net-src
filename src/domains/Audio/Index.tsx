@@ -43,7 +43,7 @@ export function AudioIndex() {
 			throw new Error("Action service not available");
 		}
 
-		await actionService.execute("audio:importPlaylistByIds", {
+		await actionService.executeAndWait("audio:importPlaylistByIds", {
 			playlistUrl: playlistUrl,
 		});
 	};

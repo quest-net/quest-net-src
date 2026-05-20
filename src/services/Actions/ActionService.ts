@@ -320,9 +320,13 @@ export class ActionService {
 	 * Main entry point for executing actions
 	 */
 	execute(actionKey: string, params: any): void {
-		void this.executeAsync(actionKey, params).catch((error) => {
+		void this.executeAndWait(actionKey, params).catch((error) => {
 			console.error(`[ActionService] Error executing ${actionKey}:`, error);
 		});
+	}
+
+	executeAndWait(actionKey: string, params: any): Promise<void> {
+		return this.executeAsync(actionKey, params);
 	}
 
 	private async executeAsync(actionKey: string, params: any): Promise<void> {
