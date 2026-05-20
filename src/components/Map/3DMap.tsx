@@ -5,7 +5,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { acceleratedRaycast } from 'three-mesh-bvh';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
 import type { Character } from '../../domains/Character/Character';
@@ -69,7 +68,6 @@ interface TerrainRenderResources {
 }
 
 function disposeTerrainResources(resources: TerrainRenderResources): void {
-	resources.geometry.boundsTree = undefined;
 	resources.geometry.dispose();
 	resources.material.dispose();
 	resources.movementHighlight.texture.dispose();
@@ -692,7 +690,6 @@ export default function ThreeDMap({
 		});
 		installMovementHighlightShader(material, movementHighlight);
 		const mesh = new THREE.Mesh(terrainGeometry.geometry, material);
-		mesh.raycast = acceleratedRaycast;
 		mesh.castShadow = true;
 		mesh.receiveShadow = true;
 

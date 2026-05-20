@@ -6,11 +6,8 @@ import { getVoxelSurfaceHeight } from "../../../utils/VoxelTerrainUtils";
 import type { ActivePing } from "../hooks/useActivePings";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import { terrainHeightToWorldY } from "../Actors3D/actorTokenPlacement";
-import {
-	getHitWorldNormal,
-	intersectFirstTerrainHit,
-	worldPointToVoxelTile,
-} from "../Movement3D/movement3DHelpers";
+import { raycastTerrainDDA } from "../Movement3D/movement3DHelpers";
+import { getVoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
 import {
 	THREE_D_PING_INPUT,
 	THREE_D_PING_MARKER,
@@ -201,11 +198,10 @@ function getPingTileFromPointer(
 	pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 	raycaster.setFromCamera(pointer, resources.camera);
 
-	const terrainHit = intersectFirstTerrainHit(raycaster, resources.occlusionTargets);
+	const terrainHit = raycastTerrainDDA(raycaster.ray, getVoxelTerrainIndex(terrain));
 	if (!terrainHit) return null;
 
-	const worldNormal = getHitWorldNormal(terrainHit);
-	return worldPointToVoxelTile(terrain, terrainHit.point, worldNormal);
+	return { x: terrainHit.tileX, y: terrainHit.tileZ };
 }
 
 function isPingGesture(event: PointerEvent): boolean {

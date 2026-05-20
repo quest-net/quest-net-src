@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import * as THREE from "three";
-import { MeshBVH } from "three-mesh-bvh";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCount } from "../../../utils/VoxelDataUtils";
 import { createVoxelTerrainBufferGeometry } from "../../../utils/VoxelTerrainGeometryUtils";
@@ -15,14 +14,7 @@ interface VoxelGeometryWorkerResponse {
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
 	indices: Uint32Array;
-	bvhRoots: ArrayBuffer[];
-	bvhVersion: number;
 }
-
-type RuntimeSerializedBVH = Parameters<typeof MeshBVH.deserialize>[0] & {
-	version: number;
-	indirectBuffer: ArrayBufferView | null;
-};
 
 export interface VoxelTerrainGeometryResult {
 	geometry: THREE.BufferGeometry;
@@ -41,7 +33,7 @@ export const createTerrainSignature = createTerrainRevision;
 function createGeometryFromWorkerResponse(
 	data: VoxelGeometryWorkerResponse
 ): THREE.BufferGeometry {
-	const geometry = createVoxelTerrainBufferGeometry({
+	return createVoxelTerrainBufferGeometry({
 		positions:          data.positions,
 		normals:            data.normals,
 		colors:             data.colors,
@@ -50,18 +42,6 @@ function createGeometryFromWorkerResponse(
 		highlightStrengths: data.highlightStrengths,
 		indices:            data.indices,
 	});
-
-	const serializedBvh: RuntimeSerializedBVH = {
-		version: data.bvhVersion,
-		roots: data.bvhRoots,
-		index: data.indices,
-		indirectBuffer: null,
-	};
-	geometry.boundsTree = MeshBVH.deserialize(serializedBvh, geometry, {
-		setIndex: false,
-	});
-
-	return geometry;
 }
 
 export function useVoxelTerrainGeometryWorker(

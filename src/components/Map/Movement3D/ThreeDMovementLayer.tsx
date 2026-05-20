@@ -14,9 +14,8 @@ import type { HoveredTile, SelectedActor } from "../MapStateProvider";
 import { THREE_D_MOVEMENT_HIGHLIGHT } from "../threeDMapConstants";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import {
-	getHitWorldNormal,
-	intersectFirstTerrainHit,
-	worldPointToVoxelTile,
+	raycastTerrainDDA,
+	terrainDDAHitToVoxelTile,
 } from "./movement3DHelpers";
 
 // Tolerance for "actor is in front of terrain" comparisons. Pick meshes are
@@ -87,7 +86,7 @@ function getTileFromPointerEvent(
 	);
 	const closestActorDistance = actorHits[0]?.distance ?? Infinity;
 
-	const terrainHit = intersectFirstTerrainHit(raycaster, resources.occlusionTargets);
+	const terrainHit = raycastTerrainDDA(raycaster.ray, getVoxelTerrainIndex(terrain));
 
 	if (
 		terrainHit &&
@@ -97,16 +96,7 @@ function getTileFromPointerEvent(
 	}
 
 	if (terrainHit) {
-		const worldNormal = getHitWorldNormal(terrainHit);
-		// Pass the hit face and object so worldPointToVoxelTile can read the
-		// tileHeight attribute and return the exact (x, y, h) of the clicked face.
-		return worldPointToVoxelTile(
-			terrain,
-			terrainHit.point,
-			worldNormal,
-			terrainHit.face,
-			terrainHit.object
-		);
+		return terrainDDAHitToVoxelTile(terrainHit);
 	}
 
 	if (!allowVirtualGroundTile) return null;

@@ -1,5 +1,7 @@
 import * as THREE from "three";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import type { VoxelTerrainIndex } from "../../../utils/VoxelTerrainIndex";
+import { raycastVoxelIndex } from "../../../utils/VoxelRaycast";
 
 export interface PickedVoxelTile {
 	x: number;
@@ -8,108 +10,116 @@ export interface PickedVoxelTile {
 	h: number;
 }
 
+/**
+ * Result of a DDA terrain raycast. Contains everything callers need:
+ * the hit voxel in grid coords, world-space hit point and distance,
+ * face normal, and pre-computed tactical tile + height.
+ */
+export interface TerrainDDAHit {
+	/** Hit voxel in grid coordinates. */
+	vx: number;
+	vy: number;
+	vz: number;
+	/** Outward face normal (-1, 0, or 1 per axis). */
+	nx: number;
+	ny: number;
+	nz: number;
+	/** World-space point at the center of the hit face. */
+	point: THREE.Vector3;
+	/** Distance from ray origin to point. */
+	distance: number;
+	/** World-space face normal (derived from nx/ny/nz). */
+	normal: THREE.Vector3;
+	/** Tactical tile X. */
+	tileX: number;
+	/**
+	 * Tactical tile Z (the map's "Y" in PickedVoxelTile / HoveredTile convention).
+	 * Named tileZ here to make the axis unambiguous.
+	 */
+	tileZ: number;
+	/** floor((vy + 1) / resolution) -- exact tactical surface height. */
+	tacticalHeight: number;
+}
+
+/**
+ * DDA-based terrain raycast. Replaces intersectFirstTerrainHit + getHitWorldNormal
+ * + worldPointToVoxelTile. No BVH or terrain mesh required -- occupancy is read
+ * from the VoxelTerrainIndex (backed by a Set<number> in memory).
+ *
+ * Returns null when the ray misses the grid entirely.
+ */
+export function raycastTerrainDDA(
+	ray: THREE.Ray,
+	index: VoxelTerrainIndex,
+): TerrainDDAHit | null {
+	const hit = raycastVoxelIndex(ray, index);
+	if (!hit) return null;
+
+	const { vx, vy, vz, nx, ny, nz } = hit;
+	const res = index.resolution;
+	const halfVoxel = 0.5 / res;
+
+	// World-space center of the hit voxel.
+	const cx = vx / res - index.width  / 2 + halfVoxel;
+	const cy = (vy + 0.5) / res - 0.5;
+	const cz = vz / res - index.length / 2 + halfVoxel;
+
+	// Face center: displace voxel center by half a voxel along the face normal.
+	const point = new THREE.Vector3(
+		cx + nx * halfVoxel,
+		cy + ny * halfVoxel,
+		cz + nz * halfVoxel,
+	);
+
+	const distance = ray.origin.distanceTo(point);
+	const normal   = new THREE.Vector3(nx, ny, nz);
+
+	// Tactical tile coordinates. No inset needed -- DDA returns the voxel that
+	// was hit, not a boundary point, so there's no tile attribution ambiguity.
+	const tileX = Math.floor(vx / res);
+	const tileZ = Math.floor(vz / res);
+	const tacticalHeight = Math.floor((vy + 1) / res);
+
+	return { vx, vy, vz, nx, ny, nz, point, distance, normal, tileX, tileZ, tacticalHeight };
+}
+
+/**
+ * Convert a TerrainDDAHit to PickedVoxelTile (the shape expected by HoveredTile
+ * / movement actions). Note: PickedVoxelTile.y is tactical Z, not world Y.
+ */
+export function terrainDDAHitToVoxelTile(hit: TerrainDDAHit): PickedVoxelTile {
+	return { x: hit.tileX, y: hit.tileZ, h: hit.tacticalHeight };
+}
+
+// ---------------------------------------------------------------------------
+// worldPointToVoxelTile -- retained for the virtual-ground fallback path in
+// ThreeDMovementLayer, which hits a y=0 plane rather than a voxel face.
+// ---------------------------------------------------------------------------
+
 // Small inset along the inverse face normal so a hit exactly on a tile
 // boundary (e.g. a +X wall face at world x = 0) is attributed to the tile
 // that owns the wall, not the tile on the other side of it.
 const TILE_PICK_INSET = 1e-3;
 
 /**
- * Map a terrain raycast hit point to the tactical tile that owns the face,
- * including the exact tactical height (h) of the hit surface.
- *
- * When the hit is on a side face, the world point lies on the boundary
- * between two tactical tiles. Naive Math.round biases the result toward
- * the tile beyond the wall (i.e. the one you can't see), which produced
- * the "click on a wall picks the tile behind it" bug. We bias the lookup
- * by stepping a tiny amount along the inverse face normal so the rounded
- * coordinate lands inside the cube whose face was hit.
- *
- * The tactical height is read from the tileHeight vertex attribute stored
- * on the terrain geometry.  This allows the caller to distinguish between
- * two surfaces in the same (x,y) column -- e.g. ground under a staircase
- * vs. the top of the staircase.
+ * Map a world-space point (ground-plane hit) to its tactical tile.
+ * Only used by the virtual-ground fallback; all voxel face hits now go
+ * through raycastTerrainDDA / terrainDDAHitToVoxelTile instead.
  */
 export function worldPointToVoxelTile(
 	terrain: VoxelTerrain,
 	point: THREE.Vector3,
 	worldNormal?: THREE.Vector3 | null,
-	hitFace?: THREE.Face | null,
-	hitObject?: THREE.Object3D | null
 ): PickedVoxelTile | null {
 	const offsetX = (terrain.Width - 1) / 2;
 	const offsetZ = (terrain.Length - 1) / 2;
-	const adjustedX = worldNormal
-		? point.x - worldNormal.x * TILE_PICK_INSET
-		: point.x;
-	const adjustedZ = worldNormal
-		? point.z - worldNormal.z * TILE_PICK_INSET
-		: point.z;
+	const adjustedX = worldNormal ? point.x - worldNormal.x * TILE_PICK_INSET : point.x;
+	const adjustedZ = worldNormal ? point.z - worldNormal.z * TILE_PICK_INSET : point.z;
 	const x = Math.round(adjustedX + offsetX);
 	const y = Math.round(adjustedZ + offsetZ);
 
 	if (x < 0 || x >= terrain.Width || y < 0 || y >= terrain.Length) {
 		return null;
 	}
-
-	// Read the pre-computed tileHeight attribute from the hit face's geometry.
-	// This is floor((voxelY + 1) / resolution) stored per vertex in
-	// VoxelTerrainGeometryUtils.  Using Math.round guards against float
-	// precision drift since the values are whole tactical-unit integers.
-	let h = 0;
-	if (hitFace && hitObject instanceof THREE.Mesh) {
-		const attr = hitObject.geometry.attributes['tileHeight'] as THREE.BufferAttribute | undefined;
-		if (attr) {
-			h = Math.round(attr.getX(hitFace.a));
-		}
-	}
-
-	return { x, y, h };
-}
-
-const _hitNormalMatrix = new THREE.Matrix3();
-const _hitNormal = new THREE.Vector3();
-
-/**
- * World-space normal of the hit's face, computed from the object's
- * world matrix. Returns a fresh Vector3 so callers can safely retain it.
- */
-export function getHitWorldNormal(
-	hit: THREE.Intersection<THREE.Object3D>
-): THREE.Vector3 | null {
-	if (!hit.face) return null;
-	_hitNormalMatrix.getNormalMatrix(hit.object.matrixWorld);
-	_hitNormal.copy(hit.face.normal).applyNormalMatrix(_hitNormalMatrix);
-	return _hitNormal.clone().normalize();
-}
-
-/**
- * Returns the closest intersection that has a face. Unlike the previous
- * top-only filter, this respects walls: a side-face hit no longer falls
- * through to whatever top face is behind it. Boundary disambiguation is
- * handled in worldPointToVoxelTile via the face normal.
- */
-export function findFirstTerrainHit(
-	hits: THREE.Intersection<THREE.Object3D>[]
-): THREE.Intersection<THREE.Object3D> | null {
-	for (const hit of hits) {
-		if (hit.face) return hit;
-	}
-	return null;
-}
-
-/**
- * Terrain picking only needs the nearest face. `three-mesh-bvh` can answer
- * that directly when firstHitOnly is set, avoiding a full sorted hit list.
- */
-export function intersectFirstTerrainHit(
-	raycaster: THREE.Raycaster,
-	targets: THREE.Object3D[]
-): THREE.Intersection<THREE.Object3D> | null {
-	const previousFirstHitOnly = raycaster.firstHitOnly;
-	raycaster.firstHitOnly = true;
-	try {
-		return findFirstTerrainHit(raycaster.intersectObjects(targets, true));
-	} finally {
-		raycaster.firstHitOnly = previousFirstHitOnly;
-	}
+	return { x, y, h: 0 };
 }

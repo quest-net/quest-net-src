@@ -1,6 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
 import * as THREE from "three";
-import { acceleratedRaycast } from "three-mesh-bvh";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCount } from "../../../utils/VoxelDataUtils";
 import { getMaxVoxelSurfaceHeight } from "../../../utils/VoxelTerrainUtils";
@@ -22,7 +21,6 @@ interface TerrainRenderResources {
 }
 
 function disposeTerrainResources(resources: TerrainRenderResources): void {
-	resources.geometry.boundsTree = undefined;
 	resources.geometry.dispose();
 	resources.material.dispose();
 }
@@ -132,7 +130,6 @@ export function useFirstPersonTerrain(
 			vertexColors: true,
 		});
 		const mesh = new THREE.Mesh(terrainGeometry.geometry, material);
-		mesh.raycast = acceleratedRaycast;
 		mesh.castShadow = true;
 		mesh.receiveShadow = true;
 

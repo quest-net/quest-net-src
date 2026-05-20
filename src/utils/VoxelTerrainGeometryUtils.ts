@@ -216,10 +216,6 @@ export function buildVoxelTerrainBuffers(
 // Main-thread helper: assemble a BufferGeometry from the buffer struct. Used
 // by both the worker hook (after receiving transferred buffers) and the
 // editor (which builds buffers + geometry synchronously per stroke flush).
-//
-// BVH construction is left to the caller. The worker path deserializes a
-// transferred BVH via MeshBVH.deserialize; main-thread callers build one
-// directly with new MeshBVH(geometry).
 // ---------------------------------------------------------------------------
 export function createVoxelTerrainBufferGeometry(
 	buffers: VoxelTerrainBuffers

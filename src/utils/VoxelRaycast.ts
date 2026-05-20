@@ -31,6 +31,7 @@
 // -------------------------------------------------------------------------
 
 import * as THREE from 'three';
+import type { VoxelTerrainIndex } from './VoxelTerrainIndex';
 
 export interface VoxelRayHit {
 	/** Grid coordinates of the hit voxel. */
@@ -207,6 +208,120 @@ export function raycastVoxelGrid(
 		if (vx < 0 || vx >= vW || vy < 0 || vy >= vH || vz < 0 || vz >= vL) break;
 
 		if (grid[vx + vz * vW + vy * vW * vL] !== 0) {
+			return { vx, vy, vz, nx, ny, nz };
+		}
+	}
+
+	return null;
+}
+
+/**
+ * Same DDA traversal as raycastVoxelGrid but reads occupancy from a
+ * VoxelTerrainIndex (via hasVoxel) instead of a raw Uint8Array.
+ * Use this from gameplay-map call sites that already hold an index
+ * (ThreeDMovementLayer, ThreeDActorLayer, ThreeDPingLayer) so they
+ * don't need to expose or copy the raw grid buffer.
+ */
+export function raycastVoxelIndex(
+	ray: THREE.Ray,
+	index: VoxelTerrainIndex,
+): VoxelRayHit | null {
+	const { voxelWidth: vW, voxelHeight: vH, voxelLength: vL, resolution, width: tW, length: tL } = index;
+
+	const ox = (ray.origin.x + tW / 2) * resolution;
+	const oy = (ray.origin.y + 0.5)    * resolution;
+	const oz = (ray.origin.z + tL / 2) * resolution;
+	const dx = ray.direction.x * resolution;
+	const dy = ray.direction.y * resolution;
+	const dz = ray.direction.z * resolution;
+
+	// Slab clipping -- identical to raycastVoxelGrid.
+	let tEntry = 0;
+	let tExit  = Infinity;
+	let nx = 0, ny = 0, nz = 0;
+
+	if (dx !== 0) {
+		const ta = (0  - ox) / dx;
+		const tb = (vW - ox) / dx;
+		const tNear = Math.min(ta, tb);
+		const tFar  = Math.max(ta, tb);
+		if (tNear > tEntry) { tEntry = tNear; nx = dx > 0 ? -1 : 1; ny = 0; nz = 0; }
+		tExit = Math.min(tExit, tFar);
+	} else if (ox < 0 || ox >= vW) {
+		return null;
+	}
+
+	if (dy !== 0) {
+		const ta = (0  - oy) / dy;
+		const tb = (vH - oy) / dy;
+		const tNear = Math.min(ta, tb);
+		const tFar  = Math.max(ta, tb);
+		if (tNear > tEntry) { tEntry = tNear; nx = 0; ny = dy > 0 ? -1 : 1; nz = 0; }
+		tExit = Math.min(tExit, tFar);
+	} else if (oy < 0 || oy >= vH) {
+		return null;
+	}
+
+	if (dz !== 0) {
+		const ta = (0  - oz) / dz;
+		const tb = (vL - oz) / dz;
+		const tNear = Math.min(ta, tb);
+		const tFar  = Math.max(ta, tb);
+		if (tNear > tEntry) { tEntry = tNear; nx = 0; ny = 0; nz = dz > 0 ? -1 : 1; }
+		tExit = Math.min(tExit, tFar);
+	} else if (oz < 0 || oz >= vL) {
+		return null;
+	}
+
+	if (tExit <= tEntry) return null;
+
+	const ex = ox + tEntry * dx;
+	const ey = oy + tEntry * dy;
+	const ez = oz + tEntry * dz;
+
+	let vx = Math.min(Math.max(Math.floor(ex), 0), vW - 1);
+	let vy = Math.min(Math.max(Math.floor(ey), 0), vH - 1);
+	let vz = Math.min(Math.max(Math.floor(ez), 0), vL - 1);
+
+	if (index.hasVoxel(vx, vy, vz)) {
+		return { vx, vy, vz, nx, ny, nz };
+	}
+
+	const stepX = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+	const stepY = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
+	const stepZ = dz > 0 ? 1 : (dz < 0 ? -1 : 0);
+
+	const tDeltaX = dx !== 0 ? Math.abs(1 / dx) : Infinity;
+	const tDeltaY = dy !== 0 ? Math.abs(1 / dy) : Infinity;
+	const tDeltaZ = dz !== 0 ? Math.abs(1 / dz) : Infinity;
+
+	const bX = dx >= 0 ? vx + 1 : vx;
+	const bY = dy >= 0 ? vy + 1 : vy;
+	const bZ = dz >= 0 ? vz + 1 : vz;
+	let tMaxX = dx !== 0 ? (bX - ox) / dx : Infinity;
+	let tMaxY = dy !== 0 ? (bY - oy) / dy : Infinity;
+	let tMaxZ = dz !== 0 ? (bZ - oz) / dz : Infinity;
+
+	const maxSteps = vW + vH + vL + 8;
+
+	for (let step = 0; step < maxSteps; step++) {
+		if (tMaxX <= tMaxY && tMaxX <= tMaxZ) {
+			vx += stepX;
+			nx = -stepX; ny = 0; nz = 0;
+			tMaxX += tDeltaX;
+		} else if (tMaxY <= tMaxZ) {
+			vy += stepY;
+			nx = 0; ny = -stepY; nz = 0;
+			tMaxY += tDeltaY;
+		} else {
+			vz += stepZ;
+			nx = 0; ny = 0; nz = -stepZ;
+			tMaxZ += tDeltaZ;
+		}
+
+		if (vx < 0 || vx >= vW || vy < 0 || vy >= vH || vz < 0 || vz >= vL) break;
+
+		if (index.hasVoxel(vx, vy, vz)) {
 			return { vx, vy, vz, nx, ny, nz };
 		}
 	}
