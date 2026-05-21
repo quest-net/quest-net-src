@@ -124,7 +124,7 @@ export function normalizeVoxelPaletteIndex(color: number): number {
 	return voxelColorToTerrainPaletteIndex(color);
 }
 
-function getRescaledVoxelRange(
+export function getRescaledVoxelRange(
 	index: number,
 	oldResolution: number,
 	newResolution: number,

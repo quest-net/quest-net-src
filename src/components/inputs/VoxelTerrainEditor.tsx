@@ -23,6 +23,13 @@ import {
 	terrainPaletteIndexToVoxelColor,
 } from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
 import {
+	IDENTITY_STAMP_TRANSFORM,
+	iterateStampVoxels,
+	mirrorStampTransform,
+	rotateStampTransform,
+	type StampTransform,
+} from "../../utils/terrain/editor/VoxelStampUtils";
+import {
 	createTerrainRevision,
 	getVoxelTerrainIndex,
 	getVoxelTerrainResolution,
@@ -48,7 +55,7 @@ export interface ActorOverlayInfo {
 }
 
 type EditorView = "edit" | "preview";
-type EditorTool = "place" | "erase" | "paint" | "sample";
+type EditorTool = "place" | "erase" | "paint" | "sample" | "stamp";
 type EditGranularity = "tactical" | "voxel";
 
 interface VoxelTerrainEditorProps {
@@ -56,6 +63,12 @@ interface VoxelTerrainEditorProps {
 	onChange: (terrain: VoxelTerrain) => void;
 	readOnly?: boolean;
 	actors?: ActorOverlayInfo[];
+	/** Stamp-tagged terrains available for the Insert Stamp dropdown.
+	 *  May be unhydrated; the editor calls `loadStampVoxels` before use.
+	 */
+	stampSources?: VoxelTerrain[];
+	/** Returns the fully hydrated voxel data for a stamp source by id. */
+	loadStampVoxels?: (terrainId: string) => Promise<VoxelTerrain | null>;
 }
 
 interface VoxelCoord {
@@ -567,6 +580,45 @@ function collectAffectedCoords(
 }
 
 // ---------------------------------------------------------------------------
+// Apply stamp -- writes the stamp source into the editGrid at an anchor coord
+//
+// Anchor = the destination voxel the source's bottom-center maps to. The
+// caller picks this from PickInfo (typically pick.voxel + pick.normal so the
+// stamp sits *on top* of the clicked face). Source-solid voxels paint over
+// destination (additive only). Out-of-bounds offsets clip silently. Pulls
+// transformed offsets from VoxelStampUtils.iterateStampVoxels so this routine
+// only handles the grid write.
+// ---------------------------------------------------------------------------
+
+function applyStampToGrid(
+	grid: EditGrid,
+	dirtyChunks: Set<number>,
+	dims: ChunkDims,
+	anchor: VoxelCoord,
+	source: VoxelTerrain,
+	transform: StampTransform,
+): { changed: boolean } {
+	const { vW, vH, vL, resolution } = dims;
+	let changed = false;
+
+	for (const offset of iterateStampVoxels(source, resolution, transform)) {
+		const x = anchor.x + offset.x;
+		const y = anchor.y + offset.y;
+		const z = anchor.z + offset.z;
+		if (x < 0 || x >= vW || y < 0 || y >= vH || z < 0 || z >= vL) continue;
+
+		const gIdx = editGridIndex(x, y, z, vW, vL);
+		const next = offset.color + 1;
+		if (grid[gIdx] === next) continue;
+		grid[gIdx] = next;
+		markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
+		changed = true;
+	}
+
+	return { changed };
+}
+
+// ---------------------------------------------------------------------------
 // Apply edit -- writes directly to the editGrid (O(1) per voxel)
 // ---------------------------------------------------------------------------
 
@@ -924,6 +976,59 @@ function createPlaceGhostGeometry(
 	return geo;
 }
 
+function createStampGhostGeometry(
+	source: VoxelTerrain,
+	transform: StampTransform,
+	anchor: VoxelCoord,
+	dims: ChunkDims,
+	index: VoxelTerrainIndex,
+): THREE.BufferGeometry | null {
+	const { vW, vH, vL } = dims;
+
+	// Resolve the stamp into destination voxel coords (clipped to bounds) and
+	// remember each voxel's palette color. The Map dedupes overlapping coords
+	// from resolution upscaling and powers neighbor-occupancy face culling.
+	const occupancy = new Map<number, number>();
+	for (const offset of iterateStampVoxels(source, dims.resolution, transform)) {
+		const x = anchor.x + offset.x;
+		const y = anchor.y + offset.y;
+		const z = anchor.z + offset.z;
+		if (x < 0 || x >= vW || y < 0 || y >= vH || z < 0 || z >= vL) continue;
+		occupancy.set(packVoxelKey(x, y, z), offset.color);
+	}
+	if (occupancy.size === 0) return null;
+
+	const positions: number[] = [];
+	const colors:    number[] = [];
+	const indices:   number[] = [];
+	const tmpColor   = new THREE.Color();
+
+	for (const [key, paletteIndex] of occupancy) {
+		const { x, y, z } = unpackVoxelKey(key);
+		const center = getVoxelWorldCenter(index, { x, y, z });
+		tmpColor.set(terrainPaletteIndexToVoxelColor(paletteIndex));
+
+		for (const face of VOXEL_FACE_DEFINITIONS) {
+			const [dx, dy, dz] = face.neighborOffset;
+			const neighborKey = packVoxelKey(x + dx, y + dy, z + dz);
+			if (occupancy.has(neighborKey)) continue;
+			addVoxelFaceToGeometry(
+				positions, colors, indices,
+				center, index.voxelSize, face, tmpColor, HOVER_FACE_OFFSET,
+			);
+		}
+	}
+
+	if (positions.length === 0) return null;
+
+	const geo = new THREE.BufferGeometry();
+	geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+	geo.setAttribute("color",    new THREE.Float32BufferAttribute(colors, 3));
+	geo.setIndex(indices);
+	geo.computeBoundingSphere();
+	return geo;
+}
+
 function updateHoverIndicator(
 	resources: EditorSceneResources,
 	grid: EditGrid,
@@ -934,9 +1039,36 @@ function updateHoverIndicator(
 	granularity: EditGranularity,
 	brushSize: number,
 	colorIndex: number,
+	stampSource: VoxelTerrain | null,
+	stampTransform: StampTransform,
 ): void {
 	clearObjectGroup(resources.hoverGroup);
 	if (!pick) return;
+
+	// Stamp ghost: render the (transformed) source at the bottom-center anchor
+	// implied by the pick. No-op until a stamp source has been chosen.
+	if (tool === "stamp") {
+		if (!stampSource) return;
+		const anchor: VoxelCoord = pick.ground
+			? { ...pick.voxel }
+			: {
+				x: pick.voxel.x + pick.normal.x,
+				y: pick.voxel.y + pick.normal.y,
+				z: pick.voxel.z + pick.normal.z,
+			};
+		const geometry = createStampGhostGeometry(stampSource, stampTransform, anchor, dims, index);
+		if (!geometry) return;
+		const material = new THREE.MeshBasicMaterial({
+			transparent:  true,
+			opacity:      0.55,
+			depthWrite:   false,
+			vertexColors: true,
+		});
+		const mesh = new THREE.Mesh(geometry, material);
+		mesh.renderOrder = 30;
+		resources.hoverGroup.add(mesh);
+		return;
+	}
 
 	const coords =
 		tool === "sample"
@@ -1029,6 +1161,8 @@ export default function VoxelTerrainEditor({
 	onChange,
 	readOnly = false,
 	actors,
+	stampSources,
+	loadStampVoxels,
 }: VoxelTerrainEditorProps) {
 	const containerRef   = useRef<HTMLDivElement>(null);
 	const resourcesRef   = useRef<EditorSceneResources | null>(null);
@@ -1067,6 +1201,16 @@ export default function VoxelTerrainEditor({
 	const lastEmittedVoxelsRef    = useRef(terrain.Voxels);
 	// Stable onChange ref so event-handler closures don't stale-capture the prop.
 	const onChangeRef = useRef(onChange);
+	// Stamp state. The hydrated source lives in a ref so the pointer/key
+	// handlers can read it without re-binding; React state mirrors it for UI.
+	const stampSourceRef    = useRef<VoxelTerrain | null>(null);
+	const stampTransformRef = useRef<StampTransform>(IDENTITY_STAMP_TRANSFORM);
+	const loadStampVoxelsRef = useRef(loadStampVoxels);
+	const previousToolRef   = useRef<EditorTool>("place");
+	// Hover ghost needs to refresh when the stamp transform or source changes
+	// even if the cursor hasn't moved. Scene useEffect assigns to this ref so
+	// the keybind effects can call back into the scene-bound closure.
+	const refreshHoverRef   = useRef<(() => void) | null>(null);
 
 	// -------------------------------------------------------------------------
 	// React state
@@ -1084,6 +1228,9 @@ export default function VoxelTerrainEditor({
 	const [redoDepth,         setRedoDepth]          = useState(0);
 	const [voxImportModal,    setVoxImportModal]     = useState<VoxImportModal | null>(null);
 	const voxFileInputRef = useRef<HTMLInputElement>(null);
+	const [stampSource,    setStampSource]    = useState<VoxelTerrain | null>(null);
+	const [stampTransform, setStampTransform] = useState<StampTransform>(IDENTITY_STAMP_TRANSFORM);
+	const [stampLoadingId, setStampLoadingId] = useState<string | null>(null);
 	// editGen ticks on stroke end, undo/redo, and external prop changes.
 	// It gates React-visible updates (sidebar voxel count, grid lines, camera framing).
 	// It is NEVER bumped per-voxel; Three.js geometry updates happen in the rAF loop.
@@ -1143,12 +1290,26 @@ export default function VoxelTerrainEditor({
 		brushSizeRef.current     = brushSize;
 		selectedColorRef.current = selectedColorIndex;
 		readOnlyRef.current      = readOnly;
+		// Tool/brush changes affect the hover ghost; reflect them without
+		// waiting for the next pointer move (matters when leaving stamp mode).
+		refreshHoverRef.current?.();
 	}, [tool, granularity, brushSize, selectedColorIndex, readOnly]);
 
 	useEffect(() => { actorsRef.current    = actors ?? []; }, [actors]);
 	useEffect(() => { showActorsRef.current = showActors;  }, [showActors]);
 	useEffect(() => { showTacticalGridRef.current = showTacticalGrid; }, [showTacticalGrid]);
 	useEffect(() => { showVoxelGridRef.current    = showVoxelGrid;    }, [showVoxelGrid]);
+	useEffect(() => {
+		stampSourceRef.current = stampSource;
+		// Repaint the ghost so a new source's preview appears immediately.
+		refreshHoverRef.current?.();
+	}, [stampSource]);
+	useEffect(() => {
+		stampTransformRef.current = stampTransform;
+		// R/M presses don't move the cursor, so push the new orientation.
+		refreshHoverRef.current?.();
+	}, [stampTransform]);
+	useEffect(() => { loadStampVoxelsRef.current = loadStampVoxels; }, [loadStampVoxels]);
 
 	// -------------------------------------------------------------------------
 	// Terrain prop adoption
@@ -1296,6 +1457,34 @@ export default function VoxelTerrainEditor({
 		const dims  = chunkDimsRef.current;
 		if (!dims) return false;
 
+		// Stamp tool diverges from the brush flow: it writes the hydrated
+		// source's voxels at a bottom-center anchor derived from the pick.
+		if (toolRef.current === "stamp") {
+			const source = stampSourceRef.current;
+			if (!source) return false;
+			const anchor: VoxelCoord = pick.ground
+				? { ...pick.voxel }
+				: {
+					x: pick.voxel.x + pick.normal.x,
+					y: pick.voxel.y + pick.normal.y,
+					z: pick.voxel.z + pick.normal.z,
+				};
+			const stampResult = applyStampToGrid(
+				editGridRef.current,
+				dirtyChunksRef.current,
+				dims,
+				anchor,
+				source,
+				stampTransformRef.current,
+			);
+			if (!stampResult.changed) return false;
+			if (!strokeStartedRef.current) {
+				recordUndo();
+				strokeStartedRef.current = true;
+			}
+			return true;
+		}
+
 		const result = applyVoxelEdit(
 			editGridRef.current,
 			index,
@@ -1328,7 +1517,58 @@ export default function VoxelTerrainEditor({
 		return true;
 	}, [recordUndo]);
 
+	// -------------------------------------------------------------------------
+	// Stamp mode entry/exit
+	// -------------------------------------------------------------------------
+
+	const exitStampMode = useCallback(() => {
+		// Restore the brush tool the user was on before they opened a stamp.
+		// previousToolRef defaults to "place" so we always have a sensible fallback.
+		setTool(previousToolRef.current);
+		setStampSource(null);
+		setStampTransform(IDENTITY_STAMP_TRANSFORM);
+		setStampLoadingId(null);
+	}, []);
+
+	const selectStamp = useCallback(async (terrainId: string) => {
+		const loader = loadStampVoxelsRef.current;
+		if (!loader) return;
+		// Remember the brush tool so ESC can return to it.
+		if (toolRef.current !== "stamp") {
+			previousToolRef.current = toolRef.current;
+		}
+		setStampLoadingId(terrainId);
+		try {
+			const hydrated = await loader(terrainId);
+			if (!hydrated) {
+				console.warn(`[VoxelTerrainEditor] Failed to load stamp source: ${terrainId}`);
+				setStampLoadingId(null);
+				return;
+			}
+			setStampSource(hydrated);
+			setStampTransform(IDENTITY_STAMP_TRANSFORM);
+			setTool("stamp");
+		} finally {
+			setStampLoadingId((current) => (current === terrainId ? null : current));
+		}
+	}, []);
+
 	const getEditKey = useCallback((pick: PickInfo): string => {
+		// In stamp mode the brush params are irrelevant; the orientation and
+		// source identity matter instead, so each anchor + transform pair is a
+		// distinct edit.
+		if (toolRef.current === "stamp") {
+			const source = stampSourceRef.current;
+			const transform = stampTransformRef.current;
+			return [
+				"stamp",
+				source?.Id ?? "none",
+				transform.rotation,
+				transform.mirror ? 1 : 0,
+				pick.voxel.x, pick.voxel.y, pick.voxel.z,
+				pick.normal.x, pick.normal.y, pick.normal.z,
+			].join(":");
+		}
 		return [
 			toolRef.current,
 			granularityRef.current,
@@ -1638,7 +1878,11 @@ export default function VoxelTerrainEditor({
 		resizeObserver.observe(container);
 
 		// --- Shared hover refresh helper ---
+		// Caches the most recent pick so external callers (stamp R/M presses)
+		// can re-render the ghost without a new pointer event.
+		let lastHoverPick: PickInfo | null = null;
 		const refreshHover = (pick: PickInfo | null) => {
+			lastHoverPick = pick;
 			const dims = chunkDimsRef.current;
 			if (!dims) return;
 			updateHoverIndicator(
@@ -1651,8 +1895,11 @@ export default function VoxelTerrainEditor({
 				granularityRef.current,
 				brushSizeRef.current,
 				selectedColorRef.current,
+				stampSourceRef.current,
+				stampTransformRef.current,
 			);
 		};
+		refreshHoverRef.current = () => refreshHover(lastHoverPick);
 
 		const getPickForStroke = (
 			event: PointerEvent,
@@ -1687,7 +1934,13 @@ export default function VoxelTerrainEditor({
 					? activeStrokeRef.current : null;
 			const pick = getPickForStroke(event, activeStroke);
 			refreshHover(pick);
-			if (!activeStroke || !pick || toolRef.current === "sample") return;
+			// Sample is one-shot; stamp is one-per-click. Both skip drag-painting.
+			if (
+				!activeStroke ||
+				!pick ||
+				toolRef.current === "sample" ||
+				toolRef.current === "stamp"
+			) return;
 
 			if (!activeStroke.dragStarted) {
 				if (!hasMovedPastDragThreshold(event, activeStroke)) return;
@@ -1792,6 +2045,7 @@ export default function VoxelTerrainEditor({
 			}
 			activeStrokeRef.current = null;
 			resourcesRef.current    = null;
+			refreshHoverRef.current = null;
 		};
 	}, [applyEdit, encodeAndEmit, getEditKey, getLockedPlanePickInfo, getPickInfo]);
 
@@ -1855,7 +2109,28 @@ export default function VoxelTerrainEditor({
 			}
 			if (event.ctrlKey || event.metaKey || event.altKey) return;
 
-			switch (event.key.toLowerCase()) {
+			const key = event.key.toLowerCase();
+
+			// In stamp mode, R/M/Escape steer the stamp instead of the brush tools.
+			if (toolRef.current === "stamp") {
+				if (key === "r") {
+					event.preventDefault();
+					setStampTransform((t) => rotateStampTransform(t));
+					return;
+				}
+				if (key === "m") {
+					event.preventDefault();
+					setStampTransform((t) => mirrorStampTransform(t));
+					return;
+				}
+				if (key === "escape") {
+					event.preventDefault();
+					exitStampMode();
+					return;
+				}
+			}
+
+			switch (key) {
 				case "p": case "t": setTool("place");  break;
 				case "r":           setTool("erase");  break;
 				case "g":           setTool("paint");  break;
@@ -1866,7 +2141,7 @@ export default function VoxelTerrainEditor({
 		};
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [redo, undo]);
+	}, [exitStampMode, redo, undo]);
 
 	// -------------------------------------------------------------------------
 	// VOX import
@@ -1987,6 +2262,72 @@ export default function VoxelTerrainEditor({
 							</button>
 						</div>
 
+						{!readOnly && loadStampVoxels && (
+							tool === "stamp" ? (
+								<button
+									type="button"
+									className="btn btn-sm btn-warning"
+									onClick={exitStampMode}
+									title="Stop stamping (Esc)"
+								>
+									<span className="icon-[mdi--stamper] w-5 h-5" />
+									ESC to stop
+								</button>
+							) : (
+								<div className="dropdown dropdown-bottom">
+									<div
+										tabIndex={0}
+										role="button"
+										className="btn btn-sm btn-outline"
+										title="Insert a stamp terrain (R rotate, M mirror, Esc stop)"
+									>
+										<span className="icon-[mdi--stamper] w-5 h-5" />
+										Insert Stamp
+										<span className="icon-[mdi--chevron-down] w-4 h-4 opacity-60" />
+									</div>
+									<div
+										tabIndex={0}
+										className="dropdown-content z-50 mt-2 w-64 max-h-80 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-2 shadow-lg"
+									>
+										{stampSources && stampSources.length > 0 ? (
+											<ul className="menu menu-sm p-0">
+												{stampSources.map((source) => {
+													const isLoading = stampLoadingId === source.Id;
+													return (
+														<li key={source.Id}>
+															<button
+																type="button"
+																onClick={() => {
+																	void selectStamp(source.Id);
+																	(document.activeElement as HTMLElement | null)?.blur();
+																}}
+																disabled={isLoading}
+																className="flex items-center gap-2"
+															>
+																{isLoading && (
+																	<span className="loading loading-spinner loading-xs" />
+																)}
+																<span className="truncate">{source.Name}</span>
+																<span className="ml-auto text-xs opacity-60 whitespace-nowrap">
+																	{source.Width}×{source.Height}×{source.Length}
+																</span>
+															</button>
+														</li>
+													);
+												})}
+											</ul>
+										) : (
+											<div className="px-2 py-1 text-xs opacity-70 leading-relaxed">
+												No stamps available. Tag a terrain{" "}
+												<code className="text-[0.7rem]">path:stamps</code>{" "}
+												to see it here.
+											</div>
+										)}
+									</div>
+								</div>
+							)
+						)}
+
 						<div className="join">
 							<button
 								type="button"
@@ -2062,6 +2403,30 @@ export default function VoxelTerrainEditor({
 											<tr><td className="opacity-70 py-0.5">Zoom</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Scroll</kbd></td></tr>
 										</tbody>
 									</table>
+								</div>
+
+								<div className="mt-3 pt-2 border-t border-base-300">
+									<div className="font-semibold mb-2">Stamps</div>
+									<table className="w-full">
+										<tbody>
+											<tr>
+												<td className="opacity-70 py-0.5">Rotate stamp 90&deg;</td>
+												<td className="text-right"><kbd className="kbd kbd-sm">R</kbd></td>
+											</tr>
+											<tr>
+												<td className="opacity-70 py-0.5">Mirror stamp</td>
+												<td className="text-right"><kbd className="kbd kbd-sm">M</kbd></td>
+											</tr>
+											<tr>
+												<td className="opacity-70 py-0.5">Stop stamping</td>
+												<td className="text-right"><kbd className="kbd kbd-sm">Esc</kbd></td>
+											</tr>
+										</tbody>
+									</table>
+									<div className="mt-1 text-xs opacity-70 leading-relaxed">
+										Tag a terrain <code className="text-[0.7rem]">path:stamps</code>{" "}
+										to use it as a stamp.
+									</div>
 								</div>
 
 								<div className="mt-3 pt-2 border-t border-base-300 text-xs leading-relaxed">

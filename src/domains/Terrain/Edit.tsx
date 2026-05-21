@@ -1,6 +1,6 @@
 // domains/Terrain/Edit.tsx
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { FormWrapper, useFormReadOnly } from "../../components/Form/Form";
 import { TagEditor } from "../../components/inputs/TagEditor";
@@ -17,6 +17,7 @@ import {
 	clampVoxelTerrainResolution,
 	reshapeVoxelTerrainForEditor,
 } from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
+import { listStampTerrains } from "../../utils/terrain/editor/VoxelStampUtils";
 
 const TERRAIN_RESOLUTION_OPTIONS = [
 	{ value: 1, label: "Basic" },
@@ -235,6 +236,21 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 			}))
 			: [];
 
+	// Stamps: any terrain tagged path:stamps (or a subfolder thereof), minus
+	// the terrain currently being edited. Sources may be unhydrated; the
+	// editor calls loadStampVoxels when the user picks one.
+	const stampSources = useMemo(
+		() => listStampTerrains(campaign?.VoxelTerrains ?? [], data.Id),
+		[campaign, data.Id]
+	);
+	const loadStampVoxels = useCallback(
+		async (terrainId: string) => {
+			if (!campaign) return null;
+			return TerrainStorageService.hydrateTerrain(campaign, terrainId);
+		},
+		[campaign]
+	);
+
 	const terrainRef = useRef(data);
 	const [shapeDraft, setShapeDraft] = useState(() => ({
 		width: data.Width,
@@ -424,6 +440,8 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 				onChange={onChange}
 				readOnly={readOnly}
 				actors={actorOverlayInfos}
+				stampSources={stampSources}
+				loadStampVoxels={loadStampVoxels}
 			/>
 
 			{/* Tags at the bottom */}
