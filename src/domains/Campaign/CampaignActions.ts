@@ -11,6 +11,10 @@ import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { runMigrations } from "../../migrations/runMigrations";
 import { campaignMigrations } from "../../migrations/campaignMigrations";
+import {
+	addMissingDefaultVoxelStamps,
+	createDefaultVoxelStamps,
+} from "../../data/defaultVoxelStamps";
 
 
 /**
@@ -50,6 +54,7 @@ function generateRoomCode(): string {
  */
 function createBlankCampaign(name: string, roomCode?: string): Campaign {
 	const defaultVoxelTerrain = VoxelTerrainActions.createDefault();
+	const defaultVoxelStamps = createDefaultVoxelStamps();
 	defaultVoxelTerrain.VoxelsLoaded = true;
 
 	return {
@@ -62,7 +67,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 		SkillTemplates: [],
 		StatusTemplates: [],
 		EntityTemplates: [],
-		VoxelTerrains: [defaultVoxelTerrain],
+		VoxelTerrains: [defaultVoxelTerrain, ...defaultVoxelStamps],
 		Audios: [],
 		Images: [],
 		Scenarios: [],
@@ -580,6 +585,7 @@ export const CampaignActions = {
 				fileVersion,
 				campaignMigrations
 			)) as Campaign;
+			addMissingDefaultVoxelStamps(campaign);
 
 			// Ensure room code is unique against existing CampaignInfos
 			const existingRoomCodes = context.Campaigns.map((c) => c.RoomCode);

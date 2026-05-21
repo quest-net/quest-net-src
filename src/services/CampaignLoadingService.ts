@@ -10,6 +10,7 @@ import { APP_VERSION } from "../version";
 import { TerrainStorageService } from "./TerrainStorageService";
 import { runMigrations } from "../migrations/runMigrations";
 import { campaignMigrations } from "../migrations/campaignMigrations";
+import { addMissingDefaultVoxelStamps } from "../data/defaultVoxelStamps";
 
 /**
  * CampaignLoadingService
@@ -102,7 +103,13 @@ export class CampaignLoadingService {
 			await this.saveCampaign(campaign);
 		}
 
+		const addedDefaultVoxelStamps = addMissingDefaultVoxelStamps(campaign);
+
 		await TerrainStorageService.prepareCampaignAfterLoad(campaign);
+
+		if (addedDefaultVoxelStamps > 0) {
+			await this.saveCampaign(campaign);
+		}
 
 		return campaign;
 	}

@@ -19,6 +19,7 @@
 	},
 	"scripts": {
 		"push:src": "git add . && git diff --cached --quiet && echo \"No changes to commit\" || (git commit -m \"chore(src): update\" && git push)",
+		"generate:stamps": "node scripts/generate-default-voxel-stamps.mjs",
 		"predeploy": "npm run build",
 		"deploy": "npx gh-pages -d build -r https://github.com/quest-net/quest-net.github.io.git",
 		"deploy:beta": "npx gh-pages -d build -b beta -r https://github.com/quest-net/quest-net.github.io.git",

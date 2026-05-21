@@ -11,6 +11,7 @@ import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { runMigrations } from "../../migrations/runMigrations";
 import { contextMigrations } from "../../migrations/contextMigrations";
 import { campaignMigrations } from "../../migrations/campaignMigrations";
+import { addMissingDefaultVoxelStamps } from "../../data/defaultVoxelStamps";
 
 const STORAGE_KEY = "quest-net-context";
 const BACKUP_PREFIX = `${STORAGE_KEY}-backup`;
@@ -128,6 +129,9 @@ export const ContextActions = {
 			// Stamp the current version so the field stays current.
 			context.version = APP_VERSION;
 
+			const addedDefaultVoxelStamps = context.ActiveCampaign
+				? addMissingDefaultVoxelStamps(context.ActiveCampaign)
+				: 0;
 			const didPrepareActiveCampaign = !!context.ActiveCampaign;
 			if (context.ActiveCampaign) {
 				await TerrainStorageService.prepareCampaignAfterLoad(
@@ -135,7 +139,12 @@ export const ContextActions = {
 				);
 			}
 
-			if (didReshape || didPrepareActiveCampaign || hadPersistedOptimisticFlag) {
+			if (
+				didReshape ||
+				didPrepareActiveCampaign ||
+				hadPersistedOptimisticFlag ||
+				addedDefaultVoxelStamps > 0
+			) {
 				this.save(context);
 			}
 
