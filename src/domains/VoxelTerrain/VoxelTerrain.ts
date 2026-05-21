@@ -44,12 +44,79 @@ export const DEFAULT_VOXEL_TERRAIN_LIGHTING: VoxelTerrainLighting = {
 export const DEFAULT_VOXEL_TERRAIN_BACKGROUND: VoxelTerrainBackground = {};
 export const DEFAULT_VOXEL_TERRAIN_BACKGROUND_COLOR = "#0f172a";
 
+export const VOXEL_TERRAIN_ENVIRONMENT_PRESET_IDS = [
+	"neutral",
+	"nighttime",
+	"daytime",
+	"sunset",
+] as const;
+
+export type VoxelTerrainEnvironmentPresetId =
+	(typeof VOXEL_TERRAIN_ENVIRONMENT_PRESET_IDS)[number];
+
+export interface VoxelTerrainEnvironmentPreset {
+	Name: string;
+	Lighting: VoxelTerrainLighting;
+	Background: VoxelTerrainBackground;
+}
+
+export const VOXEL_TERRAIN_ENVIRONMENT_PRESETS: Record<
+	VoxelTerrainEnvironmentPresetId,
+	VoxelTerrainEnvironmentPreset
+> = {
+	neutral: {
+		Name: "Neutral",
+		Lighting: { ...DEFAULT_VOXEL_TERRAIN_LIGHTING },
+		Background: { ...DEFAULT_VOXEL_TERRAIN_BACKGROUND },
+	},
+	nighttime: {
+		Name: "Nighttime",
+		Lighting: {
+			Color: "#7aa7ff",
+			Intensity: 0.58,
+			Rotation: 35,
+			Elevation: 30,
+		},
+		Background: { Color: "#07111f" },
+	},
+	daytime: {
+		Name: "Daytime",
+		Lighting: {
+			Color: "#fff4d6",
+			Intensity: 1.35,
+			Rotation: 300,
+			Elevation: 62,
+		},
+		Background: { Color: "#9bd8ff" },
+	},
+	sunset: {
+		Name: "Sunset",
+		Lighting: {
+			Color: "#ff7a3d",
+			Intensity: 1.15,
+			Rotation: 252,
+			Elevation: 18,
+		},
+		Background: { Color: "#7c2d6f" },
+	},
+};
+
 export function createDefaultVoxelTerrainLighting(): VoxelTerrainLighting {
 	return { ...DEFAULT_VOXEL_TERRAIN_LIGHTING };
 }
 
 export function createDefaultVoxelTerrainBackground(): VoxelTerrainBackground {
 	return { ...DEFAULT_VOXEL_TERRAIN_BACKGROUND };
+}
+
+export function createVoxelTerrainEnvironmentPreset(
+	presetId: VoxelTerrainEnvironmentPresetId
+): Pick<VoxelTerrain, "Lighting" | "Background"> {
+	const preset = VOXEL_TERRAIN_ENVIRONMENT_PRESETS[presetId];
+	return {
+		Lighting: { ...preset.Lighting },
+		Background: { ...preset.Background },
+	};
 }
 
 export type EncodedVoxelSVO = string;

@@ -210,7 +210,11 @@ export const VoxelTerrainActions = {
 	},
 
 	edit(
-		params: { terrainId: string; updates: Partial<VoxelTerrain> },
+		params: {
+			terrainId: string;
+			updates: Partial<VoxelTerrain>;
+			validateActors?: boolean;
+		},
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
@@ -233,7 +237,9 @@ export const VoxelTerrainActions = {
 			context
 		);
 
-		VoxelTerrainActions.validateActors(context);
+		if (params.validateActors !== false) {
+			VoxelTerrainActions.validateActors(context);
+		}
 	},
 
 	async delete(params: { terrainId: string }, context: Context): Promise<void> {
