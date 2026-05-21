@@ -1,7 +1,6 @@
 // domains/Audio/AudioDisplay.tsx
 
-import { useState, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
@@ -10,6 +9,10 @@ import { isDmAccess } from "../../utils/UrlParser";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { extractPathTags } from "../../utils/FolderUtils";
 import { useAudioState } from "./AudioContext";
+
+type SearchResult =
+	| { kind: "playlist"; key: string; name: string; trackCount: number }
+	| { kind: "track"; key: string; name: string; audioId: string };
 
 export function AudioDisplay() {
 	const context = useQuestContext();
@@ -31,14 +34,18 @@ export function AudioDisplay() {
 		? currentAudios[currentTrackIndex]
 		: currentAudios[0];
 
-	// Get all folders for playlist dropdown
-	const allFolders = Array.from(
-		new Set(
-			campaign.Audios.flatMap((audio) =>
-				extractPathTags(audio.Tags).map((path) => path)
-			)
-		)
-	).sort();
+	// All folders (playlists) on the campaign
+	const allFolders = useMemo(
+		() =>
+			Array.from(
+				new Set(
+					campaign.Audios.flatMap((audio) =>
+						extractPathTags(audio.Tags).map((path) => path)
+					)
+				)
+			).sort(),
+		[campaign.Audios]
+	);
 
 	// Volume state
 	const dmVolume = campaign.GameState.Volume;
@@ -48,43 +55,69 @@ export function AudioDisplay() {
 	const [localVolume, setLocalVolume] = useState(displayVolume * 100);
 	const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-	// Dropdown state and positioning
-	const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-	const buttonRef = useRef<HTMLButtonElement>(null);
-	const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
+	// Search state
+	const [isSearching, setIsSearching] = useState(false);
+	const [searchQuery, setSearchQuery] = useState("");
+	const containerRef = useRef<HTMLDivElement>(null);
+	const searchInputRef = useRef<HTMLInputElement>(null);
 
 	// Update local volume when external volume changes
 	useEffect(() => {
 		setLocalVolume(displayVolume * 100);
 	}, [displayVolume]);
 
-	// Update dropdown position when opened
+	// Auto-focus search input when search mode is opened
 	useEffect(() => {
-		if (isDropdownOpen && buttonRef.current) {
-			const rect = buttonRef.current.getBoundingClientRect();
-			setDropdownPosition({
-				top: rect.bottom + 4, // 4px gap below button
-				right: window.innerWidth - rect.right,
-			});
+		if (isSearching) {
+			searchInputRef.current?.focus();
 		}
-	}, [isDropdownOpen]);
+	}, [isSearching]);
 
-	// Close dropdown when clicking outside
+	// Close search when clicking outside the AudioDisplay
 	useEffect(() => {
-		if (!isDropdownOpen) return;
+		if (!isSearching) return;
 
 		const handleClickOutside = (e: MouseEvent) => {
 			if (
-				buttonRef.current &&
-				!buttonRef.current.contains(e.target as Node)
+				containerRef.current &&
+				!containerRef.current.contains(e.target as Node)
 			) {
-				setIsDropdownOpen(false);
+				exitSearch();
 			}
 		};
 
 		document.addEventListener("mousedown", handleClickOutside);
 		return () => document.removeEventListener("mousedown", handleClickOutside);
-	}, [isDropdownOpen]);
+	}, [isSearching]);
+
+	// Build combined results (playlists + tracks), filtered by query, sorted by name
+	const searchResults = useMemo<SearchResult[]>(() => {
+		const query = searchQuery.trim().toLowerCase();
+
+		const playlistResults: SearchResult[] = allFolders
+			.filter((folder) => query === "" || folder.toLowerCase().includes(query))
+			.map((folder) => ({
+				kind: "playlist",
+				key: `pl:${folder}`,
+				name: folder,
+				trackCount: campaign.Audios.filter((a) =>
+					extractPathTags(a.Tags).includes(folder)
+				).length,
+			}));
+
+		const trackResults: SearchResult[] = campaign.Audios.filter(
+			(audio) => query === "" || audio.Name.toLowerCase().includes(query)
+		).map((audio) => ({
+			kind: "track",
+			key: `tr:${audio.Id}`,
+			name: audio.Name,
+			audioId: audio.Id,
+		}));
+
+		return [...playlistResults, ...trackResults].sort((a, b) =>
+			a.name.localeCompare(b.name)
+		);
+	}, [allFolders, campaign.Audios, searchQuery]);
 
 	// Debounced volume change
 	const handleVolumeChange = (value: number) => {
@@ -111,67 +144,113 @@ export function AudioDisplay() {
 		actionService.execute("audio:stopTrack", {});
 	};
 
-	const handlePlayFolder = (folderPath: string) => {
-		if (!actionService) return;
-
-		// Get all tracks in this folder (exact path match, no nested)
-		const tracksInFolder = campaign.Audios.filter((audio) => {
-			const paths = extractPathTags(audio.Tags);
-			return paths.includes(folderPath);
-		}).sort((a, b) => a.Name.localeCompare(b.Name)); // Alphabetical
-
-		const audioIds = tracksInFolder.map((t) => t.Id);
-
-		if (audioIds.length > 0) {
-			actionService.execute("audio:setTrack", { audioId: audioIds });
-		}
-
-		setIsDropdownOpen(false);
+	const exitSearch = () => {
+		setIsSearching(false);
+		setSearchQuery("");
 	};
 
+	const handleSelectResult = (result: SearchResult) => {
+		if (!actionService) {
+			exitSearch();
+			return;
+		}
+
+		if (result.kind === "playlist") {
+			const tracksInFolder = campaign.Audios.filter((audio) =>
+				extractPathTags(audio.Tags).includes(result.name)
+			).sort((a, b) => a.Name.localeCompare(b.Name));
+			const audioIds = tracksInFolder.map((t) => t.Id);
+			if (audioIds.length > 0) {
+				actionService.execute("audio:setTrack", { audioId: audioIds });
+			}
+		} else {
+			actionService.execute("audio:setTrack", { audioId: result.audioId });
+		}
+
+		exitSearch();
+	};
+
+	const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+		if (e.key === "Escape") {
+			e.preventDefault();
+			exitSearch();
+		}
+	};
+
+	const showSearchButton = isDM && campaign.Audios.length > 0 && !isSearching;
+
 	return (
-		<div className="space-y-4 relative">
-			{/* Floating Playlist Button (DM only) */}
-			{isDM && allFolders.length > 0 && (
+		<div ref={containerRef} className="space-y-4 relative">
+			{/* Floating Search Button (DM only, hidden while searching) */}
+			{showSearchButton && (
+				<div className="absolute top-1 right-1 z-10">
+					<button
+						onClick={() => setIsSearching(true)}
+						className="btn btn-outline btn-square"
+						title="Search playlists and tracks"
+					>
+						<span className="icon-[mdi--magnify] w-5 h-5" />
+					</button>
+				</div>
+			)}
+
+			{isSearching ? (
+				/* Search Mode: takes over the whole display */
 				<>
-					<div className="absolute top-1 right-1 z-10">
+					<div className="flex items-center gap-2">
+						<label className="input input-bordered input-sm flex items-center gap-2 flex-1">
+							<span className="icon-[mdi--magnify] w-4 h-4 opacity-60" />
+							<input
+								ref={searchInputRef}
+								type="text"
+								placeholder="Search playlists or tracks..."
+								value={searchQuery}
+								onChange={(e) => setSearchQuery(e.target.value)}
+								onKeyDown={handleSearchKeyDown}
+								className="grow"
+							/>
+						</label>
 						<button
-							ref={buttonRef}
-							onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-							className="btn btn-outline btn-square"
-							title="Play playlist"
+							onClick={exitSearch}
+							className="btn btn-sm btn-square btn-ghost"
+							title="Close search (Esc)"
 						>
-							<span className="icon-[mdi--playlist-music] w-5 h-5" />
+							<span className="icon-[mdi--close] w-4 h-4" />
 						</button>
 					</div>
 
-					{/* Portal the dropdown menu outside */}
-					{isDropdownOpen &&
-						createPortal(
-							<div
-								className="fixed z-50"
-								style={{
-									top: `${dropdownPosition.top}px`,
-									right: `${dropdownPosition.right}px`,
-								}}
-							>
-								<ul className="menu p-2 shadow-lg bg-base-100 rounded-box w-52 max-h-64 overflow-y-auto border-2 border-base-300">
-									<li className="menu-title">
-										<span>Play Playlist</span>
+					<div className="max-h-64 overflow-y-auto -mx-1">
+						{searchResults.length === 0 ? (
+							<div className="text-center py-6 opacity-60 text-sm">
+								No matches found
+							</div>
+						) : (
+							<ul className="menu menu-sm p-0 [&_li>*]:rounded-md">
+								{searchResults.map((result) => (
+									<li key={result.key}>
+										<a
+											onClick={() => handleSelectResult(result)}
+											className="flex items-center gap-2"
+										>
+											{result.kind === "playlist" ? (
+												<span className="icon-[mdi--playlist-music] w-4 h-4 opacity-70 shrink-0" />
+											) : (
+												<span className="icon-[mdi--music-note] w-4 h-4 opacity-70 shrink-0" />
+											)}
+											<span className="flex-1 truncate">{result.name}</span>
+											{result.kind === "playlist" && (
+												<span className="text-xs opacity-50 shrink-0">
+													{result.trackCount}
+												</span>
+											)}
+										</a>
 									</li>
-									{allFolders.map((folder) => (
-										<li key={folder}>
-											<a onClick={() => handlePlayFolder(folder)}>{folder}</a>
-										</li>
-									))}
-								</ul>
-							</div>,
-							document.body
+								))}
+							</ul>
 						)}
+					</div>
 				</>
-			)}
-
-			{currentAudio ? (
+			) : currentAudio ? (
 				<>
 					{/* Track Info */}
 					<div className="flex items-center gap-3">
