@@ -28,14 +28,6 @@ export interface VoxelTerrainBackground {
 }
 
 /**
- * A voxel-based terrain stored as a compact base64-encoded Uint32Array.
- * See VoxelDataUtils for encoding details.
- *
- * Width/Length/Height remain tactical map units so actor coordinates and
- * gameplay rules don't need to scale when terrain resolution rises.
- * Voxel coordinates are stored in subcells under Resolution.
- */
-/**
  * The maximum height (in tactical units) the movement cost system accounts for.
  * Matches MAX_VOXEL_TERRAIN_HEIGHT in VoxelTerrainEditorUtils. Used for
  * height-cost formula validation and UI previews.
@@ -60,6 +52,15 @@ export function createDefaultVoxelTerrainBackground(): VoxelTerrainBackground {
 	return { ...DEFAULT_VOXEL_TERRAIN_BACKGROUND };
 }
 
+export type EncodedVoxelSVO = string;
+
+/**
+ * A voxel-based terrain stored as a base64-encoded Sparse Voxel Octree.
+ *
+ * Width/Length/Height remain tactical map units so actor coordinates and
+ * gameplay rules don't need to scale when terrain resolution rises.
+ * Voxel coordinates are stored in subcells under Resolution.
+ */
 export interface VoxelTerrain {
 	Id: string;
 	Name: string;
@@ -67,7 +68,7 @@ export interface VoxelTerrain {
 	Length: number;      // Z extent in tactical units
 	Height: number;      // Y extent in tactical units
 	Resolution?: number; // voxels per tactical unit; defaults to 1 for older saves
-	Voxels: string;      // base64-encoded sorted Uint32Array when loaded (see VoxelDataUtils)
+	Voxels: EncodedVoxelSVO;
 	VoxelsLoaded?: boolean;
 	VoxelStorageKey?: string;
 	VoxelCount?: number;

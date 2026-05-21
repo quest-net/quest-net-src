@@ -102,8 +102,8 @@ export function createTerrainRevision(
 	].join(":");
 }
 
-// Pack (x, y, z) into one 32-bit integer. Matches VoxelDataUtils encoding
-// modulo the trailing color byte. x/y/z are 0..255.
+// Pack (x, y, z) into one 32-bit integer for runtime lookup caches.
+// x/y/z are 0..255.
 export function packVoxelKey(x: number, y: number, z: number): number {
 	return x + (y << 8) + (z << 16);
 }

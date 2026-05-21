@@ -219,14 +219,15 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Edit grid -- flat Uint8Array (replaces the old overlay + base64 roundtrip)
+// Edit grid -- flat Uint8Array
 //
 // Encoding: index = vx + vz * vW + vy * vW * vL
 //   0        = empty
 //   color+1  = occupied with palette index `color` (0..254)
 //
 // Reads and writes are O(1). The grid is decoded from terrain.Voxels once on
-// mount (or on shape change) and re-encoded to base64 only at stroke end.
+// mount (or on shape change) so strokes do not mutate the encoded SVO payload
+// directly. The draft is re-encoded only at commit boundaries.
 // ---------------------------------------------------------------------------
 
 type EditGrid = Uint8Array;
