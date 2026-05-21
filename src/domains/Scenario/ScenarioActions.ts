@@ -130,6 +130,7 @@ export const ScenarioActions = {
                 );
             }
         }
+		//TODO: support item entities
 
         // 4. Relocate characters to spawn positions
         const characters = campaign.GameState.Characters;
