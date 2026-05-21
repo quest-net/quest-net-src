@@ -29,14 +29,27 @@ function base64ToBytes(encoded: string): Uint8Array {
 function isAlreadySVO(encoded: string): boolean {
 	if (!encoded) return true;
 
-	const bytes = base64ToBytes(encoded);
-	if (bytes.length < SVO_MAGIC.length) return false;
+	// Only decode enough base64 to see the 4 magic bytes. 8 chars decode to 6
+	// bytes, which is the smallest aligned prefix that covers bytes 0-3. This
+	// matters during migration: every legacy terrain is checked once, and the
+	// legacy blobs can be megabytes -- decoding the entire string just to read
+	// the first four bytes is wasted work.
+	if (encoded.length < 8) return false;
+
+	let prefix: string;
+	try {
+		prefix = atob(encoded.slice(0, 8));
+	} catch {
+		return false;
+	}
+
+	if (prefix.length < SVO_MAGIC.length) return false;
 
 	return (
-		bytes[0] === SVO_MAGIC.charCodeAt(0) &&
-		bytes[1] === SVO_MAGIC.charCodeAt(1) &&
-		bytes[2] === SVO_MAGIC.charCodeAt(2) &&
-		bytes[3] === SVO_MAGIC.charCodeAt(3)
+		prefix.charCodeAt(0) === SVO_MAGIC.charCodeAt(0) &&
+		prefix.charCodeAt(1) === SVO_MAGIC.charCodeAt(1) &&
+		prefix.charCodeAt(2) === SVO_MAGIC.charCodeAt(2) &&
+		prefix.charCodeAt(3) === SVO_MAGIC.charCodeAt(3)
 	);
 }
 
@@ -64,30 +77,110 @@ function migrateVoxelString(encoded: string): string {
 	return encodeVoxels(decodeLegacyVoxelString(encoded));
 }
 
-function migrateTerrain(terrain: any): void {
-	if (!terrain || typeof terrain !== "object") return;
-	if (typeof terrain.Voxels !== "string") return;
+// On per-terrain encoding failure we replace the voxel payload with the empty
+// SVO ("") rather than leaving the legacy blob. The runtime is SVO-only --
+// keeping legacy data on disk would just produce a crash the next time that
+// terrain is hydrated. Data is lost on failure, but the campaign stays
+// loadable and the pre-migration Context is recoverable from IndexedDB
+// (see contextBackup.ts, key "pre-2.3.0").
 
-	terrain.Voxels = migrateVoxelString(terrain.Voxels);
-	terrain.VoxelCount = getVoxelCount(terrain.Voxels);
+function migrateTerrain(terrain: any, campaignId: string): boolean {
+	if (!terrain || typeof terrain !== "object") return true;
+	if (typeof terrain.Voxels !== "string") return true;
+
+	try {
+		terrain.Voxels = migrateVoxelString(terrain.Voxels);
+		terrain.VoxelCount = getVoxelCount(terrain.Voxels);
+		return true;
+	} catch (error) {
+		console.error(
+			`[v2.3.0 migration] Failed to re-encode inline voxels for terrain ` +
+				`"${terrain.Id ?? "(unknown)"}" in campaign "${campaignId}". ` +
+				`Clearing the payload to keep the campaign loadable. The ` +
+				`pre-migration Context is backed up under IndexedDB key ` +
+				`"pre-2.3.0" if recovery is needed. Original error:`,
+			error
+		);
+		terrain.Voxels = "";
+		terrain.VoxelCount = 0;
+		return false;
+	}
+}
+
+async function migrateIdbRecord(
+	record: any,
+	campaignId: string,
+	storage: Parameters<Migration["migrate"]>[1]
+): Promise<boolean> {
+	const recordKey = record?.Key ?? record?.TerrainId ?? "(unknown)";
+	let nextVoxels: string;
+	let encodeFailed = false;
+	try {
+		nextVoxels = migrateVoxelString(record.Voxels);
+	} catch (error) {
+		console.error(
+			`[v2.3.0 migration] Failed to re-encode IndexedDB voxel record ` +
+				`"${recordKey}" for campaign "${campaignId}". Clearing the ` +
+				`record to keep the campaign loadable. The pre-migration ` +
+				`Context is backed up under IndexedDB key "pre-2.3.0" if ` +
+				`recovery is needed. Original error:`,
+			error
+		);
+		nextVoxels = "";
+		encodeFailed = true;
+	}
+
+	// Skip the write when the record is already in the desired form. Only
+	// reachable on the success path (an encoding failure always produces "",
+	// which is only equal to record.Voxels when the record was already empty
+	// -- and an empty record can't have failed encoding in the first place).
+	if (nextVoxels === record.Voxels) return !encodeFailed;
+
+	try {
+		record.Voxels = nextVoxels;
+		await storage.idbPut("voxelTerrains", record);
+		return !encodeFailed;
+	} catch (error) {
+		console.error(
+			`[v2.3.0 migration] Failed to persist re-encoded voxel record ` +
+				`"${recordKey}" for campaign "${campaignId}". Original error:`,
+			error
+		);
+		return false;
+	}
 }
 
 export const voxelSVOV230Migration: Migration = {
 	version: "2.3.0",
 	migrate: async (data: unknown, storage) => {
 		const campaign = data as any;
+		const campaignId = String(campaign?.Id ?? "(unknown)");
+		let inlineFailures = 0;
+		let idbFailures = 0;
 
 		for (const terrain of campaign.VoxelTerrains ?? []) {
-			migrateTerrain(terrain);
+			if (!migrateTerrain(terrain, campaignId)) inlineFailures++;
 		}
 
-		const allRecords = await storage.idbGetAll("voxelTerrains") as any[];
+		const allRecords = (await storage.idbGetAll("voxelTerrains")) as any[];
 		for (const record of allRecords) {
 			if (record.CampaignId !== campaign.Id) continue;
 			if (typeof record.Voxels !== "string") continue;
 
-			record.Voxels = migrateVoxelString(record.Voxels);
-			await storage.idbPut("voxelTerrains", record);
+			if (!(await migrateIdbRecord(record, campaignId, storage))) {
+				idbFailures++;
+			}
+		}
+
+		if (inlineFailures > 0 || idbFailures > 0) {
+			console.warn(
+				`[v2.3.0 migration] Completed for campaign "${campaignId}" with ` +
+					`${inlineFailures} inline failure(s) and ${idbFailures} IDB ` +
+					`record failure(s). Affected terrains had their voxel payload ` +
+					`cleared. The pre-migration Context is backed up under ` +
+					`IndexedDB key "pre-2.3.0" if recovery is needed. See logs ` +
+					`above for per-terrain details.`
+			);
 		}
 
 		return campaign;

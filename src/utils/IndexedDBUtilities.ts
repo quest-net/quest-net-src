@@ -1,13 +1,15 @@
 // utils/IndexedDBUtilities.ts
 const DB_NAME = "quest-net-db";
-// Bumped to 4 to add the "voxelTerrains" object store. IndexedDB cannot open a
-// later version DB as an earlier one, so older builds with v2 will still see
-// their original "images" store after this upgrade — we just add another
-// store alongside it.
-const DB_VERSION = 4;
+// Bumped to 5 to add the "contextBackups" object store, used by the 2.3.0
+// migration to snapshot the localStorage Context before applying risky
+// transformations. IndexedDB cannot open a later version DB as an earlier one,
+// so older builds will still see their existing stores after this upgrade -- we
+// just add another store alongside them.
+const DB_VERSION = 5;
 const STORE_NAME = "images";
 export const CAMPAIGNS_STORE_NAME = "campaigns";
 export const VOXEL_TERRAINS_STORE_NAME = "voxelTerrains";
+export const CONTEXT_BACKUPS_STORE_NAME = "contextBackups";
 
 /**
  * Generic utilities for IndexedDB operations
@@ -67,6 +69,14 @@ export class IndexedDBUtilities {
 				// Create object store for voxel terrain payloads
 				if (!db.objectStoreNames.contains(VOXEL_TERRAINS_STORE_NAME)) {
 					db.createObjectStore(VOXEL_TERRAINS_STORE_NAME, { keyPath: "Key" });
+				}
+
+				// Create object store for one-shot Context snapshots taken right
+				// before risky migrations run (added for 2.3.0). Records are
+				// keyed by a stable backup key (e.g. "pre-2.3.0") so the same
+				// backup is never overwritten by a subsequent failed reload.
+				if (!db.objectStoreNames.contains(CONTEXT_BACKUPS_STORE_NAME)) {
+					db.createObjectStore(CONTEXT_BACKUPS_STORE_NAME, { keyPath: "Key" });
 				}
 			};
 		});

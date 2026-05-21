@@ -65,18 +65,7 @@ function packPosition(x: number, y: number, z: number): number {
 	return x + (y << 8) + (z << 16);
 }
 
-function determineDepth(positions: Uint32Array): number {
-	let maxCoord = 0;
-	for (let i = 0; i < positions.length; i++) {
-		const position = positions[i];
-		const x = getX(position);
-		const y = getY(position);
-		const z = getZ(position);
-		if (x > maxCoord) maxCoord = x;
-		if (y > maxCoord) maxCoord = y;
-		if (z > maxCoord) maxCoord = z;
-	}
-
+function depthForMaxCoord(maxCoord: number): number {
 	let depth = 1;
 	let extent = 2;
 	while (extent <= maxCoord) {
@@ -90,20 +79,21 @@ function determineDepth(positions: Uint32Array): number {
 	return depth;
 }
 
-function mortonPath(position: number, depth: number): number {
-	const x = getX(position);
-	const y = getY(position);
-	const z = getZ(position);
+/**
+ * Computes the full MAX_SVO_DEPTH Morton path for a voxel. Always emits 24
+ * bits (3 bits per level) -- leading zeros mean the same numeric value sorts
+ * and indexes identically for any smaller actual depth, so the encoder can
+ * defer computing the real depth until after the single combined pass.
+ */
+function fullMortonPath(x: number, y: number, z: number): number {
 	let path = 0;
-
-	for (let level = depth - 1; level >= 0; level--) {
+	for (let level = MAX_SVO_DEPTH - 1; level >= 0; level--) {
 		path =
 			(path << 3) |
 			(((x >>> level) & 1) << 2) |
 			(((y >>> level) & 1) << 1) |
 			((z >>> level) & 1);
 	}
-
 	return path;
 }
 
@@ -255,11 +245,23 @@ export function encode(
 		return new Uint8Array(0);
 	}
 
-	const depth = determineDepth(positions);
+	// Single pass over positions: build Morton-keyed entries and track the
+	// largest coordinate seen. The full-depth Morton path is depth-agnostic
+	// (small coords just have leading zeros), so we don't need to know the
+	// final depth until after the loop.
 	const entries = new Array<number>(positions.length);
+	let maxCoord = 0;
 	for (let i = 0; i < positions.length; i++) {
-		entries[i] = mortonPath(positions[i], depth) * 256 + (colors[i] & 0xff);
+		const position = positions[i];
+		const x = getX(position);
+		const y = getY(position);
+		const z = getZ(position);
+		if (x > maxCoord) maxCoord = x;
+		if (y > maxCoord) maxCoord = y;
+		if (z > maxCoord) maxCoord = z;
+		entries[i] = fullMortonPath(x, y, z) * 256 + (colors[i] & 0xff);
 	}
+	const depth = depthForMaxCoord(maxCoord);
 	entries.sort((a, b) => a - b);
 
 	const geometryBytes: number[] = [];

@@ -11,10 +11,28 @@ import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { runMigrations } from "../../migrations/runMigrations";
 import { contextMigrations } from "../../migrations/contextMigrations";
 import { campaignMigrations } from "../../migrations/campaignMigrations";
+import { backupContextOnce } from "../../migrations/contextBackup";
 import { addMissingDefaultVoxelStamps } from "../../data/defaultVoxelStamps";
 
 const STORAGE_KEY = "quest-net-context";
 const BACKUP_PREFIX = `${STORAGE_KEY}-backup`;
+
+// One-shot IndexedDB backup taken right before the 2.3.0 voxel SVO migration
+// reshapes terrain payloads. Keyed by version so future risky migrations can
+// add their own pre-snapshot under a distinct key without clobbering this one.
+const PRE_SVO_BACKUP_KEY = "pre-2.3.0";
+const PRE_SVO_BACKUP_THRESHOLD = "2.3.0";
+
+function isOlderVersion(a: string, b: string): boolean {
+	const pa = a.split(".").map(Number);
+	const pb = b.split(".").map(Number);
+	const len = Math.max(pa.length, pb.length);
+	for (let i = 0; i < len; i++) {
+		const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+		if (diff !== 0) return diff < 0;
+	}
+	return false;
+}
 
 /**
  * Detects the legacy on-disk shape where Context.Campaigns held full Campaign
@@ -60,6 +78,14 @@ export const ContextActions = {
 
 		try {
 			const storedVersion: string = (stored as any).version ?? "0.0.0";
+
+			// Safety net for the 2.3.0 voxel SVO migration: snapshot the raw
+			// stored Context (with its inline legacy voxel payload) into
+			// IndexedDB before any transformation runs. Best-effort -- failure
+			// to back up is logged but does not block the migration.
+			if (isOlderVersion(storedVersion, PRE_SVO_BACKUP_THRESHOLD)) {
+				await backupContextOnce(PRE_SVO_BACKUP_KEY, storedVersion, original);
+			}
 
 			// Run context-level migrations (operates on the raw stored object).
 			const context = (await runMigrations(
