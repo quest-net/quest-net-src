@@ -114,9 +114,10 @@ export function AudioDisplay() {
 			audioId: audio.Id,
 		}));
 
-		return [...playlistResults, ...trackResults].sort((a, b) =>
-			a.name.localeCompare(b.name)
-		);
+		// Playlists float to the top, with each group sorted alphabetically.
+		playlistResults.sort((a, b) => a.name.localeCompare(b.name));
+		trackResults.sort((a, b) => a.name.localeCompare(b.name));
+		return [...playlistResults, ...trackResults];
 	}, [allFolders, campaign.Audios, searchQuery]);
 
 	// Debounced volume change
