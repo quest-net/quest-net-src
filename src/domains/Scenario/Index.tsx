@@ -56,7 +56,7 @@ export function ScenarioIndex() {
         label: scenario.Name,
         icon: "icon-[mdi--map-marker-multiple]",
         iconColor: "#10b981",
-        details: `${scenario.EntityPlacements.length} entities, ${scenario.SpawnPositions.length} spawn points`,
+        details: `${scenario.EntityPlacements.length} entities, ${scenario.ItemPlacements?.length ?? 0} items, ${scenario.SpawnPositions.length} spawn points`,
         tags: scenario.Tags || [],
         action: {
             label: "Load",

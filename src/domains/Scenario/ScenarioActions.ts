@@ -1,12 +1,13 @@
 // domains/Scenario/ScenarioActions.ts
 
 import { Context } from "../Context/Context";
-import { Scenario, EntityPlacement } from "./Scenario";
+import { Scenario, EntityPlacement, ItemPlacement } from "./Scenario";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { EntityActions } from "../Entity/EntityActions";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import { getActiveVoxelTerrain } from "../../utils/terrain/data/VoxelTerrainUtils";
+import { isItemEntity, getItemDataFromEntity, createItemEntity } from "../Item/ItemDropUtils";
 
 /**
  * Scenario action handlers
@@ -21,9 +22,27 @@ export const ScenarioActions = {
         const campaign = CampaignActions.getActiveCampaign(context);
         const gs = campaign.GameState;
 
-        // Build entity placements by finding the template for each spawned entity
+        // Build entity placements by finding the template for each spawned entity.
+        // Item entities are templateless (their state lives in a tag) and are
+        // captured separately into itemPlacements.
         const entityPlacements: EntityPlacement[] = [];
+        const itemPlacements: ItemPlacement[] = [];
         for (const entity of gs.Entities) {
+            if (isItemEntity(entity)) {
+                // Templateless item entity — capture template ref + uses + position.
+                // The item snapshot lives in a tag; pull the ID and remaining
+                // uses out of it. Skip if the snapshot is unreadable.
+                const snapshot = getItemDataFromEntity(entity);
+                if (snapshot) {
+                    itemPlacements.push({
+                        ItemTemplateId: snapshot.Id,
+                        UsesLeft: snapshot.UsesLeft,
+                        Position: { ...entity.Position },
+                    });
+                }
+                continue;
+            }
+
             // Find the template by matching base name
             const baseName = EntityActions.getBaseName(entity.Name);
             const template = campaign.EntityTemplates.find(
@@ -45,6 +64,7 @@ export const ScenarioActions = {
             Scene: { ...gs.Scene },
             AudioPlaylist: [...gs.Audio],
             EntityPlacements: entityPlacements,
+            ItemPlacements: itemPlacements,
             SpawnPositions: gs.Characters.map((c) => ({ ...c.Position })),
         };
 
@@ -74,7 +94,7 @@ export const ScenarioActions = {
             LogActions.create(
                 {
                     action: "Scenario captured",
-                    details: `${params.name} saved with ${entityPlacements.length} entities, ${scenario.SpawnPositions.length} spawn positions`,
+                    details: `${params.name} saved with ${entityPlacements.length} entities, ${itemPlacements.length} items, ${scenario.SpawnPositions.length} spawn positions`,
                     category: "system",
                     level: "info",
                     visibility: ["dm"],
@@ -130,7 +150,24 @@ export const ScenarioActions = {
                 );
             }
         }
-		//TODO: support item entities
+
+        // 3b. Restore item entities by rebuilding a fresh entity from the
+        // template (skip if template deleted), preserving UsesLeft from capture.
+        for (const placement of scenario.ItemPlacements ?? []) {
+            const template = campaign.ItemTemplates.find(
+                (t) => t.Id === placement.ItemTemplateId
+            );
+            if (!template) continue;
+
+            const entity = createItemEntity(
+                template,
+                { Id: template.Id, UsesLeft: placement.UsesLeft },
+                placement.Position,
+                campaign.Settings.StatDefinitions,
+                campaign.Settings.ActionDefinitions
+            );
+            campaign.GameState.Entities.push(entity);
+        }
 
         // 4. Relocate characters to spawn positions
         const characters = campaign.GameState.Characters;

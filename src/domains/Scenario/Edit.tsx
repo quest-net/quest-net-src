@@ -121,6 +121,10 @@ function ScenarioForm({ data, onChange }: ScenarioFormProps) {
                         <span className="font-mono">{data.EntityPlacements.length} placement(s)</span>
                     </div>
                     <div className="flex justify-between py-2 border-b border-base-300">
+                        <span className="opacity-70">Items:</span>
+                        <span className="font-mono">{data.ItemPlacements?.length ?? 0} placement(s)</span>
+                    </div>
+                    <div className="flex justify-between py-2 border-b border-base-300">
                         <span className="opacity-70">Spawn Positions:</span>
                         <span className="font-mono">{data.SpawnPositions.length} position(s)</span>
                     </div>
