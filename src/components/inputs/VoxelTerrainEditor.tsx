@@ -137,6 +137,7 @@ const VOX_RESOLUTION_LABELS: Record<number, string> = {
 	1: "Basic",
 	2: "Detailed",
 	3: "Very Detailed",
+	4: "Extreme",
 };
 
 // ---------------------------------------------------------------------------

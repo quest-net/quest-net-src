@@ -20,7 +20,7 @@ export const MIN_VOXEL_TERRAIN_HEIGHT = 1;
 export const DEFAULT_VOXEL_TERRAIN_HEIGHT = 8;
 export const DEFAULT_VOXEL_TERRAIN_MAX_HEIGHT = 16;
 export const MIN_VOXEL_TERRAIN_RESOLUTION = 1;
-export const MAX_VOXEL_TERRAIN_RESOLUTION = 3;
+export const MAX_VOXEL_TERRAIN_RESOLUTION = 4;
 
 const clamp = (value: number, min: number, max: number) =>
 	Math.max(min, Math.min(max, value));

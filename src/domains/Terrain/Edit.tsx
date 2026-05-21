@@ -23,6 +23,7 @@ const TERRAIN_RESOLUTION_OPTIONS = [
 	{ value: 1, label: "Basic" },
 	{ value: 2, label: "Detailed" },
 	{ value: 3, label: "Very Detailed" },
+	{ value: 4, label: "Extreme" },
 ] as const;
 
 const TERRAIN_SHAPE_DEBOUNCE_MS = 300;
