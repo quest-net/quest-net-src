@@ -20,7 +20,7 @@ export function AudioEdit({ audio, initialTags, onClose }: AudioEditProps) {
 	const { actionService } = useActionService();
 
 	const defaultAudio: Omit<Audio, "Id"> = {
-		Name: "New Audio Track",
+		Name: "",
 		YoutubeId: "",
 		Tags: initialTags || [],
 	};
@@ -125,7 +125,7 @@ function AudioForm({ data, onChange }: AudioFormProps) {
 							value={data.Name}
 							onChange={(e) => handleFieldChange("Name", e.target.value)}
 							className="input input-bordered w-full"
-							placeholder="e.g. Battle Theme, Tavern Ambience"
+							placeholder="Leave empty to use video name"
 						/>
 					</FormField>
 

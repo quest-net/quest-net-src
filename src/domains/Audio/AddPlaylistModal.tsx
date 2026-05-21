@@ -97,9 +97,8 @@ export function AddPlaylistModal({
 				<div className="bg-base-200 rounded-lg p-3 mb-4">
 					<p className="text-sm opacity-70">
 						<span className="icon-[mdi--lightbulb-outline] w-4 h-4 inline mr-1" />
-						Tracks will be imported with generic names (Track No. 1, 2, 3...)
-						into a timestamped folder. You can rename and reorganize them
-						afterward.
+						Tracks and the playlist folder will use YouTube names when
+						available. Anything unavailable falls back to generic names.
 					</p>
 				</div>
 
