@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { FormWrapper, useFormReadOnly } from "../../components/Form/Form";
+import { FormWrapper, useFormContext, useFormReadOnly } from "../../components/Form/Form";
 import { TagEditor } from "../../components/inputs/TagEditor";
-import VoxelTerrainEditor, { type ActorOverlayInfo } from "../../components/inputs/VoxelTerrainEditor";
+import VoxelTerrainEditor, {
+	type ActorOverlayInfo,
+	type VoxelTerrainEditorHandle,
+} from "../../components/inputs/VoxelTerrainEditor";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import type { VoxelTerrain } from "../VoxelTerrain/VoxelTerrain";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
@@ -15,7 +18,6 @@ import {
 	MAX_VOXEL_TERRAIN_LENGTH,
 	clampVoxelTerrainHeight,
 	clampVoxelTerrainResolution,
-	reshapeVoxelTerrainForEditor,
 } from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
 import { listStampTerrains } from "../../utils/terrain/editor/VoxelStampUtils";
 
@@ -218,7 +220,9 @@ interface TerrainFormFieldsProps {
 
 function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps) {
 	const questContext = useQuestContext();
+	const { registerSaveResolver } = useFormContext();
 	const campaign = questContext.ActiveCampaign;
+	const editorRef = useRef<VoxelTerrainEditorHandle>(null);
 
 	// Show actor positions only when editing the terrain that is currently
 	// active in the game session, so the DM can see where actors stand.
@@ -271,20 +275,33 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 		});
 	}, [data]);
 
+	useEffect(() => {
+		return registerSaveResolver(
+			() => editorRef.current?.materializeTerrain() ?? terrainRef.current
+		);
+	}, [registerSaveResolver]);
+
 	const handleFieldChange = (field: keyof VoxelTerrain, value: any) => {
 		onChange({ ...data, [field]: value });
 	};
 
 	const commitShapeChange = useCallback(
 		(nextDraft: typeof shapeDraft) => {
-			onChange(
-				reshapeVoxelTerrainForEditor(terrainRef.current, {
+			const nextTerrain =
+				editorRef.current?.reshapeDraft({
 					width: nextDraft.width,
 					length: nextDraft.length,
 					height: nextDraft.height,
 					resolution: nextDraft.resolution,
-				})
-			);
+				}) ?? {
+					...terrainRef.current,
+					Width: nextDraft.width,
+					Length: nextDraft.length,
+					Height: nextDraft.height,
+					Resolution: nextDraft.resolution,
+				};
+			terrainRef.current = nextTerrain;
+			onChange(nextTerrain);
 		},
 		[onChange]
 	);
@@ -437,6 +454,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 			</div>
 
 			<VoxelTerrainEditor
+				ref={editorRef}
 				terrain={data}
 				onChange={onChange}
 				readOnly={readOnly}

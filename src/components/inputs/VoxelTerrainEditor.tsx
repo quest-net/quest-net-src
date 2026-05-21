@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	forwardRef,
+	useCallback,
+	useEffect,
+	useImperativeHandle,
+	useRef,
+	useState,
+} from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
@@ -19,6 +26,10 @@ import {
 	TERRAIN_PALETTE_ROWS,
 } from "../../utils/terrain/palette/TerrainPaletteUtils";
 import {
+	MAX_VOXEL_TERRAIN_LENGTH,
+	MAX_VOXEL_TERRAIN_WIDTH,
+	clampVoxelTerrainHeight,
+	clampVoxelTerrainResolution,
 	normalizeVoxelPaletteIndex,
 	terrainPaletteIndexToVoxelColor,
 } from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
@@ -45,6 +56,7 @@ import {
 	type VoxResolutionOption,
 } from "../../utils/terrain/import/VoxImportUtils";
 import { raycastVoxelGrid } from "../../utils/terrain/raycast/VoxelRaycast";
+import { useFormContext } from "../Form/Form";
 import ThreeDMap from "../Map/3DMap";
 import { MapStateProvider } from "../Map/MapStateProvider";
 
@@ -69,6 +81,16 @@ interface VoxelTerrainEditorProps {
 	stampSources?: VoxelTerrain[];
 	/** Returns the fully hydrated voxel data for a stamp source by id. */
 	loadStampVoxels?: (terrainId: string) => Promise<VoxelTerrain | null>;
+}
+
+export interface VoxelTerrainEditorHandle {
+	materializeTerrain: () => VoxelTerrain;
+	reshapeDraft: (nextShape: {
+		width: number;
+		length: number;
+		height: number;
+		resolution: number;
+	}) => VoxelTerrain;
 }
 
 interface VoxelCoord {
@@ -255,22 +277,142 @@ function encodeEditGrid(grid: EditGrid, vW: number, vH: number, vL: number): str
 	return encodeVoxels(voxels);
 }
 
+function countEditGridVoxels(grid: EditGrid): number {
+	let count = 0;
+	for (let i = 0; i < grid.length; i++) {
+		if (grid[i] !== 0) count++;
+	}
+	return count;
+}
+
+function computeChunkDimsForShape(
+	width: number,
+	length: number,
+	height: number,
+	resolution: number,
+): ChunkDims {
+	const vW = width * resolution;
+	const vH = height * resolution;
+	const vL = length * resolution;
+	return {
+		chunksX:    Math.ceil(vW / CHUNK_SIZE),
+		chunksY:    Math.ceil(vH / CHUNK_SIZE),
+		chunksZ:    Math.ceil(vL / CHUNK_SIZE),
+		vW,
+		vH,
+		vL,
+		resolution,
+		tW: width,
+		tL: length,
+	};
+}
+
+function getRescaledVoxelRange(
+	index: number,
+	oldResolution: number,
+	newResolution: number,
+	maxExclusive: number,
+): { start: number; end: number } | null {
+	const start = Math.floor((index * newResolution) / oldResolution);
+	const end = Math.ceil(((index + 1) * newResolution) / oldResolution);
+	const clampedStart = clamp(start, 0, maxExclusive);
+	const clampedEnd = clamp(end, clampedStart, maxExclusive);
+	if (clampedStart >= clampedEnd) return null;
+	return { start: clampedStart, end: clampedEnd };
+}
+
+function normalizeDraftShape(nextShape: {
+	width: number;
+	length: number;
+	height: number;
+	resolution: number;
+}): {
+	width: number;
+	length: number;
+	height: number;
+	resolution: number;
+} {
+	return {
+		width: clamp(Math.floor(nextShape.width) || 1, 1, MAX_VOXEL_TERRAIN_WIDTH),
+		length: clamp(Math.floor(nextShape.length) || 1, 1, MAX_VOXEL_TERRAIN_LENGTH),
+		height: clampVoxelTerrainHeight(nextShape.height),
+		resolution: clampVoxelTerrainResolution(nextShape.resolution),
+	};
+}
+
+function reshapeEditGrid(
+	grid: EditGrid,
+	oldDims: ChunkDims,
+	nextShape: {
+		width: number;
+		length: number;
+		height: number;
+		resolution: number;
+	},
+): { grid: EditGrid; dims: ChunkDims; count: number; shape: ReturnType<typeof normalizeDraftShape> } {
+	const shape = normalizeDraftShape(nextShape);
+	const nextDims = computeChunkDimsForShape(
+		shape.width,
+		shape.length,
+		shape.height,
+		shape.resolution
+	);
+	const nextGrid = new Uint8Array(nextDims.vW * nextDims.vH * nextDims.vL);
+	let count = 0;
+
+	for (let y = 0; y < oldDims.vH; y++) {
+		for (let z = 0; z < oldDims.vL; z++) {
+			for (let x = 0; x < oldDims.vW; x++) {
+				const val = grid[editGridIndex(x, y, z, oldDims.vW, oldDims.vL)];
+				if (val === 0) continue;
+
+				const xRange = getRescaledVoxelRange(
+					x,
+					oldDims.resolution,
+					shape.resolution,
+					nextDims.vW
+				);
+				const yRange = getRescaledVoxelRange(
+					y,
+					oldDims.resolution,
+					shape.resolution,
+					nextDims.vH
+				);
+				const zRange = getRescaledVoxelRange(
+					z,
+					oldDims.resolution,
+					shape.resolution,
+					nextDims.vL
+				);
+				if (!xRange || !yRange || !zRange) continue;
+
+				for (let nz = zRange.start; nz < zRange.end; nz++) {
+					for (let ny = yRange.start; ny < yRange.end; ny++) {
+						for (let nx = xRange.start; nx < xRange.end; nx++) {
+							const nextIdx = editGridIndex(nx, ny, nz, nextDims.vW, nextDims.vL);
+							if (nextGrid[nextIdx] === 0) count++;
+							nextGrid[nextIdx] = val;
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return { grid: nextGrid, dims: nextDims, count, shape };
+}
+
 // ---------------------------------------------------------------------------
 // Chunk system
 // ---------------------------------------------------------------------------
 
 function computeChunkDims(index: VoxelTerrainIndex): ChunkDims {
-	return {
-		chunksX:    Math.ceil(index.voxelWidth  / CHUNK_SIZE),
-		chunksY:    Math.ceil(index.voxelHeight / CHUNK_SIZE),
-		chunksZ:    Math.ceil(index.voxelLength / CHUNK_SIZE),
-		vW:         index.voxelWidth,
-		vH:         index.voxelHeight,
-		vL:         index.voxelLength,
-		resolution: index.resolution,
-		tW:         index.width,
-		tL:         index.length,
-	};
+	return computeChunkDimsForShape(
+		index.width,
+		index.length,
+		index.height,
+		index.resolution
+	);
 }
 
 function markAllChunksDirty(dirtyChunks: Set<number>, dims: ChunkDims): void {
@@ -598,9 +740,10 @@ function applyStampToGrid(
 	anchor: VoxelCoord,
 	source: VoxelTerrain,
 	transform: StampTransform,
-): { changed: boolean } {
+): { changed: boolean; countDelta: number } {
 	const { vW, vH, vL, resolution } = dims;
 	let changed = false;
+	let countDelta = 0;
 
 	for (const offset of iterateStampVoxels(source, resolution, transform)) {
 		const x = anchor.x + offset.x;
@@ -611,12 +754,13 @@ function applyStampToGrid(
 		const gIdx = editGridIndex(x, y, z, vW, vL);
 		const next = offset.color + 1;
 		if (grid[gIdx] === next) continue;
+		if (grid[gIdx] === 0) countDelta++;
 		grid[gIdx] = next;
 		markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 		changed = true;
 	}
 
-	return { changed };
+	return { changed, countDelta };
 }
 
 // ---------------------------------------------------------------------------
@@ -633,16 +777,17 @@ function applyVoxelEdit(
 	granularity: EditGranularity,
 	brushSize: number,
 	colorIndex: number,
-): { changed: boolean; sampledColor: number | null } {
+): { changed: boolean; sampledColor: number | null; countDelta: number } {
 	const { vW, vH, vL } = dims;
 
 	if (tool === "sample") {
 		const sampledColor = editGridGetColor(grid, pick.voxel.x, pick.voxel.y, pick.voxel.z, vW, vH, vL);
-		return { changed: false, sampledColor };
+		return { changed: false, sampledColor, countDelta: 0 };
 	}
 
 	const coords = collectAffectedCoords(index, pick, tool, granularity, brushSize);
 	let changed = false;
+	let countDelta = 0;
 
 	for (const { x, y, z } of coords) {
 		if (x < 0 || x >= vW || y < 0 || y >= vH || z < 0 || z >= vL) continue;
@@ -653,6 +798,7 @@ function applyVoxelEdit(
 				grid[gIdx] = 0;
 				markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 				changed = true;
+				countDelta--;
 			}
 			continue;
 		}
@@ -672,10 +818,11 @@ function applyVoxelEdit(
 			grid[gIdx] = colorIndex + 1;
 			markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 			changed = true;
+			countDelta++;
 		}
 	}
 
-	return { changed, sampledColor: null };
+	return { changed, sampledColor: null, countDelta };
 }
 
 // ---------------------------------------------------------------------------
@@ -1157,20 +1304,22 @@ function isTextInputTarget(target: EventTarget | null): boolean {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function VoxelTerrainEditor({
+const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEditorProps>(function VoxelTerrainEditor({
 	terrain,
 	onChange,
 	readOnly = false,
 	actors,
 	stampSources,
 	loadStampVoxels,
-}: VoxelTerrainEditorProps) {
+}: VoxelTerrainEditorProps, ref) {
+	const { setDirty } = useFormContext();
 	const containerRef   = useRef<HTMLDivElement>(null);
 	const resourcesRef   = useRef<EditorSceneResources | null>(null);
 	// Canonical committed terrain. Updated at stroke end, undo/redo, external prop.
 	const terrainRef     = useRef(terrain);
 	// Live voxel state. Written per-voxel during editing; never re-encoded mid-stroke.
 	const editGridRef    = useRef<EditGrid>(new Uint8Array(0));
+	const occupiedVoxelCountRef = useRef(0);
 	// Chunk system: meshes + pending rebuild set.
 	const chunkMeshesRef = useRef<Map<number, THREE.Mesh | null>>(new Map());
 	const dirtyChunksRef = useRef<Set<number>>(new Set());
@@ -1188,6 +1337,7 @@ export default function VoxelTerrainEditor({
 	const showActorsRef        = useRef(true);
 	const showTacticalGridRef  = useRef(true);
 	const showVoxelGridRef     = useRef(true);
+	const activeViewRef        = useRef<EditorView>("edit");
 	const actorMarkerElemsRef = useRef<Map<string, HTMLDivElement>>(new Map());
 	const actorOverlayRef  = useRef<HTMLDivElement>(null);
 	// Stroke state.
@@ -1232,17 +1382,21 @@ export default function VoxelTerrainEditor({
 	const [stampSource,    setStampSource]    = useState<VoxelTerrain | null>(null);
 	const [stampTransform, setStampTransform] = useState<StampTransform>(IDENTITY_STAMP_TRANSFORM);
 	const [stampLoadingId, setStampLoadingId] = useState<string | null>(null);
+	const [previewTerrain, setPreviewTerrain] = useState<VoxelTerrain | null>(null);
 	// editGen ticks on stroke end, undo/redo, and external prop changes.
 	// It gates React-visible updates (sidebar voxel count, grid lines, camera framing).
 	// It is NEVER bumped per-voxel; Three.js geometry updates happen in the rAF loop.
 	const [editGen, setEditGen] = useState(0);
 	const bumpEditGen = useCallback(() => setEditGen((g) => g + 1), []);
+	const markDraftDirty = useCallback(() => {
+		if (!readOnlyRef.current) setDirty(true);
+	}, [setDirty]);
 
 	// Sidebar reads terrainRef for voxel count and dimensions. editGen opts the
 	// expression into React's re-render cycle without re-encoding.
 	void editGen;
 	const displayedTerrain  = terrainRef.current;
-	const voxelCount        = getVoxelTerrainIndex(displayedTerrain).voxelCount;
+	const voxelCount        = occupiedVoxelCountRef.current;
 	const selectedTool      = TOOL_BUTTONS.find((b) => b.id === tool) ?? TOOL_BUTTONS[0];
 	const resolution        = getVoxelTerrainResolution(displayedTerrain);
 	const tileDimensions    = `${displayedTerrain.Width} x ${displayedTerrain.Length} x ${displayedTerrain.Height}`;
@@ -1254,6 +1408,20 @@ export default function VoxelTerrainEditor({
 	const background = terrain.Background;
 	const backgroundColor = background.Color ?? DEFAULT_VOXEL_TERRAIN_BACKGROUND_COLOR;
 
+	const createDraftTerrainSnapshot = useCallback((): VoxelTerrain => {
+		const dims = chunkDimsRef.current;
+		if (!dims) return terrainRef.current;
+		return {
+			...terrainRef.current,
+			Voxels: encodeEditGrid(editGridRef.current, dims.vW, dims.vH, dims.vL),
+			VoxelsLoaded: true,
+		};
+	}, []);
+
+	const refreshPreviewTerrain = useCallback(() => {
+		setPreviewTerrain(createDraftTerrainSnapshot());
+	}, [createDraftTerrainSnapshot]);
+
 	const emitTerrainUpdate = (nextTerrain: VoxelTerrain) => {
 		terrainRef.current = nextTerrain;
 		lastEmittedVoxelsRef.current = nextTerrain.Voxels;
@@ -1262,21 +1430,25 @@ export default function VoxelTerrainEditor({
 
 	const updateLighting = (updates: Partial<VoxelTerrainLighting>) => {
 		if (readOnly) return;
-		emitTerrainUpdate({
+		const nextTerrain = {
 			...terrain,
 			Lighting: {
 				...lighting,
 				...updates,
 			},
-		});
+		};
+		emitTerrainUpdate(nextTerrain);
+		if (activeViewRef.current === "preview") refreshPreviewTerrain();
 	};
 
 	const updateBackground = (updates: VoxelTerrainBackground) => {
 		if (readOnly) return;
-		emitTerrainUpdate({
+		const nextTerrain = {
 			...terrain,
 			Background: updates,
-		});
+		};
+		emitTerrainUpdate(nextTerrain);
+		if (activeViewRef.current === "preview") refreshPreviewTerrain();
 	};
 
 	// -------------------------------------------------------------------------
@@ -1300,6 +1472,7 @@ export default function VoxelTerrainEditor({
 	useEffect(() => { showActorsRef.current = showActors;  }, [showActors]);
 	useEffect(() => { showTacticalGridRef.current = showTacticalGrid; }, [showTacticalGrid]);
 	useEffect(() => { showVoxelGridRef.current    = showVoxelGrid;    }, [showVoxelGrid]);
+	useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
 	useEffect(() => {
 		stampSourceRef.current = stampSource;
 		// Repaint the ghost so a new source's preview appears immediately.
@@ -1349,6 +1522,7 @@ export default function VoxelTerrainEditor({
 		} else {
 			editGridRef.current = newGrid;
 		}
+		occupiedVoxelCountRef.current = countEditGridVoxels(newGrid);
 
 		const resources = resourcesRef.current;
 		if (shapeChanged && resources) {
@@ -1372,19 +1546,87 @@ export default function VoxelTerrainEditor({
 	}, [terrain.Id]);
 
 	// -------------------------------------------------------------------------
-	// Encode and emit (called once at stroke end -- never per-rAF)
+	// Draft commit (called once at stroke end -- never per-rAF)
 	// -------------------------------------------------------------------------
 
-	const encodeAndEmit = useCallback(() => {
-		const dims = chunkDimsRef.current;
-		if (!dims) return;
-		const nextVoxels  = encodeEditGrid(editGridRef.current, dims.vW, dims.vH, dims.vL);
-		const nextTerrain = { ...terrainRef.current, Voxels: nextVoxels };
-		terrainRef.current        = nextTerrain;
-		lastEmittedVoxelsRef.current = nextVoxels;
+	const commitDraftChange = useCallback(() => {
 		bumpEditGen();
-		onChangeRef.current(nextTerrain);
-	}, [bumpEditGen]);
+		markDraftDirty();
+		if (activeViewRef.current === "preview") refreshPreviewTerrain();
+	}, [bumpEditGen, markDraftDirty, refreshPreviewTerrain]);
+
+	const materializeTerrain = useCallback((): VoxelTerrain => {
+		const nextTerrain = createDraftTerrainSnapshot();
+		terrainRef.current = nextTerrain;
+		lastEmittedVoxelsRef.current = nextTerrain.Voxels;
+		return nextTerrain;
+	}, [createDraftTerrainSnapshot]);
+
+	const reshapeDraft = useCallback(
+		(nextShape: {
+			width: number;
+			length: number;
+			height: number;
+			resolution: number;
+		}): VoxelTerrain => {
+			const oldDims =
+				chunkDimsRef.current ??
+				computeChunkDimsForShape(
+					terrainRef.current.Width,
+					terrainRef.current.Length,
+					terrainRef.current.Height,
+					getVoxelTerrainResolution(terrainRef.current)
+				);
+			const result = reshapeEditGrid(editGridRef.current, oldDims, nextShape);
+
+			editGridRef.current = result.grid;
+			chunkDimsRef.current = result.dims;
+			occupiedVoxelCountRef.current = result.count;
+			undoStackRef.current = [];
+			redoStackRef.current = [];
+			setUndoDepth(0);
+			setRedoDepth(0);
+
+			const nextTerrain: VoxelTerrain = {
+				...terrainRef.current,
+				Width: result.shape.width,
+				Length: result.shape.length,
+				Height: result.shape.height,
+				Resolution: result.shape.resolution,
+			};
+			terrainRef.current = nextTerrain;
+
+			const resources = resourcesRef.current;
+			if (resources) {
+				clearAllChunkMeshes(resources.chunkGroup, chunkMeshesRef.current);
+				clearObjectGroup(resources.hoverGroup);
+				markAllChunksDirty(dirtyChunksRef.current, result.dims);
+				const container = containerRef.current;
+				if (container) frameCamera(resources, nextTerrain, container);
+				rebuildGrid(
+					resources,
+					editGridRef.current,
+					result.dims,
+					activeViewRef.current === "edit" && showTacticalGridRef.current,
+					activeViewRef.current === "edit" && showVoxelGridRef.current
+				);
+			}
+
+			lastShapeSignatureRef.current = null;
+			commitDraftChange();
+			return nextTerrain;
+		},
+		[commitDraftChange]
+	);
+
+	useImperativeHandle(
+		ref,
+		() => ({
+			materializeTerrain,
+			reshapeDraft,
+		}),
+		[materializeTerrain, reshapeDraft]
+	);
 
 	// -------------------------------------------------------------------------
 	// Undo / Redo
@@ -1414,14 +1656,11 @@ export default function VoxelTerrainEditor({
 
 		editGridRef.current.set(previousSnapshot);
 		markAllChunksDirty(dirtyChunksRef.current, dims);
+		occupiedVoxelCountRef.current = countEditGridVoxels(previousSnapshot);
 
-		const nextVoxels  = encodeEditGrid(previousSnapshot, dims.vW, dims.vH, dims.vL);
-		const nextTerrain = { ...terrainRef.current, Voxels: nextVoxels };
-		terrainRef.current        = nextTerrain;
-		lastEmittedVoxelsRef.current = nextVoxels;
 		bumpEditGen();
-		onChangeRef.current(nextTerrain);
-	}, [bumpEditGen]);
+		markDraftDirty();
+	}, [bumpEditGen, markDraftDirty]);
 
 	const redo = useCallback(() => {
 		if (redoStackRef.current.length === 0) return;
@@ -1438,14 +1677,11 @@ export default function VoxelTerrainEditor({
 
 		editGridRef.current.set(nextSnapshot);
 		markAllChunksDirty(dirtyChunksRef.current, dims);
+		occupiedVoxelCountRef.current = countEditGridVoxels(nextSnapshot);
 
-		const nextVoxels  = encodeEditGrid(nextSnapshot, dims.vW, dims.vH, dims.vL);
-		const nextTerrain = { ...terrainRef.current, Voxels: nextVoxels };
-		terrainRef.current        = nextTerrain;
-		lastEmittedVoxelsRef.current = nextVoxels;
 		bumpEditGen();
-		onChangeRef.current(nextTerrain);
-	}, [bumpEditGen]);
+		markDraftDirty();
+	}, [bumpEditGen, markDraftDirty]);
 
 	// -------------------------------------------------------------------------
 	// Apply edit (writes directly to editGrid -- no React, no encode)
@@ -1479,6 +1715,7 @@ export default function VoxelTerrainEditor({
 				stampTransformRef.current,
 			);
 			if (!stampResult.changed) return false;
+			occupiedVoxelCountRef.current += stampResult.countDelta;
 			if (!strokeStartedRef.current) {
 				recordUndo();
 				strokeStartedRef.current = true;
@@ -1507,6 +1744,7 @@ export default function VoxelTerrainEditor({
 		}
 
 		if (!result.changed) return false;
+		occupiedVoxelCountRef.current += result.countDelta;
 
 		if (!strokeStartedRef.current) {
 			recordUndo();
@@ -1514,7 +1752,7 @@ export default function VoxelTerrainEditor({
 		}
 
 		// No schedulePendingTerrainChange here. The rAF loop rebuilds dirty chunks
-		// automatically; onChange fires once at stroke end via encodeAndEmit.
+		// automatically; persisted encoding is deferred until the form saves.
 		return true;
 	}, [recordUndo]);
 
@@ -1793,6 +2031,7 @@ export default function VoxelTerrainEditor({
 		const initDims    = computeChunkDims(initIndex);
 		chunkDimsRef.current  = initDims;
 		editGridRef.current   = buildEditGrid(initTerrain, initIndex);
+		occupiedVoxelCountRef.current = countEditGridVoxels(editGridRef.current);
 		markAllChunksDirty(dirtyChunksRef.current, initDims);
 		frameCamera(resources, initTerrain, container);
 		lastShapeSignatureRef.current =
@@ -1860,8 +2099,8 @@ export default function VoxelTerrainEditor({
 					// the last-committed state.
 					rebuildGrid(
 						resources, grid, dims,
-						showTacticalGridRef.current,
-						showVoxelGridRef.current,
+						activeViewRef.current === "edit" && showTacticalGridRef.current,
+						activeViewRef.current === "edit" && showVoxelGridRef.current,
 					);
 				}
 			}
@@ -1886,6 +2125,10 @@ export default function VoxelTerrainEditor({
 			lastHoverPick = pick;
 			const dims = chunkDimsRef.current;
 			if (!dims) return;
+			if (activeViewRef.current !== "edit") {
+				clearObjectGroup(resources.hoverGroup);
+				return;
+			}
 			updateHoverIndicator(
 				resources,
 				editGridRef.current,
@@ -1930,6 +2173,7 @@ export default function VoxelTerrainEditor({
 
 		// --- Pointer handlers ---
 		const handlePointerMove = (event: PointerEvent) => {
+			if (activeViewRef.current !== "edit") return;
 			const activeStroke =
 				activeStrokeRef.current?.pointerId === event.pointerId
 					? activeStrokeRef.current : null;
@@ -1957,6 +2201,7 @@ export default function VoxelTerrainEditor({
 		};
 
 		const handlePointerDown = (event: PointerEvent) => {
+			if (activeViewRef.current !== "edit") return;
 			if (event.button === 1) { event.preventDefault(); return; }
 			if (event.button !== 0 || readOnlyRef.current) return;
 			event.preventDefault();
@@ -2001,9 +2246,8 @@ export default function VoxelTerrainEditor({
 			if (renderer.domElement.hasPointerCapture(event.pointerId)) {
 				renderer.domElement.releasePointerCapture(event.pointerId);
 			}
-			// Encode editGrid and notify parent exactly once per stroke.
 			if (strokeStartedRef.current) {
-				encodeAndEmit();
+				commitDraftChange();
 			}
 			clearStrokeState();
 		};
@@ -2048,7 +2292,7 @@ export default function VoxelTerrainEditor({
 			resourcesRef.current    = null;
 			refreshHoverRef.current = null;
 		};
-	}, [applyEdit, encodeAndEmit, getEditKey, getLockedPlanePickInfo, getPickInfo]);
+	}, [applyEdit, commitDraftChange, getEditKey, getLockedPlanePickInfo, getPickInfo]);
 
 	// -------------------------------------------------------------------------
 	// editGen effects (React-visible changes: camera framing, grid lines)
@@ -2074,21 +2318,32 @@ export default function VoxelTerrainEditor({
 		const resources = resourcesRef.current;
 		const dims = chunkDimsRef.current;
 		if (!resources || !dims) return;
-		rebuildGrid(resources, editGridRef.current, dims, showTacticalGrid, showVoxelGrid);
-	}, [showTacticalGrid, showVoxelGrid]);
+		rebuildGrid(
+			resources,
+			editGridRef.current,
+			dims,
+			activeView === "edit" && showTacticalGrid,
+			activeView === "edit" && showVoxelGrid
+		);
+		if (activeView !== "edit") clearObjectGroup(resources.hoverGroup);
+		if (activeView === "preview") {
+			refreshPreviewTerrain();
+		}
+	}, [activeView, refreshPreviewTerrain, showTacticalGrid, showVoxelGrid]);
 
 	useEffect(() => {
 		const resources = resourcesRef.current;
 		const container = containerRef.current;
-		if (!resources || !container || activeView !== "edit") return;
+		if (!resources || !container) return;
 		resizeRenderer(resources, container);
 	}, [activeView]);
 
 	useEffect(() => {
 		const resources = resourcesRef.current;
 		if (!resources) return;
-		resources.renderer.domElement.style.cursor = readOnly ? "default" : "crosshair";
-	}, [readOnly]);
+		resources.renderer.domElement.style.cursor =
+			readOnly || activeView !== "edit" ? "default" : "crosshair";
+	}, [activeView, readOnly]);
 
 	// -------------------------------------------------------------------------
 	// Keyboard shortcuts
@@ -2150,6 +2405,11 @@ export default function VoxelTerrainEditor({
 
 	const handleBrushSizeChange = (value: number) => {
 		setBrushSize(clamp(Math.floor(value) || MIN_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE));
+	};
+
+	const showPreview = () => {
+		refreshPreviewTerrain();
+		setActiveView("preview");
 	};
 
 	const handleVoxImportClick = () => { voxFileInputRef.current?.click(); };
@@ -2474,7 +2734,7 @@ export default function VoxelTerrainEditor({
 							<button
 								type="button"
 								className={`btn btn-sm join-item ${activeView === "preview" ? "btn-neutral" : "btn-outline"}`}
-								onClick={() => setActiveView("preview")}
+								onClick={showPreview}
 							>
 								Preview
 							</button>
@@ -2490,7 +2750,7 @@ export default function VoxelTerrainEditor({
 					{activeView === "preview" && (
 						<div className="absolute inset-0">
 							<MapStateProvider>
-								<ThreeDMap terrain={terrain} />
+								<ThreeDMap terrain={previewTerrain ?? terrain} />
 							</MapStateProvider>
 						</div>
 					)}
@@ -2799,4 +3059,6 @@ export default function VoxelTerrainEditor({
 		)}
 		</>
 	);
-}
+});
+
+export default VoxelTerrainEditor;

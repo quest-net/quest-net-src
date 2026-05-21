@@ -4,6 +4,8 @@ import {
 	useContext,
 	useState,
 	useEffect,
+	useRef,
+	useCallback,
 	ReactNode,
 	ReactElement,
 	cloneElement,
@@ -28,6 +30,7 @@ interface FormContextValue {
 	readOnly: boolean;
 	isDirty: boolean;
 	setDirty: (dirty: boolean) => void;
+	registerSaveResolver: (resolver: (() => unknown) | null) => () => void;
 }
 
 const FormContext = createContext<FormContextValue | null>(null);
@@ -108,34 +111,68 @@ export function FormWrapper<T extends Record<string, any>>({
 	const readOnly = mode === "view";
 
 	// State management
-	const [data, setData] = useState<T>(initialData);
+	const [data, setDataState] = useState<T>(initialData);
 	const [isDirty, setDirty] = useState(mode === "create");
+	const dataRef = useRef<T>(initialData);
+	const saveResolverRef = useRef<(() => T) | null>(null);
 
 	// Delete confirmation state
 	const [isDeleteConfirm, setIsDeleteConfirm] = useState(false);
 	const [isDeleteCooldown, setIsDeleteCooldown] = useState(false);
 
-	// Track changes for dirty state
 	useEffect(() => {
 		if (mode === "create") {
 			setDirty(true);
-			return;
 		}
+	}, [mode]);
 
-		const originalData = JSON.stringify(initialData);
-		const currentData = JSON.stringify(data);
-		setDirty(originalData !== currentData);
-	}, [data, initialData, mode]);
+	useEffect(() => {
+		dataRef.current = data;
+	}, [data]);
+
+	const setData = useCallback(
+		(nextData: T) => {
+			dataRef.current = nextData;
+			setDataState(nextData);
+			if (mode !== "view") {
+				setDirty(true);
+			}
+		},
+		[mode]
+	);
+
+	const registerSaveResolver = useCallback(
+		(resolver: (() => unknown) | null) => {
+			saveResolverRef.current = resolver as (() => T) | null;
+			return () => {
+				if (saveResolverRef.current === resolver) {
+					saveResolverRef.current = null;
+				}
+			};
+		},
+		[]
+	);
+
+	const resolveSaveData = (): T => {
+		const resolvedData = saveResolverRef.current?.();
+		if (resolvedData !== undefined) {
+			const typedData = resolvedData as T;
+			dataRef.current = typedData;
+			setDataState(typedData);
+			return typedData;
+		}
+		return dataRef.current;
+	};
 
 	const handleSave = () => {
-		onSave(data);
+		onSave(resolveSaveData());
 		setDirty(false);
 		onClose();
 	};
 
 	const handleClone = () => {
 		if (onClone) {
-			onClone(data);
+			onClone(resolveSaveData());
 		}
 	};
 
@@ -159,6 +196,7 @@ export function FormWrapper<T extends Record<string, any>>({
 		readOnly,
 		isDirty,
 		setDirty,
+		registerSaveResolver,
 	};
 
 	// Inject data and setData into children
