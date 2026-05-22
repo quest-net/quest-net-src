@@ -5,6 +5,7 @@
 
 import type { Migration } from "./types";
 import { encodeVoxels, getVoxelCount } from "../utils/terrain/data/VoxelDataUtils";
+import { base64ToBytes } from "../utils/base64";
 
 interface LegacyVoxel {
 	x: number;
@@ -14,17 +15,6 @@ interface LegacyVoxel {
 }
 
 const SVO_MAGIC = "QSVO";
-
-function base64ToBytes(encoded: string): Uint8Array {
-	if (!encoded) return new Uint8Array(0);
-
-	const binary = atob(encoded);
-	const bytes = new Uint8Array(binary.length);
-	for (let i = 0; i < binary.length; i++) {
-		bytes[i] = binary.charCodeAt(i);
-	}
-	return bytes;
-}
 
 function isAlreadySVO(encoded: string): boolean {
 	if (!encoded) return true;

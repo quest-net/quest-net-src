@@ -8,7 +8,7 @@ import type {
   ImageProviderCredentials,
   GeneratedImageResult,
 } from "./types";
-import { base64ToBlob } from "./utils";
+import { base64ToBlob } from "../../utils/base64";
 
 const MODEL = "gemini-2.5-flash-image";
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;

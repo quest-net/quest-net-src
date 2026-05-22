@@ -10,30 +10,7 @@ import {
 	encode as encodeVoxelSVO,
 	getVoxelCount as getSvoVoxelCount,
 } from "./VoxelSVOCodec";
-
-const BASE64_CHUNK_SIZE = 0x8000;
-
-function bytesToBase64(bytes: Uint8Array): string {
-	if (bytes.length === 0) return "";
-
-	let binary = "";
-	for (let i = 0; i < bytes.length; i += BASE64_CHUNK_SIZE) {
-		const chunk = bytes.subarray(i, i + BASE64_CHUNK_SIZE);
-		binary += String.fromCharCode(...chunk);
-	}
-	return btoa(binary);
-}
-
-function base64ToBytes(encoded: string): Uint8Array {
-	if (!encoded) return new Uint8Array(0);
-
-	const binary = atob(encoded);
-	const bytes = new Uint8Array(binary.length);
-	for (let i = 0; i < binary.length; i++) {
-		bytes[i] = binary.charCodeAt(i);
-	}
-	return bytes;
-}
+import { bytesToBase64, base64ToBytes } from "../../base64";
 
 function packPosition(x: number, y: number, z: number): number {
 	return x + y * 256 + z * 65536;

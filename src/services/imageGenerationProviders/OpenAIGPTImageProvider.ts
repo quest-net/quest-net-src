@@ -8,7 +8,7 @@ import type {
   ImageProviderCredentials,
   GeneratedImageResult,
 } from "./types";
-import { base64ToBlob } from "./utils";
+import { base64ToBlob } from "../../utils/base64";
 
 const MODEL = "gpt-image-1";
 const ENDPOINT = "https://api.openai.com/v1/images/generations";
