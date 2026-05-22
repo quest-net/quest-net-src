@@ -41,7 +41,7 @@ export function base64ToBytes(encoded: string): Uint8Array {
  */
 export function base64ToBlob(base64: string, mimeType: string): Blob {
 	const bytes = base64ToBytes(base64);
-	return new Blob([bytes], { type: mimeType });
+	return new Blob([bytes.buffer as ArrayBuffer], { type: mimeType });
 }
 
 /**
