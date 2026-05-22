@@ -120,6 +120,9 @@ export function voxelColorToTerrainPaletteIndex(color: number): number {
 export function normalizeVoxelPaletteIndex(color: number): number {
 	const index = Math.floor(color);
 	if (index >= 0 && index < TERRAIN_PALETTE.length) return index;
+	// Indices 240-255 are reserved for special materials; pass through unchanged
+	// rather than trying to match them against the palette as hex colour values.
+	if (index >= 240 && index <= 255) return index;
 
 	return voxelColorToTerrainPaletteIndex(color);
 }

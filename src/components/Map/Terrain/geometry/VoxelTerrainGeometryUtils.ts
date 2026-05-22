@@ -22,6 +22,7 @@ export interface VoxelTerrainBuffers {
 	tileCoords: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
+	materialSlots: Float32Array;
 	indices: Uint32Array;
 }
 
@@ -173,6 +174,7 @@ export function buildVoxelTerrainBuffers(
 	const tileCoords         = new Float32Array(maxVertices * 2);
 	const tileHeights        = new Float32Array(maxVertices);
 	const highlightStrengths = new Float32Array(maxVertices);
+	const materialSlots      = new Float32Array(maxVertices);
 	const indices            = new Uint32Array(maxIndices);
 
 	let vp = 0; // vertex pointer (one unit = one vertex)
@@ -249,6 +251,8 @@ export function buildVoxelTerrainBuffers(
 			tileCoords[p2 + 1] = greedyFace.tileY;
 			tileHeights[vp]        = greedyFace.tileHeight;
 			highlightStrengths[vp] = strength;
+			// Slot 0 = normal solid; 1+ = special material (paletteIndex - 239).
+			materialSlots[vp] = greedyFace.color >= 240 ? greedyFace.color - 239 : 0;
 			vp++;
 		}
 
@@ -389,6 +393,7 @@ export function buildVoxelTerrainBuffers(
 		tileCoords:         trimFloat32Buffer(tileCoords, vp * 2, transferSafe),
 		tileHeights:        trimFloat32Buffer(tileHeights, vp, transferSafe),
 		highlightStrengths: trimFloat32Buffer(highlightStrengths, vp, transferSafe),
+		materialSlots:      trimFloat32Buffer(materialSlots, vp, transferSafe),
 		indices:            trimUint32Buffer(indices, ip, transferSafe),
 	};
 }
@@ -408,6 +413,10 @@ export function createVoxelTerrainBufferGeometry(
 	geometry.setAttribute(
 		'highlightStrength',
 		new THREE.BufferAttribute(buffers.highlightStrengths, 1)
+	);
+	geometry.setAttribute(
+		'voxelMaterialSlot',
+		new THREE.BufferAttribute(buffers.materialSlots, 1)
 	);
 	geometry.setIndex(new THREE.BufferAttribute(buffers.indices, 1));
 	geometry.computeBoundingBox();

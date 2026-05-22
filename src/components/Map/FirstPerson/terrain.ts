@@ -4,6 +4,7 @@ import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCount } from "../../../utils/terrain/data/VoxelDataUtils";
 import { getMaxVoxelSurfaceHeight } from "../../../utils/terrain/data/VoxelTerrainUtils";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
+import { installSpecialMaterialShader } from "../Materials/installSpecialMaterials";
 import {
 	createTerrainSignature,
 	useVoxelTerrainGeometryWorker,
@@ -138,6 +139,12 @@ export function useFirstPersonTerrain(
 			metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
 			vertexColors: true,
 		});
+		const specialUniforms = installSpecialMaterialShader(material);
+		const tickTime = (now: number) => {
+			specialUniforms.uTime.value = now / 1000;
+		};
+		resources.animationCallbacks.add(tickTime);
+
 		const mesh = new THREE.Mesh(terrainGeometry.geometry, material);
 		mesh.castShadow = true;
 		mesh.receiveShadow = true;
@@ -155,6 +162,10 @@ export function useFirstPersonTerrain(
 			mesh,
 			geometry: terrainGeometry.geometry,
 			material,
+		};
+
+		return () => {
+			resources.animationCallbacks.delete(tickTime);
 		};
 	}, [resources, terrainGeometry]);
 }

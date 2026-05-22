@@ -41,6 +41,7 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 		getTransferableBuffer(buf.tileCoords),
 		getTransferableBuffer(buf.tileHeights),
 		getTransferableBuffer(buf.highlightStrengths),
+		getTransferableBuffer(buf.materialSlots),
 		getTransferableBuffer(buf.indices),
 	];
 
@@ -53,6 +54,7 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 			tileCoords:         buf.tileCoords,
 			tileHeights:        buf.tileHeights,
 			highlightStrengths: buf.highlightStrengths,
+			materialSlots:      buf.materialSlots,
 			indices:            buf.indices,
 		},
 		transferList

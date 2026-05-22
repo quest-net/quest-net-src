@@ -119,6 +119,20 @@ export const TERRAIN_PALETTE: readonly string[] = buildPalette();
 // Default: light grey (greyscale family, brightest level)
 export const DEFAULT_TERRAIN_COLOR_INDEX = TERRAIN_PALETTE_ROWS - 1; // index 11
 
+// ---------------------------------------------------------------------------
+// Special material placeholder colours (palette indices 240-255)
+// These are shown in the terrain editor in place of the animated runtime look.
+// ---------------------------------------------------------------------------
+export const SPECIAL_MATERIAL_PALETTE_START = 240;
+
+export const SPECIAL_MATERIAL_EDITOR_COLORS: Readonly<Record<number, string>> = {
+	240: '#1a6ea8', // water
+	// 241-255: reserved for future materials
+};
+
 export function getTerrainColorByIndex(index: number): string {
+	if (index >= SPECIAL_MATERIAL_PALETTE_START) {
+		return SPECIAL_MATERIAL_EDITOR_COLORS[index] ?? TERRAIN_PALETTE[DEFAULT_TERRAIN_COLOR_INDEX];
+	}
 	return TERRAIN_PALETTE[index] ?? TERRAIN_PALETTE[DEFAULT_TERRAIN_COLOR_INDEX];
 }

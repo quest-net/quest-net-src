@@ -49,6 +49,7 @@ import {
 	createTerrainSignature,
 	useVoxelTerrainGeometryWorker,
 } from './Terrain/hooks/useVoxelTerrainGeometryWorker';
+import { SPECIAL_MATERIAL_REGISTRY } from './Materials/allMaterials';
 
 interface ThreeDMapProps {
 	terrain?: VoxelTerrain | null;
@@ -69,6 +70,7 @@ interface TerrainRenderResources {
 	geometry: THREE.BufferGeometry;
 	material: THREE.MeshStandardMaterial;
 	movementHighlight: ReturnType<typeof createMovementHighlightTexture>;
+	specialUniforms: { uTime: { value: number } };
 }
 
 function disposeTerrainResources(resources: TerrainRenderResources): void {
@@ -112,17 +114,29 @@ function createMovementHighlightTexture(width: number, heightLevels: number, len
 	return { texture, data, width, heightLevels, length };
 }
 
-function installMovementHighlightShader(
+// Installs all terrain shader extensions onto a freshly created material:
+//   1. Movement highlight (gameplay overlay for movement range / hover)
+//   2. Special material effects (water, grass, etc.) via SPECIAL_MATERIAL_REGISTRY
+//
+// Returns the specialUniforms object so the caller can update uTime each frame.
+function installTerrainShaderExtensions(
 	material: THREE.MeshStandardMaterial,
 	highlight: ReturnType<typeof createMovementHighlightTexture>
-): void {
+): { uTime: { value: number } } {
 	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
 	const heightLevels = highlight.heightLevels;
+	const specialUniforms = { uTime: { value: 0 } };
 
 	material.onBeforeCompile = (shader) => {
+		// -- Movement highlight uniforms --
 		shader.uniforms.movementHighlightMap = { value: highlight.texture };
 		shader.uniforms.movementHighlightSize = { value: highlightSize };
 		shader.uniforms.movementHighlightHeightLevels = { value: heightLevels };
+
+		// -- Special material uniforms --
+		shader.uniforms.uTime = specialUniforms.uTime;
+
+		// -- Vertex shader: add declarations --
 		shader.vertexShader = shader.vertexShader.replace(
 			"#include <common>",
 			[
@@ -130,12 +144,16 @@ function installMovementHighlightShader(
 				"uniform vec2 movementHighlightSize;",
 				"attribute float tileHeight;",
 				"attribute float highlightStrength;",
+				"attribute float voxelMaterialSlot;",
 				"varying float vMovementHighlightHeight;",
 				"varying float vMovementHighlightStrength;",
 				"varying vec3 vMovementWorldPosition;",
 				"varying vec3 vMovementWorldNormal;",
+				"varying float vVoxelMaterialSlot;",
 			].join("\n")
 		);
+
+		// -- Vertex shader: compute varyings --
 		shader.vertexShader = shader.vertexShader.replace(
 			"#include <begin_vertex>",
 			[
@@ -144,8 +162,11 @@ function installMovementHighlightShader(
 				"vMovementHighlightStrength = highlightStrength;",
 				"vMovementWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;",
 				"vMovementWorldNormal = normalize(mat3(modelMatrix) * normal);",
+				"vVoxelMaterialSlot = voxelMaterialSlot;",
 			].join("\n")
 		);
+
+		// -- Fragment shader: declare varyings + uniforms + material functions --
 		shader.fragmentShader = shader.fragmentShader.replace(
 			"#include <common>",
 			[
@@ -157,11 +178,20 @@ function installMovementHighlightShader(
 				"varying float vMovementHighlightStrength;",
 				"varying vec3 vMovementWorldPosition;",
 				"varying vec3 vMovementWorldNormal;",
+				"varying float vVoxelMaterialSlot;",
+				"uniform float uTime;",
+				// Per-material functions + applySpecialMaterial() dispatcher:
+				SPECIAL_MATERIAL_REGISTRY.buildFragmentGLSL(),
 			].join("\n")
 		);
+
+		// -- Fragment shader: apply special materials first, movement highlight on top --
 		shader.fragmentShader = shader.fragmentShader.replace(
 			"#include <dithering_fragment>",
 			[
+				// Special materials run first so the movement highlight overlays them.
+				"applySpecialMaterial(vVoxelMaterialSlot, vMovementWorldPosition, vMovementWorldNormal, uTime, gl_FragColor);",
+				// Movement highlight (unchanged):
 				"vec3 movementOwnerPosition = vMovementWorldPosition - vMovementWorldNormal * 0.002;",
 				"vec2 movementTileCoord = clamp(",
 				"	floor(movementOwnerPosition.xz + movementHighlightSize * 0.5),",
@@ -194,6 +224,7 @@ function installMovementHighlightShader(
 		);
 	};
 	material.needsUpdate = true;
+	return specialUniforms;
 }
 
 function findSelectedActor(
@@ -546,6 +577,11 @@ export default function ThreeDMap({
 		const animate = () => {
 			rafId = requestAnimationFrame(animate);
 			const now = performance.now();
+			// Advance the time uniform for special material animations (water, etc.).
+			const terrainRes = terrainResourcesRef.current;
+			if (terrainRes) {
+				terrainRes.specialUniforms.uTime.value = now / 1000;
+			}
 			for (const callback of resources.animationCallbacks) {
 				callback(now);
 			}
@@ -716,7 +752,7 @@ export default function ThreeDMap({
 			metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
 			vertexColors: true,
 		});
-		installMovementHighlightShader(material, movementHighlight);
+		const specialUniforms = installTerrainShaderExtensions(material, movementHighlight);
 		const mesh = new THREE.Mesh(terrainGeometry.geometry, material);
 		mesh.castShadow = true;
 		mesh.receiveShadow = true;
@@ -738,6 +774,7 @@ export default function ThreeDMap({
 			geometry: terrainGeometry.geometry,
 			material,
 			movementHighlight,
+			specialUniforms,
 		};
 	}, [terrainGeometry]);
 

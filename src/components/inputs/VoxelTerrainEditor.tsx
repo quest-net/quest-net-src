@@ -26,6 +26,7 @@ import {
 	TERRAIN_PALETTE,
 	TERRAIN_PALETTE_ROWS,
 } from "../../utils/terrain/palette/TerrainPaletteUtils";
+import { SPECIAL_MATERIAL_REGISTRY } from "../Map/Materials/allMaterials";
 import {
 	MAX_VOXEL_TERRAIN_LENGTH,
 	MAX_VOXEL_TERRAIN_WIDTH,
@@ -3562,6 +3563,25 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 							))}
 						</div>
 					</div>
+
+					{SPECIAL_MATERIAL_REGISTRY.hasAny() && (
+						<div>
+							<div className="text-sm font-semibold mb-2">Special Materials</div>
+							<div className="flex flex-wrap gap-1">
+								{SPECIAL_MATERIAL_REGISTRY.all.map((def) => (
+									<button
+										key={def.paletteIndex}
+										type="button"
+										className={`w-7 h-7 rounded${selectedColorIndex === def.paletteIndex ? " ring-2 ring-base-content ring-inset" : ""}`}
+										style={{ backgroundColor: def.editorColor }}
+										onClick={() => chooseColorIndex(def.paletteIndex)}
+										title={def.name}
+										aria-label={def.name}
+									/>
+								))}
+							</div>
+						</div>
+					)}
 
 					<div>
 						<div className="text-sm font-semibold mb-2">Grid</div>
