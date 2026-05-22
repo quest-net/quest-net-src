@@ -13,6 +13,7 @@ import { Main } from "../Main/Main";
 import { LogAlerts } from "../Log/LogAlerts";
 import { PeerStatus } from "../Room/PeerStatus";
 import { usePeerTracking } from "../../hooks/usePeerTracking";
+import { AppSettingsDisplay } from "../AppSetting/AppSettingsDisplay";
 import { ItemIndex } from "../Item/Index";
 import { AudioIndex } from "../Audio/Index";
 import { AudioPlayer } from "../Audio/AudioPlayer";
@@ -81,6 +82,7 @@ export function DMView() {
 							<span className="icon-[heroicons-solid--clipboard-copy] h-5 w-5"></span>
 						</button>
 						<PeerStatus connectionStatus={connectionStatus} peers={peers} />
+						<AppSettingsDisplay />
 					</div>
 					<h1 className="text-xl font-bold">{campaign.Name}</h1>
 					<div className="flex items-center gap-2">

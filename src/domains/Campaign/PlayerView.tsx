@@ -13,6 +13,7 @@ import { usePeerTracking } from "../../hooks/usePeerTracking";
 import { Main } from "../Main/Main";
 import { AudioPlayer } from "../Audio/AudioPlayer";
 import { AudioStateProvider } from "../Audio/AudioContext";
+import { AppSettingsDisplay } from "../AppSetting/AppSettingsDisplay";
 
 export function PlayerView() {
 	const context = useQuestContext();
@@ -59,6 +60,7 @@ export function PlayerView() {
 				<header className="navbar border-b-2 px-6 justify-between">
 					<div className="flex items-center gap-4">
 						<PeerStatus connectionStatus={connectionStatus} peers={peers} />
+						<AppSettingsDisplay />
 					</div>
 					<h1 className="text-xl font-bold">{campaign.Name}</h1>
 					<div className="flex items-center gap-2">
