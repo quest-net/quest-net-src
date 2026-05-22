@@ -4,13 +4,15 @@ import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCount } from "../../../utils/terrain/data/VoxelDataUtils";
 import { getMaxVoxelSurfaceHeight } from "../../../utils/terrain/data/VoxelTerrainUtils";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
-import { installSpecialMaterialShader } from "../Materials/installSpecialMaterials";
+import {
+	createSpecialMaterialsExtension,
+	createTerrainMaterial,
+} from "../Materials/terrainMaterial";
 import {
 	createTerrainSignature,
 	useVoxelTerrainGeometryWorker,
 } from "../Terrain/hooks/useVoxelTerrainGeometryWorker";
 import { getShadowCameraBounds } from "../shadowCameraBounds";
-import { THREE_D_TERRAIN_MATERIAL } from "../threeDMapConstants";
 import {
 	applyVoxelTerrainBackground,
 	applyVoxelTerrainDirectionalLight,
@@ -134,15 +136,9 @@ export function useFirstPersonTerrain(
 			return;
 		}
 
-		const material = new THREE.MeshStandardMaterial({
-			roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
-			metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
-			vertexColors: true,
-		});
-		const specialUniforms = installSpecialMaterialShader(material);
-		const tickTime = (now: number) => {
-			specialUniforms.uTime.value = now / 1000;
-		};
+		const { material, tickTime } = createTerrainMaterial([
+			createSpecialMaterialsExtension(),
+		]);
 		resources.animationCallbacks.add(tickTime);
 
 		const mesh = new THREE.Mesh(terrainGeometry.geometry, material);

@@ -11,12 +11,12 @@
 // World-space coordinates are used throughout so greedy-merged quads tile
 // seamlessly without UV stretching.
 //
-// Importing this module is enough to register the material; the import is a
-// side-effect that calls SPECIAL_MATERIAL_REGISTRY.register().
+// Exports the definition declaratively; allMaterials.ts collects every
+// material into a single array that is passed to the registry at startup.
 
-import { SPECIAL_MATERIAL_REGISTRY } from '../SpecialMaterialRegistry';
+import type { SpecialMaterialDefinition } from '../types';
 
-SPECIAL_MATERIAL_REGISTRY.register({
+export const WATER_MATERIAL: SpecialMaterialDefinition = {
 	paletteIndex: 240,
 	name: 'Water',
 	editorColor: '#1a6ea8',
@@ -115,4 +115,4 @@ SPECIAL_MATERIAL_REGISTRY.register({
 		float foam = smoothstep(0.55, 0.78, pattern) * step(0.35, foamNoise);
 		fragColor.rgb = mix(fragColor.rgb, vec3(0.92, 0.96, 1.0), foam * 0.90 * isHoriz);
 	`,
-});
+};

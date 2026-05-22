@@ -1,5 +1,6 @@
 import type { Voxel, VoxelTerrain } from '../../../../domains/VoxelTerrain/VoxelTerrain';
 import { decodeVoxels } from '../../../../utils/terrain/data/VoxelDataUtils';
+import { paletteIndexToMaterialSlot } from '../../Materials/allMaterials';
 import { VOXEL_AO_CURVE, VOXEL_FACE_DEFINITIONS } from './VoxelTerrainGeometryConstants';
 import {
 	buildVoxelTerrainIndex,
@@ -252,7 +253,7 @@ export function buildVoxelTerrainBuffers(
 			tileHeights[vp]        = greedyFace.tileHeight;
 			highlightStrengths[vp] = strength;
 			// Slot 0 = normal solid; 1+ = special material (paletteIndex - 239).
-			materialSlots[vp] = greedyFace.color >= 240 ? greedyFace.color - 239 : 0;
+			materialSlots[vp] = paletteIndexToMaterialSlot(greedyFace.color);
 			vp++;
 		}
 

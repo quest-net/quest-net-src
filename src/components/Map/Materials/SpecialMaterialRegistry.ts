@@ -2,12 +2,15 @@
 //
 // Registry for special voxel materials (palette indices 240-255).
 //
-// Each material registers itself by importing this module and calling
-// SPECIAL_MATERIAL_REGISTRY.register(def).  The registry is then consumed
-// by installTerrainShaderExtensions in 3DMap.tsx, which:
-//   - injects per-material GLSL functions and a slot dispatcher into the
-//     terrain MeshStandardMaterial via onBeforeCompile
-//   - keeps a uTime uniform that is updated every animation frame
+// Construction is declarative: allMaterials.ts hands the full set of material
+// definitions to the constructor, and the registry exposes:
+//   - lookup by palette index
+//   - editor metadata (name + placeholder colour)
+//   - GLSL assembly (vertex + fragment per-slot dispatchers)
+//
+// The assembled GLSL is consumed by createSpecialMaterialsExtension (see
+// terrainMaterial.ts), which feeds it into the single onBeforeCompile that
+// createTerrainMaterial installs on the terrain MeshStandardMaterial.
 //
 // Slot numbering:  slot = paletteIndex - 239
 //   e.g. index 240 -> slot 1, index 241 -> slot 2, ...
@@ -19,19 +22,43 @@ export const SPECIAL_MATERIAL_SLOT_OFFSET = 239;
 export const SPECIAL_MATERIAL_MIN_INDEX   = 240;
 export const SPECIAL_MATERIAL_MAX_INDEX   = 255;
 
-class SpecialMaterialRegistry {
-	private readonly defs: Map<number, SpecialMaterialDefinition> = new Map();
+/**
+ * Returns true if the given palette index is reserved for a special material
+ * (regardless of whether one has been registered at that index).
+ */
+export function isSpecialMaterialIndex(index: number): boolean {
+	return index >= SPECIAL_MATERIAL_MIN_INDEX && index <= SPECIAL_MATERIAL_MAX_INDEX;
+}
 
-	/**
-	 * Register a special material definition.
-	 * Call this once per material at module load time (e.g. in water_240/index.ts).
-	 */
-	register(def: SpecialMaterialDefinition): void {
-		if (def.paletteIndex < SPECIAL_MATERIAL_MIN_INDEX || def.paletteIndex > SPECIAL_MATERIAL_MAX_INDEX) {
-			console.warn(`SpecialMaterialRegistry: paletteIndex ${def.paletteIndex} is outside reserved range 240-255`);
-			return;
+/**
+ * Converts a palette index to its shader-attribute slot value.
+ * Returns 0 for non-special indices.
+ */
+export function paletteIndexToMaterialSlot(index: number): number {
+	return isSpecialMaterialIndex(index) ? index - SPECIAL_MATERIAL_SLOT_OFFSET : 0;
+}
+
+export class SpecialMaterialRegistry {
+	private readonly defs: Map<number, SpecialMaterialDefinition>;
+
+	constructor(materials: ReadonlyArray<SpecialMaterialDefinition> = []) {
+		this.defs = new Map();
+		for (const material of materials) {
+			if (!isSpecialMaterialIndex(material.paletteIndex)) {
+				console.warn(
+					`SpecialMaterialRegistry: paletteIndex ${material.paletteIndex} for "${material.name}" ` +
+					`is outside reserved range ${SPECIAL_MATERIAL_MIN_INDEX}-${SPECIAL_MATERIAL_MAX_INDEX}`
+				);
+				continue;
+			}
+			if (this.defs.has(material.paletteIndex)) {
+				console.warn(
+					`SpecialMaterialRegistry: paletteIndex ${material.paletteIndex} is registered twice; ` +
+					`the second definition ("${material.name}") will overwrite the first.`
+				);
+			}
+			this.defs.set(material.paletteIndex, material);
 		}
-		this.defs.set(def.paletteIndex, def);
 	}
 
 	get all(): SpecialMaterialDefinition[] {
@@ -42,15 +69,17 @@ class SpecialMaterialRegistry {
 		return this.defs.size > 0;
 	}
 
+	get(paletteIndex: number): SpecialMaterialDefinition | undefined {
+		return this.defs.get(paletteIndex);
+	}
+
 	/**
-	 * Returns the slot number for a given palette index.
-	 * Slot 0 = normal solid voxel (no special material).
+	 * Editor placeholder colour for a palette index in the reserved range.
+	 * Returns null if no material is registered at that index (caller decides
+	 * what to fall back to).
 	 */
-	getSlot(paletteIndex: number): number {
-		if (paletteIndex >= SPECIAL_MATERIAL_MIN_INDEX && paletteIndex <= SPECIAL_MATERIAL_MAX_INDEX) {
-			return paletteIndex - SPECIAL_MATERIAL_SLOT_OFFSET;
-		}
-		return 0;
+	getEditorColor(paletteIndex: number): string | null {
+		return this.defs.get(paletteIndex)?.editorColor ?? null;
 	}
 
 	/**
@@ -70,7 +99,7 @@ class SpecialMaterialRegistry {
 
 		for (const def of this.defs.values()) {
 			if (!def.vertexGLSL) continue;
-			const slot = this.getSlot(def.paletteIndex);
+			const slot = paletteIndexToMaterialSlot(def.paletteIndex);
 			if (def.vertexHelperGLSL) {
 				functions.push(def.vertexHelperGLSL);
 			}
@@ -110,7 +139,7 @@ class SpecialMaterialRegistry {
 		const dispatchLines: string[] = [];
 
 		for (const def of this.defs.values()) {
-			const slot = this.getSlot(def.paletteIndex);
+			const slot = paletteIndexToMaterialSlot(def.paletteIndex);
 			if (def.helperGLSL) {
 				functions.push(def.helperGLSL);
 			}
@@ -134,5 +163,3 @@ class SpecialMaterialRegistry {
 		return [...functions, ...dispatcher].join('\n');
 	}
 }
-
-export const SPECIAL_MATERIAL_REGISTRY = new SpecialMaterialRegistry();

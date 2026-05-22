@@ -1,11 +1,15 @@
 // src/components/Map/Materials/types.ts
 //
-// Defines the contract for special voxel material definitions.
-// Palette indices 240-255 are reserved for special materials.
-// Each one registers a SpecialMaterialDefinition that provides:
-//   - its palette index
-//   - a placeholder hex color for the terrain editor
-//   - GLSL that runs per-fragment for voxels painted with this material
+// Two contracts:
+//   - SpecialMaterialDefinition: what a single special voxel material declares
+//     (palette index, editor swatch colour, and the GLSL it contributes to
+//     the per-slot dispatcher inside the terrain fragment shader).
+//   - TerrainShaderExtension: what an extension contributes to the single
+//     onBeforeCompile that createTerrainMaterial installs. Multiple extensions
+//     can layer (special materials, movement highlight, future overlays), all
+//     sharing the world-space varyings the composer provides.
+
+import type * as THREE from 'three';
 
 export interface SpecialMaterialDefinition {
 	/**
@@ -72,4 +76,34 @@ export interface SpecialMaterialDefinition {
 	 *   fragColor.rgb = vec3(0.1, 0.4, 0.9);
 	 */
 	fragmentGLSL: string;
+}
+
+/**
+ * One layer of GLSL injected into the terrain material's onBeforeCompile.
+ *
+ * The composer (createTerrainMaterial) always provides two world-space varyings
+ * any extension can read:
+ *   varying vec3 vTerrainWorldPos;    // world-space position of the fragment
+ *   varying vec3 vTerrainWorldNormal; // world-space unit normal of the face
+ *
+ * Header snippets are inserted immediately after `#include <common>` in their
+ * respective stages, so they can declare uniforms, attributes, varyings, and
+ * top-level helper functions.
+ *
+ * Body snippets are inserted at:
+ *   - vertex:   right after `#include <begin_vertex>` (operate on `transformed`)
+ *   - fragment: right before `#include <dithering_fragment>` (operate on
+ *               `gl_FragColor`); extensions earlier in the array run first.
+ */
+export interface TerrainShaderExtension {
+	uniforms?: Record<string, THREE.IUniform>;
+	vertexHeaderGLSL?: string;
+	vertexBodyGLSL?: string;
+	fragmentHeaderGLSL?: string;
+	fragmentBodyGLSL?: string;
+	/**
+	 * Optional per-frame hook. Called once per animation frame with the current
+	 * timestamp (ms). Use for ticking time-based uniforms (e.g. water animation).
+	 */
+	tickTime?: (now: number) => void;
 }

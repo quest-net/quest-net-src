@@ -120,19 +120,21 @@ export const TERRAIN_PALETTE: readonly string[] = buildPalette();
 export const DEFAULT_TERRAIN_COLOR_INDEX = TERRAIN_PALETTE_ROWS - 1; // index 11
 
 // ---------------------------------------------------------------------------
-// Special material placeholder colours (palette indices 240-255)
-// These are shown in the terrain editor in place of the animated runtime look.
+// Special materials live in palette indices 240-255 and have animated runtime
+// shaders -- the editor shows a static placeholder colour instead. The registry
+// (Map/Materials) owns those placeholder colours; this util just delegates.
 // ---------------------------------------------------------------------------
-export const SPECIAL_MATERIAL_PALETTE_START = 240;
-
-export const SPECIAL_MATERIAL_EDITOR_COLORS: Readonly<Record<number, string>> = {
-	240: '#1a6ea8', // water
-	// 241-255: reserved for future materials
-};
+import {
+	SPECIAL_MATERIAL_REGISTRY,
+	isSpecialMaterialIndex,
+} from '../../../components/Map/Materials/allMaterials';
 
 export function getTerrainColorByIndex(index: number): string {
-	if (index >= SPECIAL_MATERIAL_PALETTE_START) {
-		return SPECIAL_MATERIAL_EDITOR_COLORS[index] ?? TERRAIN_PALETTE[DEFAULT_TERRAIN_COLOR_INDEX];
+	if (isSpecialMaterialIndex(index)) {
+		return (
+			SPECIAL_MATERIAL_REGISTRY.getEditorColor(index) ??
+			TERRAIN_PALETTE[DEFAULT_TERRAIN_COLOR_INDEX]
+		);
 	}
 	return TERRAIN_PALETTE[index] ?? TERRAIN_PALETTE[DEFAULT_TERRAIN_COLOR_INDEX];
 }
