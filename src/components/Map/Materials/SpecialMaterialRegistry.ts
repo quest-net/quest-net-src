@@ -54,6 +54,47 @@ class SpecialMaterialRegistry {
 	}
 
 	/**
+	 * Assembles the GLSL declarations to inject into the vertex shader.
+	 * Produces one displacement function per material that has vertexGLSL,
+	 * plus a dispatcher:
+	 *
+	 *   void specialMaterialVertex_N(inout vec3 transformed, vec3 normal, float time) { ... }
+	 *   void applySpecialMaterialVertex(float slot, inout vec3 transformed, vec3 normal, float time) { ... }
+	 *
+	 * Always returns a valid dispatcher stub even if no material has vertexGLSL,
+	 * so the call site compiles unconditionally.
+	 */
+	buildVertexGLSL(): string {
+		const functions: string[] = [];
+		const dispatchLines: string[] = [];
+
+		for (const def of this.defs.values()) {
+			if (!def.vertexGLSL) continue;
+			const slot = this.getSlot(def.paletteIndex);
+			if (def.vertexHelperGLSL) {
+				functions.push(def.vertexHelperGLSL);
+			}
+			functions.push(
+				`void specialMaterialVertex_${slot}(inout vec3 transformed, vec3 normal, float time) {`,
+				def.vertexGLSL,
+				`}`
+			);
+			dispatchLines.push(
+				`  if (abs(slot - ${slot}.0) < 0.5) { specialMaterialVertex_${slot}(transformed, normal, time); return; }`
+			);
+		}
+
+		const dispatcher = [
+			`void applySpecialMaterialVertex(float slot, inout vec3 transformed, vec3 normal, float time) {`,
+			`  if (slot < 0.5) return;`,
+			...dispatchLines,
+			`}`,
+		];
+
+		return [...functions, ...dispatcher].join('\n');
+	}
+
+	/**
 	 * Assembles the GLSL declarations to inject into the fragment shader.
 	 * Produces one function per registered material, plus a dispatcher:
 	 *

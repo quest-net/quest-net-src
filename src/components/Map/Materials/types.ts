@@ -37,6 +37,27 @@ export interface SpecialMaterialDefinition {
 	helperGLSL?: string;
 
 	/**
+	 * Optional top-level GLSL helper code injected into the vertex shader.
+	 * Same rules as helperGLSL -- use a material-specific prefix.
+	 */
+	vertexHelperGLSL?: string;
+
+	/**
+	 * Optional GLSL snippet that runs in the vertex shader when this material's
+	 * slot is active. Use it to displace vertices (e.g. wave deformation).
+	 *
+	 * The following are already declared and available:
+	 *   inout vec3 transformed -- local-space vertex position; modify to displace
+	 *   vec3  normal           -- local-space vertex normal (read-only)
+	 *   float time             -- elapsed time in seconds
+	 *
+	 * Example (gentle bob on top faces only):
+	 *   float isTop = step(0.5, normal.y);
+	 *   transformed.y += sin(transformed.x + time) * 0.05 * isTop;
+	 */
+	vertexGLSL?: string;
+
+	/**
 	 * GLSL function body that runs when vVoxelMaterialSlot matches this slot.
 	 *
 	 * The following are already declared and available:

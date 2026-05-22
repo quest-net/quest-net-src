@@ -80,8 +80,39 @@ SPECIAL_MATERIAL_REGISTRY.register({
 			? mix(colorDeep,  colorMid,   pattern * 2.0)
 			: mix(colorMid,   colorCrest, (pattern - 0.5) * 2.0);
 
+		// --- Per-pixel bump normals via screen-space derivatives ---
+		// dFdx/dFdy give the rate-of-change of 'pattern' across adjacent fragments.
+		// Dividing by the world-space step size normalises to slope-per-world-unit,
+		// so the result is independent of camera zoom, resolution, or projection type.
+		// This entirely replaces vertex displacement: every pixel gets its own correct
+		// normal with no geometry topology involved, so T-junction seams are impossible.
+		float wdx = length(dFdx(worldPos.xz));
+		float wdz = length(dFdy(worldPos.xz));
+		float slopeX = dFdx(pattern) / max(wdx, 0.0001);
+		float slopeZ = dFdy(pattern) / max(wdz, 0.0001);
+		vec3 bumpNormal = normalize(normal + vec3(-slopeX, 0.0, -slopeZ) * 2.5 * isHoriz);
+
+		// --- Fresnel (using bump normal for per-pixel accuracy) ---
+		vec3 viewDir = normalize(cameraPosition - worldPos);
+		float NdotV = max(dot(bumpNormal, viewDir), 0.0);
+		float fresnel = pow(1.0 - NdotV, 4.0);
+		waterColor = mix(waterColor, colorCrest + vec3(0.15, 0.12, 0.08), fresnel * 0.55 * isHoriz);
+
+		// --- Specular glint from bump normal ---
+		// Half-vector between view and an approximate sun direction gives sharp sparkle
+		// at wave crests, which is the dominant visual cue for 3D water deformation.
+		vec3 sunDir = normalize(vec3(0.5, 1.5, 0.5));
+		vec3 halfVec = normalize(viewDir + sunDir);
+		float spec = pow(max(dot(bumpNormal, halfVec), 0.0), 64.0);
+		waterColor += vec3(1.0, 0.98, 0.95) * spec * 0.8 * isHoriz;
+
 		// Preserve lighting and AO baked by the standard material pass.
 		float luma = dot(fragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
 		fragColor.rgb = waterColor * (0.35 + luma * 0.65);
+
+		// --- Foam crests (applied after lighting so shadows don't dampen it) ---
+		float foamNoise = water_fbm(surfaceUV * 3.0 - time * 0.1);
+		float foam = smoothstep(0.55, 0.78, pattern) * step(0.35, foamNoise);
+		fragColor.rgb = mix(fragColor.rgb, vec3(0.92, 0.96, 1.0), foam * 0.90 * isHoriz);
 	`,
 });

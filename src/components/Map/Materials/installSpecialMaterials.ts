@@ -26,10 +26,12 @@ export function installSpecialMaterialShader(
 			'#include <common>',
 			[
 				'#include <common>',
+				'uniform float uTime;',
 				'attribute float voxelMaterialSlot;',
 				'varying float vVoxelMaterialSlot;',
 				'varying vec3 vSpecialWorldPos;',
 				'varying vec3 vSpecialWorldNormal;',
+				SPECIAL_MATERIAL_REGISTRY.buildVertexGLSL(),
 			].join('\n')
 		);
 		shader.vertexShader = shader.vertexShader.replace(
@@ -39,6 +41,7 @@ export function installSpecialMaterialShader(
 				'vVoxelMaterialSlot = voxelMaterialSlot;',
 				'vSpecialWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;',
 				'vSpecialWorldNormal = normalize(mat3(modelMatrix) * normal);',
+				'applySpecialMaterialVertex(voxelMaterialSlot, transformed, normal, uTime);',
 			].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(

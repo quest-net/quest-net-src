@@ -141,6 +141,7 @@ function installTerrainShaderExtensions(
 			"#include <common>",
 			[
 				"#include <common>",
+				"uniform float uTime;",
 				"uniform vec2 movementHighlightSize;",
 				"attribute float tileHeight;",
 				"attribute float highlightStrength;",
@@ -150,6 +151,7 @@ function installTerrainShaderExtensions(
 				"varying vec3 vMovementWorldPosition;",
 				"varying vec3 vMovementWorldNormal;",
 				"varying float vVoxelMaterialSlot;",
+				SPECIAL_MATERIAL_REGISTRY.buildVertexGLSL(),
 			].join("\n")
 		);
 
@@ -163,6 +165,7 @@ function installTerrainShaderExtensions(
 				"vMovementWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;",
 				"vMovementWorldNormal = normalize(mat3(modelMatrix) * normal);",
 				"vVoxelMaterialSlot = voxelMaterialSlot;",
+				"applySpecialMaterialVertex(voxelMaterialSlot, transformed, normal, uTime);",
 			].join("\n")
 		);
 
