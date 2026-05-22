@@ -55,6 +55,7 @@ export type VoxelTerrainEnvironmentPresetId =
 	(typeof VOXEL_TERRAIN_ENVIRONMENT_PRESET_IDS)[number];
 
 export interface VoxelTerrainEnvironmentPreset {
+	Id: string;
 	Name: string;
 	Lighting: VoxelTerrainLighting;
 	Background: VoxelTerrainBackground;
@@ -65,11 +66,13 @@ export const VOXEL_TERRAIN_ENVIRONMENT_PRESETS: Record<
 	VoxelTerrainEnvironmentPreset
 > = {
 	neutral: {
+		Id: "neutral",
 		Name: "Neutral",
 		Lighting: { ...DEFAULT_VOXEL_TERRAIN_LIGHTING },
 		Background: { ...DEFAULT_VOXEL_TERRAIN_BACKGROUND },
 	},
 	nighttime: {
+		Id: "nighttime",
 		Name: "Nighttime",
 		Lighting: {
 			Color: "#7aa7ff",
@@ -80,6 +83,7 @@ export const VOXEL_TERRAIN_ENVIRONMENT_PRESETS: Record<
 		Background: { Color: "#07111f" },
 	},
 	daytime: {
+		Id: "daytime",
 		Name: "Daytime",
 		Lighting: {
 			Color: "#fff4d6",
@@ -90,6 +94,7 @@ export const VOXEL_TERRAIN_ENVIRONMENT_PRESETS: Record<
 		Background: { Color: "#9bd8ff" },
 	},
 	sunset: {
+		Id: "sunset",
 		Name: "Sunset",
 		Lighting: {
 			Color: "#ff7a3d",
@@ -107,6 +112,25 @@ export function createDefaultVoxelTerrainLighting(): VoxelTerrainLighting {
 
 export function createDefaultVoxelTerrainBackground(): VoxelTerrainBackground {
 	return { ...DEFAULT_VOXEL_TERRAIN_BACKGROUND };
+}
+
+export function cloneVoxelTerrainEnvironmentPreset(
+	preset: VoxelTerrainEnvironmentPreset
+): VoxelTerrainEnvironmentPreset {
+	return {
+		Id: preset.Id,
+		Name: preset.Name,
+		Lighting: { ...preset.Lighting },
+		Background: { ...preset.Background },
+	};
+}
+
+export function createDefaultVoxelTerrainEnvironmentPresets(): VoxelTerrainEnvironmentPreset[] {
+	return VOXEL_TERRAIN_ENVIRONMENT_PRESET_IDS.map((presetId) =>
+		cloneVoxelTerrainEnvironmentPreset(
+			VOXEL_TERRAIN_ENVIRONMENT_PRESETS[presetId]
+		)
+	);
 }
 
 export function createVoxelTerrainEnvironmentPreset(

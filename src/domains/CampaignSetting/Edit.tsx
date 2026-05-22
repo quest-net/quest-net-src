@@ -4,12 +4,16 @@ import { useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions, ExportProgress } from "../Campaign/CampaignActions";
-import { CampaignSettings } from "./CampaignSetting";
+import {
+	getCampaignTerrainEnvironmentPresets,
+	type CampaignSettings,
+} from "./CampaignSetting";
 import {
 	FormWrapper,
 	FormSection,
 	FormField,
 	FormGrid,
+	useFormReadOnly,
 } from "../../components/Form/Form";
 import { StatDefinitionsEditor } from "../../components/inputs/StatDefinitionEditor";
 import { ActionDefinitionEditor } from "../../components/inputs/ActionDefinitionEditor";
@@ -19,6 +23,10 @@ import CalendarConfigEditor from "../../components/inputs/CalendarConfigEditor";
 import { MovementSettingsEditor } from "../../components/inputs/MovementSettingsEditor";
 import { InitiativeSettingsEditor } from "../../components/inputs/InitiativeSettingsEditor";
 import { Campaign } from "../Campaign/Campaign";
+import {
+	cloneVoxelTerrainEnvironmentPreset,
+	type VoxelTerrainEnvironmentPreset,
+} from "../VoxelTerrain/VoxelTerrain";
 
 export function CampaignSettingEdit() {
 	const context = useQuestContext();
@@ -394,6 +402,17 @@ function CampaignSettingForm({
 				/>
 			</FormSection>
 			<FormSection
+				title="Terrain Environments"
+				description="Saved lighting and background presets for terrain maps."
+			>
+				<TerrainEnvironmentPresetsEditor
+					presets={data.TerrainEnvironmentPresets}
+					onChange={(TerrainEnvironmentPresets) =>
+						updateSettings({ TerrainEnvironmentPresets })
+					}
+				/>
+			</FormSection>
+			<FormSection
 				title="Movement & Height"
 				description="Configure how terrain height affects movement cost"
 			>
@@ -444,5 +463,106 @@ function CampaignSettingForm({
 				</FormField>
 			</FormSection>
 		</>
+	);
+}
+
+interface TerrainEnvironmentPresetsEditorProps {
+	presets?: VoxelTerrainEnvironmentPreset[];
+	onChange: (presets: VoxelTerrainEnvironmentPreset[]) => void;
+}
+
+function TerrainEnvironmentPresetsEditor({
+	presets,
+	onChange,
+}: TerrainEnvironmentPresetsEditorProps) {
+	const readOnly = useFormReadOnly();
+	const [confirmingPresetId, setConfirmingPresetId] = useState<string | null>(
+		null
+	);
+	const environmentPresets = getCampaignTerrainEnvironmentPresets({
+		TerrainEnvironmentPresets: presets,
+	});
+
+	const deletePreset = (presetId: string) => {
+		if (confirmingPresetId !== presetId) {
+			setConfirmingPresetId(presetId);
+			return;
+		}
+
+		onChange(
+			environmentPresets
+				.filter((preset) => preset.Id !== presetId)
+				.map(cloneVoxelTerrainEnvironmentPreset)
+		);
+		setConfirmingPresetId(null);
+	};
+
+	if (environmentPresets.length === 0) {
+		return (
+			<div className="rounded-md border border-base-300 bg-base-200/40 px-3 py-2 text-sm text-base-content/60">
+				No environment presets saved
+			</div>
+		);
+	}
+
+	return (
+		<div className="space-y-2">
+			{environmentPresets.map((preset) => {
+				const confirming = confirmingPresetId === preset.Id;
+				return (
+					<div
+						key={preset.Id}
+						className="flex items-center gap-3 rounded-md border border-base-300 bg-base-200/40 px-3 py-2"
+					>
+						<div className="min-w-0 flex-1">
+							<div className="truncate font-medium">{preset.Name}</div>
+							<div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-base-content/60">
+								<span className="inline-flex items-center gap-1">
+									<EnvironmentPresetSwatch color={preset.Lighting.Color} />
+									Light
+								</span>
+								<span className="inline-flex items-center gap-1">
+									<EnvironmentPresetSwatch color={preset.Background.Color} />
+									Background
+								</span>
+								<span>{preset.Lighting.Intensity.toFixed(2)}</span>
+								<span>{Math.round(preset.Lighting.Rotation)} deg</span>
+								<span>{Math.round(preset.Lighting.Elevation)} deg</span>
+							</div>
+						</div>
+						<button
+							type="button"
+							className={`btn btn-square btn-sm ${
+								confirming ? "btn-warning" : "btn-error btn-outline"
+							}`}
+							onClick={() => deletePreset(preset.Id)}
+							disabled={readOnly}
+							title={confirming ? "Click again to delete preset" : "Delete preset"}
+						>
+							<span
+								className={`h-4 w-4 ${
+									confirming
+										? "icon-[mdi--alert]"
+										: "icon-[mdi--trash-can-outline]"
+								}`}
+							/>
+						</button>
+					</div>
+				);
+			})}
+		</div>
+	);
+}
+
+function EnvironmentPresetSwatch({ color }: { color?: string }) {
+	return (
+		<span
+			className="h-4 w-4 shrink-0 rounded-full border border-base-content/20"
+			style={{
+				background: color
+					? color
+					: "linear-gradient(135deg, transparent 0 45%, currentColor 45% 55%, transparent 55% 100%)",
+			}}
+		/>
 	);
 }

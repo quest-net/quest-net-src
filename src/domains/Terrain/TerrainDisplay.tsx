@@ -5,13 +5,13 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
+import { getCampaignTerrainEnvironmentPresets } from "../CampaignSetting/CampaignSetting";
 import {
 	DEFAULT_VOXEL_TERRAIN_BACKGROUND_COLOR,
 	DEFAULT_VOXEL_TERRAIN_LIGHTING,
-	VOXEL_TERRAIN_ENVIRONMENT_PRESET_IDS,
-	VOXEL_TERRAIN_ENVIRONMENT_PRESETS,
-	createVoxelTerrainEnvironmentPreset,
+	cloneVoxelTerrainEnvironmentPreset,
 	type VoxelTerrainBackground,
+	type VoxelTerrainEnvironmentPreset,
 	type VoxelTerrainEnvironmentPresetId,
 	type VoxelTerrainLighting,
 } from "../VoxelTerrain/VoxelTerrain";
@@ -33,7 +33,7 @@ const PRESET_ICONS: Record<VoxelTerrainEnvironmentPresetId, string> = {
 };
 
 type TerrainEnvironmentUpdates = Pick<
-	ReturnType<typeof createVoxelTerrainEnvironmentPreset>,
+	VoxelTerrainEnvironmentPreset,
 	"Lighting" | "Background"
 >;
 
@@ -92,6 +92,13 @@ function environmentMatches(
 	return (
 		lightingMatches(lighting, environment.Lighting) &&
 		backgroundMatches(background, environment.Background)
+	);
+}
+
+function getPresetIcon(presetId: string): string {
+	return (
+		PRESET_ICONS[presetId as VoxelTerrainEnvironmentPresetId] ??
+		"icon-[mdi--palette-outline]"
 	);
 }
 
@@ -170,6 +177,7 @@ export default function TerrainDisplay() {
 		useState<VoxelTerrainLighting | null>(null);
 	const [draftBackground, setDraftBackground] =
 		useState<VoxelTerrainBackground | null>(null);
+	const [presetName, setPresetName] = useState("");
 	const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const pendingUpdatesRef = useRef<Partial<TerrainEnvironmentUpdates> | null>(
 		null
@@ -230,17 +238,21 @@ export default function TerrainDisplay() {
 	const currentBackground = draftBackground ?? committedBackground;
 	const backgroundColor =
 		currentBackground.Color ?? DEFAULT_VOXEL_TERRAIN_BACKGROUND_COLOR;
+	const environmentPresets = useMemo(
+		() => getCampaignTerrainEnvironmentPresets(campaign.Settings),
+		[campaign.Settings.TerrainEnvironmentPresets]
+	);
 
-	const activePresetId = useMemo(
+	const activePreset = useMemo(
 		() =>
-			VOXEL_TERRAIN_ENVIRONMENT_PRESET_IDS.find((presetId) =>
+			environmentPresets.find((preset) =>
 				environmentMatches(
 					currentLighting,
 					currentBackground,
-					createVoxelTerrainEnvironmentPreset(presetId)
+					preset
 				)
 			) ?? null,
-		[currentLighting, currentBackground]
+		[currentLighting, currentBackground, environmentPresets]
 	);
 
 	const commitEnvironmentUpdate = (
@@ -287,10 +299,13 @@ export default function TerrainDisplay() {
 		}, ENVIRONMENT_EDIT_DEBOUNCE_MS);
 	};
 
-	const applyPreset = (presetId: VoxelTerrainEnvironmentPresetId) => {
+	const applyPreset = (preset: VoxelTerrainEnvironmentPreset) => {
 		if (!activeTerrain || !isInteractive) return;
 
-		const environment = createVoxelTerrainEnvironmentPreset(presetId);
+		const environment: TerrainEnvironmentUpdates = {
+			Lighting: { ...preset.Lighting },
+			Background: cloneBackground(preset.Background),
+		};
 		setDraftLighting(environment.Lighting);
 		setDraftBackground(environment.Background);
 		clearPendingUpdate();
@@ -306,6 +321,28 @@ export default function TerrainDisplay() {
 		}
 
 		commitEnvironmentUpdate(activeTerrain.Id, environment);
+	};
+
+	const saveCurrentEnvironmentAsPreset = () => {
+		const name = presetName.trim();
+		if (!name || !isInteractive) return;
+
+		const nextPreset: VoxelTerrainEnvironmentPreset = {
+			Id: crypto.randomUUID(),
+			Name: name,
+			Lighting: { ...currentLighting },
+			Background: cloneBackground(currentBackground),
+		};
+
+		actionServiceRef.current?.execute("setting:edit", {
+			updates: {
+				TerrainEnvironmentPresets: [
+					...environmentPresets.map(cloneVoxelTerrainEnvironmentPreset),
+					nextPreset,
+				],
+			},
+		});
+		setPresetName("");
 	};
 
 	const updateLighting = (updates: Partial<VoxelTerrainLighting>) => {
@@ -341,7 +378,7 @@ export default function TerrainDisplay() {
 					type="button"
 					onClick={() => setShowAdvanced((value) => !value)}
 					disabled={!activeTerrain}
-					className="btn btn-circle btn-sm btn-ghost absolute right-0 top-0 z-10"
+					className="btn btn-circle btn-sm btn-ghost absolute right-2 top-2 z-10"
 					title={
 						showAdvanced
 							? "Show environment presets"
@@ -356,67 +393,98 @@ export default function TerrainDisplay() {
 				</button>
 			)}
 
-			<div className="flex h-full flex-col justify-center gap-3">
-				<div className="text-center">
-					<div className="text-xl font-semibold leading-tight">
-						Currently in <span className="font-bold">{name}</span>
+			<div
+				className={`flex h-full flex-col ${
+					showAdvanced && isDM ? "justify-center gap-2" : "justify-center gap-3"
+				}`}
+			>
+				{!(showAdvanced && isDM) && (
+					<div className="text-center">
+						<div className="text-xl font-semibold leading-tight">
+							Currently in <span className="font-bold">{name}</span>
+						</div>
+						<div className="mt-1 flex flex-wrap items-center justify-center gap-2 text-xs uppercase tracking-wide text-base-content/60">
+							<span>
+								{activePreset
+									? `${activePreset.Name} environment`
+									: "Custom environment"}
+							</span>
+							{!isLoaded && <span>Loading terrain data...</span>}
+						</div>
+						<div className="mx-auto mt-1 h-1 w-full max-w-md bg-linear-to-r from-transparent via-primary to-transparent" />
 					</div>
-					<div className="mt-1 flex flex-wrap items-center justify-center gap-2 text-xs uppercase tracking-wide text-base-content/60">
-						<span>
-							{activePresetId
-								? `${VOXEL_TERRAIN_ENVIRONMENT_PRESETS[activePresetId].Name} environment`
-								: "Custom environment"}
-						</span>
-						{!isLoaded && <span>Loading terrain data...</span>}
-					</div>
-					<div className="mx-auto mt-1 h-1 w-full max-w-md bg-linear-to-r from-transparent via-primary to-transparent" />
-				</div>
+				)}
 
 				{showAdvanced && isDM ? (
-					<div className="mx-auto w-full max-w-3xl space-y-3 text-left">
-						<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-							<label className="flex items-center justify-between gap-3 rounded-md border border-base-300 bg-base-200/40 px-3 py-2">
-								<span className="label-text text-sm font-medium">
-									Light color
-								</span>
-								<input
-									type="color"
-									className="h-8 w-12 cursor-pointer rounded border border-base-300 bg-base-100 p-1 disabled:cursor-not-allowed disabled:opacity-50"
-									value={currentLighting.Color}
-									onChange={(e) =>
-										updateLighting({ Color: e.target.value })
-									}
-									disabled={!isInteractive}
-								/>
-							</label>
-							<label className="flex items-center justify-between gap-3 rounded-md border border-base-300 bg-base-200/40 px-3 py-2">
-								<span className="label-text text-sm font-medium">
-									Background
-								</span>
-								<div className="flex items-center gap-2">
-									<button
-										type="button"
-										className="btn btn-square btn-xs btn-ghost"
-										onClick={() => updateBackground({})}
-										disabled={!isInteractive || !currentBackground.Color}
-										title="Clear background color"
-									>
-										<span className="icon-[mdi--close] h-4 w-4" />
-									</button>
+					<div className="mx-auto flex w-full max-w-3xl flex-col gap-2 pr-9 text-left sm:pr-0">
+						<div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(190px,1fr)_minmax(220px,1.1fr)]">
+							<div className="grid gap-2">
+								<label className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-base-300 bg-base-200/40 px-2 py-1.5">
+									<span className="label-text text-sm font-medium">
+										Light
+									</span>
 									<input
 										type="color"
 										className="h-8 w-12 cursor-pointer rounded border border-base-300 bg-base-100 p-1 disabled:cursor-not-allowed disabled:opacity-50"
-										value={backgroundColor}
+										value={currentLighting.Color}
 										onChange={(e) =>
-											updateBackground({ Color: e.target.value })
+											updateLighting({ Color: e.target.value })
 										}
 										disabled={!isInteractive}
+										title="Light color"
 									/>
-								</div>
-							</label>
+								</label>
+								<label className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-base-300 bg-base-200/40 px-2 py-1.5">
+									<span className="label-text text-sm font-medium">
+										Background
+									</span>
+									<div className="flex items-center gap-2">
+										<button
+											type="button"
+											className="btn btn-square btn-xs btn-ghost"
+											onClick={() => updateBackground({})}
+											disabled={!isInteractive || !currentBackground.Color}
+											title="Clear background color"
+										>
+											<span className="icon-[mdi--close] h-4 w-4" />
+										</button>
+										<input
+											type="color"
+											className="h-8 w-12 cursor-pointer rounded border border-base-300 bg-base-100 p-1 disabled:cursor-not-allowed disabled:opacity-50"
+											value={backgroundColor}
+											onChange={(e) =>
+												updateBackground({ Color: e.target.value })
+											}
+											disabled={!isInteractive}
+											title="Background color"
+										/>
+									</div>
+								</label>
+							</div>
+							<div className="flex min-w-0 flex-col gap-2 rounded-md border border-base-300 bg-base-200/40 p-2">
+								<input
+									type="text"
+									className="input input-bordered input-md w-58 min-w-0"
+									value={presetName}
+									onChange={(e) => setPresetName(e.target.value)}
+									disabled={!isInteractive}
+									maxLength={48}
+									placeholder="Preset name"
+									aria-label="Preset name"
+								/>
+								<button
+									type="button"
+									className="btn btn-primary btn-md w-full gap-2"
+									onClick={saveCurrentEnvironmentAsPreset}
+									disabled={!isInteractive || presetName.trim().length === 0}
+									title="Save terrain environment preset"
+								>
+									<span className="icon-[mdi--content-save] h-4 w-4" />
+									<span>Save</span>
+								</button>
+							</div>
 						</div>
-
-						<div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+						<div className="grid grid-cols-1 gap-2 rounded-md border border-base-300 bg-base-200/40 p-2 sm:grid-cols-3">
 							<EnvironmentSlider
 								label="Intensity"
 								value={currentLighting.Intensity}
@@ -475,23 +543,27 @@ export default function TerrainDisplay() {
 					</div>
 				) : (
 					<div className="flex flex-wrap justify-center gap-2">
-						{VOXEL_TERRAIN_ENVIRONMENT_PRESET_IDS.map((presetId) => {
-							const preset = VOXEL_TERRAIN_ENVIRONMENT_PRESETS[presetId];
-							const active = activePresetId === presetId;
+						{environmentPresets.length === 0 && (
+							<div className="text-sm text-base-content/60">
+								No environment presets saved
+							</div>
+						)}
+						{environmentPresets.map((preset) => {
+							const active = activePreset?.Id === preset.Id;
 							return (
 								<button
-									key={presetId}
+									key={preset.Id}
 									type="button"
 									className={`btn btn-sm min-w-28 gap-2 ${
 										active ? "btn-primary" : "btn-outline"
 									}`}
-									onClick={() => applyPreset(presetId)}
+									onClick={() => applyPreset(preset)}
 									disabled={!isInteractive}
 									aria-pressed={active}
 									title={`${preset.Name} environment`}
 								>
 									<span
-										className={`${PRESET_ICONS[presetId]} h-4 w-4`}
+										className={`${getPresetIcon(preset.Id)} h-4 w-4`}
 									/>
 									<span>{preset.Name}</span>
 									<EnvironmentSwatch color={preset.Background.Color} />

@@ -1,5 +1,9 @@
 // domains/CampaignSetting/CampaignSetting.ts
 import { InventorySlot } from "../Actor/Actor";
+import {
+	createDefaultVoxelTerrainEnvironmentPresets,
+	type VoxelTerrainEnvironmentPreset,
+} from "../VoxelTerrain/VoxelTerrain";
 
 export interface CampaignSettings {
 	StatDefinitions: StatDefinition[];
@@ -11,6 +15,17 @@ export interface CampaignSettings {
 	MovementSettings: MovementSettings;
 	SharedInventories?: SharedInventory[];
 	InitiativeSettings?: InitiativeSettings;
+	TerrainEnvironmentPresets?: VoxelTerrainEnvironmentPreset[];
+}
+
+export function getCampaignTerrainEnvironmentPresets(
+	settings: Pick<CampaignSettings, "TerrainEnvironmentPresets"> | undefined
+): VoxelTerrainEnvironmentPreset[] {
+	if (Array.isArray(settings?.TerrainEnvironmentPresets)) {
+		return settings.TerrainEnvironmentPresets;
+	}
+
+	return createDefaultVoxelTerrainEnvironmentPresets();
 }
 
 /**
