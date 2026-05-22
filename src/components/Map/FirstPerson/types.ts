@@ -16,8 +16,8 @@ export interface FirstPersonActor {
 }
 
 export type MovementOverlayState =
-	| { kind: "combat"; value: number }
-	| { kind: "exploration"; value: number }
+	| { kind: "combat"; value: number; overage?: number }
+	| { kind: "exploration"; value: number; overage?: number }
 	| null;
 
 export interface FirstPersonFrameInput {

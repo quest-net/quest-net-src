@@ -402,6 +402,53 @@ function snapToGround(
 	return true;
 }
 
+function findStepUpGroundY(
+	terrain: VoxelTerrain,
+	index: VoxelTerrainIndex,
+	dimensions: CapsuleDimensions,
+	position: THREE.Vector3,
+	maxStepHeight: number
+): number | null {
+	// Find the first clear resting height instead of requiring the capsule to
+	// fit at the maximum step height, which can falsely reject low ceilings.
+	const probe = position.clone();
+	if (!capsuleIntersectsTerrain(terrain, index, dimensions, probe)) {
+		return null;
+	}
+
+	const startY = position.y;
+	const maxY = startY + maxStepHeight;
+	const scanStep = Math.max(
+		index.voxelSize / 4,
+		FIRST_PERSON_PHYSICS.COLLISION_EPSILON * 4
+	);
+	const steps = Math.max(1, Math.ceil(maxStepHeight / scanStep));
+	let blockedY = startY;
+
+	for (let step = 1; step <= steps; step++) {
+		probe.y = Math.min(maxY, startY + scanStep * step);
+		if (capsuleIntersectsTerrain(terrain, index, dimensions, probe)) {
+			blockedY = probe.y;
+			continue;
+		}
+
+		let low = blockedY;
+		let high = probe.y;
+		for (let iteration = 0; iteration < 14; iteration++) {
+			const mid = (low + high) / 2;
+			probe.y = mid;
+			if (capsuleIntersectsTerrain(terrain, index, dimensions, probe)) {
+				low = mid;
+			} else {
+				high = mid;
+			}
+		}
+		return high;
+	}
+
+	return null;
+}
+
 function horizontalProgress(
 	from: THREE.Vector3,
 	to: THREE.Vector3,
@@ -424,19 +471,14 @@ function tryGroundedEndpointMove(
 ): boolean {
 	const probe = state.position.clone();
 	probe.x += deltaX;
-	probe.y += stepHeight;
 	probe.z += deltaZ;
 
-	if (capsuleIntersectsTerrain(terrain, index, dimensions, probe)) {
-		return false;
-	}
-
-	const groundY = findGroundBelow(
+	const groundY = findStepUpGroundY(
 		terrain,
 		index,
 		dimensions,
 		probe,
-		stepHeight + FIRST_PERSON_PHYSICS.STEP_DOWN_SNAP_DISTANCE
+		stepHeight
 	);
 	if (groundY === null) return false;
 

@@ -4,6 +4,27 @@ import { calculateVoxelMovementRange } from "../../../utils/terrain/movement/Vox
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants";
 import type { FirstPersonActor } from "./types";
 
+function getMovementLookupBudget(
+	terrain: VoxelTerrain,
+	moveSpeed: number,
+	canFly: boolean,
+	movementSettings: MovementSettings
+): number {
+	const maxHorizontal =
+		Math.max(0, terrain.Width - 1) + Math.max(0, terrain.Length - 1);
+	const maxVertical = Math.max(0, terrain.Height);
+
+	if (canFly && movementSettings.flyingIgnoresHeight) {
+		return Math.max(moveSpeed, maxHorizontal + maxVertical);
+	}
+
+	const maxHeightCost = movementSettings.heightCostLookup.reduce(
+		(max, cost) => Math.max(max, cost),
+		0
+	);
+	return Math.max(moveSpeed, maxHorizontal * (1 + maxHeightCost));
+}
+
 export function createMovementCostLookup(
 	terrain: VoxelTerrain,
 	actor: FirstPersonActor,
@@ -17,10 +38,16 @@ export function createMovementCostLookup(
 		isCombatActive && actor.actor.TurnStartPosition
 			? actor.actor.TurnStartPosition
 			: actor.actor.Position;
+	const lookupBudget = getMovementLookupBudget(
+		terrain,
+		moveSpeed,
+		canFly,
+		movementSettings
+	);
 	return calculateVoxelMovementRange(
 		terrain,
 		anchor,
-		moveSpeed,
+		lookupBudget,
 		canFly,
 		movementSettings
 	).costs;

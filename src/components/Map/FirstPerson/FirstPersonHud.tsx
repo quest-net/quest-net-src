@@ -8,6 +8,40 @@ interface FirstPersonHudProps {
 	onExitFirstPerson?: () => void;
 }
 
+function MovementOverlayText({
+	movementOverlay,
+}: {
+	movementOverlay: Exclude<MovementOverlayState, null>;
+}) {
+	const overage =
+		movementOverlay.overage && movementOverlay.overage > 0
+			? movementOverlay.overage
+			: 0;
+	const overageText =
+		overage > 0 ? (
+			<span className="text-error">
+				{" "}
+				(+{formatMovementValue(overage)})
+			</span>
+		) : null;
+
+	if (movementOverlay.kind === "combat") {
+		return (
+			<>
+				Move left: {formatMovementValue(movementOverlay.value)}
+				{overageText}
+			</>
+		);
+	}
+
+	return (
+		<>
+			Walked {formatMovementValue(movementOverlay.value)}
+			{overageText}
+		</>
+	);
+}
+
 export function FirstPersonHud({
 	isPointerLocked,
 	movementOverlay,
@@ -64,9 +98,7 @@ export function FirstPersonHud({
 			{movementOverlay && (
 				<div className="absolute left-1/2 top-3 -translate-x-1/2 z-20">
 					<div className="rounded bg-base-100/90 border border-base-300 px-3 py-1 shadow text-sm font-semibold">
-						{movementOverlay.kind === "combat"
-							? `Move left: ${formatMovementValue(movementOverlay.value)}`
-							: `Walked: ${formatMovementValue(movementOverlay.value)}`}
+						<MovementOverlayText movementOverlay={movementOverlay} />
 					</div>
 				</div>
 			)}

@@ -59,6 +59,42 @@ const PENDING_MOVE_TIMEOUT_MS = 2000;
 const ACTOR_POSE_SEND_INTERVAL_MS = 80;
 const ACTOR_POSE_MIN_DISTANCE_SQ = 0.0004;
 const EMPTY_FIRST_PERSON_KEYS: ReadonlySet<string> = new Set();
+const MOVEMENT_OVERAGE_EPSILON = 0.0001;
+
+function getActorMoveSpeed(actor: FirstPersonActor): number {
+	return actor.actor.MoveSpeed ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.MOVE_SPEED;
+}
+
+function getMovementCostFromLookup(
+	lookup: Map<string, number>,
+	index: VoxelTerrainIndex,
+	position: Position
+): number | undefined {
+	const exact = lookup.get(
+		getVoxelTileHeightKey(position.x, position.y, position.h)
+	);
+	if (exact !== undefined) return exact;
+
+	const surfaces = index.allSurfaces.get(`${position.x},${position.y}`) ?? [];
+	let bestCost: number | undefined;
+	let bestDistance = Number.POSITIVE_INFINITY;
+	for (const surface of surfaces) {
+		const cost = lookup.get(getVoxelTileHeightKey(position.x, position.y, surface));
+		if (cost === undefined) continue;
+
+		const distance = Math.abs(position.h - surface);
+		if (
+			distance < bestDistance ||
+			(distance === bestDistance &&
+				(bestCost === undefined || cost < bestCost))
+		) {
+			bestCost = cost;
+			bestDistance = distance;
+		}
+	}
+
+	return bestCost;
+}
 
 export default function FirstPersonMap({
 	terrain,
@@ -399,7 +435,10 @@ export default function FirstPersonMap({
 	);
 
 	const updateMovementOverlay = useCallback((now: number, rulesPosition: Position) => {
-		if (!activeActorRef.current) {
+		const activeActor = activeActorRef.current;
+		const index = voxelTerrainIndexRef.current;
+		const lookup = movementCostLookupRef.current;
+		if (!activeActor || !index || !lookup) {
 			setMovementOverlay((current) => (current === null ? current : null));
 			return;
 		}
@@ -407,27 +446,32 @@ export default function FirstPersonMap({
 		if (now - lastStateUpdateRef.current < MOVEMENT_STATE_UPDATE_MS) return;
 		lastStateUpdateRef.current = now;
 
-		const currentActor = activeActorRef.current.actor;
-		const lookup = movementCostLookupRef.current;
-		const cost = lookup?.get(
-			getVoxelTileHeightKey(rulesPosition.x, rulesPosition.y, rulesPosition.h)
-		);
+		const moveSpeed = getActorMoveSpeed(activeActor);
+		const cost = getMovementCostFromLookup(lookup, index, rulesPosition);
+		if (cost === undefined) {
+			setMovementOverlay((current) => (current === null ? current : null));
+			return;
+		}
+
+		const overage = Math.max(0, cost - moveSpeed);
+		const visibleOverage =
+			overage > MOVEMENT_OVERAGE_EPSILON ? overage : undefined;
 		const next: MovementOverlayState =
-			cost === undefined
-				? null
-				: isCombatActiveRef.current
-					? {
-							kind: "combat",
-							value:
-								(currentActor.MoveSpeed ??
-									ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.MOVE_SPEED) - cost,
-					  }
-					: {
-							kind: "exploration",
-							value: cost,
-					  };
+			isCombatActiveRef.current
+				? {
+						kind: "combat",
+						value: Math.max(0, moveSpeed - cost),
+						overage: visibleOverage,
+				  }
+				: {
+						kind: "exploration",
+						value: visibleOverage === undefined ? cost : moveSpeed,
+						overage: visibleOverage,
+				  };
 		setMovementOverlay((current) =>
-			current?.kind === next?.kind && current?.value === next?.value
+			current?.kind === next.kind &&
+			current?.value === next.value &&
+			(current?.overage ?? 0) === (next.overage ?? 0)
 				? current
 				: next
 		);
