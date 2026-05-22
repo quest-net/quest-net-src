@@ -1,4 +1,4 @@
-import { RestoreRule } from "../CampaignSetting/CampaignSetting";
+import { ActionCost, RestoreRule, StatCost } from "../CampaignSetting/CampaignSetting";
 
 export interface Skill {
 	Id: string;
@@ -8,7 +8,8 @@ export interface Skill {
 	Tags?: string[];
 
 	// Skill properties
-	StatCost?: { statId: string; amount: number }
+	StatCost?: StatCost;
+	ActionCost?: ActionCost;
 	MaxUses?: number;
 
 	// Dice roll functionality

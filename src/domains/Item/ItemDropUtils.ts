@@ -21,6 +21,8 @@ export interface ItemSnapshot {
 	Name: string;
 	Description?: string;
 	Image?: string;
+	StatCost?: Item["StatCost"];
+	ActionCost?: Item["ActionCost"];
 	MaxUses?: number;
 	UsesLeft?: number;
 	IsEquippable: boolean;
@@ -55,6 +57,8 @@ export function createItemTag(
 		Name: template.Name,
 		Description: template.Description,
 		Image: template.Image,
+		StatCost: template.StatCost,
+		ActionCost: template.ActionCost,
 		MaxUses: template.MaxUses,
 		UsesLeft: slot.UsesLeft,
 		IsEquippable: template.IsEquippable,

@@ -1,56 +1,50 @@
-// components/inputs/StatCostEditor.tsx
-
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
-import type { StatCost } from "../../domains/CampaignSetting/CampaignSetting";
+import type { ActionCost } from "../../domains/CampaignSetting/CampaignSetting";
 
-interface StatCostEditorProps {
-	value?: StatCost;
-	onChange: (value?: StatCost) => void;
+interface ActionCostEditorProps {
+	value?: ActionCost;
+	onChange: (value?: ActionCost) => void;
 }
 
-export function StatCostEditor({ value, onChange }: StatCostEditorProps) {
+export function ActionCostEditor({ value, onChange }: ActionCostEditorProps) {
 	const context = useQuestContext();
 	const campaign = CampaignActions.getActiveCampaign(context);
 
 	const isEnabled = !!value;
-	const statId = value?.statId || "";
+	const actionId = value?.actionId || "";
 	const amount = value?.amount || 1;
 
 	const handleToggle = (enabled: boolean) => {
 		if (enabled) {
-			// Enable with first available stat
-			const firstStat = campaign.Settings.StatDefinitions[0];
-			if (firstStat) {
-				onChange({ statId: firstStat.Id, amount: 1 });
+			const firstAction = campaign.Settings.ActionDefinitions[0];
+			if (firstAction) {
+				onChange({ actionId: firstAction.Id, amount: 1 });
 			}
 		} else {
-			// Disable
 			onChange(undefined);
 		}
 	};
 
-	const handleStatChange = (newStatId: string) => {
-		onChange({ statId: newStatId, amount });
+	const handleActionChange = (newActionId: string) => {
+		onChange({ actionId: newActionId, amount });
 	};
 
 	const handleAmountChange = (newAmount: number) => {
 		const clamped = Math.max(0, Math.floor(newAmount));
-		onChange({ statId, amount: clamped });
+		onChange({ actionId, amount: clamped });
 	};
 
-	// No stats defined in campaign settings
-	if (campaign.Settings.StatDefinitions.length === 0) {
+	if (campaign.Settings.ActionDefinitions.length === 0) {
 		return (
 			<div className="text-sm opacity-60 italic">
-				No stats defined in campaign settings. Add stats before setting costs.
+				No actions defined in campaign settings. Add actions before setting costs.
 			</div>
 		);
 	}
 
 	return (
 		<div className="space-y-3">
-			{/* Enable/Disable Toggle */}
 			<div className="form-control">
 				<label className="label cursor-pointer justify-start gap-3">
 					<input
@@ -60,33 +54,30 @@ export function StatCostEditor({ value, onChange }: StatCostEditorProps) {
 						className="toggle toggle-primary"
 					/>
 					<span className="label-text font-medium">
-						Requires stat cost to use
+						Requires action cost to use
 					</span>
 				</label>
 			</div>
 
-			{/* Stat Selection + Amount */}
 			{isEnabled && (
 				<div className="grid grid-cols-2 gap-3">
-					{/* Stat Dropdown */}
 					<div className="form-control">
 						<label className="label">
-							<span className="label-text">Stat</span>
+							<span className="label-text">Action</span>
 						</label>
 						<select
-							value={statId}
-							onChange={(e) => handleStatChange(e.target.value)}
+							value={actionId}
+							onChange={(e) => handleActionChange(e.target.value)}
 							className="select select-bordered w-full"
 						>
-							{campaign.Settings.StatDefinitions.map((stat) => (
-								<option key={stat.Id} value={stat.Id}>
-									{stat.Name}
+							{campaign.Settings.ActionDefinitions.map((action) => (
+								<option key={action.Id} value={action.Id}>
+									{action.Name}
 								</option>
 							))}
 						</select>
 					</div>
 
-					{/* Amount Input */}
 					<div className="form-control">
 						<label className="label">
 							<span className="label-text">Cost</span>
@@ -103,14 +94,13 @@ export function StatCostEditor({ value, onChange }: StatCostEditorProps) {
 				</div>
 			)}
 
-			{/* Preview Text */}
 			{isEnabled && (
 				<div className="text-sm opacity-70">
 					Costs{" "}
 					<span className="font-semibold">
 						{amount}{" "}
-						{campaign.Settings.StatDefinitions.find((s) => s.Id === statId)
-							?.Name || "Unknown Stat"}
+						{campaign.Settings.ActionDefinitions.find((a) => a.Id === actionId)
+							?.Name || "Unknown Action"}
 					</span>{" "}
 					to use
 				</div>

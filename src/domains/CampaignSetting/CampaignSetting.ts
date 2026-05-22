@@ -90,6 +90,16 @@ export interface ActionDefinition {
 	Max: number;
 }
 
+export interface StatCost {
+	statId: string;
+	amount: number;
+}
+
+export interface ActionCost {
+	actionId: string;
+	amount: number;
+}
+
 /**
  * AttributeDefinition is a campaign-wide template that defines an attribute key.
  * Actors store AttributeSlots that reference these by Id.

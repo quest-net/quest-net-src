@@ -13,6 +13,8 @@ import {
 import { TagEditor } from "../../components/inputs/TagEditor";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { RestoreRuleEditor } from "../../components/inputs/RestoreRuleEditor";
+import { StatCostEditor } from "../../components/inputs/StatCostEditor";
+import { ActionCostEditor } from "../../components/inputs/ActionCostEditor";
 
 interface ItemEditProps {
 	item?: Item;
@@ -147,9 +149,23 @@ function ItemForm({ data, onChange }: ItemFormProps) {
 			{/* Properties */}
 			<FormSection
 				title="Item Properties"
-				description="Usage, equipment, and dice behavior"
+				description="Cost, usage limits, equipment, and dice behavior"
 			>
 				<FormGrid cols={2}>
+					<FormField label="Stat Cost" span={2}>
+						<StatCostEditor
+							value={data.StatCost}
+							onChange={(cost) => handleFieldChange("StatCost", cost)}
+						/>
+					</FormField>
+
+					<FormField label="Action Cost" span={2}>
+						<ActionCostEditor
+							value={data.ActionCost}
+							onChange={(cost) => handleFieldChange("ActionCost", cost)}
+						/>
+					</FormField>
+
 					<FormField label="Max Uses">
 						<input
 							type="number"

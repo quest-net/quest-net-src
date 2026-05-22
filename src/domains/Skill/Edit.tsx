@@ -14,6 +14,7 @@ import { TagEditor } from "../../components/inputs/TagEditor";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { RestoreRuleEditor } from "../../components/inputs/RestoreRuleEditor";
 import { StatCostEditor } from "../../components/inputs/StatCostEditor";
+import { ActionCostEditor } from "../../components/inputs/ActionCostEditor";
 
 interface SkillEditProps {
 	skill?: Skill;
@@ -155,6 +156,13 @@ function SkillForm({ data, onChange }: SkillFormProps) {
 						<StatCostEditor
 							value={data.StatCost}
 							onChange={(cost) => handleFieldChange("StatCost", cost)}
+						/>
+					</FormField>
+
+					<FormField label="Action Cost" span={2}>
+						<ActionCostEditor
+							value={data.ActionCost}
+							onChange={(cost) => handleFieldChange("ActionCost", cost)}
 						/>
 					</FormField>
 

@@ -9,6 +9,12 @@ import { ImageDisplay } from "../Image/ImageDisplay";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { ActorPicker } from "../../components/inputs/ActorPicker";
 import { Actor, InventorySlot, EquipmentSlot } from "../Actor/Actor";
+import {
+	formatActionCost,
+	formatStatCost,
+	getActionCostAvailability,
+	getStatCostAvailability,
+} from "../../utils/ActorCostUtils";
 
 interface ItemSlotDisplayProps {
 	isOpen: boolean;
@@ -202,6 +208,19 @@ export function ItemSlotDisplay({
 			? `${slot.UsesLeft} / ${item.MaxUses || "∞"} uses`
 			: "Unlimited uses";
 
+	const statCostText = formatStatCost(item.StatCost, campaign.Settings);
+	const actionCostText = formatActionCost(item.ActionCost, campaign.Settings);
+	const statAvailability = getStatCostAvailability(
+		actor,
+		item.StatCost,
+		campaign.Settings
+	);
+	const actionAvailability = getActionCostAvailability(
+		actor,
+		item.ActionCost,
+		campaign.Settings
+	);
+
 	// Format restore rules
 	const restoreLines = formatRestoreRule(item.RestoreRule);
 
@@ -274,6 +293,33 @@ export function ItemSlotDisplay({
 									</button>
 								)}
 
+								{/* Stat Cost Warning */}
+								{mode !== "shared-inventory" && item.StatCost && !statAvailability.hasEnough && (
+									<div className="alert alert-warning text-sm py-2">
+										<span className="icon-[mdi--alert] w-4 h-4" />
+										<span>
+											Not enough {statAvailability.name ?? "stat"} ({statAvailability.current} / {item.StatCost.amount})
+											<br />
+											<span className="text-xs opacity-70">
+												Item will still activate but cost will be reduced
+											</span>
+										</span>
+									</div>
+								)}
+
+								{/* Action Cost Warning */}
+								{mode !== "shared-inventory" && item.ActionCost && !actionAvailability.hasEnough && (
+									<div className="alert alert-warning text-sm py-2">
+										<span className="icon-[mdi--alert] w-4 h-4" />
+										<span>
+											Not enough {actionAvailability.name ?? "action"} ({actionAvailability.current} / {item.ActionCost.amount})
+											<br />
+											<span className="text-xs opacity-70">
+												Item will still activate but cost will be reduced
+											</span>
+										</span>
+									</div>
+								)}
 
 								{/* Equip/Unequip Button */}
 								{mode === "inventory" && item.IsEquippable && (
@@ -373,6 +419,22 @@ export function ItemSlotDisplay({
 						<div className="card bg-base-100 border-2 border-base-300">
 							<div className="card-body p-4 space-y-3">
 								<h3 className="card-title text-sm">Properties</h3>
+
+								{/* Stat Cost */}
+								<div className="flex justify-between items-center py-2 border-b border-base-300">
+									<span className="font-semibold">Stat Cost</span>
+									<span className={item.StatCost ? "font-bold" : ""}>
+										{statCostText}
+									</span>
+								</div>
+
+								{/* Action Cost */}
+								<div className="flex justify-between items-center py-2 border-b border-base-300">
+									<span className="font-semibold">Action Cost</span>
+									<span className={item.ActionCost ? "font-bold" : ""}>
+										{actionCostText}
+									</span>
+								</div>
 
 								{/* Uses */}
 								<div className="flex justify-between items-center py-2 border-b border-base-300">

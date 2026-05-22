@@ -10,6 +10,7 @@ import {
 	syncItemSlotsAfterEdit,
 	getAllActors,
 } from "../../utils/SlotSyncUtils";
+import { applyActionCost, applyStatCost } from "../../utils/ActorCostUtils";
 import { createItemEntity, createItemEntityFromTemplate, getItemDataFromEntity, isItemEntity } from "./ItemDropUtils";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import {
@@ -392,6 +393,12 @@ export const ItemActions = {
 			slot.UsesLeft--;
 		}
 
+		// Handle costs gracefully: deduct to 0, don't block use.
+		// If the actor doesn't have the target stat/action, skip that deduction.
+		const costDetails =
+			applyStatCost(actor, itemTemplate.StatCost, campaign.Settings) +
+			applyActionCost(actor, itemTemplate.ActionCost, campaign.Settings);
+
 		// Determine visibility based on the ACTOR TYPE, not who pressed the button
 		const visibilitySettings = campaign.Settings.VisibilitySettings;
 		let visibility: ("dm" | "player" | "owner" | "all")[];
@@ -419,7 +426,7 @@ export const ItemActions = {
 				LogActions.create(
 					{
 						action: `${actor.Name} used ${itemTemplate.Name} : ${rollResult.total}`,
-						details: `${rollResult.formula} : ${rollResult.breakdown}`,
+						details: `${rollResult.formula} : ${rollResult.breakdown}${costDetails}`,
 						category: "dice",
 						level: "important",
 						visibility,
@@ -437,7 +444,7 @@ export const ItemActions = {
 				LogActions.create(
 					{
 						action: `${actor.Name} used ${itemTemplate.Name}`,
-						details: `${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""
+						details: `${costDetails}${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""
 							}`,
 						category: "item",
 						level: "info",
@@ -452,7 +459,7 @@ export const ItemActions = {
 			LogActions.create(
 				{
 					action: `${actor.Name} used ${itemTemplate.Name}`,
-					details: `${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""
+					details: `${costDetails}${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""
 						}`,
 					category: "item",
 					level: "info",

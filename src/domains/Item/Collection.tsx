@@ -6,6 +6,7 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { Actor, InventorySlot, EquipmentSlot } from "../Actor/Actor";
 import { ItemSlotDisplay } from "./ItemSlotDisplay";
+import { formatActionCost, formatStatCost } from "../../utils/ActorCostUtils";
 
 interface ItemCollectionProps {
 	actor: Actor;
@@ -47,11 +48,22 @@ export function ItemCollection({ actor, mode }: ItemCollectionProps) {
             slot.UsesLeft !== undefined
                 ? `${slot.UsesLeft}/${item.MaxUses || "∞"}`
                 : "∞";
+        const statCostText = item.StatCost
+            ? `Costs ${formatStatCost(item.StatCost, campaign.Settings, "")}`
+            : "";
+        const actionCostText = item.ActionCost
+            ? `Costs ${formatActionCost(item.ActionCost, campaign.Settings, "")}`
+            : "";
+        const details = [
+            `${usesText} uses`,
+            statCostText,
+            actionCostText,
+        ].filter(Boolean).join(" • ");
 
         return {
             id: `${slot.Id}-${index}`,
             label: item.Name,
-            details: `${usesText} uses`,
+            details,
             description: item.Description,
             imageId: item.Image,
             badge: item.DiceRoll,

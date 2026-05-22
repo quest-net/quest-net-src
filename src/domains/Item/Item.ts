@@ -1,4 +1,4 @@
-import { RestoreRule } from "../CampaignSetting/CampaignSetting";
+import { ActionCost, RestoreRule, StatCost } from "../CampaignSetting/CampaignSetting";
 
 export interface Item {
 	Id: string;
@@ -8,6 +8,8 @@ export interface Item {
 	Tags?: string[];
 
 	// Item properties
+	StatCost?: StatCost;
+	ActionCost?: ActionCost;
 	MaxUses?: number; // undefined = infinite uses
 	IsEquippable: boolean;
 

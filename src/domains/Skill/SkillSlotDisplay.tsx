@@ -8,6 +8,12 @@ import { formatRestoreRule } from "../CampaignSetting/CampaignSettingActions";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { Actor, SkillSlot } from "../Actor/Actor";
+import {
+	formatActionCost,
+	formatStatCost,
+	getActionCostAvailability,
+	getStatCostAvailability,
+} from "../../utils/ActorCostUtils";
 
 interface SkillSlotDisplayProps {
 	isOpen: boolean;
@@ -128,31 +134,18 @@ export function SkillSlotDisplay({
 			? `${slot.UsesLeft} / ${skill.MaxUses || "∞"} uses`
 			: "Unlimited uses";
 
-	// Format stat cost
-	let statCostText = "No stat cost";
-	let statCostStat = null;
-	if (skill.StatCost) {
-		const stat = campaign.Settings.StatDefinitions.find(
-			(s) => s.Id === skill.StatCost!.statId
-		);
-		if (stat) {
-			statCostStat = stat;
-			statCostText = `${skill.StatCost.amount} ${stat.Name}`;
-		}
-	}
-
-	// Check if actor has enough of the stat.
-	// If the stat is unset (actor doesn't have this stat), treat as 0 available
-	// so the skill is correctly flagged as unavailable.
-	let hasEnoughStat = true;
-	let currentStatValue = 0;
-	if (skill.StatCost && statCostStat) {
-		const actorStat = actor.Stats.find((s) => s.Id === statCostStat.Id);
-		if (actorStat) {
-			currentStatValue = actorStat.Current ?? 0;
-			hasEnoughStat = currentStatValue >= skill.StatCost.amount;
-		}
-	}
+	const statCostText = formatStatCost(skill.StatCost, campaign.Settings);
+	const actionCostText = formatActionCost(skill.ActionCost, campaign.Settings);
+	const statAvailability = getStatCostAvailability(
+		actor,
+		skill.StatCost,
+		campaign.Settings
+	);
+	const actionAvailability = getActionCostAvailability(
+		actor,
+		skill.ActionCost,
+		campaign.Settings
+	);
 
 	// Format restore rules
 	const restoreLines = formatRestoreRule(skill.RestoreRule);
@@ -224,11 +217,25 @@ export function SkillSlotDisplay({
 							</button>
 
 							{/* Stat Cost Warning */}
-							{skill.StatCost && !hasEnoughStat && (
+							{skill.StatCost && !statAvailability.hasEnough && (
 								<div className="alert alert-warning text-sm py-2">
 									<span className="icon-[mdi--alert] w-4 h-4" />
 									<span>
-										Not enough {statCostStat?.Name} ({currentStatValue} / {skill.StatCost.amount})
+										Not enough {statAvailability.name ?? "stat"} ({statAvailability.current} / {skill.StatCost.amount})
+										<br />
+										<span className="text-xs opacity-70">
+											Skill will still activate but cost will be reduced
+										</span>
+									</span>
+								</div>
+							)}
+
+							{/* Action Cost Warning */}
+							{skill.ActionCost && !actionAvailability.hasEnough && (
+								<div className="alert alert-warning text-sm py-2">
+									<span className="icon-[mdi--alert] w-4 h-4" />
+									<span>
+										Not enough {actionAvailability.name ?? "action"} ({actionAvailability.current} / {skill.ActionCost.amount})
 										<br />
 										<span className="text-xs opacity-70">
 											Skill will still activate but cost will be reduced
@@ -297,6 +304,14 @@ export function SkillSlotDisplay({
 								<span className="font-semibold">Stat Cost</span>
 								<span className={skill.StatCost ? "font-bold" : ""}>
 									{statCostText}
+								</span>
+							</div>
+
+							{/* Action Cost */}
+							<div className="flex justify-between items-center py-2 border-b border-base-300">
+								<span className="font-semibold">Action Cost</span>
+								<span className={skill.ActionCost ? "font-bold" : ""}>
+									{actionCostText}
 								</span>
 							</div>
 

@@ -7,6 +7,7 @@ import { Skill } from "./Skill";
 import { Actor } from "../Actor/Actor";
 import { rollDiceFormula } from "../../utils/DiceUtils";
 import { syncSkillSlotsAfterEdit, getAllActors } from "../../utils/SlotSyncUtils";
+import { applyActionCost, applyStatCost } from "../../utils/ActorCostUtils";
 
 /**
  * Skill action handlers
@@ -268,25 +269,11 @@ export const SkillActions = {
 			slot.UsesLeft--;
 		}
 
-		// Handle stat cost deduction (graceful - deduct to 0, don't block).
-		// If the actor doesn't have this stat (Current === null) we simply skip
-		// the deduction; the skill still fires.
-		let statCostDetails = "";
-		if (skillTemplate.StatCost) {
-			const stat = actor.Stats.find((s) => s.Id === skillTemplate.StatCost!.statId);
-			if (stat && stat.Current !== null) {
-				const currentValue = stat.Current;
-				const costAmount = skillTemplate.StatCost.amount;
-				const newValue = Math.max(0, currentValue - costAmount);
-				stat.Current = newValue;
-
-				// Look up stat name from campaign settings
-				const statDef = campaign.Settings.StatDefinitions.find(d => d.Id === stat.Id);
-				const statName = statDef?.Name ?? stat.Id;
-
-				statCostDetails = ` (-${Math.min(currentValue, costAmount)} ${statName})`;
-			}
-		}
+		// Handle costs gracefully: deduct to 0, don't block use.
+		// If the actor doesn't have the target stat/action, skip that deduction.
+		const costDetails =
+			applyStatCost(actor, skillTemplate.StatCost, campaign.Settings) +
+			applyActionCost(actor, skillTemplate.ActionCost, campaign.Settings);
 
 		// Determine visibility based on the ACTOR TYPE
 		const visibilitySettings = campaign.Settings.VisibilitySettings;
@@ -314,7 +301,7 @@ export const SkillActions = {
 				LogActions.create(
 					{
 						action: `${actor.Name} used ${skillTemplate.Name} : ${rollResult.total}`,
-						details: `${rollResult.formula} : ${rollResult.breakdown}${statCostDetails}`,
+						details: `${rollResult.formula} : ${rollResult.breakdown}${costDetails}`,
 						category: "dice",
 						level: "important",
 						visibility,
@@ -329,7 +316,7 @@ export const SkillActions = {
 				LogActions.create(
 					{
 						action: `${actor.Name} used ${skillTemplate.Name}`,
-						details: `${statCostDetails}${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""}`,
+						details: `${costDetails}${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""}`,
 						category: "skill",
 						level: "info",
 						visibility,
@@ -343,7 +330,7 @@ export const SkillActions = {
 			LogActions.create(
 				{
 					action: `${actor.Name} used ${skillTemplate.Name}`,
-					details: `${statCostDetails}${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""}`,
+					details: `${costDetails}${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""}`,
 					category: "skill",
 					level: "info",
 					visibility,
