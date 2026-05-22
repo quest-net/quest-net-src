@@ -3,6 +3,7 @@ import {
 	useCallback,
 	useEffect,
 	useImperativeHandle,
+	useMemo,
 	useRef,
 	useState,
 } from "react";
@@ -55,6 +56,17 @@ import {
 	type VoxParseResult,
 	type VoxResolutionOption,
 } from "../../utils/terrain/import/VoxImportUtils";
+import {
+	combineVoxelSelectionBounds,
+	createColorVoxelSelection,
+	getVoxelSelectionBounds,
+	getVoxelSelectionSpaceCount,
+	iterateVoxelSelectionSpace,
+	normalizeVoxelSelectionBounds,
+	type TerrainSelection,
+	type VoxelCoord,
+	type VoxelSelectionBounds,
+} from "../../utils/terrain/editor/VoxelTerrainSelectionUtils";
 import { raycastVoxelGrid } from "../../utils/terrain/raycast/VoxelRaycast";
 import { useFormContext } from "../Form/Form";
 import ThreeDMap from "../Map/3DMap";
@@ -67,7 +79,8 @@ export interface ActorOverlayInfo {
 }
 
 type EditorView = "edit" | "preview";
-type EditorTool = "place" | "erase" | "paint" | "sample" | "stamp";
+type EditorTool = "place" | "erase" | "paint" | "sample" | "stamp" | "boxSelect" | "colorSelect";
+type SelectionEditTool = "place" | "erase" | "paint";
 type EditGranularity = "tactical" | "voxel";
 
 interface VoxelTerrainEditorProps {
@@ -91,12 +104,6 @@ export interface VoxelTerrainEditorHandle {
 		height: number;
 		resolution: number;
 	}) => VoxelTerrain;
-}
-
-interface VoxelCoord {
-	x: number;
-	y: number;
-	z: number;
 }
 
 interface PickInfo {
@@ -127,6 +134,7 @@ interface EditorSceneResources {
 	controls: OrbitControls;
 	gridGroup: THREE.Group;
 	hoverGroup: THREE.Group;
+	selectionGroup: THREE.Group;
 	chunkGroup: THREE.Group;
 	terrainMaterial: THREE.MeshStandardMaterial;
 }
@@ -208,6 +216,8 @@ const TOOL_BUTTONS: Array<{
 	{ id: "erase",  label: "Erase",  icon: "icon-[mdi--eraser]",       shortcut: "R" },
 	{ id: "paint",  label: "Paint",  icon: "icon-[mdi--palette]",       shortcut: "G" },
 	{ id: "sample", label: "Sample", icon: "icon-[mdi--eyedropper]",    shortcut: "I" },
+	{ id: "boxSelect",   label: "Box Select",   icon: "icon-[mdi--selection-drag]", shortcut: "B" },
+	{ id: "colorSelect", label: "Color Select", icon: "icon-[mdi--palette-swatch]", shortcut: "C" },
 ];
 
 const IS_MAC =
@@ -216,6 +226,10 @@ const MOD_KEY_LABEL = IS_MAC ? "⌘" : "Ctrl";
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
+}
+
+function isSelectionEditTool(tool: EditorTool): tool is SelectionEditTool {
+	return tool === "place" || tool === "erase" || tool === "paint";
 }
 
 // ---------------------------------------------------------------------------
@@ -455,6 +469,40 @@ function markVoxelDirtyChunks(
 	if ((vz + 1) % CHUNK_SIZE === 0)    addIfValid(mainCx, mainCy, mainCz + 1);
 }
 
+function markVoxelRangeDirtyChunks(
+	bounds: VoxelSelectionBounds,
+	dirtyChunks: Set<number>,
+	dims: ChunkDims,
+): void {
+	const minX = clamp(bounds.min.x - 1, 0, Math.max(0, dims.vW - 1));
+	const minY = clamp(bounds.min.y - 1, 0, Math.max(0, dims.vH - 1));
+	const minZ = clamp(bounds.min.z - 1, 0, Math.max(0, dims.vL - 1));
+	const maxX = clamp(bounds.max.x + 1, 0, Math.max(0, dims.vW - 1));
+	const maxY = clamp(bounds.max.y + 1, 0, Math.max(0, dims.vH - 1));
+	const maxZ = clamp(bounds.max.z + 1, 0, Math.max(0, dims.vL - 1));
+
+	const startCx = Math.floor(minX / CHUNK_SIZE);
+	const startCy = Math.floor(minY / CHUNK_SIZE);
+	const startCz = Math.floor(minZ / CHUNK_SIZE);
+	const endCx = Math.floor(maxX / CHUNK_SIZE);
+	const endCy = Math.floor(maxY / CHUNK_SIZE);
+	const endCz = Math.floor(maxZ / CHUNK_SIZE);
+
+	for (let cy = startCy; cy <= endCy; cy++) {
+		for (let cz = startCz; cz <= endCz; cz++) {
+			for (let cx = startCx; cx <= endCx; cx++) {
+				if (
+					cx >= 0 && cx < dims.chunksX &&
+					cy >= 0 && cy < dims.chunksY &&
+					cz >= 0 && cz < dims.chunksZ
+				) {
+					dirtyChunks.add(cx + cz * dims.chunksX + cy * dims.chunksX * dims.chunksZ);
+				}
+			}
+		}
+	}
+}
+
 // Reused across buildChunkGeometry calls to avoid per-voxel Color allocations.
 const CHUNK_VOXEL_COLOR = new THREE.Color();
 
@@ -687,6 +735,30 @@ function getTacticalBlockCoords(unit: VoxelCoord, index: VoxelTerrainIndex): Vox
 	return coords;
 }
 
+function getPickSelectionBounds(
+	index: VoxelTerrainIndex,
+	pick: PickInfo,
+	granularity: EditGranularity,
+	dims: ChunkDims,
+): VoxelSelectionBounds {
+	if (granularity === "voxel") {
+		return normalizeVoxelSelectionBounds(pick.voxel, pick.voxel, dims);
+	}
+
+	const unit = getTacticalUnitFromVoxel(pick.voxel, index);
+	const start = {
+		x: unit.x * index.resolution,
+		y: unit.y * index.resolution,
+		z: unit.z * index.resolution,
+	};
+	const end = {
+		x: start.x + index.resolution - 1,
+		y: start.y + index.resolution - 1,
+		z: start.z + index.resolution - 1,
+	};
+	return normalizeVoxelSelectionBounds(start, end, dims);
+}
+
 function collectAffectedCoords(
 	index: VoxelTerrainIndex,
 	pick: PickInfo,
@@ -741,6 +813,7 @@ function applyStampToGrid(
 	anchor: VoxelCoord,
 	source: VoxelTerrain,
 	transform: StampTransform,
+	beforeMutation?: () => void,
 ): { changed: boolean; countDelta: number } {
 	const { vW, vH, vL, resolution } = dims;
 	let changed = false;
@@ -755,6 +828,7 @@ function applyStampToGrid(
 		const gIdx = editGridIndex(x, y, z, vW, vL);
 		const next = offset.color + 1;
 		if (grid[gIdx] === next) continue;
+		beforeMutation?.();
 		if (grid[gIdx] === 0) countDelta++;
 		grid[gIdx] = next;
 		markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
@@ -778,6 +852,7 @@ function applyVoxelEdit(
 	granularity: EditGranularity,
 	brushSize: number,
 	colorIndex: number,
+	beforeMutation?: () => void,
 ): { changed: boolean; sampledColor: number | null; countDelta: number } {
 	const { vW, vH, vL } = dims;
 
@@ -796,6 +871,7 @@ function applyVoxelEdit(
 
 		if (tool === "erase") {
 			if (grid[gIdx] !== 0) {
+				beforeMutation?.();
 				grid[gIdx] = 0;
 				markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 				changed = true;
@@ -807,6 +883,7 @@ function applyVoxelEdit(
 		if (tool === "paint") {
 			const cur = grid[gIdx];
 			if (cur !== 0 && cur - 1 !== colorIndex) {
+				beforeMutation?.();
 				grid[gIdx] = colorIndex + 1;
 				markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 				changed = true;
@@ -816,6 +893,7 @@ function applyVoxelEdit(
 
 		// place
 		if (grid[gIdx] === 0) {
+			beforeMutation?.();
 			grid[gIdx] = colorIndex + 1;
 			markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 			changed = true;
@@ -824,6 +902,76 @@ function applyVoxelEdit(
 	}
 
 	return { changed, sampledColor: null, countDelta };
+}
+
+function applySelectionEdit(
+	grid: EditGrid,
+	dirtyChunks: Set<number>,
+	dims: ChunkDims,
+	selection: TerrainSelection,
+	tool: SelectionEditTool,
+	colorIndex: number,
+	beforeMutation?: () => void,
+): { changed: boolean; countDelta: number } {
+	const { vW, vH, vL } = dims;
+	const next = colorIndex + 1;
+	let changed = false;
+	let countDelta = 0;
+	let changedMin: VoxelCoord | null = null;
+	let changedMax: VoxelCoord | null = null;
+
+	const markChanged = (x: number, y: number, z: number) => {
+		if (!changedMin || !changedMax) {
+			changedMin = { x, y, z };
+			changedMax = { x, y, z };
+		} else {
+			if (x < changedMin.x) changedMin.x = x;
+			if (y < changedMin.y) changedMin.y = y;
+			if (z < changedMin.z) changedMin.z = z;
+			if (x > changedMax.x) changedMax.x = x;
+			if (y > changedMax.y) changedMax.y = y;
+			if (z > changedMax.z) changedMax.z = z;
+		}
+	};
+
+	for (const { x, y, z } of iterateVoxelSelectionSpace(selection, dims)) {
+		if (x < 0 || x >= vW || y < 0 || y >= vH || z < 0 || z >= vL) continue;
+
+		const gIdx = editGridIndex(x, y, z, vW, vL);
+		const cur = grid[gIdx];
+
+		if (tool === "erase") {
+			if (cur === 0) continue;
+			beforeMutation?.();
+			grid[gIdx] = 0;
+			changed = true;
+			countDelta--;
+			markChanged(x, y, z);
+			continue;
+		}
+
+		if (tool === "paint") {
+			if (cur === 0 || cur === next) continue;
+			beforeMutation?.();
+			grid[gIdx] = next;
+			changed = true;
+			markChanged(x, y, z);
+			continue;
+		}
+
+		if (cur === next) continue;
+		beforeMutation?.();
+		if (cur === 0) countDelta++;
+		grid[gIdx] = next;
+		changed = true;
+		markChanged(x, y, z);
+	}
+
+	if (changedMin && changedMax) {
+		markVoxelRangeDirtyChunks({ min: changedMin, max: changedMax }, dirtyChunks, dims);
+	}
+
+	return { changed, countDelta };
 }
 
 // ---------------------------------------------------------------------------
@@ -891,6 +1039,37 @@ function createBoundsFrame(
 		points.push(...corners[a], ...corners[b]);
 	}
 	return createGridLineSegments(points, color, opacity);
+}
+
+function createSelectionBoundsFrame(
+	bounds: VoxelSelectionBounds,
+	dims: ChunkDims,
+	color: number,
+	opacity: number,
+): THREE.LineSegments {
+	const { resolution: r, tW, tL } = dims;
+	const minX = bounds.min.x / r - tW / 2;
+	const maxX = (bounds.max.x + 1) / r - tW / 2;
+	const minY = bounds.min.y / r - 0.5;
+	const maxY = (bounds.max.y + 1) / r - 0.5;
+	const minZ = bounds.min.z / r - tL / 2;
+	const maxZ = (bounds.max.z + 1) / r - tL / 2;
+	const corners = [
+		[minX, minY, minZ], [maxX, minY, minZ], [maxX, minY, maxZ], [minX, minY, maxZ],
+		[minX, maxY, minZ], [maxX, maxY, minZ], [maxX, maxY, maxZ], [minX, maxY, maxZ],
+	];
+	const edges = [
+		[0,1],[1,2],[2,3],[3,0],
+		[4,5],[5,6],[6,7],[7,4],
+		[0,4],[1,5],[2,6],[3,7],
+	];
+	const points: number[] = [];
+	for (const [a, b] of edges) {
+		points.push(...corners[a], ...corners[b]);
+	}
+	const frame = createGridLineSegments(points, color, opacity);
+	frame.renderOrder = 35;
+	return frame;
 }
 
 function addTopRectangle(
@@ -1125,6 +1304,50 @@ function createPlaceGhostGeometry(
 	return geo;
 }
 
+function createSelectionCellGhostGeometry(
+	dims: ChunkDims,
+	index: VoxelTerrainIndex,
+	bounds: VoxelSelectionBounds,
+): THREE.BufferGeometry | null {
+	const positions: number[] = [];
+	const colors:    number[] = [];
+	const indices:   number[] = [];
+	const ghostKeys = new Set<number>();
+
+	for (let y = bounds.min.y; y <= bounds.max.y; y++) {
+		for (let z = bounds.min.z; z <= bounds.max.z; z++) {
+			for (let x = bounds.min.x; x <= bounds.max.x; x++) {
+				if (x < 0 || x >= dims.vW || y < 0 || y >= dims.vH || z < 0 || z >= dims.vL) {
+					continue;
+				}
+				ghostKeys.add(packVoxelKey(x, y, z));
+			}
+		}
+	}
+
+	if (ghostKeys.size === 0) return null;
+
+	const white = new THREE.Color(0xffffff);
+	for (const key of ghostKeys) {
+		const { x, y, z } = unpackVoxelKey(key);
+		const center = getVoxelWorldCenter(index, { x, y, z });
+		for (const face of VOXEL_FACE_DEFINITIONS) {
+			const [dx, dy, dz] = face.neighborOffset;
+			if (ghostKeys.has(packVoxelKey(x + dx, y + dy, z + dz))) continue;
+			addVoxelFaceToGeometry(positions, colors, indices, center, index.voxelSize, face, white, 0);
+		}
+	}
+
+	if (positions.length === 0) return null;
+
+	const geo = new THREE.BufferGeometry();
+	geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+	geo.setAttribute("color",    new THREE.Float32BufferAttribute(colors,    3));
+	geo.setIndex(indices);
+	geo.computeBoundingSphere();
+	return geo;
+}
+
 function createStampGhostGeometry(
 	source: VoxelTerrain,
 	transform: StampTransform,
@@ -1194,6 +1417,38 @@ function updateHoverIndicator(
 	clearObjectGroup(resources.hoverGroup);
 	if (!pick) return;
 
+	if (tool === "boxSelect") {
+		const bounds = getPickSelectionBounds(index, pick, granularity, dims);
+		const geometry = createSelectionCellGhostGeometry(dims, index, bounds);
+		if (!geometry) return;
+		const material = new THREE.MeshBasicMaterial({
+			color: 0x38bdf8,
+			transparent: true,
+			opacity: 0.28,
+			depthWrite: false,
+			vertexColors: false,
+		});
+		const mesh = new THREE.Mesh(geometry, material);
+		mesh.renderOrder = 31;
+		resources.hoverGroup.add(mesh);
+		return;
+	}
+
+	if (tool === "colorSelect") {
+		const geometry = createHoverSurfaceGeometry(grid, dims, index, [pick.voxel]);
+		if (!geometry) return;
+		const material = new THREE.MeshBasicMaterial({
+			transparent: true,
+			opacity: 0.9,
+			depthWrite: false,
+			vertexColors: true,
+		});
+		const mesh = new THREE.Mesh(geometry, material);
+		mesh.renderOrder = 30;
+		resources.hoverGroup.add(mesh);
+		return;
+	}
+
 	// Stamp ghost: render the (transformed) source at the bottom-center anchor
 	// implied by the pick. No-op until a stamp source has been chosen.
 	if (tool === "stamp") {
@@ -1249,6 +1504,29 @@ function updateHoverIndicator(
 	const mesh = new THREE.Mesh(geometry, material);
 	mesh.renderOrder = 30;
 	resources.hoverGroup.add(mesh);
+}
+
+function updateSelectionIndicator(
+	resources: EditorSceneResources,
+	dims: ChunkDims,
+	selection: TerrainSelection | null,
+	previewBounds: VoxelSelectionBounds | null,
+): void {
+	clearObjectGroup(resources.selectionGroup);
+
+	const bounds =
+		previewBounds ??
+		(selection?.kind === "box" ? getVoxelSelectionBounds(selection) : null);
+	if (bounds) {
+		resources.selectionGroup.add(
+			createSelectionBoundsFrame(
+				bounds,
+				dims,
+				previewBounds ? 0xfacc15 : 0x38bdf8,
+				previewBounds ? 0.95 : 0.86,
+			)
+		);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1359,10 +1637,16 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	const stampTransformRef = useRef<StampTransform>(IDENTITY_STAMP_TRANSFORM);
 	const loadStampVoxelsRef = useRef(loadStampVoxels);
 	const previousToolRef   = useRef<EditorTool>("place");
+	// Selection state is kept in refs for pointer handlers and mirrored in
+	// React state for the sidebar.
+	const selectionRef = useRef<TerrainSelection | null>(null);
+	const boxSelectionAnchorRef = useRef<VoxelSelectionBounds | null>(null);
+	const selectionIdRef = useRef(1);
 	// Hover ghost needs to refresh when the stamp transform or source changes
 	// even if the cursor hasn't moved. Scene useEffect assigns to this ref so
 	// the keybind effects can call back into the scene-bound closure.
 	const refreshHoverRef   = useRef<(() => void) | null>(null);
+	const refreshSelectionRef = useRef<(() => void) | null>(null);
 
 	// -------------------------------------------------------------------------
 	// React state
@@ -1383,6 +1667,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	const [stampSource,    setStampSource]    = useState<VoxelTerrain | null>(null);
 	const [stampTransform, setStampTransform] = useState<StampTransform>(IDENTITY_STAMP_TRANSFORM);
 	const [stampLoadingId, setStampLoadingId] = useState<string | null>(null);
+	const [selection, setSelectionState] = useState<TerrainSelection | null>(null);
+	const [boxSelectionAnchor, setBoxSelectionAnchorState] = useState<VoxelSelectionBounds | null>(null);
 	const [previewTerrain, setPreviewTerrain] = useState<VoxelTerrain | null>(null);
 	// editGen ticks on stroke end, undo/redo, and external prop changes.
 	// It gates React-visible updates (sidebar voxel count, grid lines, camera framing).
@@ -1393,21 +1679,35 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		if (!readOnlyRef.current) setDirty(true);
 	}, [setDirty]);
 
+	const setTerrainSelection = useCallback((next: TerrainSelection | null) => {
+		selectionRef.current = next;
+		setSelectionState(next);
+		refreshSelectionRef.current?.();
+	}, []);
+
+	const setBoxSelectionAnchor = useCallback((next: VoxelSelectionBounds | null) => {
+		boxSelectionAnchorRef.current = next;
+		setBoxSelectionAnchorState(next);
+		refreshSelectionRef.current?.();
+	}, []);
+
+	const nextSelectionId = useCallback(() => selectionIdRef.current++, []);
+
 	// Sidebar reads terrainRef for voxel count and dimensions. editGen opts the
 	// expression into React's re-render cycle without re-encoding.
 	void editGen;
-	const displayedTerrain  = terrainRef.current;
 	const voxelCount        = occupiedVoxelCountRef.current;
-	const selectedTool      = TOOL_BUTTONS.find((b) => b.id === tool) ?? TOOL_BUTTONS[0];
-	const resolution        = getVoxelTerrainResolution(displayedTerrain);
-	const tileDimensions    = `${displayedTerrain.Width} x ${displayedTerrain.Length} x ${displayedTerrain.Height}`;
-	const voxelDimensions   =
-		`${displayedTerrain.Width * resolution} x ${displayedTerrain.Length * resolution} x ` +
-		`${displayedTerrain.Height * resolution}`;
-	const brushModeLabel    = granularity === "tactical" ? "Tile Brush" : "Voxel Brush";
 	const lighting = terrain.Lighting;
 	const background = terrain.Background;
 	const backgroundColor = background.Color ?? DEFAULT_VOXEL_TERRAIN_BACKGROUND_COLOR;
+	const selectionSummary = useMemo(() => {
+		const dims = chunkDimsRef.current;
+		if (!selection || !dims) return null;
+		return {
+			bounds: getVoxelSelectionBounds(selection),
+			spaceCount: getVoxelSelectionSpaceCount(selection),
+		};
+	}, [selection, editGen]);
 
 	const createDraftTerrainSnapshot = useCallback((): VoxelTerrain => {
 		const dims = chunkDimsRef.current;
@@ -1452,6 +1752,56 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		if (activeViewRef.current === "preview") refreshPreviewTerrain();
 	};
 
+	const selectVoxelsByColor = useCallback((colorIndex: number) => {
+		const dims = chunkDimsRef.current;
+		if (!dims) return;
+
+		setBoxSelectionAnchor(null);
+		setTerrainSelection(
+			createColorVoxelSelection(
+				editGridRef.current,
+				dims,
+				normalizeVoxelPaletteIndex(colorIndex),
+				nextSelectionId()
+			)
+		);
+	}, [nextSelectionId, setBoxSelectionAnchor, setTerrainSelection]);
+
+	const updateBoxSelectionBound = useCallback((
+		edge: "min" | "max",
+		axis: keyof VoxelCoord,
+		value: number,
+	) => {
+		if (!selectionRef.current || selectionRef.current.kind !== "box") return;
+		const dims = chunkDimsRef.current;
+		if (!dims) return;
+
+		const min = { ...selectionRef.current.bounds.min };
+		const max = { ...selectionRef.current.bounds.max };
+		if (edge === "min") min[axis] = value;
+		else max[axis] = value;
+
+		setTerrainSelection({
+			kind: "box",
+			id: nextSelectionId(),
+			bounds: normalizeVoxelSelectionBounds(min, max, dims),
+		});
+	}, [nextSelectionId, setTerrainSelection]);
+
+	const clearSelection = useCallback(() => {
+		setBoxSelectionAnchor(null);
+		setTerrainSelection(null);
+	}, [setBoxSelectionAnchor, setTerrainSelection]);
+
+	const chooseColorIndex = useCallback((colorIndex: number) => {
+		const normalized = normalizeVoxelPaletteIndex(colorIndex);
+		selectedColorRef.current = normalized;
+		setSelectedColorIndex(normalized);
+		if (toolRef.current === "colorSelect") {
+			selectVoxelsByColor(normalized);
+		}
+	}, [selectVoxelsByColor]);
+
 	// -------------------------------------------------------------------------
 	// Sync refs from props/state
 	// -------------------------------------------------------------------------
@@ -1486,6 +1836,12 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	}, [stampTransform]);
 	useEffect(() => { loadStampVoxelsRef.current = loadStampVoxels; }, [loadStampVoxels]);
 
+	useEffect(() => {
+		if (tool !== "boxSelect" && boxSelectionAnchorRef.current) {
+			setBoxSelectionAnchor(null);
+		}
+	}, [setBoxSelectionAnchor, tool]);
+
 	// -------------------------------------------------------------------------
 	// Terrain prop adoption
 	// -------------------------------------------------------------------------
@@ -1515,6 +1871,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			oldDims.vL !== newDims.vL;
 
 		chunkDimsRef.current = newDims;
+		setTerrainSelection(null);
+		setBoxSelectionAnchor(null);
 
 		// Rebuild editGrid (or resize it if grid dimensions changed).
 		const newGrid = buildEditGrid(terrain, index);
@@ -1529,13 +1887,14 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		if (shapeChanged && resources) {
 			clearAllChunkMeshes(resources.chunkGroup, chunkMeshesRef.current);
 			clearObjectGroup(resources.hoverGroup);
+			clearObjectGroup(resources.selectionGroup);
 			const container = containerRef.current;
 			if (container) frameCamera(resources, terrain, container);
 		}
 
 		markAllChunksDirty(dirtyChunksRef.current, newDims);
 		bumpEditGen();
-	}, [terrain, bumpEditGen]);
+	}, [terrain, bumpEditGen, setBoxSelectionAnchor, setTerrainSelection]);
 
 	// Clear undo history when switching to a different terrain entirely.
 	useEffect(() => {
@@ -1544,7 +1903,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		setUndoDepth(0);
 		setRedoDepth(0);
 		lastShapeSignatureRef.current = null;
-	}, [terrain.Id]);
+		clearSelection();
+	}, [clearSelection, terrain.Id]);
 
 	// -------------------------------------------------------------------------
 	// Draft commit (called once at stroke end -- never per-rAF)
@@ -1587,6 +1947,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			redoStackRef.current = [];
 			setUndoDepth(0);
 			setRedoDepth(0);
+			clearSelection();
 
 			const nextTerrain: VoxelTerrain = {
 				...terrainRef.current,
@@ -1601,6 +1962,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			if (resources) {
 				clearAllChunkMeshes(resources.chunkGroup, chunkMeshesRef.current);
 				clearObjectGroup(resources.hoverGroup);
+				clearObjectGroup(resources.selectionGroup);
 				markAllChunksDirty(dirtyChunksRef.current, result.dims);
 				const container = containerRef.current;
 				if (container) frameCamera(resources, nextTerrain, container);
@@ -1617,7 +1979,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			commitDraftChange();
 			return nextTerrain;
 		},
-		[commitDraftChange]
+		[clearSelection, commitDraftChange]
 	);
 
 	useImperativeHandle(
@@ -1658,6 +2020,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		editGridRef.current.set(previousSnapshot);
 		markAllChunksDirty(dirtyChunksRef.current, dims);
 		occupiedVoxelCountRef.current = countEditGridVoxels(previousSnapshot);
+		refreshSelectionRef.current?.();
 
 		bumpEditGen();
 		markDraftDirty();
@@ -1679,6 +2042,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		editGridRef.current.set(nextSnapshot);
 		markAllChunksDirty(dirtyChunksRef.current, dims);
 		occupiedVoxelCountRef.current = countEditGridVoxels(nextSnapshot);
+		refreshSelectionRef.current?.();
 
 		bumpEditGen();
 		markDraftDirty();
@@ -1688,12 +2052,74 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	// Apply edit (writes directly to editGrid -- no React, no encode)
 	// -------------------------------------------------------------------------
 
+	const captureUndoSnapshot = useCallback(() => {
+		if (!strokeStartSnapshotRef.current) {
+			strokeStartSnapshotRef.current = editGridRef.current.slice();
+		}
+	}, []);
+
 	const applyEdit = useCallback((pick: PickInfo): boolean => {
 		if (readOnlyRef.current) return false;
 
 		const index = getVoxelTerrainIndex(terrainRef.current);
 		const dims  = chunkDimsRef.current;
 		if (!dims) return false;
+
+		if (toolRef.current === "boxSelect") {
+			const pickBounds = getPickSelectionBounds(index, pick, granularityRef.current, dims);
+			const anchor = boxSelectionAnchorRef.current;
+			if (!anchor) {
+				setTerrainSelection(null);
+				setBoxSelectionAnchor(pickBounds);
+			} else {
+				setTerrainSelection({
+					kind: "box",
+					id: nextSelectionId(),
+					bounds: combineVoxelSelectionBounds(anchor, pickBounds, dims),
+				});
+				setBoxSelectionAnchor(null);
+			}
+			return false;
+		}
+
+		if (toolRef.current === "colorSelect") {
+			const sampledColor = editGridGetColor(
+				editGridRef.current,
+				pick.voxel.x,
+				pick.voxel.y,
+				pick.voxel.z,
+				dims.vW,
+				dims.vH,
+				dims.vL
+			);
+			if (sampledColor === null) return false;
+			selectedColorRef.current = sampledColor;
+			setSelectedColorIndex(sampledColor);
+			selectVoxelsByColor(sampledColor);
+			return false;
+		}
+
+		const activeSelection = selectionRef.current;
+		if (activeSelection && isSelectionEditTool(toolRef.current)) {
+			const selectionResult = applySelectionEdit(
+				editGridRef.current,
+				dirtyChunksRef.current,
+				dims,
+				activeSelection,
+				toolRef.current,
+				selectedColorRef.current,
+				captureUndoSnapshot,
+			);
+			if (!selectionResult.changed) return false;
+			occupiedVoxelCountRef.current += selectionResult.countDelta;
+			refreshSelectionRef.current?.();
+
+			if (!strokeStartedRef.current) {
+				recordUndo();
+				strokeStartedRef.current = true;
+			}
+			return true;
+		}
 
 		// Stamp tool diverges from the brush flow: it writes the hydrated
 		// source's voxels at a bottom-center anchor derived from the pick.
@@ -1714,6 +2140,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				anchor,
 				source,
 				stampTransformRef.current,
+				captureUndoSnapshot,
 			);
 			if (!stampResult.changed) return false;
 			occupiedVoxelCountRef.current += stampResult.countDelta;
@@ -1734,6 +2161,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			granularityRef.current,
 			brushSizeRef.current,
 			selectedColorRef.current,
+			captureUndoSnapshot,
 		);
 
 		if (result.sampledColor !== null) {
@@ -1755,7 +2183,14 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		// No schedulePendingTerrainChange here. The rAF loop rebuilds dirty chunks
 		// automatically; persisted encoding is deferred until the form saves.
 		return true;
-	}, [recordUndo]);
+	}, [
+		captureUndoSnapshot,
+		nextSelectionId,
+		recordUndo,
+		selectVoxelsByColor,
+		setBoxSelectionAnchor,
+		setTerrainSelection,
+	]);
 
 	// -------------------------------------------------------------------------
 	// Stamp mode entry/exit
@@ -2010,8 +2445,9 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		// --- Scene groups ---
 		const gridGroup  = new THREE.Group();
 		const hoverGroup = new THREE.Group();
+		const selectionGroup = new THREE.Group();
 		const chunkGroup = new THREE.Group();
-		scene.add(gridGroup, hoverGroup, chunkGroup);
+		scene.add(gridGroup, selectionGroup, hoverGroup, chunkGroup);
 
 		const terrainMaterial = new THREE.MeshStandardMaterial({
 			roughness: 0.78,
@@ -2021,7 +2457,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 		const resources: EditorSceneResources = {
 			scene, camera, renderer, controls,
-			gridGroup, hoverGroup, chunkGroup,
+			gridGroup, hoverGroup, selectionGroup, chunkGroup,
 			terrainMaterial,
 		};
 		resourcesRef.current = resources;
@@ -2122,12 +2558,49 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		// Caches the most recent pick so external callers (stamp R/M presses)
 		// can re-render the ghost without a new pointer event.
 		let lastHoverPick: PickInfo | null = null;
+		const refreshSelection = (pick: PickInfo | null = lastHoverPick) => {
+			const dims = chunkDimsRef.current;
+			if (!dims) return;
+			if (activeViewRef.current !== "edit") {
+				clearObjectGroup(resources.selectionGroup);
+				return;
+			}
+
+			const previewBounds =
+				toolRef.current === "boxSelect" && boxSelectionAnchorRef.current && pick
+					? combineVoxelSelectionBounds(
+						boxSelectionAnchorRef.current,
+						getPickSelectionBounds(
+							getVoxelTerrainIndex(terrainRef.current),
+							pick,
+							granularityRef.current,
+							dims
+						),
+						dims
+					)
+					: null;
+
+			updateSelectionIndicator(
+				resources,
+				dims,
+				selectionRef.current,
+				previewBounds,
+			);
+		};
 		const refreshHover = (pick: PickInfo | null) => {
 			lastHoverPick = pick;
 			const dims = chunkDimsRef.current;
 			if (!dims) return;
 			if (activeViewRef.current !== "edit") {
 				clearObjectGroup(resources.hoverGroup);
+				refreshSelection(pick);
+				return;
+			}
+			if (
+				(selectionRef.current && isSelectionEditTool(toolRef.current))
+			) {
+				clearObjectGroup(resources.hoverGroup);
+				refreshSelection(pick);
 				return;
 			}
 			updateHoverIndicator(
@@ -2143,8 +2616,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				stampSourceRef.current,
 				stampTransformRef.current,
 			);
+			refreshSelection(pick);
 		};
 		refreshHoverRef.current = () => refreshHover(lastHoverPick);
+		refreshSelectionRef.current = () => refreshSelection(lastHoverPick);
 
 		const getPickForStroke = (
 			event: PointerEvent,
@@ -2185,7 +2660,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				!activeStroke ||
 				!pick ||
 				toolRef.current === "sample" ||
-				toolRef.current === "stamp"
+				toolRef.current === "stamp" ||
+				toolRef.current === "boxSelect" ||
+				toolRef.current === "colorSelect" ||
+				(selectionRef.current && isSelectionEditTool(toolRef.current))
 			) return;
 
 			if (!activeStroke.dragStarted) {
@@ -2225,13 +2703,15 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			};
 			activeStrokeRef.current        = activeStroke;
 			strokeStartedRef.current       = false;
-			strokeStartSnapshotRef.current = editGridRef.current.slice();
+			strokeStartSnapshotRef.current = null;
 			lastEditKeyRef.current         = getEditKey(pick);
 
+			const wasSelectionTool =
+				toolRef.current === "boxSelect" || toolRef.current === "colorSelect";
 			const wasSampleTool = toolRef.current === "sample";
 			applyEdit(pick);
 			refreshHover(getPickForStroke(event, activeStroke));
-			if (wasSampleTool) {
+			if (wasSampleTool || wasSelectionTool) {
 				renderer.domElement.releasePointerCapture(event.pointerId);
 				clearStrokeState();
 			}
@@ -2285,6 +2765,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			terrainMaterial.dispose();
 			disposeObjectTree(gridGroup);
 			disposeObjectTree(hoverGroup);
+			disposeObjectTree(selectionGroup);
 			renderer.dispose();
 			if (renderer.domElement.parentElement === container) {
 				container.removeChild(renderer.domElement);
@@ -2292,6 +2773,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			activeStrokeRef.current = null;
 			resourcesRef.current    = null;
 			refreshHoverRef.current = null;
+			refreshSelectionRef.current = null;
 		};
 	}, [applyEdit, commitDraftChange, getEditKey, getLockedPlanePickInfo, getPickInfo]);
 
@@ -2326,7 +2808,12 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			activeView === "edit" && showTacticalGrid,
 			activeView === "edit" && showVoxelGrid
 		);
-		if (activeView !== "edit") clearObjectGroup(resources.hoverGroup);
+		if (activeView !== "edit") {
+			clearObjectGroup(resources.hoverGroup);
+			clearObjectGroup(resources.selectionGroup);
+		} else {
+			refreshSelectionRef.current?.();
+		}
 		if (activeView === "preview") {
 			refreshPreviewTerrain();
 		}
@@ -2387,18 +2874,34 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				}
 			}
 
+			if (key === "escape" && (selectionRef.current || boxSelectionAnchorRef.current)) {
+				event.preventDefault();
+				clearSelection();
+				return;
+			}
+
 			switch (key) {
 				case "p": case "t": setTool("place");  break;
 				case "r":           setTool("erase");  break;
 				case "g":           setTool("paint");  break;
 				case "i":           setTool("sample"); break;
+				case "b":
+					if (selectionRef.current?.kind === "mask") clearSelection();
+					setTool("boxSelect");
+					break;
+				case "c":
+					if (selectionRef.current?.kind === "box" || boxSelectionAnchorRef.current) {
+						clearSelection();
+					}
+					setTool("colorSelect");
+					break;
 				case "1":           setGranularity("tactical"); break;
 				case "2":           setGranularity("voxel");    break;
 			}
 		};
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [exitStampMode, redo, undo]);
+	}, [clearSelection, exitStampMode, redo, undo]);
 
 	// -------------------------------------------------------------------------
 	// VOX import
@@ -2449,11 +2952,49 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			redoStackRef.current = [];
 			setUndoDepth(0);
 			setRedoDepth(0);
+			clearSelection();
 			setVoxImportModal(null);
 			onChangeRef.current(nextTerrain);
 		},
-		[],
+		[clearSelection],
 	);
+
+	const boxSelectionBounds =
+		selection?.kind === "box" ? selectionSummary?.bounds ?? null : null;
+	const activeSelectionTool =
+		boxSelectionAnchor || selection?.kind === "box"
+			? "boxSelect"
+			: selection?.kind === "mask"
+			? "colorSelect"
+			: null;
+	const selectionColorIndex =
+		selection?.kind === "mask"
+			? selection.colorIndex ?? selectedColorIndex
+			: selectedColorIndex;
+	const selectionColorHex =
+		TERRAIN_PALETTE[selectionColorIndex] ?? TERRAIN_PALETTE[DEFAULT_TERRAIN_COLOR_INDEX];
+	const handleToolButtonClick = (buttonId: EditorTool) => {
+		if (buttonId === "boxSelect" || buttonId === "colorSelect") {
+			if (activeSelectionTool === buttonId) {
+				clearSelection();
+				return;
+			}
+			if (activeSelectionTool && activeSelectionTool !== buttonId) {
+				clearSelection();
+			}
+		}
+		setTool(buttonId);
+	};
+	const getToolButtonClass = (buttonId: EditorTool): string => {
+		const base = "btn btn-square btn-sm join-item";
+		const isSelectButton = buttonId === "boxSelect" || buttonId === "colorSelect";
+		const hasActiveSelection = activeSelectionTool === buttonId;
+		if (hasActiveSelection) {
+			return `${base} btn-primary hover:bg-error hover:border-error hover:text-error-content`;
+		}
+		if (isSelectButton && tool === buttonId) return `${base} btn-primary`;
+		return `${base} ${tool === buttonId ? "btn-neutral" : "btn-outline"}`;
+	};
 
 	// -------------------------------------------------------------------------
 	// Render
@@ -2470,9 +3011,13 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 								<button
 									key={button.id}
 									type="button"
-									className={`btn btn-square btn-sm join-item ${tool === button.id ? "btn-neutral" : "btn-outline"}`}
-									onClick={() => setTool(button.id)}
-									title={`${button.label} (${button.shortcut})`}
+									className={getToolButtonClass(button.id)}
+									onClick={() => handleToolButtonClick(button.id)}
+									title={
+										activeSelectionTool === button.id
+											? `Clear ${button.label.toLowerCase()} selection`
+											: `${button.label} (${button.shortcut})`
+									}
 									aria-label={`${button.label} (shortcut ${button.shortcut})`}
 								>
 									<span className={`${button.icon} w-5 h-5`} />
@@ -2634,6 +3179,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 										<tr><td className="opacity-70 py-0.5">Erase</td><td className="text-right"><kbd className="kbd kbd-sm">R</kbd></td></tr>
 										<tr><td className="opacity-70 py-0.5">Paint</td><td className="text-right"><kbd className="kbd kbd-sm">G</kbd></td></tr>
 										<tr><td className="opacity-70 py-0.5">Sample (eyedropper)</td><td className="text-right"><kbd className="kbd kbd-sm">I</kbd></td></tr>
+										<tr><td className="opacity-70 py-0.5">Box select</td><td className="text-right"><kbd className="kbd kbd-sm">B</kbd></td></tr>
+										<tr><td className="opacity-70 py-0.5">Color select</td><td className="text-right"><kbd className="kbd kbd-sm">C</kbd></td></tr>
 										<tr><td className="opacity-70 py-0.5">Tile brush</td><td className="text-right"><kbd className="kbd kbd-sm">1</kbd></td></tr>
 										<tr><td className="opacity-70 py-0.5">Voxel brush</td><td className="text-right"><kbd className="kbd kbd-sm">2</kbd></td></tr>
 										<tr>
@@ -2891,22 +3438,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 						<div className="text-sm font-semibold mb-2">Info</div>
 						<div className="space-y-1 text-xs text-base-content/75">
 							<div className="flex justify-between gap-3">
-								<span>Tool</span>
-								<span className="font-medium text-base-content">{selectedTool.label}</span>
-							</div>
-							<div className="flex justify-between gap-3">
-								<span>Brush</span>
-								<span className="font-medium text-base-content">{brushModeLabel} {brushSize}</span>
-							</div>
-							<div className="flex justify-between gap-3">
-								<span>Tiles W x L x H</span>
-								<span className="font-medium text-base-content">{tileDimensions}</span>
-							</div>
-							<div className="flex justify-between gap-3">
-								<span>Voxels W x L x H</span>
-								<span className="font-medium text-base-content">{voxelDimensions}</span>
-							</div>
-							<div className="flex justify-between gap-3">
 								<span>Count</span>
 								<span className="font-medium text-base-content">
 									{voxelCount.toLocaleString()}
@@ -2914,6 +3445,103 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 							</div>
 						</div>
 					</div>
+
+					{(selection || boxSelectionAnchor || tool === "boxSelect" || tool === "colorSelect") && (
+					<div>
+						<div className="text-sm font-semibold mb-2">Selection</div>
+						<div className="space-y-2 text-xs">
+							{selectionSummary && (
+								<div className="flex justify-between gap-3 text-base-content/75">
+									<span>Selected</span>
+									<span className="font-medium text-base-content">
+										{selectionSummary.spaceCount.toLocaleString()}
+									</span>
+								</div>
+							)}
+							{selection?.kind === "mask" && (
+								<div className="flex items-center justify-between gap-3 text-base-content/75">
+									<span>Color</span>
+									<span className="flex items-center gap-2 font-medium text-base-content">
+										<span
+											className="inline-block h-4 w-4 rounded-sm border border-base-300"
+											style={{ backgroundColor: selectionColorHex }}
+										/>
+										{selectionColorIndex}
+									</span>
+								</div>
+							)}
+							{tool === "colorSelect" && selection?.kind !== "mask" && (
+								<div className="flex items-center justify-between gap-3 text-base-content/75">
+									<span>Color</span>
+									<span className="flex items-center gap-2 font-medium text-base-content">
+										<span
+											className="inline-block h-4 w-4 rounded-sm border border-base-300"
+											style={{ backgroundColor: selectionColorHex }}
+										/>
+										{selectionColorIndex}
+									</span>
+								</div>
+							)}
+							{boxSelectionAnchor && !selection && (
+								<div className="rounded border border-warning/40 bg-warning/10 px-2 py-1 text-warning-content">
+									Anchor {boxSelectionAnchor.min.x}, {boxSelectionAnchor.min.y}, {boxSelectionAnchor.min.z}
+								</div>
+							)}
+							{boxSelectionBounds && (
+								<div className="grid grid-cols-[auto_1fr_1fr_1fr] items-center gap-1">
+									<span className="text-base-content/60" />
+									<span className="text-center text-base-content/60">X</span>
+									<span className="text-center text-base-content/60">Y</span>
+									<span className="text-center text-base-content/60">Z</span>
+									<span className="text-base-content/60">Min</span>
+									{(["x", "y", "z"] as Array<keyof VoxelCoord>).map((axis) => (
+										<input
+											key={`min-${axis}`}
+											type="number"
+											className="input input-bordered input-xs min-w-0 px-1 text-center"
+											value={boxSelectionBounds.min[axis]}
+											min={0}
+											max={
+												axis === "x"
+													? (chunkDimsRef.current?.vW ?? 1) - 1
+													: axis === "y"
+													? (chunkDimsRef.current?.vH ?? 1) - 1
+													: (chunkDimsRef.current?.vL ?? 1) - 1
+											}
+											disabled={readOnly || selection?.kind !== "box"}
+											readOnly={readOnly || selection?.kind !== "box"}
+											onChange={(e) =>
+												updateBoxSelectionBound("min", axis, Number(e.target.value))
+											}
+										/>
+									))}
+									<span className="text-base-content/60">Max</span>
+									{(["x", "y", "z"] as Array<keyof VoxelCoord>).map((axis) => (
+										<input
+											key={`max-${axis}`}
+											type="number"
+											className="input input-bordered input-xs min-w-0 px-1 text-center"
+											value={boxSelectionBounds.max[axis]}
+											min={0}
+											max={
+												axis === "x"
+													? (chunkDimsRef.current?.vW ?? 1) - 1
+													: axis === "y"
+													? (chunkDimsRef.current?.vH ?? 1) - 1
+													: (chunkDimsRef.current?.vL ?? 1) - 1
+											}
+											disabled={readOnly || selection?.kind !== "box"}
+											readOnly={readOnly || selection?.kind !== "box"}
+											onChange={(e) =>
+												updateBoxSelectionBound("max", axis, Number(e.target.value))
+											}
+										/>
+									))}
+								</div>
+							)}
+						</div>
+					</div>
+					)}
 
 					<div>
 						<div className="text-sm font-semibold mb-2">Color</div>
@@ -2927,7 +3555,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 									type="button"
 									className={`aspect-square${selectedColorIndex === idx ? " ring-2 ring-base-content ring-inset" : ""}`}
 									style={{ backgroundColor: color }}
-									onClick={() => setSelectedColorIndex(idx)}
+									onClick={() => chooseColorIndex(idx)}
 									title={`Color ${idx}`}
 									aria-label={`Color ${idx}`}
 								/>

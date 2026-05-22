@@ -1,0 +1,198 @@
+export interface VoxelCoord {
+	x: number;
+	y: number;
+	z: number;
+}
+
+export interface VoxelGridDims {
+	vW: number;
+	vH: number;
+	vL: number;
+}
+
+export interface VoxelSelectionBounds {
+	min: VoxelCoord;
+	max: VoxelCoord;
+}
+
+export type TerrainSelection =
+	| {
+		kind: "box";
+		id: number;
+		bounds: VoxelSelectionBounds;
+	}
+	| {
+		kind: "mask";
+		id: number;
+		label: string;
+		mask: Uint8Array;
+		selectedCount: number;
+		bounds: VoxelSelectionBounds | null;
+		colorIndex?: number;
+	};
+
+function clampInt(value: number, min: number, max: number): number {
+	return Math.max(min, Math.min(max, Math.floor(value) || 0));
+}
+
+export function clampVoxelCoord(coord: VoxelCoord, dims: VoxelGridDims): VoxelCoord {
+	return {
+		x: clampInt(coord.x, 0, Math.max(0, dims.vW - 1)),
+		y: clampInt(coord.y, 0, Math.max(0, dims.vH - 1)),
+		z: clampInt(coord.z, 0, Math.max(0, dims.vL - 1)),
+	};
+}
+
+export function normalizeVoxelSelectionBounds(
+	a: VoxelCoord,
+	b: VoxelCoord,
+	dims: VoxelGridDims
+): VoxelSelectionBounds {
+	const ca = clampVoxelCoord(a, dims);
+	const cb = clampVoxelCoord(b, dims);
+	return {
+		min: {
+			x: Math.min(ca.x, cb.x),
+			y: Math.min(ca.y, cb.y),
+			z: Math.min(ca.z, cb.z),
+		},
+		max: {
+			x: Math.max(ca.x, cb.x),
+			y: Math.max(ca.y, cb.y),
+			z: Math.max(ca.z, cb.z),
+		},
+	};
+}
+
+export function combineVoxelSelectionBounds(
+	a: VoxelSelectionBounds,
+	b: VoxelSelectionBounds,
+	dims: VoxelGridDims
+): VoxelSelectionBounds {
+	return normalizeVoxelSelectionBounds(
+		{
+			x: Math.min(a.min.x, b.min.x),
+			y: Math.min(a.min.y, b.min.y),
+			z: Math.min(a.min.z, b.min.z),
+		},
+		{
+			x: Math.max(a.max.x, b.max.x),
+			y: Math.max(a.max.y, b.max.y),
+			z: Math.max(a.max.z, b.max.z),
+		},
+		dims
+	);
+}
+
+export function getVoxelSelectionBounds(
+	selection: TerrainSelection | null
+): VoxelSelectionBounds | null {
+	if (!selection) return null;
+	return selection.kind === "box" ? selection.bounds : selection.bounds;
+}
+
+export function getVoxelSelectionSpaceCount(selection: TerrainSelection): number {
+	if (selection.kind === "mask") return selection.selectedCount;
+
+	const { min, max } = selection.bounds;
+	return (
+		(max.x - min.x + 1) *
+		(max.y - min.y + 1) *
+		(max.z - min.z + 1)
+	);
+}
+
+export function editGridOffsetToVoxelCoord(
+	offset: number,
+	dims: VoxelGridDims
+): VoxelCoord {
+	const layerSize = dims.vW * dims.vL;
+	const y = Math.floor(offset / layerSize);
+	const rem = offset - y * layerSize;
+	const z = Math.floor(rem / dims.vW);
+	const x = rem - z * dims.vW;
+	return { x, y, z };
+}
+
+export function createColorVoxelSelection(
+	grid: Uint8Array,
+	dims: VoxelGridDims,
+	colorIndex: number,
+	id: number
+): TerrainSelection {
+	const mask = new Uint8Array(grid.length);
+	const target = colorIndex + 1;
+	let selectedCount = 0;
+	let min: VoxelCoord | null = null;
+	let max: VoxelCoord | null = null;
+
+	for (let i = 0; i < grid.length; i++) {
+		if (grid[i] !== target) continue;
+
+		mask[i] = 1;
+		selectedCount++;
+
+		const coord = editGridOffsetToVoxelCoord(i, dims);
+		if (!min || !max) {
+			min = { ...coord };
+			max = { ...coord };
+		} else {
+			if (coord.x < min.x) min.x = coord.x;
+			if (coord.y < min.y) min.y = coord.y;
+			if (coord.z < min.z) min.z = coord.z;
+			if (coord.x > max.x) max.x = coord.x;
+			if (coord.y > max.y) max.y = coord.y;
+			if (coord.z > max.z) max.z = coord.z;
+		}
+	}
+
+	return {
+		kind: "mask",
+		id,
+		label: `Color ${colorIndex}`,
+		mask,
+		selectedCount,
+		bounds: min && max ? { min, max } : null,
+		colorIndex,
+	};
+}
+
+export function* iterateVoxelSelectionSpace(
+	selection: TerrainSelection,
+	dims: VoxelGridDims
+): Generator<VoxelCoord> {
+	if (selection.kind === "box") {
+		const { min, max } = selection.bounds;
+		for (let y = min.y; y <= max.y; y++) {
+			for (let z = min.z; z <= max.z; z++) {
+				for (let x = min.x; x <= max.x; x++) {
+					yield { x, y, z };
+				}
+			}
+		}
+		return;
+	}
+
+	for (let i = 0; i < selection.mask.length; i++) {
+		if (selection.mask[i] !== 0) {
+			yield editGridOffsetToVoxelCoord(i, dims);
+		}
+	}
+}
+
+export function countSelectedOccupiedVoxels(
+	selection: TerrainSelection,
+	grid: Uint8Array,
+	dims: VoxelGridDims
+): number {
+	let count = 0;
+
+	for (const { x, y, z } of iterateVoxelSelectionSpace(selection, dims)) {
+		if (x < 0 || x >= dims.vW || y < 0 || y >= dims.vH || z < 0 || z >= dims.vL) {
+			continue;
+		}
+		if (grid[x + z * dims.vW + y * dims.vW * dims.vL] !== 0) count++;
+	}
+
+	return count;
+}
