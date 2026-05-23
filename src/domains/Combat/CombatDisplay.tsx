@@ -61,6 +61,14 @@ export function CombatDisplay() {
 				.filter((e) => e.Order === activeOrder)
 				.map((e) => allActors.find((a) => a.Id === e.ActorId)?.Name ?? "Unknown")
 			: [];
+	// When many actors share the same initiative order, the "A or B or C or D
+	// or E..." banner gets unwieldy. Cap the list at three names and append
+	// "etc." to keep the banner readable.
+	const ACTIVE_NAME_DISPLAY_LIMIT = 3;
+	const activeActorNamesDisplay =
+		activeActorNames.length > ACTIVE_NAME_DISPLAY_LIMIT
+			? activeActorNames.slice(0, ACTIVE_NAME_DISPLAY_LIMIT).join(" or ") + ", etc."
+			: activeActorNames.join(" or ");
 	// Banner is shown whenever there's an initiative chain for the current
 	// acting pool. In party mode that's the party (party round) or entities
 	// (enemy round); in individual mode it's the whole group.
@@ -130,7 +138,7 @@ export function CombatDisplay() {
 					)}
 					{showActiveBanner && activeActorNames.length > 0 && (
 						<div className="text-lg">
-							It is now <span className="font-semibold">{activeActorNames.join(" or ")}</span>'s turn
+							It is now <span className="font-semibold">{activeActorNamesDisplay}</span>'s turn
 						</div>
 					)}
 					{showActiveBanner && activeActorNames.length === 0 && (
@@ -234,7 +242,7 @@ export function CombatDisplay() {
 					{/* Active actor banner -- lowest-order actor not yet done. */}
 					{showActiveBanner && activeActorNames.length > 0 && (
 						<div className="text-lg">
-							It is now <span className="font-semibold">{activeActorNames.join(" or ")}</span>'s turn
+							It is now <span className="font-semibold">{activeActorNamesDisplay}</span>'s turn
 						</div>
 					)}
 					{showActiveBanner && activeActorNames.length === 0 && (
