@@ -664,8 +664,12 @@ export function DiceRoller() {
 
 	const handleAddDie = (sides: number) => {
 		setFormula((f) => {
-			const next = addDieToFormula(f, sides);
-			return normalizeSafe(next);
+			try {
+				return normalizeSafe(addDieToFormula(f, sides));
+			} catch {
+				// Current formula is unparseable — discard it and start fresh
+				return `1d${sides}`;
+			}
 		});
 		if (!isOpen) persistOpen(true);
 	};
