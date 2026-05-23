@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { THREE_D_TERRAIN_MATERIAL } from '../threeDMapConstants';
 import { SPECIAL_MATERIAL_REGISTRY } from './allMaterials';
 import type { TerrainShaderExtension } from './types';
+import type { VoxelTerrainLighting } from '../../../domains/VoxelTerrain/VoxelTerrain';
 
 export interface TerrainMaterialBundle {
 	material: THREE.MeshStandardMaterial;
@@ -27,6 +28,10 @@ export interface TerrainMaterialBundle {
 	 * (in ms). Internally calls every extension's tickTime if it provided one.
 	 */
 	tickTime: (now: number) => void;
+}
+
+export interface SpecialMaterialsExtension extends TerrainShaderExtension {
+	setTerrainLighting: (lighting: VoxelTerrainLighting | null | undefined) => void;
 }
 
 /**
@@ -108,11 +113,21 @@ export function createTerrainMaterial(
  * advance. Safe to use when the registry is empty -- the dispatcher becomes a
  * no-op stub.
  */
-export function createSpecialMaterialsExtension(): TerrainShaderExtension {
+export function createSpecialMaterialsExtension(
+	lighting?: VoxelTerrainLighting | null
+): SpecialMaterialsExtension {
 	const uTime = { value: 0 };
+	const uTerrainLightColor = { value: new THREE.Color('#ffffff') };
+	const uTerrainLightIntensity = { value: 1.15 };
+
+	const setTerrainLighting = (nextLighting: VoxelTerrainLighting | null | undefined) => {
+		uTerrainLightColor.value.set(nextLighting?.Color ?? '#ffffff');
+		uTerrainLightIntensity.value = Math.max(0, nextLighting?.Intensity ?? 1.15);
+	};
+	setTerrainLighting(lighting);
 
 	return {
-		uniforms: { uTime },
+		uniforms: { uTime, uTerrainLightColor, uTerrainLightIntensity },
 		vertexHeaderGLSL: [
 			'uniform float uTime;',
 			'attribute float voxelMaterialSlot;',
@@ -125,6 +140,8 @@ export function createSpecialMaterialsExtension(): TerrainShaderExtension {
 		].join('\n'),
 		fragmentHeaderGLSL: [
 			'uniform float uTime;',
+			'uniform vec3 uTerrainLightColor;',
+			'uniform float uTerrainLightIntensity;',
 			'varying float vVoxelMaterialSlot;',
 			SPECIAL_MATERIAL_REGISTRY.buildFragmentGLSL(),
 		].join('\n'),
@@ -133,5 +150,6 @@ export function createSpecialMaterialsExtension(): TerrainShaderExtension {
 		tickTime: (now) => {
 			uTime.value = now / 1000;
 		},
+		setTerrainLighting,
 	};
 }

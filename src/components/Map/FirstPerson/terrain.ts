@@ -1,6 +1,9 @@
 import { useEffect, useRef, type RefObject } from "react";
 import * as THREE from "three";
-import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import type {
+	VoxelTerrain,
+	VoxelTerrainLighting,
+} from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCount } from "../../../utils/terrain/data/VoxelDataUtils";
 import { getMaxVoxelSurfaceHeight } from "../../../utils/terrain/data/VoxelTerrainUtils";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
@@ -22,6 +25,7 @@ interface TerrainRenderResources {
 	mesh: THREE.Mesh;
 	geometry: THREE.BufferGeometry;
 	material: THREE.MeshStandardMaterial;
+	setSpecialMaterialsLighting: (lighting: VoxelTerrainLighting | null | undefined) => void;
 }
 
 function disposeTerrainResources(resources: TerrainRenderResources): void {
@@ -136,8 +140,9 @@ export function useFirstPersonTerrain(
 			return;
 		}
 
+		const specialMaterialsExtension = createSpecialMaterialsExtension(terrain?.Lighting);
 		const { material, tickTime } = createTerrainMaterial([
-			createSpecialMaterialsExtension(),
+			specialMaterialsExtension,
 		]);
 		resources.animationCallbacks.add(tickTime);
 
@@ -158,10 +163,18 @@ export function useFirstPersonTerrain(
 			mesh,
 			geometry: terrainGeometry.geometry,
 			material,
+			setSpecialMaterialsLighting: specialMaterialsExtension.setTerrainLighting,
 		};
 
 		return () => {
 			resources.animationCallbacks.delete(tickTime);
 		};
 	}, [resources, terrainGeometry]);
+
+	useEffect(() => {
+		terrainResourcesRef.current?.setSpecialMaterialsLighting(terrain?.Lighting);
+	}, [
+		terrainLighting?.Color,
+		terrainLighting?.Intensity,
+	]);
 }

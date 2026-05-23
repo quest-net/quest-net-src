@@ -19,7 +19,10 @@ import {
 	calculateVoxelMovementRange,
 	calculateVoxelRemainingMovementRange,
 } from '../../utils/terrain/movement/VoxelMovementUtilities';
-import type { VoxelTerrain } from '../../domains/VoxelTerrain/VoxelTerrain';
+import type {
+	VoxelTerrain,
+	VoxelTerrainLighting,
+} from '../../domains/VoxelTerrain/VoxelTerrain';
 import { useMapState } from './MapStateProvider';
 import { ThreeDActorLayer } from './Actors3D/ThreeDActorLayer';
 import { ThreeDMovementLayer } from './Movement3D/ThreeDMovementLayer';
@@ -74,6 +77,7 @@ interface TerrainRenderResources {
 	material: THREE.MeshStandardMaterial;
 	movementHighlight: ReturnType<typeof createMovementHighlightTexture>;
 	tickTime: (now: number) => void;
+	setSpecialMaterialsLighting: (lighting: VoxelTerrainLighting | null | undefined) => void;
 }
 
 function disposeTerrainResources(resources: TerrainRenderResources): void {
@@ -700,8 +704,9 @@ export default function ThreeDMap({
 		);
 		// Order matters: special materials run first in the fragment body so
 		// the movement highlight overlays animated water etc.
+		const specialMaterialsExtension = createSpecialMaterialsExtension(terrain?.Lighting);
 		const { material, tickTime } = createTerrainMaterial([
-			createSpecialMaterialsExtension(),
+			specialMaterialsExtension,
 			createMovementHighlightExtension(movementHighlight),
 		]);
 		const mesh = new THREE.Mesh(terrainGeometry.geometry, material);
@@ -726,8 +731,16 @@ export default function ThreeDMap({
 			material,
 			movementHighlight,
 			tickTime,
+			setSpecialMaterialsLighting: specialMaterialsExtension.setTerrainLighting,
 		};
 	}, [terrainGeometry]);
+
+	useEffect(() => {
+		terrainResourcesRef.current?.setSpecialMaterialsLighting(terrain?.Lighting);
+	}, [
+		terrainLighting?.Color,
+		terrainLighting?.Intensity,
+	]);
 
 	return (
 		<div className="relative w-full h-full">
