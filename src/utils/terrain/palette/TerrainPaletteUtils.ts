@@ -119,22 +119,6 @@ export const TERRAIN_PALETTE: readonly string[] = buildPalette();
 // Default: light grey (greyscale family, brightest level)
 export const DEFAULT_TERRAIN_COLOR_INDEX = TERRAIN_PALETTE_ROWS - 1; // index 11
 
-// ---------------------------------------------------------------------------
-// Special materials live in palette indices 240-255 and have animated runtime
-// shaders -- the editor shows a static placeholder colour instead. The registry
-// (Map/Materials) owns those placeholder colours; this util just delegates.
-// ---------------------------------------------------------------------------
-import {
-	SPECIAL_MATERIAL_REGISTRY,
-	isSpecialMaterialIndex,
-} from '../../../components/Map/Materials/allMaterials';
-
 export function getTerrainColorByIndex(index: number): string {
-	if (isSpecialMaterialIndex(index)) {
-		return (
-			SPECIAL_MATERIAL_REGISTRY.getEditorColor(index) ??
-			TERRAIN_PALETTE[DEFAULT_TERRAIN_COLOR_INDEX]
-		);
-	}
 	return TERRAIN_PALETTE[index] ?? TERRAIN_PALETTE[DEFAULT_TERRAIN_COLOR_INDEX];
 }

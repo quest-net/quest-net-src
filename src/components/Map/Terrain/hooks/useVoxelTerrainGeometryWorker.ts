@@ -13,7 +13,6 @@ interface VoxelGeometryWorkerResponse {
 	tileCoords: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
-	materialSlots: Float32Array;
 	indices: Uint32Array;
 }
 
@@ -24,7 +23,6 @@ interface VoxelGeometryBufferPayload {
 	tileCoords: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
-	materialSlots: Float32Array;
 	indices: Uint32Array;
 }
 
@@ -77,7 +75,6 @@ function payloadFromWorkerResponse(
 		tileCoords:         data.tileCoords,
 		tileHeights:        data.tileHeights,
 		highlightStrengths: data.highlightStrengths,
-		materialSlots:      data.materialSlots,
 		indices:            data.indices,
 	};
 }
