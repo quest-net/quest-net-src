@@ -171,6 +171,18 @@ export class ActionService {
 		const refreshedInfo =
 			CampaignLoadingService.buildPlayerInfo(isolatedCampaign);
 
+		// Keep the captured context in lockstep with React state. The mutator
+		// below lands the new ActiveCampaign on the live React state, but
+		// action handlers invoked via runDomainAction read from this.context.
+		// Without this direct assignment, a player who joins a campaign for
+		// the first time while another campaign was previously active ends up
+		// with a stale this.context.ActiveCampaign === null, and every
+		// subsequent action throws "No active campaign for identifier: ...".
+		// (Inner-reference fields like Campaigns[] propagate automatically
+		// through the shallow spread, so only top-level reassignments need
+		// this extra step.)
+		this.context.ActiveCampaign = isolatedCampaign;
+
 		// Use the mutator form of triggerContextUpdate so that reassigning the
 		// top-level ActiveCampaign field lands on the live React state rather
 		// than the stale context object we captured at construction.
