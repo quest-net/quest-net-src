@@ -186,8 +186,12 @@ export function Main() {
 		// Clear indicators when switching to that tab
 		if (tab === "inventory") {
 			setShowInventoryIndicator(false);
+		} else if (tab === "equipment") {
+			setShowEquipmentIndicator(false);
 		} else if (tab === "skills") {
 			setShowSkillsIndicator(false);
+		} else if (tab === "statuses") {
+			setShowStatusIndicator(false);
 		}
 	};
 

@@ -541,7 +541,7 @@ export default function TerrainDisplay() {
 							/>
 						</div>
 					</div>
-				) : (
+				) : isDM ? (
 					<div className="flex flex-wrap justify-center gap-2">
 						{environmentPresets.length === 0 && (
 							<div className="text-sm text-base-content/60">
@@ -571,7 +571,7 @@ export default function TerrainDisplay() {
 							);
 						})}
 					</div>
-				)}
+				) : null}
 			</div>
 		</div>
 	);

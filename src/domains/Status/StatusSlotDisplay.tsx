@@ -25,7 +25,6 @@ export function StatusSlotDisplay({
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const campaign = CampaignActions.getActiveCampaign(context);
-	const isDM = context.User.Role === "dm";
 
 	const [removeClickCount, setRemoveClickCount] = useState(0);
 	const [localCountValue, setLocalCountValue] = useState(() => {
@@ -127,7 +126,7 @@ export function StatusSlotDisplay({
 	};
 
 	const handleImageChange = (imageId: string | undefined) => {
-		if (!actionService || !isDM) return;
+		if (!actionService) return;
 
 		// Update the status template's image
 		actionService.execute("status:edit", {
