@@ -31,8 +31,10 @@ import {
 	firstPersonCapsuleToRulesPosition,
 	isFirstPersonCapsuleSettled,
 	stepFirstPersonCapsuleController,
+	worldPositionToRulesPosition,
 	type FirstPersonCapsuleState,
 } from "./capsuleController";
+import type { LiveActorPose } from "../../../services/ActorPoseService";
 import { getVoxelTerrainIndex, type VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	FIRST_PERSON_CAMERA,
@@ -135,6 +137,9 @@ export default function FirstPersonMap({
 	const lastPingTimeRef = useRef(0);
 	const charactersRef = useRef(characters);
 	const entitiesRef = useRef(entities);
+	const liveActorPosesRef = useRef<ReadonlyMap<string, LiveActorPose> | null>(
+		null
+	);
 
 	const terrainSignature = useMemo(
 		() => createTerrainSignature(terrain),
@@ -262,6 +267,10 @@ export default function FirstPersonMap({
 	}, [entities]);
 
 	useEffect(() => {
+		liveActorPosesRef.current = liveActorPoses ?? null;
+	}, [liveActorPoses]);
+
+	useEffect(() => {
 		voxelTerrainIndexRef.current = voxelTerrainIndex;
 	}, [voxelTerrainIndex]);
 
@@ -318,6 +327,34 @@ export default function FirstPersonMap({
 			)
 		) {
 			return;
+		}
+
+		// Also reject the move if any other actor's live (high-frequency) peer
+		// pose discretizes to the same tile. The check above uses the local
+		// snapshot of each actor's authoritative rules position, which can lag
+		// the live pose stream by 100+ms; without this guard a fast-moving
+		// neighbour can slip through and end up colliding on the DM, which
+		// then resolves the conflict by stacking us onto the next surface up.
+		if (currentTerrain) {
+			const livePoses = liveActorPosesRef.current;
+			if (livePoses) {
+				for (const [poseActorId, pose] of livePoses) {
+					if (poseActorId === currentActor.id) continue;
+					const peerRules = worldPositionToRulesPosition(
+						currentTerrain,
+						pose.position[0],
+						pose.position[1],
+						pose.position[2]
+					);
+					if (
+						peerRules.x === normalized.x &&
+						peerRules.y === normalized.y &&
+						peerRules.h === normalized.h
+					) {
+						return;
+					}
+				}
+			}
 		}
 
 		const key = `${currentActor.kind}:${currentActor.id}:${normalized.x},${normalized.y},${normalized.h}`;

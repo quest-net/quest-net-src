@@ -520,14 +520,44 @@ export const VoxelTerrainActions = {
 			return null;
 		};
 
-		const currentH = findAvailableHeight(actor.Position.x, actor.Position.y);
-		if (currentH !== null) {
-			return { x: actor.Position.x, y: actor.Position.y, h: currentH };
+		const currentX = actor.Position.x;
+		const currentY = actor.Position.y;
+		const currentH = actor.Position.h;
+
+		// Step 1: prefer keeping the actor exactly where they are if their
+		// incoming tile (same column AND same height) is still valid and
+		// available. This is the no-op path for actors that didn't actually
+		// conflict with anything.
+		const currentColumnSurfaceValid = actor.CanFly
+			? VoxelTerrainActions.isInBounds(currentX, currentY, terrain)
+			: VoxelTerrainActions.isInBounds(currentX, currentY, terrain) &&
+				getSurfaceHeights(index, currentX, currentY).includes(currentH);
+		if (
+			currentColumnSurfaceValid &&
+			isPositionAvailable(currentX, currentY, currentH)
+		) {
+			return { x: currentX, y: currentY, h: currentH };
 		}
 
-		return findTileFromCenter(terrain, (x, y) => {
+		// Step 2: prefer horizontal displacement to a nearby tile. We deliberately
+		// skip the actor's own column here so a collision doesn't "teleport" them
+		// up to the next surface in the same column (e.g. onto walls, tables, or
+		// the upper floor of a multi-storey terrain).
+		const displaced = findTileFromCenter(terrain, (x, y) => {
+			if (x === currentX && y === currentY) return null;
 			const h = findAvailableHeight(x, y);
 			return h === null ? null : { x, y, h };
 		});
+		if (displaced) return displaced;
+
+		// Step 3: last resort -- fall back to any other surface in the original
+		// column. This preserves the previous stacking behaviour when there is
+		// genuinely nowhere else to put the actor.
+		const fallbackH = findAvailableHeight(currentX, currentY);
+		if (fallbackH !== null) {
+			return { x: currentX, y: currentY, h: fallbackH };
+		}
+
+		return null;
 	},
 };

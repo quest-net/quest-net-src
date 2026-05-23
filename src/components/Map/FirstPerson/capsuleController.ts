@@ -831,22 +831,36 @@ export function stepFirstPersonCapsuleController(
 	clampPositionToBounds(terrain, dimensions, state.position);
 }
 
-export function firstPersonCapsuleToRulesPosition(
+export function worldPositionToRulesPosition(
 	terrain: VoxelTerrain,
-	state: FirstPersonCapsuleState
+	worldX: number,
+	worldY: number,
+	worldZ: number
 ): Position {
 	const offsetX = (terrain.Width - 1) / 2;
 	const offsetZ = (terrain.Length - 1) / 2;
 	const h =
-		state.position.y -
+		worldY -
 		ACTOR_TOKEN_PLACEMENT.TERRAIN_WORLD_Y_OFFSET -
 		ACTOR_TOKEN_PLACEMENT.BASE_Y_OFFSET;
 
 	return {
-		x: Math.round(clamp(state.position.x + offsetX, 0, terrain.Width - 1)),
-		y: Math.round(clamp(state.position.z + offsetZ, 0, terrain.Length - 1)),
+		x: Math.round(clamp(worldX + offsetX, 0, terrain.Width - 1)),
+		y: Math.round(clamp(worldZ + offsetZ, 0, terrain.Length - 1)),
 		h: Math.round(h),
 	};
+}
+
+export function firstPersonCapsuleToRulesPosition(
+	terrain: VoxelTerrain,
+	state: FirstPersonCapsuleState
+): Position {
+	return worldPositionToRulesPosition(
+		terrain,
+		state.position.x,
+		state.position.y,
+		state.position.z
+	);
 }
 
 export function isFirstPersonCapsuleSettled(
