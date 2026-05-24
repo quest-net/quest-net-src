@@ -36,6 +36,7 @@ import type {
 } from './materialTypes';
 
 import defaultMaterial from './defaultMaterial';
+import stoneBricks240Material from './stoneBricks240Material';
 
 // ---------------------------------------------------------------------------
 // Catalogue
@@ -48,6 +49,7 @@ import defaultMaterial from './defaultMaterial';
 
 export const TERRAIN_MATERIALS: readonly TerrainMaterial[] = [
 	defaultMaterial,
+	stoneBricks240Material,
 ];
 
 // ---------------------------------------------------------------------------

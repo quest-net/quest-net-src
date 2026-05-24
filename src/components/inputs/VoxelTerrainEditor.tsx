@@ -584,9 +584,9 @@ function buildChunkGeometry(
 	const normals:   number[] = [];
 	const colors:    number[] = [];
 	// Per-vertex "is this voxel a special material?" flag (0.0 or 1.0). Drives a
-	// subtle stripe-pattern hint in the editor's terrain shader so painted water
-	// reads as "not just a blue voxel" without recreating the full water material
-	// in the editor.
+	// subtle stripe-pattern hint in the editor's terrain shader so special
+	// materials read as "not just a normal voxel" without recreating the full
+	// material shader stack in the editor.
 	const specials:  number[] = [];
 	const indices:   number[] = [];
 
@@ -3048,7 +3048,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			? selection.colorIndex ?? selectedColorIndex
 			: selectedColorIndex;
 	const selectionColorHex =
-		TERRAIN_PALETTE[selectionColorIndex] ?? TERRAIN_PALETTE[DEFAULT_TERRAIN_COLOR_INDEX];
+		`#${terrainPaletteIndexToVoxelColor(selectionColorIndex).toString(16).padStart(6, "0")}`;
 	const handleToolButtonClick = (buttonId: EditorTool) => {
 		if (buttonId === "boxSelect" || buttonId === "colorSelect") {
 			if (activeSelectionTool === buttonId) {
