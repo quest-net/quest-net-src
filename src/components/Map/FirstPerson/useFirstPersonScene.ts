@@ -10,8 +10,12 @@ import {
 	FIRST_PERSON_CAMERA,
 	FIRST_PERSON_KEY_CODES,
 } from "./constants";
-import { createEmptyMovementHighlight } from "./terrain";
 import type { FirstPersonFrameInput } from "./types";
+import {
+	createMovementHighlightTexture,
+	createDummyTerrainGeometry,
+	TERRAIN_MATERIAL_REGISTRY,
+} from "../Terrain/materials";
 
 interface FirstPersonSceneHandlers {
 	onFrame: (now: number, dt: number, input: FirstPersonFrameInput) => void;
@@ -104,12 +108,31 @@ export function useFirstPersonScene(
 			camera,
 			domElement: renderer.domElement,
 			occlusionTargets: [],
-			movementHighlight: createEmptyMovementHighlight(),
+			movementHighlight: createMovementHighlightTexture(1, 1, 1),
 			animationCallbacks: new Set(),
 			actorPickTargets: [],
 			dragState: { active: false },
 		};
-		setSceneResources(resources);
+
+		// Pre-warm: compile every registered shader variant so no stutter on first
+		// terrain frame. FP view only needs the no-highlight variants.
+		let cancelled = false;
+		void (async () => {
+			const dummyGeo = createDummyTerrainGeometry();
+			const warmMeshes: THREE.Mesh[] = [];
+			for (const [, factory] of TERRAIN_MATERIAL_REGISTRY) {
+				const result = factory({ acceptsMovementHighlight: false });
+				const warmMesh = new THREE.Mesh(dummyGeo, result.material);
+				scene.add(warmMesh);
+				warmMeshes.push(warmMesh);
+			}
+			await renderer.compileAsync(scene, camera);
+			if (cancelled) return;
+			for (const warmMesh of warmMeshes) scene.remove(warmMesh);
+			// Warm geometry and materials are intentionally left undisposed so the
+			// compiled WebGL programs stay resident in the driver cache.
+			setSceneResources(resources);
+		})();
 
 		let lastFrame = performance.now();
 		let rafId = 0;
@@ -200,6 +223,7 @@ export function useFirstPersonScene(
 		window.addEventListener("keyup", onKeyUp);
 
 		return () => {
+			cancelled = true;
 			setSceneResources(null);
 			cancelAnimationFrame(rafId);
 			ro.disconnect();

@@ -26,6 +26,7 @@ import {
 	TERRAIN_PALETTE,
 	TERRAIN_PALETTE_ROWS,
 } from "../../utils/terrain/palette/TerrainPaletteUtils";
+import { SPECIAL_MATERIAL_SWATCHES, isSpecialPaletteIndex } from "../Map/Terrain/materials";
 import {
 	MAX_VOXEL_TERRAIN_LENGTH,
 	MAX_VOXEL_TERRAIN_WIDTH,
@@ -506,6 +507,66 @@ function markVoxelRangeDirtyChunks(
 // Reused across buildChunkGeometry calls to avoid per-voxel Color allocations.
 const CHUNK_VOXEL_COLOR = new THREE.Color();
 
+// ---------------------------------------------------------------------------
+// Editor terrain shader patch
+//
+// Adds a per-vertex `isSpecial` attribute (0.0 or 1.0) and, for fragments
+// belonging to special-material voxels, multiplies diffuseColor by a subtle
+// world-space diagonal stripe. The stripe is computed from world position so
+// it stays put as the camera moves; the slight Y-axis weighting (0.5) makes
+// it visible on vertical side faces too without doubling the visual density
+// on horizontal top faces.
+//
+// Magnitude (mix(0.82, 1.0, stripe)) was picked to be "a hint, not a feature":
+// readable at editor zoom levels but quiet enough that the swatch color
+// remains the dominant cue.
+// ---------------------------------------------------------------------------
+
+function installEditorTerrainShader(material: THREE.MeshStandardMaterial): void {
+	material.onBeforeCompile = (shader) => {
+		shader.vertexShader = shader.vertexShader.replace(
+			'#include <common>',
+			[
+				'#include <common>',
+				'attribute float isSpecial;',
+				'varying float vIsSpecial;',
+				'varying vec3 vEditorWorldPos;',
+			].join('\n')
+		);
+		shader.vertexShader = shader.vertexShader.replace(
+			'#include <begin_vertex>',
+			[
+				'#include <begin_vertex>',
+				'vIsSpecial = isSpecial;',
+				'vEditorWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+			].join('\n')
+		);
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <common>',
+			[
+				'#include <common>',
+				'varying float vIsSpecial;',
+				'varying vec3 vEditorWorldPos;',
+			].join('\n')
+		);
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <color_fragment>',
+			[
+				'#include <color_fragment>',
+				'if (vIsSpecial > 0.5) {',
+				'	float stripeT = (vEditorWorldPos.x + vEditorWorldPos.y * 0.5 + vEditorWorldPos.z) * 4.0;',
+				'	float stripe = step(0.5, fract(stripeT));',
+				'	diffuseColor.rgb *= mix(0.82, 1.0, stripe);',
+				'}',
+			].join('\n')
+		);
+	};
+	// Stable cache key in case the editor material is ever rebuilt across
+	// remounts; cheap insurance against accidental recompiles.
+	material.customProgramCacheKey = () => 'voxel-editor-terrain-v1';
+	material.needsUpdate = true;
+}
+
 function buildChunkGeometry(
 	grid: EditGrid,
 	dims: ChunkDims,
@@ -522,6 +583,11 @@ function buildChunkGeometry(
 	const positions: number[] = [];
 	const normals:   number[] = [];
 	const colors:    number[] = [];
+	// Per-vertex "is this voxel a special material?" flag (0.0 or 1.0). Drives a
+	// subtle stripe-pattern hint in the editor's terrain shader so painted water
+	// reads as "not just a blue voxel" without recreating the full water material
+	// in the editor.
+	const specials:  number[] = [];
 	const indices:   number[] = [];
 
 	const startX = chunkX * CHUNK_SIZE;
@@ -537,9 +603,9 @@ function buildChunkGeometry(
 				const val = grid[editGridIndex(vx, vy, vz, vW, vL)];
 				if (val === 0) continue;
 
-				CHUNK_VOXEL_COLOR.set(
-					terrainPaletteIndexToVoxelColor(normalizeVoxelPaletteIndex(val - 1))
-				);
+				const paletteIndex = normalizeVoxelPaletteIndex(val - 1);
+				CHUNK_VOXEL_COLOR.set(terrainPaletteIndexToVoxelColor(paletteIndex));
+				const isSpecial = isSpecialPaletteIndex(paletteIndex) ? 1 : 0;
 
 				// Center of this voxel in world space.
 				const cx = vx / resolution - halfW + halfVoxelSize;
@@ -569,6 +635,7 @@ function buildChunkGeometry(
 						);
 						normals.push(fnx, fny, fnz);
 						colors.push(CHUNK_VOXEL_COLOR.r, CHUNK_VOXEL_COLOR.g, CHUNK_VOXEL_COLOR.b);
+						specials.push(isSpecial);
 					}
 
 					indices.push(
@@ -587,9 +654,10 @@ function buildChunkGeometry(
 	if (positions.length === 0) return null;
 
 	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-	geometry.setAttribute("normal",   new THREE.Float32BufferAttribute(normals,   3));
-	geometry.setAttribute("color",    new THREE.Float32BufferAttribute(colors,    3));
+	geometry.setAttribute("position",  new THREE.Float32BufferAttribute(positions, 3));
+	geometry.setAttribute("normal",    new THREE.Float32BufferAttribute(normals,   3));
+	geometry.setAttribute("color",     new THREE.Float32BufferAttribute(colors,    3));
+	geometry.setAttribute("isSpecial", new THREE.Float32BufferAttribute(specials,  1));
 	geometry.setIndex(indices);
 	geometry.computeBoundingSphere();
 	return geometry;
@@ -1614,8 +1682,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	const readOnlyRef      = useRef(readOnly);
 	const actorsRef        = useRef<ActorOverlayInfo[]>(actors ?? []);
 	const showActorsRef        = useRef(true);
-	const showTacticalGridRef  = useRef(true);
-	const showVoxelGridRef     = useRef(true);
 	const activeViewRef        = useRef<EditorView>("edit");
 	const actorMarkerElemsRef = useRef<Map<string, HTMLDivElement>>(new Map());
 	const actorOverlayRef  = useRef<HTMLDivElement>(null);
@@ -1657,8 +1723,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	const [granularity,       setGranularity]       = useState<EditGranularity>("tactical");
 	const [brushSize,         setBrushSize]         = useState(1);
 	const [selectedColorIndex, setSelectedColorIndex] = useState(DEFAULT_TERRAIN_COLOR_INDEX);
-	const [showTacticalGrid,  setShowTacticalGrid]  = useState(true);
-	const [showVoxelGrid,     setShowVoxelGrid]      = useState(true);
+	// Grid visibility is derived from `granularity`: the tile brush shows the
+	// tactical grid only; the voxel brush shows the voxel grid only.
+	const showTacticalGrid = granularity === "tactical";
+	const showVoxelGrid    = granularity === "voxel";
 	const [showActors,        setShowActors]         = useState(true);
 	const [undoDepth,         setUndoDepth]          = useState(0);
 	const [redoDepth,         setRedoDepth]          = useState(0);
@@ -1821,8 +1889,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 	useEffect(() => { actorsRef.current    = actors ?? []; }, [actors]);
 	useEffect(() => { showActorsRef.current = showActors;  }, [showActors]);
-	useEffect(() => { showTacticalGridRef.current = showTacticalGrid; }, [showTacticalGrid]);
-	useEffect(() => { showVoxelGridRef.current    = showVoxelGrid;    }, [showVoxelGrid]);
 	useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
 	useEffect(() => {
 		stampSourceRef.current = stampSource;
@@ -1970,8 +2036,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					resources,
 					editGridRef.current,
 					result.dims,
-					activeViewRef.current === "edit" && showTacticalGridRef.current,
-					activeViewRef.current === "edit" && showVoxelGridRef.current
+					activeViewRef.current === "edit" && granularityRef.current === "tactical",
+					activeViewRef.current === "edit" && granularityRef.current === "voxel",
 				);
 			}
 
@@ -2454,6 +2520,16 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			metalness: 0,
 			vertexColors: true,
 		});
+		// "Specialness" hint: voxels painted with a special material (palette
+		// index >= 240) get a subtle world-space diagonal stripe so they read as
+		// distinct from a same-coloured normal voxel. The pattern is constant in
+		// world space (stable across camera moves) and gated by a per-vertex
+		// isSpecial flag so plain voxels are unaffected.
+		//
+		// Cost: one extra vertex attribute, one varying, ~4 fragment-shader
+		// instructions. No animation, no transparency, no second material -- the
+		// editor's per-frame cost is essentially unchanged.
+		installEditorTerrainShader(terrainMaterial);
 
 		const resources: EditorSceneResources = {
 			scene, camera, renderer, controls,
@@ -2536,8 +2612,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					// the last-committed state.
 					rebuildGrid(
 						resources, grid, dims,
-						activeViewRef.current === "edit" && showTacticalGridRef.current,
-						activeViewRef.current === "edit" && showVoxelGridRef.current,
+						activeViewRef.current === "edit" && granularityRef.current === "tactical",
+						activeViewRef.current === "edit" && granularityRef.current === "voxel",
 					);
 				}
 			}
@@ -3564,26 +3640,19 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					</div>
 
 					<div>
-						<div className="text-sm font-semibold mb-2">Grid</div>
-						<div className="flex flex-col gap-2">
-							<label className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2">
-								<span className="label-text">Tile Grid</span>
-								<input
-									type="checkbox"
-									className="toggle toggle-sm toggle-primary"
-									checked={showTacticalGrid}
-									onChange={(e) => setShowTacticalGrid(e.target.checked)}
+						<div className="text-sm font-semibold mb-2">Materials</div>
+						<div className="flex flex-row gap-1">
+							{SPECIAL_MATERIAL_SWATCHES.map((swatch) => (
+								<button
+									key={swatch.index}
+									type="button"
+									className={`w-6 h-6${selectedColorIndex === swatch.index ? " ring-2 ring-base-content ring-inset" : ""}`}
+									style={{ backgroundColor: swatch.color }}
+									onClick={() => chooseColorIndex(swatch.index)}
+									title={swatch.label}
+									aria-label={swatch.label}
 								/>
-							</label>
-							<label className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2">
-								<span className="label-text">Voxel Grid</span>
-								<input
-									type="checkbox"
-									className="toggle toggle-sm toggle-warning"
-									checked={showVoxelGrid}
-									onChange={(e) => setShowVoxelGrid(e.target.checked)}
-								/>
-							</label>
+							))}
 						</div>
 					</div>
 

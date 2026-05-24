@@ -9,39 +9,27 @@ import {
 	useVoxelTerrainGeometryWorker,
 } from "../Terrain/hooks/useVoxelTerrainGeometryWorker";
 import { getShadowCameraBounds } from "../shadowCameraBounds";
-import { THREE_D_TERRAIN_MATERIAL } from "../threeDMapConstants";
+import {
+	TERRAIN_MATERIAL_REGISTRY,
+} from "../Terrain/materials";
 import {
 	applyVoxelTerrainBackground,
 	applyVoxelTerrainDirectionalLight,
 } from "../terrainEnvironment";
 
 interface TerrainRenderResources {
-	mesh: THREE.Mesh;
-	geometry: THREE.BufferGeometry;
-	material: THREE.MeshStandardMaterial;
+	meshes: THREE.Mesh[];
+	geometries: THREE.BufferGeometry[];
+	materials: THREE.MeshStandardMaterial[];
+	animationFrameCallbacks: ((timeMs: number) => void)[];
 }
 
 function disposeTerrainResources(resources: TerrainRenderResources): void {
-	resources.geometry.dispose();
-	resources.material.dispose();
+	for (const geo of resources.geometries) geo.dispose();
+	for (const mat of resources.materials) mat.dispose();
 }
 
 export { createTerrainSignature };
-
-export function createEmptyMovementHighlight(): ThreeDSceneResources["movementHighlight"] {
-	const data = new Uint8Array(4);
-	const texture = new THREE.Data3DTexture(data, 1, 1, 1);
-	texture.format = THREE.RGBAFormat;
-	texture.type = THREE.UnsignedByteType;
-	texture.needsUpdate = true;
-	return {
-		texture,
-		data,
-		width: 1,
-		heightLevels: 1,
-		length: 1,
-	};
-}
 
 export function useFirstPersonTerrain(
 	resources: ThreeDSceneResources | null,
@@ -69,7 +57,10 @@ export function useFirstPersonTerrain(
 			const terrainResources = terrainResourcesRef.current;
 			if (!activeResources || !terrainResources) return;
 
-			activeResources.scene.remove(terrainResources.mesh);
+			for (const m of terrainResources.meshes) activeResources.scene.remove(m);
+			for (const cb of terrainResources.animationFrameCallbacks) {
+				activeResources.animationCallbacks.delete(cb);
+			}
 			disposeTerrainResources(terrainResources);
 			terrainResourcesRef.current = null;
 			activeResources.occlusionTargets.length = 0;
@@ -126,35 +117,51 @@ export function useFirstPersonTerrain(
 			const old = terrainResourcesRef.current;
 			if (!old) return;
 
-			resources.scene.remove(old.mesh);
+			for (const m of old.meshes) resources.scene.remove(m);
+			for (const cb of old.animationFrameCallbacks) {
+				resources.animationCallbacks.delete(cb);
+			}
 			disposeTerrainResources(old);
 			terrainResourcesRef.current = null;
 			resources.occlusionTargets.length = 0;
 			return;
 		}
 
-		const material = new THREE.MeshStandardMaterial({
-			roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
-			metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
-			vertexColors: true,
-		});
-		const mesh = new THREE.Mesh(terrainGeometry.geometry, material);
-		mesh.castShadow = true;
-		mesh.receiveShadow = true;
+		const meshes: THREE.Mesh[] = [];
+		const geometries: THREE.BufferGeometry[] = [];
+		const materials: THREE.MeshStandardMaterial[] = [];
+		const animationFrameCallbacks: ((timeMs: number) => void)[] = [];
+
+		for (const [bucketKey, geometry] of terrainGeometry.buckets) {
+			const factory =
+				TERRAIN_MATERIAL_REGISTRY.get(bucketKey) ??
+				TERRAIN_MATERIAL_REGISTRY.get('default')!;
+			const result = factory({ acceptsMovementHighlight: false });
+			if (result.onAnimationFrame) {
+				resources.animationCallbacks.add(result.onAnimationFrame);
+				animationFrameCallbacks.push(result.onAnimationFrame);
+			}
+			const mesh = new THREE.Mesh(geometry, result.material);
+			mesh.castShadow = result.castShadow;
+			mesh.receiveShadow = result.receiveShadow;
+			mesh.renderOrder = result.renderOrder ?? 0;
+			meshes.push(mesh);
+			geometries.push(geometry);
+			materials.push(result.material);
+		}
 
 		const old = terrainResourcesRef.current;
 		if (old) {
-			resources.scene.remove(old.mesh);
+			for (const m of old.meshes) resources.scene.remove(m);
+			for (const cb of old.animationFrameCallbacks) {
+				resources.animationCallbacks.delete(cb);
+			}
 			disposeTerrainResources(old);
 		}
 
-		resources.scene.add(mesh);
+		for (const mesh of meshes) resources.scene.add(mesh);
 		resources.occlusionTargets.length = 0;
-		resources.occlusionTargets.push(mesh);
-		terrainResourcesRef.current = {
-			mesh,
-			geometry: terrainGeometry.geometry,
-			material,
-		};
+		for (const mesh of meshes) resources.occlusionTargets.push(mesh);
+		terrainResourcesRef.current = { meshes, geometries, materials, animationFrameCallbacks };
 	}, [resources, terrainGeometry]);
 }

@@ -10,6 +10,7 @@ import {
 	TERRAIN_PALETTE,
 	getTerrainColorByIndex,
 } from "../palette/TerrainPaletteUtils";
+import { getSpecialMaterialEditorColor } from "../../../components/Map/Terrain/materials";
 import { decodeVoxels, encodeVoxels } from "../data/VoxelDataUtils";
 import { getVoxelTerrainResolution } from "../data/VoxelTerrainUtils";
 
@@ -90,6 +91,11 @@ function rgbToOklab(r: number, g: number, b: number): [number, number, number] {
 }
 
 export function terrainPaletteIndexToVoxelColor(index: number): number {
+	// Special materials (indices 240-255) use the swatch color declared in
+	// their material definition file, not a fallback palette lookup. This
+	// keeps each material file the single source of truth for its color.
+	const special = getSpecialMaterialEditorColor(index);
+	if (special !== undefined) return special;
 	return parseInt(getTerrainColorByIndex(index).slice(1), 16);
 }
 
@@ -119,8 +125,11 @@ export function voxelColorToTerrainPaletteIndex(color: number): number {
 
 export function normalizeVoxelPaletteIndex(color: number): number {
 	const index = Math.floor(color);
-	if (index >= 0 && index < TERRAIN_PALETTE.length) return index;
-
+	// Normal palette indices (0-239) and special material indices (240-255)
+	// are all valid voxel data values -- pass them through unchanged.
+	if (index >= 0 && index <= 255) return index;
+	// Fallback: treat as a legacy raw RGB hex value and find the nearest
+	// palette color (handles old saves that stored color values directly).
 	return voxelColorToTerrainPaletteIndex(color);
 }
 

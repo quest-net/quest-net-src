@@ -6,10 +6,18 @@ import {
 	voxelTopToRulesHeight,
 	type VoxelTerrainIndex,
 } from '../../../../utils/terrain/data/VoxelTerrainIndex';
+import { getMaterialBucket, getMaterialOcclusionGroup } from '../materials';
 
 import * as THREE from 'three';
 
 export type VoxelColorFactory = (voxel: Voxel) => THREE.Color;
+
+// The palette-index -> material dispatch lives in the materials module so that
+// each material file remains the single source of truth. Re-exported here for
+// the small number of callers that historically imported it from this module;
+// the canonical source is `components/Map/Terrain/materials`.
+export { getMaterialBucket, getMaterialOcclusionGroup };
+
 
 // ---------------------------------------------------------------------------
 // Raw geometry buffers
@@ -18,7 +26,10 @@ export type VoxelColorFactory = (voxel: Voxel) => THREE.Color;
 export interface VoxelTerrainBuffers {
 	positions: Float32Array;
 	normals: Float32Array;
+	/** Pure palette RGB -- no AO baked in. AO is in the aoStrength attribute. */
 	colors: Float32Array;
+	/** Per-vertex AO multiplier (0.45 .. 1.0). Applied in the fragment shader. */
+	aoStrength: Float32Array;
 	tileCoords: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
@@ -29,11 +40,45 @@ interface VoxelTerrainBufferOptions {
 	transferSafe?: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Per-render-bucket accumulator -- one per distinct getMaterialBucket() result.
+// Allocated lazily at worst-case size the first time a bucket is needed.
+// ---------------------------------------------------------------------------
+interface BucketState {
+	positions: Float32Array;
+	normals: Float32Array;
+	colors: Float32Array;
+	aoStrength: Float32Array;
+	tileCoords: Float32Array;
+	tileHeights: Float32Array;
+	highlightStrengths: Float32Array;
+	indices: Uint32Array;
+	vp: number; // vertex pointer
+	ip: number; // index pointer
+}
+
+function createBucketState(maxVertices: number, maxIndices: number): BucketState {
+	return {
+		positions:          new Float32Array(maxVertices * 3),
+		normals:            new Float32Array(maxVertices * 3),
+		colors:             new Float32Array(maxVertices * 3),
+		aoStrength:         new Float32Array(maxVertices),
+		tileCoords:         new Float32Array(maxVertices * 2),
+		tileHeights:        new Float32Array(maxVertices),
+		highlightStrengths: new Float32Array(maxVertices),
+		indices:            new Uint32Array(maxIndices),
+		vp: 0,
+		ip: 0,
+	};
+}
+
 interface GreedyFace {
 	vx: number;
 	vy: number;
 	vz: number;
 	color: number;
+	/** Bucket key for this face -- faces only merge within the same bucket. */
+	bucket: string;
 	r: number;
 	g: number;
 	b: number;
@@ -75,6 +120,8 @@ function trimUint32Buffer(
 //   corner -- one step in the normal direction + both tangent steps
 //
 // Result: 0 (most occluded) .. 3 (fully lit), matching the VOXEL_AO_CURVE index.
+// AO is computed from the global voxel index regardless of material bucket, so
+// voxels of different materials still darken each other's corners correctly.
 // ---------------------------------------------------------------------------
 function vertexAO(
 	vx: number, vy: number, vz: number,
@@ -142,6 +189,7 @@ function packAOKey(ao0: number, ao1: number, ao2: number, ao3: number): number {
 function canMergeGreedyFaces(a: GreedyFace, b: GreedyFace | null): boolean {
 	return (
 		b !== null &&
+		a.bucket === b.bucket &&
 		a.color === b.color &&
 		a.tileHeight === b.tileHeight &&
 		a.aoKey === b.aoKey
@@ -150,13 +198,14 @@ function canMergeGreedyFaces(a: GreedyFace, b: GreedyFace | null): boolean {
 
 // ---------------------------------------------------------------------------
 // Core buffer builder -- no Three.js objects created, safe to run in a worker.
-// Returns properly-sized (sliced) TypedArrays ready for transfer.
+// Returns a Map<bucketKey, VoxelTerrainBuffers> with properly-sized (sliced)
+// TypedArrays ready for transfer. Each bucket becomes its own draw call.
 // ---------------------------------------------------------------------------
 export function buildVoxelTerrainBuffers(
 	terrain: VoxelTerrain,
 	createVoxelColor: VoxelColorFactory,
 	options: VoxelTerrainBufferOptions = {}
-): VoxelTerrainBuffers {
+): Map<string, VoxelTerrainBuffers> {
 	// Decode once, share with the index so it doesn't re-decode for occupancy.
 	const voxels = Array.from(decodeVoxels(terrain.Voxels));
 	const index = buildVoxelTerrainIndex(terrain, voxels);
@@ -164,19 +213,22 @@ export function buildVoxelTerrainBuffers(
 	const transferSafe = options.transferSafe ?? false;
 
 	// Pre-allocate at worst-case size: every voxel fully exposed (6 faces, 4 vertices, 6 indices).
+	// Each bucket allocates this much -- in practice only the default bucket is
+	// populated until special-material voxels exist, so memory cost is the same
+	// as Phase 1.
 	const maxVertices = voxelCount * 6 * 4;
 	const maxIndices  = voxelCount * 6 * 6;
 
-	const positions          = new Float32Array(maxVertices * 3);
-	const normals            = new Float32Array(maxVertices * 3);
-	const colors             = new Float32Array(maxVertices * 3);
-	const tileCoords         = new Float32Array(maxVertices * 2);
-	const tileHeights        = new Float32Array(maxVertices);
-	const highlightStrengths = new Float32Array(maxVertices);
-	const indices            = new Uint32Array(maxIndices);
+	const buckets = new Map<string, BucketState>();
 
-	let vp = 0; // vertex pointer (one unit = one vertex)
-	let ip = 0; // index pointer
+	const getOrCreateBucket = (key: string): BucketState => {
+		let b = buckets.get(key);
+		if (!b) {
+			b = createBucketState(maxVertices, maxIndices);
+			buckets.set(key, b);
+		}
+		return b;
+	};
 
 	const voxelDimensions = [index.voxelWidth, index.voxelHeight, index.voxelLength] as const;
 	const colorCache = new Map<number, { r: number; g: number; b: number }>();
@@ -200,6 +252,7 @@ export function buildVoxelTerrainBuffers(
 		quadWidth: number,
 		quadHeight: number
 	) => {
+		const b = getOrCreateBucket(greedyFace.bucket);
 		const [nx, ny, nz] = face.normal;
 		const strength = ny > 0.5 ? 1 : 0.28;
 		const startU = getGreedyFaceAxisValue(greedyFace, uAxis);
@@ -213,7 +266,7 @@ export function buildVoxelTerrainBuffers(
 			greedyFace.ao3,
 		] as const;
 
-		const faceStartVertex = vp;
+		const faceStartVertex = b.vp;
 
 		for (let ci = 0; ci < 4; ci++) {
 			const corner = face.corners[ci];
@@ -229,27 +282,27 @@ export function buildVoxelTerrainBuffers(
 				normalAxis === 2 ? sliceCoordinate :
 				uAxis === 2 ? (corner[2] < 0 ? startU : endU) :
 				(corner[2] < 0 ? startV : endV);
-			const aoFactor = VOXEL_AO_CURVE[aoValues[ci]];
-
-			const p3 = vp * 3;
-			const p2 = vp * 2;
-			positions[p3]     = gridX / resolution - terrain.Width / 2;
-			positions[p3 + 1] = gridY / resolution - 0.5;
-			positions[p3 + 2] = gridZ / resolution - terrain.Length / 2;
-			normals[p3]       = nx;
-			normals[p3 + 1]   = ny;
-			normals[p3 + 2]   = nz;
-			colors[p3]        = greedyFace.r * aoFactor;
-			colors[p3 + 1]    = greedyFace.g * aoFactor;
-			colors[p3 + 2]    = greedyFace.b * aoFactor;
+			const p3 = b.vp * 3;
+			const p2 = b.vp * 2;
+			b.positions[p3]     = gridX / resolution - terrain.Width / 2;
+			b.positions[p3 + 1] = gridY / resolution - 0.5;
+			b.positions[p3 + 2] = gridZ / resolution - terrain.Length / 2;
+			b.normals[p3]       = nx;
+			b.normals[p3 + 1]   = ny;
+			b.normals[p3 + 2]   = nz;
+			// Pure palette color -- AO is written separately into aoStrength.
+			b.colors[p3]        = greedyFace.r;
+			b.colors[p3 + 1]    = greedyFace.g;
+			b.colors[p3 + 2]    = greedyFace.b;
+			b.aoStrength[b.vp]  = VOXEL_AO_CURVE[aoValues[ci]];
 			// tileCoord is retained for buffer compatibility. The gameplay
 			// highlight shader derives X/Z per fragment from world position so
 			// merged quads can span tactical-tile boundaries safely.
-			tileCoords[p2]     = greedyFace.tileX;
-			tileCoords[p2 + 1] = greedyFace.tileY;
-			tileHeights[vp]        = greedyFace.tileHeight;
-			highlightStrengths[vp] = strength;
-			vp++;
+			b.tileCoords[p2]     = greedyFace.tileX;
+			b.tileCoords[p2 + 1] = greedyFace.tileY;
+			b.tileHeights[b.vp]        = greedyFace.tileHeight;
+			b.highlightStrengths[b.vp] = strength;
+			b.vp++;
 		}
 
 		// Quad-flip anisotropy fix (Mikola Lysenko / 0fps.net):
@@ -259,22 +312,22 @@ export function buildVoxelTerrainBuffers(
 		const flipQuad = greedyFace.ao0 + greedyFace.ao2 > greedyFace.ao1 + greedyFace.ao3;
 		if (!flipQuad) {
 			// Default winding: diagonal v0--v2
-			indices[ip]     = faceStartVertex;
-			indices[ip + 1] = faceStartVertex + 1;
-			indices[ip + 2] = faceStartVertex + 2;
-			indices[ip + 3] = faceStartVertex;
-			indices[ip + 4] = faceStartVertex + 2;
-			indices[ip + 5] = faceStartVertex + 3;
+			b.indices[b.ip]     = faceStartVertex;
+			b.indices[b.ip + 1] = faceStartVertex + 1;
+			b.indices[b.ip + 2] = faceStartVertex + 2;
+			b.indices[b.ip + 3] = faceStartVertex;
+			b.indices[b.ip + 4] = faceStartVertex + 2;
+			b.indices[b.ip + 5] = faceStartVertex + 3;
 		} else {
 			// Flipped winding: diagonal v1--v3
-			indices[ip]     = faceStartVertex;
-			indices[ip + 1] = faceStartVertex + 1;
-			indices[ip + 2] = faceStartVertex + 3;
-			indices[ip + 3] = faceStartVertex + 1;
-			indices[ip + 4] = faceStartVertex + 2;
-			indices[ip + 5] = faceStartVertex + 3;
+			b.indices[b.ip]     = faceStartVertex;
+			b.indices[b.ip + 1] = faceStartVertex + 1;
+			b.indices[b.ip + 2] = faceStartVertex + 3;
+			b.indices[b.ip + 3] = faceStartVertex + 1;
+			b.indices[b.ip + 4] = faceStartVertex + 2;
+			b.indices[b.ip + 5] = faceStartVertex + 3;
 		}
-		ip += 6;
+		b.ip += 6;
 	};
 
 	for (const face of VOXEL_FACE_DEFINITIONS) {
@@ -291,7 +344,16 @@ export function buildVoxelTerrainBuffers(
 
 		for (const voxel of voxels) {
 			const { x: vx, y: vy, z: vz } = voxel;
-			if (index.hasVoxel(vx + dx, vy + dy, vz + dz)) continue;
+
+			// Face culling: cull a face if and only if its neighbor is in the
+			// same occlusion group. Render bucket controls draw calls and shader
+			// selection; occlusion group controls whether neighboring materials
+			// are allowed to hide shared faces.
+			const neighborColor = index.getVoxelColor(vx + dx, vy + dy, vz + dz);
+			if (
+				neighborColor !== null &&
+				getMaterialOcclusionGroup(voxel.color) === getMaterialOcclusionGroup(neighborColor)
+			) continue;
 
 			const sliceCoordinate = getFaceSliceCoordinate(voxel, normalAxis, normalSign);
 			let mask = masks.get(sliceCoordinate);
@@ -313,6 +375,7 @@ export function buildVoxelTerrainBuffers(
 				vy,
 				vz,
 				color: voxel.color,
+				bucket: getMaterialBucket(voxel.color),
 				r: color.r,
 				g: color.g,
 				b: color.b,
@@ -382,19 +445,26 @@ export function buildVoxelTerrainBuffers(
 		}
 	}
 
-	return {
-		positions:          trimFloat32Buffer(positions, vp * 3, transferSafe),
-		normals:            trimFloat32Buffer(normals, vp * 3, transferSafe),
-		colors:             trimFloat32Buffer(colors, vp * 3, transferSafe),
-		tileCoords:         trimFloat32Buffer(tileCoords, vp * 2, transferSafe),
-		tileHeights:        trimFloat32Buffer(tileHeights, vp, transferSafe),
-		highlightStrengths: trimFloat32Buffer(highlightStrengths, vp, transferSafe),
-		indices:            trimUint32Buffer(indices, ip, transferSafe),
-	};
+	// Trim and package each bucket's buffers.
+	const result = new Map<string, VoxelTerrainBuffers>();
+	for (const [key, b] of buckets) {
+		result.set(key, {
+			positions:          trimFloat32Buffer(b.positions, b.vp * 3, transferSafe),
+			normals:            trimFloat32Buffer(b.normals, b.vp * 3, transferSafe),
+			colors:             trimFloat32Buffer(b.colors, b.vp * 3, transferSafe),
+			aoStrength:         trimFloat32Buffer(b.aoStrength, b.vp, transferSafe),
+			tileCoords:         trimFloat32Buffer(b.tileCoords, b.vp * 2, transferSafe),
+			tileHeights:        trimFloat32Buffer(b.tileHeights, b.vp, transferSafe),
+			highlightStrengths: trimFloat32Buffer(b.highlightStrengths, b.vp, transferSafe),
+			indices:            trimUint32Buffer(b.indices, b.ip, transferSafe),
+		});
+	}
+	return result;
 }
 
 // ---------------------------------------------------------------------------
-// Main-thread helper: assemble a BufferGeometry from the worker buffer struct.
+// Main-thread helper: assemble a BufferGeometry from one bucket's buffer struct.
+// Call once per bucket entry in the Map returned by buildVoxelTerrainBuffers.
 // ---------------------------------------------------------------------------
 export function createVoxelTerrainBufferGeometry(
 	buffers: VoxelTerrainBuffers
@@ -403,6 +473,7 @@ export function createVoxelTerrainBufferGeometry(
 	geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
 	geometry.setAttribute('normal',   new THREE.BufferAttribute(buffers.normals, 3));
 	geometry.setAttribute('color',    new THREE.BufferAttribute(buffers.colors, 3));
+	geometry.setAttribute('aoStrength', new THREE.BufferAttribute(buffers.aoStrength, 1));
 	geometry.setAttribute('tileCoord', new THREE.BufferAttribute(buffers.tileCoords, 2));
 	geometry.setAttribute('tileHeight', new THREE.BufferAttribute(buffers.tileHeights, 1));
 	geometry.setAttribute(

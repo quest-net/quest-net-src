@@ -3,8 +3,8 @@
 // Protocol
 // --------
 // Incoming:  { buildId: number; terrain: VoxelTerrain }
-// Outgoing:  { buildId, positions, normals, colors, tileCoords, tileHeights,
-//              highlightStrengths, indices }
+// Outgoing:  { buildId, buckets: Array<{ key: string, positions, normals, colors,
+//              aoStrength, tileCoords, tileHeights, highlightStrengths, indices }> }
 //            All TypedArray/ArrayBuffer values are transferred (zero-copy).
 
 import * as THREE from 'three';
@@ -24,8 +24,8 @@ function getTransferableBuffer(view: ArrayBufferView): ArrayBuffer {
 self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }>) => {
 	const { buildId, terrain } = event.data;
 
-	// Build raw buffers (face-culled, AO-baked, quad-flipped).
-	const buf = buildVoxelTerrainBuffers(
+	// Build raw buffers (face-culled, AO-separated, quad-flipped, per-bucket).
+	const bucketMap = buildVoxelTerrainBuffers(
 		terrain,
 		(voxel) =>
 			new THREE.Color(
@@ -34,27 +34,34 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 		{ transferSafe: true }
 	);
 
-	const transferList: Transferable[] = [
-		getTransferableBuffer(buf.positions),
-		getTransferableBuffer(buf.normals),
-		getTransferableBuffer(buf.colors),
-		getTransferableBuffer(buf.tileCoords),
-		getTransferableBuffer(buf.tileHeights),
-		getTransferableBuffer(buf.highlightStrengths),
-		getTransferableBuffer(buf.indices),
-	];
+	// Flatten the Map into an array for structured-clone transfer.
+	// Collect all ArrayBuffers into the transfer list for zero-copy transfer.
+	const buckets = [];
+	const transferList: Transferable[] = [];
 
-	(self as unknown as Worker).postMessage(
-		{
-			buildId,
+	for (const [key, buf] of bucketMap) {
+		buckets.push({
+			key,
 			positions:          buf.positions,
 			normals:            buf.normals,
 			colors:             buf.colors,
+			aoStrength:         buf.aoStrength,
 			tileCoords:         buf.tileCoords,
 			tileHeights:        buf.tileHeights,
 			highlightStrengths: buf.highlightStrengths,
 			indices:            buf.indices,
-		},
-		transferList
-	);
+		});
+		transferList.push(
+			getTransferableBuffer(buf.positions),
+			getTransferableBuffer(buf.normals),
+			getTransferableBuffer(buf.colors),
+			getTransferableBuffer(buf.aoStrength),
+			getTransferableBuffer(buf.tileCoords),
+			getTransferableBuffer(buf.tileHeights),
+			getTransferableBuffer(buf.highlightStrengths),
+			getTransferableBuffer(buf.indices)
+		);
+	}
+
+	(self as unknown as Worker).postMessage({ buildId, buckets }, transferList);
 };

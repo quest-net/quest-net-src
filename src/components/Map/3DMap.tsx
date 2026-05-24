@@ -43,12 +43,17 @@ import {
 	THREE_D_MAP_LIGHTING,
 	THREE_D_MAP_RENDERER,
 	THREE_D_MAP_SHADOW,
-	THREE_D_TERRAIN_MATERIAL,
 } from './threeDMapConstants';
 import {
 	createTerrainSignature,
 	useVoxelTerrainGeometryWorker,
 } from './Terrain/hooks/useVoxelTerrainGeometryWorker';
+import {
+	createMovementHighlightTexture,
+	createDummyTerrainGeometry,
+	TERRAIN_MATERIAL_REGISTRY,
+	type MovementHighlightTexture,
+} from './Terrain/materials';
 
 interface ThreeDMapProps {
 	terrain?: VoxelTerrain | null;
@@ -65,15 +70,16 @@ interface ThreeDMapCameraState {
 }
 
 interface TerrainRenderResources {
-	mesh: THREE.Mesh;
-	geometry: THREE.BufferGeometry;
-	material: THREE.MeshStandardMaterial;
-	movementHighlight: ReturnType<typeof createMovementHighlightTexture>;
+	meshes: THREE.Mesh[];
+	geometries: THREE.BufferGeometry[];
+	materials: THREE.MeshStandardMaterial[];
+	movementHighlight: MovementHighlightTexture;
+	animationFrameCallbacks: ((timeMs: number) => void)[];
 }
 
 function disposeTerrainResources(resources: TerrainRenderResources): void {
-	resources.geometry.dispose();
-	resources.material.dispose();
+	for (const geo of resources.geometries) geo.dispose();
+	for (const mat of resources.materials) mat.dispose();
 	resources.movementHighlight.texture.dispose();
 }
 
@@ -85,115 +91,6 @@ function getPanLimitRadius(width: number, length: number, maxElevation: number):
 		maxElevation * THREE_D_MAP_CONTROLS.PAN_LIMIT_ELEVATION_SCALE +
 		THREE_D_MAP_CONTROLS.PAN_LIMIT_PADDING
 	);
-}
-
-function createMovementHighlightTexture(width: number, heightLevels: number, length: number): {
-	texture: THREE.Data3DTexture;
-	data: Uint8Array;
-	width: number;
-	heightLevels: number;
-	length: number;
-} {
-	// Layout: data[(tileZ * heightLevels * width + h * width + tileX) * 4]
-	// Sampled in the shader with texture(sampler3D, vec3(s, t, r)) where
-	// s = tileX/width, t = h/heightLevels, r = tileZ/length.
-	const data = new Uint8Array(width * heightLevels * length * 4);
-	const texture = new THREE.Data3DTexture(data, width, heightLevels, length);
-	texture.format = THREE.RGBAFormat;
-	texture.type = THREE.UnsignedByteType;
-	texture.magFilter = THREE.NearestFilter;
-	texture.minFilter = THREE.NearestFilter;
-	texture.wrapS = THREE.ClampToEdgeWrapping;
-	texture.wrapT = THREE.ClampToEdgeWrapping;
-	texture.wrapR = THREE.ClampToEdgeWrapping;
-	texture.generateMipmaps = false;
-	texture.needsUpdate = true;
-
-	return { texture, data, width, heightLevels, length };
-}
-
-function installMovementHighlightShader(
-	material: THREE.MeshStandardMaterial,
-	highlight: ReturnType<typeof createMovementHighlightTexture>
-): void {
-	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
-	const heightLevels = highlight.heightLevels;
-
-	material.onBeforeCompile = (shader) => {
-		shader.uniforms.movementHighlightMap = { value: highlight.texture };
-		shader.uniforms.movementHighlightSize = { value: highlightSize };
-		shader.uniforms.movementHighlightHeightLevels = { value: heightLevels };
-		shader.vertexShader = shader.vertexShader.replace(
-			"#include <common>",
-			[
-				"#include <common>",
-				"uniform vec2 movementHighlightSize;",
-				"attribute float tileHeight;",
-				"attribute float highlightStrength;",
-				"varying float vMovementHighlightHeight;",
-				"varying float vMovementHighlightStrength;",
-				"varying vec3 vMovementWorldPosition;",
-				"varying vec3 vMovementWorldNormal;",
-			].join("\n")
-		);
-		shader.vertexShader = shader.vertexShader.replace(
-			"#include <begin_vertex>",
-			[
-				"#include <begin_vertex>",
-				"vMovementHighlightHeight = tileHeight;",
-				"vMovementHighlightStrength = highlightStrength;",
-				"vMovementWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;",
-				"vMovementWorldNormal = normalize(mat3(modelMatrix) * normal);",
-			].join("\n")
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			"#include <common>",
-			[
-				"#include <common>",
-				"uniform highp sampler3D movementHighlightMap;",
-				"uniform vec2 movementHighlightSize;",
-				"uniform float movementHighlightHeightLevels;",
-				"varying float vMovementHighlightHeight;",
-				"varying float vMovementHighlightStrength;",
-				"varying vec3 vMovementWorldPosition;",
-				"varying vec3 vMovementWorldNormal;",
-			].join("\n")
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			"#include <dithering_fragment>",
-			[
-				"vec3 movementOwnerPosition = vMovementWorldPosition - vMovementWorldNormal * 0.002;",
-				"vec2 movementTileCoord = clamp(",
-				"	floor(movementOwnerPosition.xz + movementHighlightSize * 0.5),",
-				"	vec2(0.0),",
-				"	movementHighlightSize - vec2(1.0)",
-				");",
-				"float movementTileHeight = clamp(vMovementHighlightHeight, 0.0, movementHighlightHeightLevels - 1.0);",
-				"vec3 movementHighlightUvw = vec3(",
-				"	(movementTileCoord.x + 0.5) / movementHighlightSize.x,",
-				"	(movementTileHeight + 0.5) / movementHighlightHeightLevels,",
-				"	(movementTileCoord.y + 0.5) / movementHighlightSize.y",
-				");",
-				"vec4 movementHighlight = texture(movementHighlightMap, movementHighlightUvw);",
-				"if (movementHighlight.a > 0.0 && vMovementHighlightStrength > 0.0) {",
-				"	vec3 baseColor = gl_FragColor.rgb;",
-				"	float baseLuma = dot(baseColor, vec3(0.2126, 0.7152, 0.0722));",
-				"	vec2 tileLocal = fract(movementOwnerPosition.xz + movementHighlightSize * 0.5);",
-				"	float edgeDistance = min(min(tileLocal.x, 1.0 - tileLocal.x), min(tileLocal.y, 1.0 - tileLocal.y));",
-				"	float edgeBand = 1.0 - smoothstep(0.025, 0.11, edgeDistance);",
-				"	float markAlpha = clamp(movementHighlight.a * (1.35 + edgeBand * 0.75) * vMovementHighlightStrength, 0.0, 0.92);",
-				"	vec3 screened = 1.0 - (1.0 - baseColor) * (1.0 - movementHighlight.rgb * 0.85);",
-				"	vec3 marked = mix(baseColor, screened, markAlpha);",
-				"	marked = max(marked, movementHighlight.rgb * movementHighlight.a * (0.65 + 0.55 * vMovementHighlightStrength));",
-				"	vec3 contrastEdge = mix(vec3(1.0), vec3(0.035), step(0.58, baseLuma));",
-				"	vec3 edgeColor = mix(movementHighlight.rgb, contrastEdge, 0.45);",
-				"	gl_FragColor.rgb = mix(marked, edgeColor, edgeBand * movementHighlight.a * 0.7 * vMovementHighlightStrength);",
-				"}",
-				"#include <dithering_fragment>",
-			].join("\n")
-		);
-	};
-	material.needsUpdate = true;
 }
 
 function findSelectedActor(
@@ -226,6 +123,8 @@ export default function ThreeDMap({
 	const controlsRef = useRef<OrbitControls | null>(null);
 	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
 	const terrainResourcesRef = useRef<TerrainRenderResources | null>(null);
+	const warmGeometryRef = useRef<THREE.BufferGeometry | null>(null);
+	const warmMeshesRef = useRef<THREE.Mesh[]>([]);
 	const currentHalfSizeRef = useRef<number>(THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS);
 	const hasFramedTerrainRef = useRef(false);
 	const context = useQuestContext();
@@ -539,8 +438,37 @@ export default function ThreeDMap({
 			actorPickTargets: [],
 			dragState: { active: false },
 		};
-		sceneResourcesRef.current = resources;
-		setSceneResources(resources);
+
+		// Pre-warm: compile every registered shader variant before exposing the
+		// scene to the rest of the app, so no stutter when terrain first appears.
+		let cancelled = false;
+		void (async () => {
+			const dummyGeo = createDummyTerrainGeometry();
+			warmGeometryRef.current = dummyGeo;
+			const dummyHighlight = createMovementHighlightTexture(1, 1, 1);
+			const warmMeshes: THREE.Mesh[] = [];
+			for (const [, factory] of TERRAIN_MATERIAL_REGISTRY) {
+				for (const acceptsMovementHighlight of [false, true]) {
+					const result = factory({
+						acceptsMovementHighlight,
+						movementHighlight: acceptsMovementHighlight ? dummyHighlight : undefined,
+					});
+					const warmMesh = new THREE.Mesh(dummyGeo, result.material);
+					scene.add(warmMesh);
+					warmMeshes.push(warmMesh);
+				}
+			}
+			warmMeshesRef.current = warmMeshes;
+			await renderer.compileAsync(scene, camera);
+			if (cancelled) return;
+			for (const warmMesh of warmMeshes) scene.remove(warmMesh);
+			warmMeshesRef.current = [];
+			dummyHighlight.texture.dispose();
+			// Warm geometry and materials are intentionally kept alive (not disposed)
+			// so the compiled WebGL programs remain resident in the driver cache.
+			sceneResourcesRef.current = resources;
+			setSceneResources(resources);
+		})();
 
 		let rafId = 0;
 		const animate = () => {
@@ -577,6 +505,7 @@ export default function ThreeDMap({
 		ro.observe(container);
 
 		return () => {
+			cancelled = true;
 			cameraStateRef.current = {
 				position: camera.position.clone(),
 				target: controls.target.clone(),
@@ -587,9 +516,18 @@ export default function ThreeDMap({
 			cancelAnimationFrame(rafId);
 			ro.disconnect();
 			controls.dispose();
+			// Clean up any warm meshes still in the scene (compileAsync may not have
+			// finished yet). The warm geometry and materials are left undisposed so
+			// the compiled WebGL programs stay resident until renderer.dispose().
+			const pendingWarmMeshes = warmMeshesRef.current;
+			for (const m of pendingWarmMeshes) scene.remove(m);
+			warmMeshesRef.current = [];
 			const terrainResources = terrainResourcesRef.current;
 			if (terrainResources) {
-				scene.remove(terrainResources.mesh);
+				for (const m of terrainResources.meshes) scene.remove(m);
+				for (const cb of terrainResources.animationFrameCallbacks) {
+					resources.animationCallbacks.delete(cb);
+				}
 				disposeTerrainResources(terrainResources);
 				terrainResourcesRef.current = null;
 			} else {
@@ -615,18 +553,17 @@ export default function ThreeDMap({
 	}, []);
 
 	useEffect(() => {
-		const resources = sceneResourcesRef.current;
-		if (!resources) return;
+		if (!sceneResources) return;
 
-		applyVoxelTerrainBackground(resources.scene, terrain);
-	}, [terrain, terrainBackgroundColor]);
+		applyVoxelTerrainBackground(sceneResources.scene, terrain);
+	}, [sceneResources, terrain, terrainBackgroundColor]);
 
 	useEffect(() => {
-		const resources = sceneResourcesRef.current;
+		if (!sceneResources) return;
 		const container = containerRef.current;
 		const controls = controlsRef.current;
 		const dirLight = directionalLightRef.current;
-		if (!resources || !container || !controls || !dirLight) return;
+		if (!container || !controls || !dirLight) return;
 		if (!terrain || getVoxelCount(terrain.Voxels) === 0) return;
 
 		const W = terrain.Width;
@@ -637,7 +574,7 @@ export default function ThreeDMap({
 		currentHalfSizeRef.current = halfSize;
 
 		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
-		const camera = resources.camera as THREE.OrthographicCamera;
+		const camera = sceneResources.camera as THREE.OrthographicCamera;
 		camera.left = -halfSize * aspect;
 		camera.right = halfSize * aspect;
 		camera.top = halfSize;
@@ -683,6 +620,7 @@ export default function ThreeDMap({
 		}
 
 	}, [
+		sceneResources,
 		terrainSignature,
 		terrainLighting?.Color,
 		terrainLighting?.Intensity,
@@ -691,14 +629,15 @@ export default function ThreeDMap({
 	]);
 
 	useEffect(() => {
-		const resources = sceneResourcesRef.current;
-		if (!resources) return;
+		if (!sceneResources) return;
+		const resources = sceneResources;
 
 		if (!terrainGeometry) {
 			const old = terrainResourcesRef.current;
 			if (!old) return;
 
-			resources.scene.remove(old.mesh);
+			for (const m of old.meshes) resources.scene.remove(m);
+			for (const cb of old.animationFrameCallbacks) resources.animationCallbacks.delete(cb);
 			disposeTerrainResources(old);
 			terrainResourcesRef.current = null;
 			resources.occlusionTargets.length = 0;
@@ -711,35 +650,45 @@ export default function ThreeDMap({
 			terrainGeometry.height + 1,
 			terrainGeometry.length
 		);
-		const material = new THREE.MeshStandardMaterial({
-			roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
-			metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
-			vertexColors: true,
-		});
-		installMovementHighlightShader(material, movementHighlight);
-		const mesh = new THREE.Mesh(terrainGeometry.geometry, material);
-		mesh.castShadow = true;
-		mesh.receiveShadow = true;
+
+		const meshes: THREE.Mesh[] = [];
+		const geometries: THREE.BufferGeometry[] = [];
+		const materials: THREE.MeshStandardMaterial[] = [];
+		const animationFrameCallbacks: ((timeMs: number) => void)[] = [];
+
+		for (const [bucketKey, geometry] of terrainGeometry.buckets) {
+			const factory =
+				TERRAIN_MATERIAL_REGISTRY.get(bucketKey) ??
+				TERRAIN_MATERIAL_REGISTRY.get('default')!;
+			const result = factory({ acceptsMovementHighlight: true, movementHighlight });
+			if (result.onAnimationFrame) {
+				resources.animationCallbacks.add(result.onAnimationFrame);
+				animationFrameCallbacks.push(result.onAnimationFrame);
+			}
+			const mesh = new THREE.Mesh(geometry, result.material);
+			mesh.castShadow = result.castShadow;
+			mesh.receiveShadow = result.receiveShadow;
+			mesh.renderOrder = result.renderOrder ?? 0;
+			meshes.push(mesh);
+			geometries.push(geometry);
+			materials.push(result.material);
+		}
 
 		const old = terrainResourcesRef.current;
 		if (old) {
-			resources.scene.remove(old.mesh);
+			for (const m of old.meshes) resources.scene.remove(m);
+			for (const cb of old.animationFrameCallbacks) resources.animationCallbacks.delete(cb);
 			disposeTerrainResources(old);
 		} else {
 			resources.movementHighlight.texture.dispose();
 		}
 
-		resources.scene.add(mesh);
+		for (const mesh of meshes) resources.scene.add(mesh);
 		resources.occlusionTargets.length = 0;
-		resources.occlusionTargets.push(mesh);
+		for (const mesh of meshes) resources.occlusionTargets.push(mesh);
 		resources.movementHighlight = movementHighlight;
-		terrainResourcesRef.current = {
-			mesh,
-			geometry: terrainGeometry.geometry,
-			material,
-			movementHighlight,
-		};
-	}, [terrainGeometry]);
+		terrainResourcesRef.current = { meshes, geometries, materials, movementHighlight, animationFrameCallbacks };
+	}, [sceneResources, terrainGeometry]);
 
 	return (
 		<div className="relative w-full h-full">

@@ -1,6 +1,7 @@
 // Ambient occlusion curve: maps AO level (0 = maximally occluded, 3 = fully lit)
-// to a colour multiplier applied to the baked vertex colour at mesh-build time.
-// Zero runtime cost -- the darkened values are written once into the colour buffer.
+// to a per-vertex float multiplier written into the aoStrength attribute at
+// mesh-build time. Applied in the fragment shader (diffuseColor.rgb *= vAoStrength)
+// so it works correctly for any material variant including textured surfaces.
 export const VOXEL_AO_CURVE = [0.45, 0.65, 0.82, 1.0] as const;
 
 export interface VoxelFaceDefinition {

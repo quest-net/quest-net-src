@@ -5,29 +5,52 @@ import { getVoxelCount } from "../../../../utils/terrain/data/VoxelDataUtils";
 import { createVoxelTerrainBufferGeometry } from "../geometry/VoxelTerrainGeometryUtils";
 import { createTerrainRevision } from "../../../../utils/terrain/data/VoxelTerrainIndex";
 
+// ---------------------------------------------------------------------------
+// Worker protocol types
+// ---------------------------------------------------------------------------
+
+interface BucketBufferEntry {
+	key: string;
+	positions: Float32Array;
+	normals: Float32Array;
+	colors: Float32Array;
+	aoStrength: Float32Array;
+	tileCoords: Float32Array;
+	tileHeights: Float32Array;
+	highlightStrengths: Float32Array;
+	indices: Uint32Array;
+}
+
 interface VoxelGeometryWorkerResponse {
 	buildId: number;
+	buckets: BucketBufferEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// Cache types -- keyed by terrain signature, value is the per-bucket payload
+// ---------------------------------------------------------------------------
+
+interface BucketBufferPayload {
 	positions: Float32Array;
 	normals: Float32Array;
 	colors: Float32Array;
+	aoStrength: Float32Array;
 	tileCoords: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
 	indices: Uint32Array;
 }
 
-interface VoxelGeometryBufferPayload {
-	positions: Float32Array;
-	normals: Float32Array;
-	colors: Float32Array;
-	tileCoords: Float32Array;
-	tileHeights: Float32Array;
-	highlightStrengths: Float32Array;
-	indices: Uint32Array;
-}
+/** One entry in the geometry cache: Map from bucket key to its raw buffers. */
+type VoxelGeometryBufferPayload = Map<string, BucketBufferPayload>;
+
+// ---------------------------------------------------------------------------
+// Public result shape
+// ---------------------------------------------------------------------------
 
 export interface VoxelTerrainGeometryResult {
-	geometry: THREE.BufferGeometry;
+	/** One THREE.BufferGeometry per material bucket (at minimum 'default'). */
+	buckets: Map<string, THREE.BufferGeometry>;
 	width: number;
 	length: number;
 	height: number;
@@ -48,6 +71,7 @@ function getCachedGeometryBuffers(
 ): VoxelGeometryBufferPayload | null {
 	const cached = geometryBufferCache.get(terrainSignature);
 	if (!cached) return null;
+	// LRU: move to end on access.
 	geometryBufferCache.delete(terrainSignature);
 	geometryBufferCache.set(terrainSignature, cached);
 	return cached;
@@ -68,21 +92,22 @@ function cacheGeometryBuffers(
 function payloadFromWorkerResponse(
 	data: VoxelGeometryWorkerResponse
 ): VoxelGeometryBufferPayload {
-	return {
-		positions:          data.positions,
-		normals:            data.normals,
-		colors:             data.colors,
-		tileCoords:         data.tileCoords,
-		tileHeights:        data.tileHeights,
-		highlightStrengths: data.highlightStrengths,
-		indices:            data.indices,
-	};
+	const map = new Map<string, BucketBufferPayload>();
+	for (const entry of data.buckets) {
+		const { key, ...buffers } = entry;
+		map.set(key, buffers);
+	}
+	return map;
 }
 
 function createGeometryFromPayload(
 	payload: VoxelGeometryBufferPayload
-): THREE.BufferGeometry {
-	return createVoxelTerrainBufferGeometry(payload);
+): Map<string, THREE.BufferGeometry> {
+	const result = new Map<string, THREE.BufferGeometry>();
+	for (const [key, buffers] of payload) {
+		result.set(key, createVoxelTerrainBufferGeometry(buffers));
+	}
+	return result;
 }
 
 export function useVoxelTerrainGeometryWorker(
@@ -109,7 +134,7 @@ export function useVoxelTerrainGeometryWorker(
 		const cachedPayload = getCachedGeometryBuffers(terrainSignature);
 		if (cachedPayload) {
 			setResult({
-				geometry: createGeometryFromPayload(cachedPayload),
+				buckets: createGeometryFromPayload(cachedPayload),
 				width,
 				length,
 				height,
@@ -130,9 +155,8 @@ export function useVoxelTerrainGeometryWorker(
 
 			const payload = payloadFromWorkerResponse(event.data);
 			cacheGeometryBuffers(terrainSignature, payload);
-			const geometry = createGeometryFromPayload(payload);
 			setResult({
-				geometry,
+				buckets: createGeometryFromPayload(payload),
 				width,
 				length,
 				height,

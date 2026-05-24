@@ -122,3 +122,8 @@ export const DEFAULT_TERRAIN_COLOR_INDEX = TERRAIN_PALETTE_ROWS - 1; // index 11
 export function getTerrainColorByIndex(index: number): string {
 	return TERRAIN_PALETTE[index] ?? TERRAIN_PALETTE[DEFAULT_TERRAIN_COLOR_INDEX];
 }
+
+// Special materials (palette indices 240-255) are defined in
+// components/Map/Terrain/materials/. Each material's file is the single source
+// of truth for its bucket key, label, swatch color, and factory; SPECIAL_MATERIAL_SWATCHES
+// is derived there and re-exported from that module's index.
