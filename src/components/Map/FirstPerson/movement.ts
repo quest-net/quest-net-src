@@ -10,14 +10,16 @@ function getMovementLookupBudget(
 	canFly: boolean,
 	movementSettings: MovementSettings
 ): number {
-	const maxHorizontal =
-		Math.max(0, terrain.Width - 1) + Math.max(0, terrain.Length - 1);
-	const maxVertical = Math.max(0, terrain.Height);
-
+	// Flying actors who ignore height pay only the lateral step cost (1 per
+	// step), so a budget of moveSpeed already covers every tile they can reach.
+	// Anything larger was just expanding the Dijkstra frontier with tiles the
+	// actor can't actually move to.
 	if (canFly && movementSettings.flyingIgnoresHeight) {
-		return Math.max(moveSpeed, maxHorizontal + maxVertical);
+		return moveSpeed;
 	}
 
+	const maxHorizontal =
+		Math.max(0, terrain.Width - 1) + Math.max(0, terrain.Length - 1);
 	const maxHeightCost = movementSettings.heightCostLookup.reduce(
 		(max, cost) => Math.max(max, cost),
 		0

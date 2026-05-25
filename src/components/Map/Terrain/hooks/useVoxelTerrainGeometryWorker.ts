@@ -15,6 +15,7 @@ interface BucketBufferEntry {
 	normals: Float32Array;
 	colors: Float32Array;
 	aoStrength: Float32Array;
+	surfaceDeformStrength: Float32Array;
 	tileCoords: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
@@ -35,6 +36,7 @@ interface BucketBufferPayload {
 	normals: Float32Array;
 	colors: Float32Array;
 	aoStrength: Float32Array;
+	surfaceDeformStrength: Float32Array;
 	tileCoords: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;

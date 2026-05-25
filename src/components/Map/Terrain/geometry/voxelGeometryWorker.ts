@@ -4,7 +4,8 @@
 // --------
 // Incoming:  { buildId: number; terrain: VoxelTerrain }
 // Outgoing:  { buildId, buckets: Array<{ key: string, positions, normals, colors,
-//              aoStrength, tileCoords, tileHeights, highlightStrengths, indices }> }
+//              aoStrength, surfaceDeformStrength, tileCoords, tileHeights,
+//              highlightStrengths, indices }> }
 //            All TypedArray/ArrayBuffer values are transferred (zero-copy).
 
 import * as THREE from 'three';
@@ -46,6 +47,7 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 			normals:            buf.normals,
 			colors:             buf.colors,
 			aoStrength:         buf.aoStrength,
+			surfaceDeformStrength: buf.surfaceDeformStrength,
 			tileCoords:         buf.tileCoords,
 			tileHeights:        buf.tileHeights,
 			highlightStrengths: buf.highlightStrengths,
@@ -56,6 +58,7 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 			getTransferableBuffer(buf.normals),
 			getTransferableBuffer(buf.colors),
 			getTransferableBuffer(buf.aoStrength),
+			getTransferableBuffer(buf.surfaceDeformStrength),
 			getTransferableBuffer(buf.tileCoords),
 			getTransferableBuffer(buf.tileHeights),
 			getTransferableBuffer(buf.highlightStrengths),

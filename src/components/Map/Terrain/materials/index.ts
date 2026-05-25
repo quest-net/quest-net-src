@@ -37,6 +37,7 @@ import type {
 
 import defaultMaterial from './defaultMaterial';
 import stoneBricks240Material from './stoneBricks240Material';
+import water241Material from './water241Material';
 
 // ---------------------------------------------------------------------------
 // Catalogue
@@ -50,6 +51,7 @@ import stoneBricks240Material from './stoneBricks240Material';
 export const TERRAIN_MATERIALS: readonly TerrainMaterial[] = [
 	defaultMaterial,
 	stoneBricks240Material,
+	water241Material,
 ];
 
 // ---------------------------------------------------------------------------
@@ -61,6 +63,7 @@ export type {
 	MaterialFactoryParams,
 	MaterialFactoryResult,
 	MovementHighlightTexture,
+	TerrainMaterialGeometry,
 	TerrainMaterial,
 } from './materialTypes';
 
@@ -110,12 +113,30 @@ const OCCLUSION_GROUP_BY_PALETTE_INDEX: ReadonlyMap<number, string> = new Map(
 		.map((m) => [m.special.paletteIndex, m.occlusionGroup ?? m.bucketKey] as const)
 );
 
+const GEOMETRY_BY_PALETTE_INDEX: ReadonlyMap<number, TerrainMaterial['geometry']> = new Map(
+	TERRAIN_MATERIALS
+		.filter((m): m is TerrainMaterial & { special: NonNullable<TerrainMaterial['special']> } => m.special !== undefined)
+		.map((m) => [m.special.paletteIndex, m.geometry] as const)
+);
+
+const DEFAULT_GEOMETRY = defaultMaterial.geometry;
+
 export function getMaterialBucket(colorIndex: number): string {
 	return BUCKET_BY_PALETTE_INDEX.get(colorIndex) ?? 'default';
 }
 
 export function getMaterialOcclusionGroup(colorIndex: number): string {
 	return OCCLUSION_GROUP_BY_PALETTE_INDEX.get(colorIndex) ?? DEFAULT_OCCLUSION_GROUP;
+}
+
+export function getMaterialDeformsSurface(colorIndex: number): boolean {
+	const geometry = GEOMETRY_BY_PALETTE_INDEX.get(colorIndex) ?? DEFAULT_GEOMETRY;
+	return geometry?.deformSurface === true;
+}
+
+export function getMaterialPreservesVoxelFaces(colorIndex: number): boolean {
+	const geometry = GEOMETRY_BY_PALETTE_INDEX.get(colorIndex) ?? DEFAULT_GEOMETRY;
+	return geometry?.preserveVoxelFaces === true;
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +275,7 @@ export function createDummyTerrainGeometry(): THREE.BufferGeometry {
 	geo.setAttribute('normal',            new THREE.BufferAttribute(new Float32Array(v * 3), 3));
 	geo.setAttribute('color',             new THREE.BufferAttribute(new Float32Array(v * 3), 3));
 	geo.setAttribute('aoStrength',        new THREE.BufferAttribute(new Float32Array(v), 1));
+	geo.setAttribute('surfaceDeformStrength', new THREE.BufferAttribute(new Float32Array(v), 1));
 	geo.setAttribute('tileCoord',         new THREE.BufferAttribute(new Float32Array(v * 2), 2));
 	geo.setAttribute('tileHeight',        new THREE.BufferAttribute(new Float32Array(v), 1));
 	geo.setAttribute('highlightStrength', new THREE.BufferAttribute(new Float32Array(v), 1));

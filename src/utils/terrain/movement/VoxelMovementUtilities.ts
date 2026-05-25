@@ -25,7 +25,6 @@ interface PathNode {
 	x: number;
 	y: number;
 	h: number;
-	climbUsed: number;
 }
 
 class PriorityQueue<T> {
@@ -222,12 +221,12 @@ export function calculateVoxelMovementRange(
 
 	const queue = new PriorityQueue<PathNode>();
 	const nodeCosts = new Map<string, number>();
-	const nodeKey = (x: number, y: number, h: number, climbUsed: number) =>
-		`${x},${y},${h},${climbUsed}`;
+	const nodeKey = (x: number, y: number, h: number) =>
+		`${x},${y},${h}`;
 
-	const startKey = nodeKey(start.x, start.y, start.h, 0);
+	const startKey = nodeKey(start.x, start.y, start.h);
 	nodeCosts.set(startKey, 0);
-	queue.enqueue({ x: start.x, y: start.y, h: start.h, climbUsed: 0 }, 0);
+	queue.enqueue({ x: start.x, y: start.y, h: start.h }, 0);
 
 	const directions = [
 		{ dx: 1, dy: 0 },
@@ -238,12 +237,7 @@ export function calculateVoxelMovementRange(
 
 	while (!queue.isEmpty()) {
 		const current = queue.dequeue()!;
-		const currentKey = nodeKey(
-			current.x,
-			current.y,
-			current.h,
-			current.climbUsed
-		);
+		const currentKey = nodeKey(current.x, current.y, current.h);
 		const currentCost = nodeCosts.get(currentKey)!;
 
 		for (const direction of directions) {
@@ -276,43 +270,29 @@ export function calculateVoxelMovementRange(
 
 			for (const targetH of candidateHeights) {
 				let stepCost = 1;
-				let newClimbUsed = current.climbUsed;
 				const heightDiff = targetH - current.h;
 
-				if (heightDiff > 0) {
-					if (canFly && movementSettings.flyingIgnoresHeight) {
-						const remainingFreeClimb = budget - current.climbUsed;
-						if (heightDiff <= remainingFreeClimb) {
-							newClimbUsed = current.climbUsed + heightDiff;
-						} else {
-							const freeUsed = Math.max(0, remainingFreeClimb);
-							const paidClimb = heightDiff - freeUsed;
-							newClimbUsed = current.climbUsed + freeUsed;
-							stepCost += getHeightCost(
-								paidClimb,
-								movementSettings.heightCostLookup
-							);
-						}
-					} else {
-						stepCost += getHeightCost(
-							heightDiff,
-							movementSettings.heightCostLookup
-						);
-					}
+				if (heightDiff > 0 && !(canFly && movementSettings.flyingIgnoresHeight)) {
+					// Non-flying actors (or fliers when the setting does not waive
+					// height costs) pay the configured climb cost. Fliers with
+					// `flyingIgnoresHeight` ascend freely, which keeps the state
+					// space to (x, y, h) and prevents the Dijkstra blowup that
+					// crashed the tab when entering FP on a flier.
+					stepCost += getHeightCost(
+						heightDiff,
+						movementSettings.heightCostLookup
+					);
 				}
 
 				const newCost = currentCost + stepCost;
 				if (newCost > budget) continue;
 
-				const nextKey = nodeKey(nx, ny, targetH, newClimbUsed);
+				const nextKey = nodeKey(nx, ny, targetH);
 				const existingCost = nodeCosts.get(nextKey);
 				if (existingCost !== undefined && existingCost <= newCost) continue;
 
 				nodeCosts.set(nextKey, newCost);
-				queue.enqueue(
-					{ x: nx, y: ny, h: targetH, climbUsed: newClimbUsed },
-					newCost
-				);
+				queue.enqueue({ x: nx, y: ny, h: targetH }, newCost);
 				addBestTile(nx, ny, targetH, newCost);
 			}
 		}

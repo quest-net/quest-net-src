@@ -43,6 +43,19 @@ export interface MaterialFactoryResult {
 
 export type MaterialFactory = (params: MaterialFactoryParams) => MaterialFactoryResult;
 
+export interface TerrainMaterialGeometry {
+	/**
+	 * Emit one quad per exposed voxel face instead of greedy-merging adjacent
+	 * faces. Use when a material's shader relies on voxel-resolution edges.
+	 */
+	preserveVoxelFaces?: boolean;
+	/**
+	 * Emits the surfaceDeformStrength attribute. Top faces receive 1.0; exposed
+	 * side top edges also receive 1.0 so animated surfaces stay sealed to sides.
+	 */
+	deformSurface?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Per-material definition
 //
@@ -68,6 +81,8 @@ export interface TerrainMaterial {
 	occlusionGroup?: string;
 	/** Bump when the material's shader source changes (drives the program cache key). */
 	shaderVersion: number;
+	/** Optional geometry-builder hints for materials that need extra vertices. */
+	geometry?: TerrainMaterialGeometry;
 	/** Factory that builds the THREE.MeshStandardMaterial for this bucket. */
 	factory: MaterialFactory;
 	/**

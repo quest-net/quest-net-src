@@ -6,7 +6,12 @@ import {
 	voxelTopToRulesHeight,
 	type VoxelTerrainIndex,
 } from '../../../../utils/terrain/data/VoxelTerrainIndex';
-import { getMaterialBucket, getMaterialOcclusionGroup } from '../materials';
+import {
+	getMaterialBucket,
+	getMaterialDeformsSurface,
+	getMaterialOcclusionGroup,
+	getMaterialPreservesVoxelFaces,
+} from '../materials';
 
 import * as THREE from 'three';
 
@@ -30,6 +35,8 @@ export interface VoxelTerrainBuffers {
 	colors: Float32Array;
 	/** Per-vertex AO multiplier (0.45 .. 1.0). Applied in the fragment shader. */
 	aoStrength: Float32Array;
+	/** Per-vertex mask for material vertex deformation. */
+	surfaceDeformStrength: Float32Array;
 	tileCoords: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
@@ -42,13 +49,14 @@ interface VoxelTerrainBufferOptions {
 
 // ---------------------------------------------------------------------------
 // Per-render-bucket accumulator -- one per distinct getMaterialBucket() result.
-// Allocated lazily at worst-case size the first time a bucket is needed.
+// Allocated lazily the first time a bucket is needed, then grown on demand.
 // ---------------------------------------------------------------------------
 interface BucketState {
 	positions: Float32Array;
 	normals: Float32Array;
 	colors: Float32Array;
 	aoStrength: Float32Array;
+	surfaceDeformStrength: Float32Array;
 	tileCoords: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
@@ -63,6 +71,7 @@ function createBucketState(maxVertices: number, maxIndices: number): BucketState
 		normals:            new Float32Array(maxVertices * 3),
 		colors:             new Float32Array(maxVertices * 3),
 		aoStrength:         new Float32Array(maxVertices),
+		surfaceDeformStrength: new Float32Array(maxVertices),
 		tileCoords:         new Float32Array(maxVertices * 2),
 		tileHeights:        new Float32Array(maxVertices),
 		highlightStrengths: new Float32Array(maxVertices),
@@ -72,6 +81,53 @@ function createBucketState(maxVertices: number, maxIndices: number): BucketState
 	};
 }
 
+function nextBufferLength(current: number, required: number): number {
+	if (required <= current) return current;
+	let next = Math.max(current, 256);
+	while (next < required) next = Math.ceil(next * 1.5);
+	return next;
+}
+
+function growFloat32Buffer(buffer: Float32Array, required: number): Float32Array {
+	const nextLength = nextBufferLength(buffer.length, required);
+	if (nextLength === buffer.length) return buffer;
+	const grown = new Float32Array(nextLength);
+	grown.set(buffer);
+	return grown;
+}
+
+function growUint32Buffer(buffer: Uint32Array, required: number): Uint32Array {
+	const nextLength = nextBufferLength(buffer.length, required);
+	if (nextLength === buffer.length) return buffer;
+	const grown = new Uint32Array(nextLength);
+	grown.set(buffer);
+	return grown;
+}
+
+function ensureBucketCapacity(
+	bucket: BucketState,
+	additionalVertices: number,
+	additionalIndices: number
+): void {
+	const requiredVertices = bucket.vp + additionalVertices;
+	const requiredIndices = bucket.ip + additionalIndices;
+	bucket.positions = growFloat32Buffer(bucket.positions, requiredVertices * 3);
+	bucket.normals = growFloat32Buffer(bucket.normals, requiredVertices * 3);
+	bucket.colors = growFloat32Buffer(bucket.colors, requiredVertices * 3);
+	bucket.aoStrength = growFloat32Buffer(bucket.aoStrength, requiredVertices);
+	bucket.surfaceDeformStrength = growFloat32Buffer(
+		bucket.surfaceDeformStrength,
+		requiredVertices
+	);
+	bucket.tileCoords = growFloat32Buffer(bucket.tileCoords, requiredVertices * 2);
+	bucket.tileHeights = growFloat32Buffer(bucket.tileHeights, requiredVertices);
+	bucket.highlightStrengths = growFloat32Buffer(
+		bucket.highlightStrengths,
+		requiredVertices
+	);
+	bucket.indices = growUint32Buffer(bucket.indices, requiredIndices);
+}
+
 interface GreedyFace {
 	vx: number;
 	vy: number;
@@ -79,6 +135,9 @@ interface GreedyFace {
 	color: number;
 	/** Bucket key for this face -- faces only merge within the same bucket. */
 	bucket: string;
+	preserveVoxelFaces: boolean;
+	deformsSurface: boolean;
+	deformsTopEdge: boolean;
 	r: number;
 	g: number;
 	b: number;
@@ -189,11 +248,33 @@ function packAOKey(ao0: number, ao1: number, ao2: number, ao3: number): number {
 function canMergeGreedyFaces(a: GreedyFace, b: GreedyFace | null): boolean {
 	return (
 		b !== null &&
+		!a.preserveVoxelFaces &&
+		!b.preserveVoxelFaces &&
 		a.bucket === b.bucket &&
+		a.deformsSurface === b.deformsSurface &&
+		a.deformsTopEdge === b.deformsTopEdge &&
 		a.color === b.color &&
 		a.tileHeight === b.tileHeight &&
 		a.aoKey === b.aoKey
 	);
+}
+
+function getCornerGridValue(
+	corner: readonly [number, number, number],
+	axis: number,
+	normalAxis: number,
+	uAxis: number,
+	vAxis: number,
+	sliceCoordinate: number,
+	startU: number,
+	endU: number,
+	startV: number,
+	endV: number
+): number {
+	if (axis === normalAxis) return sliceCoordinate;
+	if (axis === uAxis) return corner[axis] < 0 ? startU : endU;
+	if (axis === vAxis) return corner[axis] < 0 ? startV : endV;
+	return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -212,19 +293,17 @@ export function buildVoxelTerrainBuffers(
 	const { resolution, voxelCount } = index;
 	const transferSafe = options.transferSafe ?? false;
 
-	// Pre-allocate at worst-case size: every voxel fully exposed (6 faces, 4 vertices, 6 indices).
-	// Each bucket allocates this much -- in practice only the default bucket is
-	// populated until special-material voxels exist, so memory cost is the same
-	// as Phase 1.
-	const maxVertices = voxelCount * 6 * 4;
-	const maxIndices  = voxelCount * 6 * 6;
+	// Buckets grow on demand, so material-specific buckets only allocate storage
+	// for the faces they actually render.
+	const initialVertices = Math.min(Math.max(voxelCount * 4, 256), 65536);
+	const initialIndices = Math.min(Math.max(voxelCount * 6, 384), 98304);
 
 	const buckets = new Map<string, BucketState>();
 
 	const getOrCreateBucket = (key: string): BucketState => {
 		let b = buckets.get(key);
 		if (!b) {
-			b = createBucketState(maxVertices, maxIndices);
+			b = createBucketState(initialVertices, initialIndices);
 			buckets.set(key, b);
 		}
 		return b;
@@ -259,48 +338,87 @@ export function buildVoxelTerrainBuffers(
 		const startV = getGreedyFaceAxisValue(greedyFace, vAxis);
 		const endU = startU + quadWidth;
 		const endV = startV + quadHeight;
+		const vertexCount = 4;
+
+		ensureBucketCapacity(b, vertexCount, 6);
+		const faceStartVertex = b.vp;
+		const cornerGridValues = face.corners.map((corner) => ([
+			getCornerGridValue(
+				corner,
+				0,
+				normalAxis,
+				uAxis,
+				vAxis,
+				sliceCoordinate,
+				startU,
+				endU,
+				startV,
+				endV
+			),
+			getCornerGridValue(
+				corner,
+				1,
+				normalAxis,
+				uAxis,
+				vAxis,
+				sliceCoordinate,
+				startU,
+				endU,
+				startV,
+				endV
+			),
+			getCornerGridValue(
+				corner,
+				2,
+				normalAxis,
+				uAxis,
+				vAxis,
+				sliceCoordinate,
+				startU,
+				endU,
+				startV,
+				endV
+			),
+		] as const));
+		const topGridY = Math.max(
+			cornerGridValues[0][1],
+			cornerGridValues[1][1],
+			cornerGridValues[2][1],
+			cornerGridValues[3][1]
+		);
+		const isTopFaceDeformed = greedyFace.deformsSurface && ny > 0.5;
 		const aoValues = [
-			greedyFace.ao0,
-			greedyFace.ao1,
-			greedyFace.ao2,
-			greedyFace.ao3,
+			VOXEL_AO_CURVE[greedyFace.ao0],
+			VOXEL_AO_CURVE[greedyFace.ao1],
+			VOXEL_AO_CURVE[greedyFace.ao2],
+			VOXEL_AO_CURVE[greedyFace.ao3],
 		] as const;
 
-		const faceStartVertex = b.vp;
-
-		for (let ci = 0; ci < 4; ci++) {
-			const corner = face.corners[ci];
-			const gridX =
-				normalAxis === 0 ? sliceCoordinate :
-				uAxis === 0 ? (corner[0] < 0 ? startU : endU) :
-				(corner[0] < 0 ? startV : endV);
-			const gridY =
-				normalAxis === 1 ? sliceCoordinate :
-				uAxis === 1 ? (corner[1] < 0 ? startU : endU) :
-				(corner[1] < 0 ? startV : endV);
-			const gridZ =
-				normalAxis === 2 ? sliceCoordinate :
-				uAxis === 2 ? (corner[2] < 0 ? startU : endU) :
-				(corner[2] < 0 ? startV : endV);
+		for (let ci = 0; ci < vertexCount; ci++) {
+			const [gridX, gridY, gridZ] = cornerGridValues[ci];
 			const p3 = b.vp * 3;
 			const p2 = b.vp * 2;
-			b.positions[p3]     = gridX / resolution - terrain.Width / 2;
+			b.positions[p3] = gridX / resolution - terrain.Width / 2;
 			b.positions[p3 + 1] = gridY / resolution - 0.5;
 			b.positions[p3 + 2] = gridZ / resolution - terrain.Length / 2;
-			b.normals[p3]       = nx;
-			b.normals[p3 + 1]   = ny;
-			b.normals[p3 + 2]   = nz;
+			b.normals[p3] = nx;
+			b.normals[p3 + 1] = ny;
+			b.normals[p3 + 2] = nz;
 			// Pure palette color -- AO is written separately into aoStrength.
-			b.colors[p3]        = greedyFace.r;
-			b.colors[p3 + 1]    = greedyFace.g;
-			b.colors[p3 + 2]    = greedyFace.b;
-			b.aoStrength[b.vp]  = VOXEL_AO_CURVE[aoValues[ci]];
+			b.colors[p3] = greedyFace.r;
+			b.colors[p3 + 1] = greedyFace.g;
+			b.colors[p3 + 2] = greedyFace.b;
+			b.aoStrength[b.vp] = aoValues[ci];
+			const isSideTopEdgeDeformed = greedyFace.deformsTopEdge &&
+				ny === 0 &&
+				Math.abs(gridY - topGridY) < 0.0001;
+			b.surfaceDeformStrength[b.vp] = isTopFaceDeformed || isSideTopEdgeDeformed ? 1 : 0;
 			// tileCoord is retained for buffer compatibility. The gameplay
 			// highlight shader derives X/Z per fragment from world position so
 			// merged quads can span tactical-tile boundaries safely.
-			b.tileCoords[p2]     = greedyFace.tileX;
+			b.tileCoords[p2] = greedyFace.tileX;
 			b.tileCoords[p2 + 1] = greedyFace.tileY;
-			b.tileHeights[b.vp]        = greedyFace.tileHeight;
+			b.tileHeights[b.vp] = greedyFace.tileHeight;
 			b.highlightStrengths[b.vp] = strength;
 			b.vp++;
 		}
@@ -312,7 +430,7 @@ export function buildVoxelTerrainBuffers(
 		const flipQuad = greedyFace.ao0 + greedyFace.ao2 > greedyFace.ao1 + greedyFace.ao3;
 		if (!flipQuad) {
 			// Default winding: diagonal v0--v2
-			b.indices[b.ip]     = faceStartVertex;
+			b.indices[b.ip] = faceStartVertex;
 			b.indices[b.ip + 1] = faceStartVertex + 1;
 			b.indices[b.ip + 2] = faceStartVertex + 2;
 			b.indices[b.ip + 3] = faceStartVertex;
@@ -320,7 +438,7 @@ export function buildVoxelTerrainBuffers(
 			b.indices[b.ip + 5] = faceStartVertex + 3;
 		} else {
 			// Flipped winding: diagonal v1--v3
-			b.indices[b.ip]     = faceStartVertex;
+			b.indices[b.ip] = faceStartVertex;
 			b.indices[b.ip + 1] = faceStartVertex + 1;
 			b.indices[b.ip + 2] = faceStartVertex + 3;
 			b.indices[b.ip + 3] = faceStartVertex + 1;
@@ -369,13 +487,21 @@ export function buildVoxelTerrainBuffers(
 			const color = getCachedColor(voxel);
 			const u = getAxisValue(voxel, uAxis);
 			const v = getAxisValue(voxel, vAxis);
+			const bucket = getMaterialBucket(voxel.color);
+			const deformsSurface = getMaterialDeformsSurface(voxel.color);
+			const aboveColor = index.getVoxelColor(vx, vy + 1, vz);
+			const topEdgeExposed = aboveColor === null ||
+				getMaterialOcclusionGroup(voxel.color) !== getMaterialOcclusionGroup(aboveColor);
 
 			mask[u + v * uDim] = {
 				vx,
 				vy,
 				vz,
 				color: voxel.color,
-				bucket: getMaterialBucket(voxel.color),
+				bucket,
+				preserveVoxelFaces: getMaterialPreservesVoxelFaces(voxel.color),
+				deformsSurface,
+				deformsTopEdge: deformsSurface && ny === 0 && topEdgeExposed,
 				r: color.r,
 				g: color.g,
 				b: color.b,
@@ -453,6 +579,7 @@ export function buildVoxelTerrainBuffers(
 			normals:            trimFloat32Buffer(b.normals, b.vp * 3, transferSafe),
 			colors:             trimFloat32Buffer(b.colors, b.vp * 3, transferSafe),
 			aoStrength:         trimFloat32Buffer(b.aoStrength, b.vp, transferSafe),
+			surfaceDeformStrength: trimFloat32Buffer(b.surfaceDeformStrength, b.vp, transferSafe),
 			tileCoords:         trimFloat32Buffer(b.tileCoords, b.vp * 2, transferSafe),
 			tileHeights:        trimFloat32Buffer(b.tileHeights, b.vp, transferSafe),
 			highlightStrengths: trimFloat32Buffer(b.highlightStrengths, b.vp, transferSafe),
@@ -474,6 +601,10 @@ export function createVoxelTerrainBufferGeometry(
 	geometry.setAttribute('normal',   new THREE.BufferAttribute(buffers.normals, 3));
 	geometry.setAttribute('color',    new THREE.BufferAttribute(buffers.colors, 3));
 	geometry.setAttribute('aoStrength', new THREE.BufferAttribute(buffers.aoStrength, 1));
+	geometry.setAttribute(
+		'surfaceDeformStrength',
+		new THREE.BufferAttribute(buffers.surfaceDeformStrength, 1)
+	);
 	geometry.setAttribute('tileCoord', new THREE.BufferAttribute(buffers.tileCoords, 2));
 	geometry.setAttribute('tileHeight', new THREE.BufferAttribute(buffers.tileHeights, 1));
 	geometry.setAttribute(
