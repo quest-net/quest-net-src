@@ -103,6 +103,7 @@ export function useFirstPersonTerrain(
 		dirLight.shadow.camera.near = shadowCamera.near;
 		dirLight.shadow.camera.far = shadowCamera.far;
 		dirLight.shadow.camera.updateProjectionMatrix();
+		resources.requestShadowUpdate();
 	}, [
 		resources,
 		terrain,
@@ -128,6 +129,7 @@ export function useFirstPersonTerrain(
 			disposeTerrainResources(old);
 			terrainResourcesRef.current = null;
 			resources.occlusionTargets.length = 0;
+			resources.requestShadowUpdate();
 			return;
 		}
 
@@ -168,5 +170,6 @@ export function useFirstPersonTerrain(
 		resources.occlusionTargets.length = 0;
 		for (const mesh of meshes) resources.occlusionTargets.push(mesh);
 		terrainResourcesRef.current = { meshes, geometries, materials, voxelAo, animationFrameCallbacks };
+		resources.requestShadowUpdate();
 	}, [resources, terrainGeometry]);
 }

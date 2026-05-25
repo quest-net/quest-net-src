@@ -52,6 +52,11 @@ export type MaterialFactory = (params: MaterialFactoryParams) => MaterialFactory
 
 export interface TerrainMaterialGeometry {
 	/**
+	 * Emits the vertex color attribute. Defaults to true for palette-colored
+	 * terrain; special materials that fully shade themselves can disable it.
+	 */
+	vertexColors?: boolean;
+	/**
 	 * Emit one quad per exposed voxel face instead of greedy-merging adjacent
 	 * faces. Use when a material's shader relies on voxel-resolution edges.
 	 */

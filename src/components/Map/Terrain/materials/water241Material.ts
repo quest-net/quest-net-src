@@ -408,6 +408,7 @@ const water241Material: TerrainMaterial = {
 	// Bump on shader-source change to invalidate the program cache.
 	shaderVersion: 6,
 	geometry: {
+		vertexColors: false,
 		// Preserve voxel faces so terrain resolution controls the water mesh
 		// density and deformed side top edges stay sealed to the surface.
 		preserveVoxelFaces: true,

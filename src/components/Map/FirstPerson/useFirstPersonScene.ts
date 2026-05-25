@@ -65,6 +65,8 @@ export function useFirstPersonScene(
 		renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
 		renderer.outputColorSpace = THREE.SRGBColorSpace;
 		renderer.shadowMap.enabled = true;
+		renderer.shadowMap.autoUpdate = false;
+		renderer.shadowMap.needsUpdate = true;
 		renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 		container.appendChild(renderer.domElement);
 		rendererRef.current = renderer;
@@ -111,6 +113,9 @@ export function useFirstPersonScene(
 			occlusionTargets: [],
 			movementHighlight: createMovementHighlightTexture(1, 1, 1),
 			animationCallbacks: new Set(),
+			requestShadowUpdate: () => {
+				renderer.shadowMap.needsUpdate = true;
+			},
 			actorPickTargets: [],
 			dragState: { active: false },
 		};

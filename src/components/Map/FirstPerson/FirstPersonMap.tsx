@@ -817,7 +817,7 @@ export default function FirstPersonMap({
 					onExitFirstPerson={onExitFirstPerson}
 				/>
 			)}
-			{actor && sceneResources && terrain && getVoxelCount(terrain.Voxels) > 0 && (
+			{actor && sceneResources && terrain && voxelTerrainIndex && getVoxelCount(terrain.Voxels) > 0 && (
 				<>
 					<ThreeDActorLayer
 						resources={sceneResources}
@@ -826,6 +826,7 @@ export default function FirstPersonMap({
 						cutoutImageIds={cutoutImageIds}
 						selectedActor={selectedActor}
 						terrain={terrain}
+						terrainIndex={voxelTerrainIndex}
 						isDM={isDM}
 						imageService={imageService}
 						liveActorPoses={liveActorPoses}
@@ -843,6 +844,7 @@ export default function FirstPersonMap({
 					<ThreeDPingLayer
 						resources={sceneResources}
 						terrain={terrain}
+						terrainIndex={voxelTerrainIndex}
 						activePings={activePings}
 						onPingTile={handlePingTile}
 					/>

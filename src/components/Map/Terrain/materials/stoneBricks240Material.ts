@@ -234,6 +234,9 @@ const stoneBricks240Material: TerrainMaterial = {
 	bucketKey: 'stonebricks_240',
 	occlusionGroup: 'solid',
 	shaderVersion: 2,
+	geometry: {
+		vertexColors: false,
+	},
 	factory: createStoneBricks240Material,
 	special: {
 		paletteIndex: 240,

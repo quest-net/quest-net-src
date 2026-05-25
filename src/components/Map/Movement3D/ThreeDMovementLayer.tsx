@@ -4,7 +4,7 @@ import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
 import { isItemEntity } from "../../../domains/Item/ItemDropUtils";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { getVoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	canOccupyVoxelTile,
 	getVoxelTileHeightKey,
@@ -37,6 +37,7 @@ interface VirtualGroundHighlightTile {
 interface ThreeDMovementLayerProps {
 	resources: ThreeDSceneResources;
 	terrain: VoxelTerrain;
+	terrainIndex: VoxelTerrainIndex;
 	characters: Character[];
 	entities: Entity[];
 	selectedActor: SelectedActor | null;
@@ -65,6 +66,7 @@ function getTileFromPointerEvent(
 	event: PointerEvent,
 	resources: ThreeDSceneResources,
 	terrain: VoxelTerrain,
+	terrainIndex: VoxelTerrainIndex,
 	raycaster: THREE.Raycaster,
 	pointer: THREE.Vector2,
 	allowVirtualGroundTile: boolean
@@ -86,7 +88,7 @@ function getTileFromPointerEvent(
 	);
 	const closestActorDistance = actorHits[0]?.distance ?? Infinity;
 
-	const terrainHit = raycastTerrainDDA(raycaster.ray, getVoxelTerrainIndex(terrain));
+	const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex);
 
 	if (
 		terrainHit &&
@@ -118,7 +120,7 @@ function getTileFromPointerEvent(
 	if (x < 0 || x >= terrain.Width || y < 0 || y >= terrain.Length) {
 		return null;
 	}
-	if (getVoxelTerrainIndex(terrain).allSurfaces.get(`${x},${y}`)?.includes(0)) {
+	if (terrainIndex.allSurfaces.get(`${x},${y}`)?.includes(0)) {
 		return null;
 	}
 
@@ -128,7 +130,7 @@ function getTileFromPointerEvent(
 function resolveMoveTargetHeight(
 	tile: HoveredTile,
 	actorObject: Character | Entity,
-	terrain: VoxelTerrain,
+	terrainIndex: VoxelTerrainIndex,
 	preserveFlyingHeightOnTileMove: boolean
 ): number {
 	if (!preserveFlyingHeightOnTileMove || !actorObject.CanFly) {
@@ -137,7 +139,7 @@ function resolveMoveTargetHeight(
 
 	const originH = Math.round(actorObject.Position.h);
 	const surfaces =
-		getVoxelTerrainIndex(terrain).allSurfaces.get(`${tile.x},${tile.y}`) ??
+		terrainIndex.allSurfaces.get(`${tile.x},${tile.y}`) ??
 		[];
 	const hasTerrainAtOrAboveOrigin = surfaces.some((surfaceH) => surfaceH >= originH);
 
@@ -146,11 +148,11 @@ function resolveMoveTargetHeight(
 
 function isVirtualGroundHighlightTile(
 	tile: Pick<HoveredTile, "x" | "y" | "h">,
-	terrain: VoxelTerrain
+	terrainIndex: VoxelTerrainIndex
 ): boolean {
 	if (tile.h !== 0) return false;
 	return !(
-		getVoxelTerrainIndex(terrain).allSurfaces.get(`${tile.x},${tile.y}`) ??
+		terrainIndex.allSurfaces.get(`${tile.x},${tile.y}`) ??
 		[]
 	).includes(0);
 }
@@ -196,6 +198,7 @@ function createVirtualGroundHighlightMesh(
 export function ThreeDMovementLayer({
 	resources,
 	terrain,
+	terrainIndex,
 	characters,
 	entities,
 	selectedActor,
@@ -344,7 +347,7 @@ export function ThreeDMovementLayer({
 			seen: Set<string>,
 			tile: Pick<HoveredTile, "x" | "y" | "h">
 		) => {
-			if (!isVirtualGroundHighlightTile(tile, terrain)) return;
+			if (!isVirtualGroundHighlightTile(tile, terrainIndex)) return;
 			const key = `${tile.x},${tile.y}`;
 			if (seen.has(key)) return;
 			seen.add(key);
@@ -413,6 +416,7 @@ export function ThreeDMovementLayer({
 	}, [
 		resources,
 		terrain,
+		terrainIndex,
 		movementRange,
 		remainingMovementRange,
 		hoveredTile,
@@ -449,6 +453,7 @@ export function ThreeDMovementLayer({
 				event,
 				resources,
 				terrain,
+				terrainIndex,
 				raycaster,
 				pointer,
 				actorObject.CanFly ?? false
@@ -458,7 +463,7 @@ export function ThreeDMovementLayer({
 			const targetHeight = resolveMoveTargetHeight(
 				tile,
 				actorObject,
-				terrain,
+				terrainIndex,
 				preserveFlyingHeightOnTileMoveRef.current
 			);
 			const targetTile = { ...tile, h: targetHeight };
@@ -589,7 +594,7 @@ export function ThreeDMovementLayer({
 			const targetHeight = resolveMoveTargetHeight(
 				tile,
 				actorObject,
-				terrain,
+				terrainIndex,
 				preserveFlyingHeightOnTileMoveRef.current
 			);
 			const targetTile = { ...tile, h: targetHeight };
@@ -641,7 +646,7 @@ export function ThreeDMovementLayer({
 			}
 			resources.domElement.style.cursor = "";
 		};
-	}, [resources, terrain]);
+	}, [resources, terrain, terrainIndex]);
 
 	return null;
 }

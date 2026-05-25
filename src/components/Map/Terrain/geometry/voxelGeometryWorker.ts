@@ -5,8 +5,8 @@
 // Incoming:  { buildId: number; terrain: VoxelTerrain }
 // Outgoing:  {
 //              buildId,
-//              buckets: Array<{ key, positions, normals, colors,
-//                surfaceDeformStrength, tileCoords, tileHeights,
+//              buckets: Array<{ key, positions, normals, optional colors,
+//                optional surfaceDeformStrength, tileHeights,
 //                highlightStrengths, indices }>,
 //              occupancy: { data, voxelWidth, voxelHeight, voxelLength,
 //                worldOrigin{X,Y,Z}, worldSize{X,Y,Z}, voxelSize },
@@ -52,21 +52,19 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 			normals:            buf.normals,
 			colors:             buf.colors,
 			surfaceDeformStrength: buf.surfaceDeformStrength,
-			tileCoords:         buf.tileCoords,
 			tileHeights:        buf.tileHeights,
 			highlightStrengths: buf.highlightStrengths,
 			indices:            buf.indices,
 		});
-		transferList.push(
-			getTransferableBuffer(buf.positions),
-			getTransferableBuffer(buf.normals),
-			getTransferableBuffer(buf.colors),
-			getTransferableBuffer(buf.surfaceDeformStrength),
-			getTransferableBuffer(buf.tileCoords),
-			getTransferableBuffer(buf.tileHeights),
-			getTransferableBuffer(buf.highlightStrengths),
-			getTransferableBuffer(buf.indices)
-		);
+		transferList.push(getTransferableBuffer(buf.positions));
+		transferList.push(getTransferableBuffer(buf.normals));
+		if (buf.colors) transferList.push(getTransferableBuffer(buf.colors));
+		if (buf.surfaceDeformStrength) {
+			transferList.push(getTransferableBuffer(buf.surfaceDeformStrength));
+		}
+		transferList.push(getTransferableBuffer(buf.tileHeights));
+		transferList.push(getTransferableBuffer(buf.highlightStrengths));
+		transferList.push(getTransferableBuffer(buf.indices));
 	}
 
 	transferList.push(getTransferableBuffer(occupancy.data));

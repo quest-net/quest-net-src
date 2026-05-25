@@ -14,9 +14,8 @@ interface BucketBufferEntry {
 	key: string;
 	positions: Float32Array;
 	normals: Float32Array;
-	colors: Float32Array;
-	surfaceDeformStrength: Float32Array;
-	tileCoords: Float32Array;
+	colors?: Float32Array;
+	surfaceDeformStrength?: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
 	indices: Uint32Array;
@@ -36,9 +35,8 @@ interface VoxelGeometryWorkerResponse {
 interface BucketBufferPayload {
 	positions: Float32Array;
 	normals: Float32Array;
-	colors: Float32Array;
-	surfaceDeformStrength: Float32Array;
-	tileCoords: Float32Array;
+	colors?: Float32Array;
+	surfaceDeformStrength?: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
 	indices: Uint32Array;

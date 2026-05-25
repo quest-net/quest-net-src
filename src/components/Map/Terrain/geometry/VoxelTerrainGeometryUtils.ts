@@ -10,6 +10,7 @@ import {
 	getMaterialDeformsSurface,
 	getMaterialOcclusionGroup,
 	getMaterialPreservesVoxelFaces,
+	getMaterialUsesVertexColors,
 } from '../materials';
 
 import * as THREE from 'three';
@@ -37,10 +38,9 @@ export { getMaterialBucket, getMaterialOcclusionGroup };
 export interface VoxelTerrainBuffers {
 	positions: Float32Array;
 	normals: Float32Array;
-	colors: Float32Array;
+	colors?: Float32Array;
 	/** Per-vertex mask for material vertex deformation. */
-	surfaceDeformStrength: Float32Array;
-	tileCoords: Float32Array;
+	surfaceDeformStrength?: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
 	indices: Uint32Array;
@@ -87,9 +87,8 @@ export interface VoxelTerrainBuildResult {
 interface BucketState {
 	positions: Float32Array;
 	normals: Float32Array;
-	colors: Float32Array;
-	surfaceDeformStrength: Float32Array;
-	tileCoords: Float32Array;
+	colors?: Float32Array;
+	surfaceDeformStrength?: Float32Array;
 	tileHeights: Float32Array;
 	highlightStrengths: Float32Array;
 	indices: Uint32Array;
@@ -97,13 +96,17 @@ interface BucketState {
 	ip: number; // index pointer
 }
 
-function createBucketState(maxVertices: number, maxIndices: number): BucketState {
+function createBucketState(
+	maxVertices: number,
+	maxIndices: number,
+	usesVertexColors: boolean,
+	usesSurfaceDeform: boolean
+): BucketState {
 	return {
 		positions:          new Float32Array(maxVertices * 3),
 		normals:            new Float32Array(maxVertices * 3),
-		colors:             new Float32Array(maxVertices * 3),
-		surfaceDeformStrength: new Float32Array(maxVertices),
-		tileCoords:         new Float32Array(maxVertices * 2),
+		colors:             usesVertexColors ? new Float32Array(maxVertices * 3) : undefined,
+		surfaceDeformStrength: usesSurfaceDeform ? new Float32Array(maxVertices) : undefined,
 		tileHeights:        new Float32Array(maxVertices),
 		highlightStrengths: new Float32Array(maxVertices),
 		indices:            new Uint32Array(maxIndices),
@@ -144,12 +147,15 @@ function ensureBucketCapacity(
 	const requiredIndices = bucket.ip + additionalIndices;
 	bucket.positions = growFloat32Buffer(bucket.positions, requiredVertices * 3);
 	bucket.normals = growFloat32Buffer(bucket.normals, requiredVertices * 3);
-	bucket.colors = growFloat32Buffer(bucket.colors, requiredVertices * 3);
-	bucket.surfaceDeformStrength = growFloat32Buffer(
-		bucket.surfaceDeformStrength,
-		requiredVertices
-	);
-	bucket.tileCoords = growFloat32Buffer(bucket.tileCoords, requiredVertices * 2);
+	if (bucket.colors) {
+		bucket.colors = growFloat32Buffer(bucket.colors, requiredVertices * 3);
+	}
+	if (bucket.surfaceDeformStrength) {
+		bucket.surfaceDeformStrength = growFloat32Buffer(
+			bucket.surfaceDeformStrength,
+			requiredVertices
+		);
+	}
 	bucket.tileHeights = growFloat32Buffer(bucket.tileHeights, requiredVertices);
 	bucket.highlightStrengths = growFloat32Buffer(
 		bucket.highlightStrengths,
@@ -171,8 +177,6 @@ interface GreedyFace {
 	r: number;
 	g: number;
 	b: number;
-	tileX: number;
-	tileY: number;
 	tileHeight: number;
 }
 
@@ -279,10 +283,19 @@ export function buildVoxelTerrainBuffers(
 
 	const buckets = new Map<string, BucketState>();
 
-	const getOrCreateBucket = (key: string): BucketState => {
+	const getOrCreateBucket = (
+		key: string,
+		usesVertexColors: boolean,
+		usesSurfaceDeform: boolean
+	): BucketState => {
 		let b = buckets.get(key);
 		if (!b) {
-			b = createBucketState(initialVertices, initialIndices);
+			b = createBucketState(
+				initialVertices,
+				initialIndices,
+				usesVertexColors,
+				usesSurfaceDeform
+			);
 			buckets.set(key, b);
 		}
 		return b;
@@ -326,7 +339,11 @@ export function buildVoxelTerrainBuffers(
 		quadWidth: number,
 		quadHeight: number
 	) => {
-		const b = getOrCreateBucket(greedyFace.bucket);
+		const b = getOrCreateBucket(
+			greedyFace.bucket,
+			getMaterialUsesVertexColors(greedyFace.color),
+			greedyFace.deformsSurface
+		);
 		const [nx, ny, nz] = face.normal;
 		const strength = ny > 0.5 ? 1 : 0.28;
 		const startU = getGreedyFaceAxisValue(greedyFace, uAxis);
@@ -386,25 +403,23 @@ export function buildVoxelTerrainBuffers(
 		for (let ci = 0; ci < vertexCount; ci++) {
 			const [gridX, gridY, gridZ] = cornerGridValues[ci];
 			const p3 = b.vp * 3;
-			const p2 = b.vp * 2;
 			b.positions[p3] = gridX / resolution - terrain.Width / 2;
 			b.positions[p3 + 1] = gridY / resolution - 0.5;
 			b.positions[p3 + 2] = gridZ / resolution - terrain.Length / 2;
 			b.normals[p3] = nx;
 			b.normals[p3 + 1] = ny;
 			b.normals[p3 + 2] = nz;
-			b.colors[p3] = greedyFace.r;
-			b.colors[p3 + 1] = greedyFace.g;
-			b.colors[p3 + 2] = greedyFace.b;
+			if (b.colors) {
+				b.colors[p3] = greedyFace.r;
+				b.colors[p3 + 1] = greedyFace.g;
+				b.colors[p3 + 2] = greedyFace.b;
+			}
 			const isSideTopEdgeDeformed = greedyFace.deformsTopEdge &&
 				ny === 0 &&
 				Math.abs(gridY - topGridY) < 0.0001;
-			b.surfaceDeformStrength[b.vp] = isTopFaceDeformed || isSideTopEdgeDeformed ? 1 : 0;
-			// tileCoord is retained for buffer compatibility. The gameplay
-			// highlight shader derives X/Z per fragment from world position so
-			// merged quads can span tactical-tile boundaries safely.
-			b.tileCoords[p2] = greedyFace.tileX;
-			b.tileCoords[p2 + 1] = greedyFace.tileY;
+			if (b.surfaceDeformStrength) {
+				b.surfaceDeformStrength[b.vp] = isTopFaceDeformed || isSideTopEdgeDeformed ? 1 : 0;
+			}
 			b.tileHeights[b.vp] = greedyFace.tileHeight;
 			b.highlightStrengths[b.vp] = strength;
 			b.vp++;
@@ -454,10 +469,11 @@ export function buildVoxelTerrainBuffers(
 				masks.set(sliceCoordinate, mask);
 			}
 
-			const color = getCachedColor(voxel);
 			const u = getAxisValue(voxel, uAxis);
 			const v = getAxisValue(voxel, vAxis);
 			const bucket = getMaterialBucket(voxel.color);
+			const usesVertexColors = getMaterialUsesVertexColors(voxel.color);
+			const color = usesVertexColors ? getCachedColor(voxel) : null;
 			const deformsSurface = getMaterialDeformsSurface(voxel.color);
 			const aboveColor = index.getVoxelColor(vx, vy + 1, vz);
 			const topEdgeExposed = aboveColor === null ||
@@ -472,11 +488,9 @@ export function buildVoxelTerrainBuffers(
 				preserveVoxelFaces: getMaterialPreservesVoxelFaces(voxel.color),
 				deformsSurface,
 				deformsTopEdge: deformsSurface && face.normal[1] === 0 && topEdgeExposed,
-				r: color.r,
-				g: color.g,
-				b: color.b,
-				tileX: Math.floor(vx / resolution),
-				tileY: Math.floor(vz / resolution),
+				r: color?.r ?? 0,
+				g: color?.g ?? 0,
+				b: color?.b ?? 0,
 				tileHeight: voxelTopToRulesHeight(vy, resolution),
 			};
 		}
@@ -542,9 +556,10 @@ export function buildVoxelTerrainBuffers(
 		bucketResult.set(key, {
 			positions:          trimFloat32Buffer(b.positions, b.vp * 3, transferSafe),
 			normals:            trimFloat32Buffer(b.normals, b.vp * 3, transferSafe),
-			colors:             trimFloat32Buffer(b.colors, b.vp * 3, transferSafe),
-			surfaceDeformStrength: trimFloat32Buffer(b.surfaceDeformStrength, b.vp, transferSafe),
-			tileCoords:         trimFloat32Buffer(b.tileCoords, b.vp * 2, transferSafe),
+			colors:             b.colors ? trimFloat32Buffer(b.colors, b.vp * 3, transferSafe) : undefined,
+			surfaceDeformStrength: b.surfaceDeformStrength
+				? trimFloat32Buffer(b.surfaceDeformStrength, b.vp, transferSafe)
+				: undefined,
 			tileHeights:        trimFloat32Buffer(b.tileHeights, b.vp, transferSafe),
 			highlightStrengths: trimFloat32Buffer(b.highlightStrengths, b.vp, transferSafe),
 			indices:            trimUint32Buffer(b.indices, b.ip, transferSafe),
@@ -578,12 +593,15 @@ export function createVoxelTerrainBufferGeometry(
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
 	geometry.setAttribute('normal',   new THREE.BufferAttribute(buffers.normals, 3));
-	geometry.setAttribute('color',    new THREE.BufferAttribute(buffers.colors, 3));
-	geometry.setAttribute(
-		'surfaceDeformStrength',
-		new THREE.BufferAttribute(buffers.surfaceDeformStrength, 1)
-	);
-	geometry.setAttribute('tileCoord', new THREE.BufferAttribute(buffers.tileCoords, 2));
+	if (buffers.colors) {
+		geometry.setAttribute('color', new THREE.BufferAttribute(buffers.colors, 3));
+	}
+	if (buffers.surfaceDeformStrength) {
+		geometry.setAttribute(
+			'surfaceDeformStrength',
+			new THREE.BufferAttribute(buffers.surfaceDeformStrength, 1)
+		);
+	}
 	geometry.setAttribute('tileHeight', new THREE.BufferAttribute(buffers.tileHeights, 1));
 	geometry.setAttribute(
 		'highlightStrength',

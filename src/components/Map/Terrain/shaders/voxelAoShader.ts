@@ -7,17 +7,16 @@
 // independent of how many voxels make up a tactical tile).
 //
 // Sampling pattern: at each fragment we project one voxel-thickness into the
-// empty cell adjacent to the face, then take 4 cardinal and 4 diagonal taps
-// in the tangent plane at world-space radius `voxelAoRadius` (default 0.5,
-// i.e. half a tactical tile). Sides are weighted 2x diagonals to match the
-// classic Minecraft AO formula's emphasis. A value of 1 = fully lit, 0.45 =
-// maximally occluded -- the same darkest-stop the old per-vertex curve used.
+// empty cell adjacent to the face, then take 4 cardinal taps in the tangent
+// plane at world-space radius `voxelAoRadius` (default 0.5, i.e. half a
+// tactical tile). A value of 1 = fully lit, 0.45 = maximally occluded -- the
+// same darkest-stop the old per-vertex curve used.
 
 import * as THREE from 'three';
 import type { VoxelTerrainOccupancy } from '../geometry/VoxelTerrainGeometryUtils';
 
 /** World-space radius of the AO falloff kernel, in tactical units. */
-export const VOXEL_AO_FALLOFF_RADIUS = 0.5;
+export const VOXEL_AO_FALLOFF_RADIUS = 0.25;
 
 /**
  * Main-thread wrapper around the worker's voxel-occupancy snapshot, ready to
@@ -140,23 +139,12 @@ export const VOXEL_AO_FRAGMENT_HEADER: readonly string[] = [
 	// cardinal taps below can see it regardless of resolution.
 	'	vec3 base = worldPos + normal * (voxelAoVoxelSize * 0.5);',
 	'	float r = voxelAoRadius;',
-	// Diagonals are at sqrt(2)/2 * r so their tangent-plane distance to the
-	// fragment matches the cardinal taps; otherwise diagonal occluders would
-	// register further away than cardinal ones at the same world distance.
-	'	float dr = r * 0.7071;',
 	'	float sides = 0.0;',
 	'	sides += sampleVoxelAoOccupancy(base + T1 * r);',
 	'	sides += sampleVoxelAoOccupancy(base - T1 * r);',
 	'	sides += sampleVoxelAoOccupancy(base + T2 * r);',
 	'	sides += sampleVoxelAoOccupancy(base - T2 * r);',
-	'	float diag = 0.0;',
-	'	diag += sampleVoxelAoOccupancy(base + (T1 + T2) * dr);',
-	'	diag += sampleVoxelAoOccupancy(base + (T1 - T2) * dr);',
-	'	diag += sampleVoxelAoOccupancy(base + (-T1 + T2) * dr);',
-	'	diag += sampleVoxelAoOccupancy(base + (-T1 - T2) * dr);',
-	// Sides counted 2x diagonals to match the classic MC AO emphasis (each
-	// side appears in 2 of the 4 per-corner formulas, each corner in 1).
-	'	float occ = (sides * 2.0 + diag) / 12.0;',
+	'	float occ = sides / 4.0;',
 	'	return mix(0.45, 1.0, 1.0 - occ);',
 	'}',
 ];

@@ -9,7 +9,7 @@ import {
 	getMaxVoxelSurfaceHeight,
 	getVoxelRulesSurfaceHeight,
 } from "../../../utils/terrain/data/VoxelTerrainUtils";
-import { getVoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import type { SelectedActor } from "../MapStateProvider";
 import type { ActorTokenDescriptor, ThreeDSceneResources } from "./actorTokenTypes";
 import {
@@ -50,6 +50,7 @@ interface ThreeDActorLayerProps {
 	cutoutImageIds: ReadonlySet<string>;
 	selectedActor: SelectedActor | null;
 	terrain: VoxelTerrain;
+	terrainIndex: VoxelTerrainIndex;
 	isDM: boolean;
 	xRayActors?: boolean;
 	imageService?: {
@@ -556,7 +557,6 @@ function createBaseMesh(actor: ActorTokenDescriptor): BaseMeshResult {
 	});
 	const base = new THREE.Mesh(geometry, baseMaterial);
 	base.position.y = ACTOR_TOKEN_BASE.HEIGHT / 2;
-	base.castShadow = true;
 	base.receiveShadow = true;
 	group.add(base);
 
@@ -760,14 +760,17 @@ function refreshSupportVisual(
 	return nextHandles;
 }
 
-function getActorHeightRange(actor: ActorTokenDescriptor, terrain: VoxelTerrain): {
+function getActorHeightRange(
+	actor: ActorTokenDescriptor,
+	terrain: VoxelTerrain,
+	terrainIndex: VoxelTerrainIndex
+): {
 	min: number;
 	max: number;
 } {
 	const surfaces =
-		getVoxelTerrainIndex(terrain).allSurfaces.get(
-			`${actor.position.x},${actor.position.y}`
-		) ?? [];
+		terrainIndex.allSurfaces.get(`${actor.position.x},${actor.position.y}`) ??
+		[];
 	const min =
 		surfaces[0] ??
 		getVoxelRulesSurfaceHeight(terrain, actor.position.x, actor.position.y);
@@ -821,6 +824,7 @@ export function ThreeDActorLayer({
 	cutoutImageIds,
 	selectedActor,
 	terrain,
+	terrainIndex,
 	isDM,
 	xRayActors = false,
 	imageService,
@@ -843,6 +847,7 @@ export function ThreeDActorLayer({
 	const selectedActorRef = useRef(selectedActor);
 	const xRayActorsRef = useRef(xRayActors);
 	const terrainRef = useRef(terrain);
+	const terrainIndexRef = useRef(terrainIndex);
 	const liveActorPosesRef = useRef(liveActorPoses);
 	const selectionHandlesRef = useRef<Map<string, SelectionHandles>>(new Map());
 	const actorGroupsRef = useRef<Map<string, THREE.Group>>(new Map());
@@ -902,6 +907,10 @@ export function ThreeDActorLayer({
 	useEffect(() => {
 		terrainRef.current = terrain;
 	}, [terrain]);
+
+	useEffect(() => {
+		terrainIndexRef.current = terrainIndex;
+	}, [terrainIndex]);
 
 	useEffect(() => {
 		liveActorPosesRef.current = liveActorPoses;
@@ -1220,7 +1229,7 @@ export function ThreeDActorLayer({
 			// Precise pick first: raycast against the (1.25x) pick meshes.
 			// Eat hits that are clearly behind terrain.
 			const actorHits = raycaster.intersectObjects(resources.actorPickTargets, true);
-			const occlusionHit = raycastTerrainDDA(raycaster.ray, getVoxelTerrainIndex(terrainRef.current));
+			const occlusionHit = raycastTerrainDDA(raycaster.ray, terrainIndexRef.current);
 			for (const hit of actorHits) {
 				if (
 					!xRayActorsRef.current &&
@@ -1342,7 +1351,11 @@ export function ThreeDActorLayer({
 			const projectedDelta =
 				(pointerDx * drag.projectedUpX + pointerDy * drag.projectedUpY) /
 				(drag.pixelsPerHeight * drag.pixelsPerHeight);
-			const heightRange = getActorHeightRange(drag.descriptor, terrainRef.current);
+			const heightRange = getActorHeightRange(
+				drag.descriptor,
+				terrainRef.current,
+				terrainIndexRef.current
+			);
 			const nextH = clampHeight(
 				Math.round(drag.startPosition.h + projectedDelta),
 				heightRange.min,

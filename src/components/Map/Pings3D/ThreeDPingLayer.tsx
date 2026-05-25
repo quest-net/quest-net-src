@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { PING_DURATION_MS } from "../../../domains/Ping/Ping";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import { getVoxelSurfaceHeight } from "../../../utils/terrain/data/VoxelTerrainUtils";
 import type { ActivePing } from "../hooks/useActivePings";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import { terrainHeightToWorldY } from "../Actors3D/actorTokenPlacement";
 import { raycastTerrainDDA } from "../Movement3D/movement3DHelpers";
-import { getVoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	THREE_D_PING_INPUT,
 	THREE_D_PING_MARKER,
@@ -16,6 +16,7 @@ import {
 interface ThreeDPingLayerProps {
 	resources: ThreeDSceneResources;
 	terrain: VoxelTerrain;
+	terrainIndex: VoxelTerrainIndex;
 	activePings: ActivePing[];
 	onPingTile: (tile: { x: number; y: number }) => void;
 }
@@ -189,7 +190,7 @@ function disposePingVisual(visual: PingVisual): void {
 function getPingTileFromPointer(
 	event: PointerEvent,
 	resources: ThreeDSceneResources,
-	terrain: VoxelTerrain,
+	terrainIndex: VoxelTerrainIndex,
 	raycaster: THREE.Raycaster,
 	pointer: THREE.Vector2
 ): { x: number; y: number } | null {
@@ -198,7 +199,7 @@ function getPingTileFromPointer(
 	pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 	raycaster.setFromCamera(pointer, resources.camera);
 
-	const terrainHit = raycastTerrainDDA(raycaster.ray, getVoxelTerrainIndex(terrain));
+	const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex);
 	if (!terrainHit) return null;
 
 	return { x: terrainHit.tileX, y: terrainHit.tileZ };
@@ -211,6 +212,7 @@ function isPingGesture(event: PointerEvent): boolean {
 export function ThreeDPingLayer({
 	resources,
 	terrain,
+	terrainIndex,
 	activePings,
 	onPingTile,
 }: ThreeDPingLayerProps) {
@@ -332,7 +334,7 @@ export function ThreeDPingLayer({
 			const tile = getPingTileFromPointer(
 				event,
 				resources,
-				terrain,
+				terrainIndex,
 				raycaster,
 				pointer
 			);
@@ -363,7 +365,7 @@ export function ThreeDPingLayer({
 			window.removeEventListener("pointercancel", handlePointerCancel, true);
 			resources.domElement.removeEventListener("auxclick", handleAuxClick, true);
 		};
-	}, [resources, terrain]);
+	}, [resources, terrainIndex]);
 
 	return null;
 }

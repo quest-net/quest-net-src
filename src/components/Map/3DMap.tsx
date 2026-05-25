@@ -15,6 +15,7 @@ import { CampaignActions } from '../../domains/Campaign/CampaignActions';
 import { AppSettingActions } from '../../domains/AppSetting/AppSettingActions';
 import { getMaxVoxelSurfaceHeight } from '../../utils/terrain/data/VoxelTerrainUtils';
 import { getVoxelCount } from '../../utils/terrain/data/VoxelDataUtils';
+import { getVoxelTerrainIndex } from '../../utils/terrain/data/VoxelTerrainIndex';
 import {
 	calculateVoxelMovementRange,
 	calculateVoxelRemainingMovementRange,
@@ -179,6 +180,12 @@ export default function ThreeDMap({
 		return ids;
 	}, [campaign]);
 	const terrainSignature = useMemo(() => createTerrainSignature(terrain), [terrain]);
+	const terrainIndex = useMemo(
+		() => (terrain ? getVoxelTerrainIndex(terrain) : null),
+		// terrainSignature is the value-equal identity for the voxel terrain.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[terrainSignature]
+	);
 	const terrainLighting = terrain?.Lighting;
 	const terrainBackgroundColor = terrain?.Background.Color;
 	const terrainGeometry = useVoxelTerrainGeometryWorker(
@@ -358,6 +365,8 @@ export default function ThreeDMap({
 		renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
 		renderer.outputColorSpace = THREE.SRGBColorSpace;
 		renderer.shadowMap.enabled = true;
+		renderer.shadowMap.autoUpdate = false;
+		renderer.shadowMap.needsUpdate = true;
 		renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 		container.appendChild(renderer.domElement);
 		rendererRef.current = renderer;
@@ -440,6 +449,9 @@ export default function ThreeDMap({
 			occlusionTargets: [],
 			movementHighlight,
 			animationCallbacks: new Set(),
+			requestShadowUpdate: () => {
+				renderer.shadowMap.needsUpdate = true;
+			},
 			actorPickTargets: [],
 			dragState: { active: false },
 		};
@@ -607,6 +619,7 @@ export default function ThreeDMap({
 		dirLight.shadow.camera.near = shadowCamera.near;
 		dirLight.shadow.camera.far = shadowCamera.far;
 		dirLight.shadow.camera.updateProjectionMatrix();
+		sceneResources.requestShadowUpdate();
 
 		controls.cursor.set(0, terrainCenterY, 0);
 		controls.maxTargetRadius = getPanLimitRadius(W, L, maxSurfaceHeight);
@@ -654,6 +667,7 @@ export default function ThreeDMap({
 			terrainResourcesRef.current = null;
 			resources.occlusionTargets.length = 0;
 			resources.movementHighlight = createMovementHighlightTexture(1, 1, 1);
+			resources.requestShadowUpdate();
 			return;
 		}
 
@@ -701,12 +715,13 @@ export default function ThreeDMap({
 		for (const mesh of meshes) resources.occlusionTargets.push(mesh);
 		resources.movementHighlight = movementHighlight;
 		terrainResourcesRef.current = { meshes, geometries, materials, movementHighlight, voxelAo, animationFrameCallbacks };
+		resources.requestShadowUpdate();
 	}, [sceneResources, terrainGeometry]);
 
 	return (
 		<div className="relative w-full h-full">
 			<div ref={containerRef} className="w-full h-full" />
-			{sceneResources && terrain && getVoxelCount(terrain.Voxels) > 0 && (
+			{sceneResources && terrain && terrainIndex && getVoxelCount(terrain.Voxels) > 0 && (
 				<>
 					<ThreeDActorLayer
 						resources={sceneResources}
@@ -715,6 +730,7 @@ export default function ThreeDMap({
 						cutoutImageIds={cutoutImageIds}
 						selectedActor={selectedActor}
 						terrain={terrain}
+						terrainIndex={terrainIndex}
 						isDM={isDM}
 						xRayActors={xRayActors}
 						imageService={imageService}
@@ -727,6 +743,7 @@ export default function ThreeDMap({
 					<ThreeDMovementLayer
 						resources={sceneResources}
 						terrain={terrain}
+						terrainIndex={terrainIndex}
 						characters={characters}
 						entities={entities}
 						selectedActor={selectedActor}
@@ -752,6 +769,7 @@ export default function ThreeDMap({
 					<ThreeDPingLayer
 						resources={sceneResources}
 						terrain={terrain}
+						terrainIndex={terrainIndex}
 						activePings={activePings}
 						onPingTile={handlePingTile}
 					/>

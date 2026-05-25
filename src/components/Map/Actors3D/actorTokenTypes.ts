@@ -40,6 +40,8 @@ export interface ThreeDSceneResources {
 	 * layers register here instead of starting independent RAF loops.
 	 */
 	animationCallbacks: Set<(now: number) => void>;
+	/** Marks static shadow maps dirty so they update on the next render. */
+	requestShadowUpdate: () => void;
 	/**
 	 * Mutable list of actor pick meshes shared with the actor layer.
 	 * Other layers (e.g. movement) may raycast against this to suppress

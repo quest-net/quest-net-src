@@ -1,5 +1,5 @@
 export const THREE_D_MAP_RENDERER = {
-	MAX_PIXEL_RATIO: 2,
+	MAX_PIXEL_RATIO: 1.5,
 	CAMERA_NEAR: 0.1,
 	CAMERA_FAR: 2000,
 } as const;

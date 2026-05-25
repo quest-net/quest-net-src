@@ -139,6 +139,11 @@ export function getMaterialDeformsSurface(colorIndex: number): boolean {
 	return geometry?.deformSurface === true;
 }
 
+export function getMaterialUsesVertexColors(colorIndex: number): boolean {
+	const geometry = GEOMETRY_BY_PALETTE_INDEX.get(colorIndex) ?? DEFAULT_GEOMETRY;
+	return geometry?.vertexColors !== false;
+}
+
 export function getMaterialPreservesVoxelFaces(colorIndex: number): boolean {
 	const geometry = GEOMETRY_BY_PALETTE_INDEX.get(colorIndex) ?? DEFAULT_GEOMETRY;
 	return geometry?.preserveVoxelFaces === true;
@@ -280,7 +285,6 @@ export function createDummyTerrainGeometry(): THREE.BufferGeometry {
 	geo.setAttribute('normal',            new THREE.BufferAttribute(new Float32Array(v * 3), 3));
 	geo.setAttribute('color',             new THREE.BufferAttribute(new Float32Array(v * 3), 3));
 	geo.setAttribute('surfaceDeformStrength', new THREE.BufferAttribute(new Float32Array(v), 1));
-	geo.setAttribute('tileCoord',         new THREE.BufferAttribute(new Float32Array(v * 2), 2));
 	geo.setAttribute('tileHeight',        new THREE.BufferAttribute(new Float32Array(v), 1));
 	geo.setAttribute('highlightStrength', new THREE.BufferAttribute(new Float32Array(v), 1));
 	geo.setIndex(new THREE.BufferAttribute(new Uint32Array([0, 1, 2, 0, 2, 3]), 1));
