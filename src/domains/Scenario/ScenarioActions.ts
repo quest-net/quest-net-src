@@ -117,7 +117,7 @@ export const ScenarioActions = {
             return;
         }
 
-        // 1. Set terrain (skip if deleted). Defer actor validation until
+        // 1. Set terrain (skip if deleted). Defer actor repair until
         // after this scenario has fully replaced entities and character
         // positions, otherwise the previous encounter layout can be judged
         // against the new terrain.
@@ -126,7 +126,7 @@ export const ScenarioActions = {
         );
         if (terrainExists) {
             await VoxelTerrainActions.setActive(
-                { terrainId: scenario.TerrainId, validateActors: false },
+                { terrainId: scenario.TerrainId, repairActors: false },
                 context
             );
         }
@@ -144,7 +144,7 @@ export const ScenarioActions = {
                     {
                         entityId: placement.EntityTemplateId,
                         position: placement.Position,
-                        validateActors: false,
+                        repairActors: false,
                     },
                     context
                 );

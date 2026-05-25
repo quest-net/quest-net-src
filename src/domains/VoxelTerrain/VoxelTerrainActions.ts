@@ -28,7 +28,7 @@ const FLYING_ACTOR_CLEARANCE_BY_SIZE = {
 
 const POSITION_HEIGHT_EPSILON = 1e-6;
 
-export type ActorPositionValidationResult =
+type ActorPositionValidationResult =
 	| {
 			ok: true;
 			position: Position;
@@ -374,7 +374,7 @@ export const VoxelTerrainActions = {
 		params: {
 			terrainId: string;
 			updates: Partial<VoxelTerrain>;
-			validateActors?: boolean;
+			repairActors?: boolean;
 		},
 		context: Context
 	): void {
@@ -398,7 +398,7 @@ export const VoxelTerrainActions = {
 			context
 		);
 
-		if (params.validateActors !== false) {
+		if (params.repairActors !== false) {
 			VoxelTerrainActions.repairActors(context);
 		}
 	},
@@ -433,7 +433,7 @@ export const VoxelTerrainActions = {
 	},
 
 	async setActive(
-		params: { terrainId: string | undefined; validateActors?: boolean },
+		params: { terrainId: string | undefined; repairActors?: boolean },
 		context: Context
 	): Promise<void> {
 		const campaign = CampaignActions.getActiveCampaign(context);
@@ -470,7 +470,7 @@ export const VoxelTerrainActions = {
 			context
 		);
 
-		if (params.validateActors !== false) {
+		if (params.repairActors !== false) {
 			VoxelTerrainActions.repairActors(context);
 		}
 	},
@@ -515,7 +515,7 @@ export const VoxelTerrainActions = {
 		const occupiedTiles = new Set<string>();
 		const index = getVoxelTerrainIndex(terrain);
 
-		VoxelTerrainActions.validateActorArray(
+		VoxelTerrainActions.repairActorArray(
 			campaign.GameState.Entities,
 			terrain,
 			index,
@@ -524,7 +524,7 @@ export const VoxelTerrainActions = {
 			campaign,
 			context
 		);
-		VoxelTerrainActions.validateActorArray(
+		VoxelTerrainActions.repairActorArray(
 			campaign.GameState.Characters,
 			terrain,
 			index,
@@ -535,7 +535,7 @@ export const VoxelTerrainActions = {
 		);
 	},
 
-	validateActorArray(
+	repairActorArray(
 		actors: Actor[],
 		terrain: VoxelTerrain,
 		index: VoxelTerrainIndex,
@@ -610,26 +610,6 @@ export const VoxelTerrainActions = {
 
 	isInBounds(x: number, y: number, terrain: VoxelTerrain): boolean {
 		return isInBounds(x, y, terrain);
-	},
-
-	validateActorPosition(
-		actor: Actor,
-		position: Position,
-		terrain: VoxelTerrain,
-		index: VoxelTerrainIndex = getVoxelTerrainIndex(terrain),
-		occupiedTiles?: ReadonlySet<string>
-	): ActorPositionValidationResult {
-		return validateActorPositionForTerrain(
-			actor,
-			position,
-			terrain,
-			index,
-			occupiedTiles
-		);
-	},
-
-	validateActors(context: Context): void {
-		VoxelTerrainActions.repairActors(context);
 	},
 
 	validateActorMove(

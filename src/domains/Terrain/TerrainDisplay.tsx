@@ -262,7 +262,7 @@ export default function TerrainDisplay() {
 		actionServiceRef.current?.execute("terrain:edit", {
 			terrainId,
 			updates,
-			validateActors: false,
+			repairActors: false,
 		});
 	};
 

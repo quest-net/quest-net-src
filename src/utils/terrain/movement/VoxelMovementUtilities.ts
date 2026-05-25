@@ -8,6 +8,11 @@ import {
 	getVoxelTerrainIndex,
 	type VoxelTerrainIndex,
 } from "../data/VoxelTerrainIndex";
+import {
+	getVoxelMovementAdjacency,
+	VOXEL_MOVEMENT_DIRECTIONS,
+	type VoxelMovementAdjacency,
+} from "./VoxelMovementAdjacency";
 
 export interface VoxelMovementTile {
 	x: number;
@@ -203,6 +208,7 @@ export function calculateVoxelMovementRange(
 	}
 
 	const index = getVoxelTerrainIndex(terrain);
+	const adjacency: VoxelMovementAdjacency = getVoxelMovementAdjacency(terrain);
 
 	const addBestTile = (x: number, y: number, h: number, cost: number) => {
 		const key = getVoxelTileHeightKey(x, y, h);
@@ -228,43 +234,49 @@ export function calculateVoxelMovementRange(
 	nodeCosts.set(startKey, 0);
 	queue.enqueue({ x: start.x, y: start.y, h: start.h }, 0);
 
-	const directions = [
-		{ dx: 1, dy: 0 },
-		{ dx: -1, dy: 0 },
-		{ dx: 0, dy: 1 },
-		{ dx: 0, dy: -1 },
-	];
-
 	while (!queue.isEmpty()) {
 		const current = queue.dequeue()!;
 		const currentKey = nodeKey(current.x, current.y, current.h);
 		const currentCost = nodeCosts.get(currentKey)!;
 
-		for (const direction of directions) {
-			const nx = current.x + direction.dx;
-			const ny = current.y + direction.dy;
+		// Surface-to-surface neighbors are precomputed per terrain revision in
+		// VoxelMovementAdjacency, keyed by direction. The build runs
+		// isSurfaceTransitionReachable across every (x, y, h) surface tile and
+		// every cardinal step once per revision, so Dijkstra no longer rescans
+		// voxel columns for air clearance during traversal -- it just reads
+		// the precomputed neighbor heights here. Flier extras (maintain altitude
+		// over non-empty columns, cross empty columns at current.h) depend on
+		// `current.h` so they're computed inline below.
+		const neighborsByDirection = adjacency.getNeighborsByDirection(
+			current.x,
+			current.y,
+			current.h
+		);
+
+		for (let d = 0; d < VOXEL_MOVEMENT_DIRECTIONS.length; d++) {
+			const { dx, dy } = VOXEL_MOVEMENT_DIRECTIONS[d];
+			const nx = current.x + dx;
+			const ny = current.y + dy;
 
 			if (!isVoxelTileInBounds(terrain, nx, ny)) continue;
 
-			// All walkable surface heights at the neighbour tile.
-			const surfaceList = getSurfacesAtTile(index, nx, ny);
+			const walking = neighborsByDirection[d];
 
-			// Candidate destination heights: all surfaces the actor can stand on.
-			// Flying actors also retain the option of hovering at their current
-			// altitude (the old max(surface, current.h) path) so they can glide
-			// over terrain without being forced onto every surface below them.
-			const candidateHeights: number[] = surfaceList.slice();
-			if (canFly && surfaceList.length > 0) {
-				const maxSurface = surfaceList[surfaceList.length - 1]; // already sorted
-				const flyingAlt = Math.max(maxSurface, current.h);
-				if (!candidateHeights.includes(flyingAlt)) {
-					candidateHeights.push(flyingAlt);
-				}
-			} else if (canFly && surfaceList.length === 0) {
-				// Empty tile - flying actor can cross at current altitude.
-				candidateHeights.push(current.h);
-				if (current.h !== 0) {
-					candidateHeights.push(0);
+			// Candidate destination heights for this direction. Walking heights
+			// come from cached adjacency; flier extras are layered on top.
+			const candidateHeights: number[] = [];
+			for (const n of walking) candidateHeights.push(n.h);
+
+			if (canFly) {
+				const surfaceList = getSurfacesAtTile(index, nx, ny);
+				if (surfaceList.length === 0) {
+					// Empty tile -- flying actor can cross at current altitude.
+					candidateHeights.push(current.h);
+					if (current.h !== 0) candidateHeights.push(0);
+				} else if (!walking.some((n) => n.h === current.h)) {
+					// Flier maintains altitude over non-empty terrain only when
+					// current.h is not already a walking-reachable neighbor.
+					candidateHeights.push(current.h);
 				}
 			}
 

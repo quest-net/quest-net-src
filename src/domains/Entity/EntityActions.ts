@@ -104,7 +104,7 @@ export const EntityActions = {
 	 * DM only - handled by ACTION_REGISTRY
 	 */
 	spawn(
-		params: { entityId: string; position?: Position; validateActors?: boolean },
+		params: { entityId: string; position?: Position; repairActors?: boolean },
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
@@ -195,7 +195,7 @@ export const EntityActions = {
 			context
 		);
 
-		if (params.validateActors !== false && getActiveVoxelTerrain(campaign)) {
+		if (params.repairActors !== false && getActiveVoxelTerrain(campaign)) {
 			VoxelTerrainActions.repairActors(context);
 		}
 	},
