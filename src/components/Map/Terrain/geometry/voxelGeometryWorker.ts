@@ -3,9 +3,14 @@
 // Protocol
 // --------
 // Incoming:  { buildId: number; terrain: VoxelTerrain }
-// Outgoing:  { buildId, buckets: Array<{ key: string, positions, normals, colors,
-//              aoStrength, surfaceDeformStrength, tileCoords, tileHeights,
-//              highlightStrengths, indices }> }
+// Outgoing:  {
+//              buildId,
+//              buckets: Array<{ key, positions, normals, colors,
+//                surfaceDeformStrength, tileCoords, tileHeights,
+//                highlightStrengths, indices }>,
+//              occupancy: { data, voxelWidth, voxelHeight, voxelLength,
+//                worldOrigin{X,Y,Z}, worldSize{X,Y,Z}, voxelSize },
+//            }
 //            All TypedArray/ArrayBuffer values are transferred (zero-copy).
 
 import * as THREE from 'three';
@@ -25,8 +30,8 @@ function getTransferableBuffer(view: ArrayBufferView): ArrayBuffer {
 self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }>) => {
 	const { buildId, terrain } = event.data;
 
-	// Build raw buffers (face-culled, AO-separated, quad-flipped, per-bucket).
-	const bucketMap = buildVoxelTerrainBuffers(
+	// Build raw buffers + voxel-occupancy snapshot (face-culled, per-bucket).
+	const { buckets: bucketMap, occupancy } = buildVoxelTerrainBuffers(
 		terrain,
 		(voxel) =>
 			new THREE.Color(
@@ -46,7 +51,6 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 			positions:          buf.positions,
 			normals:            buf.normals,
 			colors:             buf.colors,
-			aoStrength:         buf.aoStrength,
 			surfaceDeformStrength: buf.surfaceDeformStrength,
 			tileCoords:         buf.tileCoords,
 			tileHeights:        buf.tileHeights,
@@ -57,7 +61,6 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 			getTransferableBuffer(buf.positions),
 			getTransferableBuffer(buf.normals),
 			getTransferableBuffer(buf.colors),
-			getTransferableBuffer(buf.aoStrength),
 			getTransferableBuffer(buf.surfaceDeformStrength),
 			getTransferableBuffer(buf.tileCoords),
 			getTransferableBuffer(buf.tileHeights),
@@ -66,5 +69,10 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 		);
 	}
 
-	(self as unknown as Worker).postMessage({ buildId, buckets }, transferList);
+	transferList.push(getTransferableBuffer(occupancy.data));
+
+	(self as unknown as Worker).postMessage(
+		{ buildId, buckets, occupancy },
+		transferList
+	);
 };

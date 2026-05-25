@@ -3,6 +3,7 @@ import * as THREE from "three";
 import type { VoxelTerrain } from "../../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCount } from "../../../../utils/terrain/data/VoxelDataUtils";
 import { createVoxelTerrainBufferGeometry } from "../geometry/VoxelTerrainGeometryUtils";
+import type { VoxelTerrainOccupancy } from "../geometry/VoxelTerrainGeometryUtils";
 import { createTerrainRevision } from "../../../../utils/terrain/data/VoxelTerrainIndex";
 
 // ---------------------------------------------------------------------------
@@ -14,7 +15,6 @@ interface BucketBufferEntry {
 	positions: Float32Array;
 	normals: Float32Array;
 	colors: Float32Array;
-	aoStrength: Float32Array;
 	surfaceDeformStrength: Float32Array;
 	tileCoords: Float32Array;
 	tileHeights: Float32Array;
@@ -25,17 +25,18 @@ interface BucketBufferEntry {
 interface VoxelGeometryWorkerResponse {
 	buildId: number;
 	buckets: BucketBufferEntry[];
+	occupancy: VoxelTerrainOccupancy;
 }
 
 // ---------------------------------------------------------------------------
 // Cache types -- keyed by terrain signature, value is the per-bucket payload
+// plus the voxel-occupancy snapshot used by the per-fragment AO shader.
 // ---------------------------------------------------------------------------
 
 interface BucketBufferPayload {
 	positions: Float32Array;
 	normals: Float32Array;
 	colors: Float32Array;
-	aoStrength: Float32Array;
 	surfaceDeformStrength: Float32Array;
 	tileCoords: Float32Array;
 	tileHeights: Float32Array;
@@ -43,8 +44,10 @@ interface BucketBufferPayload {
 	indices: Uint32Array;
 }
 
-/** One entry in the geometry cache: Map from bucket key to its raw buffers. */
-type VoxelGeometryBufferPayload = Map<string, BucketBufferPayload>;
+interface VoxelGeometryBufferPayload {
+	buckets: Map<string, BucketBufferPayload>;
+	occupancy: VoxelTerrainOccupancy;
+}
 
 // ---------------------------------------------------------------------------
 // Public result shape
@@ -53,6 +56,8 @@ type VoxelGeometryBufferPayload = Map<string, BucketBufferPayload>;
 export interface VoxelTerrainGeometryResult {
 	/** One THREE.BufferGeometry per material bucket (at minimum 'default'). */
 	buckets: Map<string, THREE.BufferGeometry>;
+	/** Voxel-occupancy snapshot used to build the per-fragment AO sampler. */
+	occupancy: VoxelTerrainOccupancy;
 	width: number;
 	length: number;
 	height: number;
@@ -99,14 +104,14 @@ function payloadFromWorkerResponse(
 		const { key, ...buffers } = entry;
 		map.set(key, buffers);
 	}
-	return map;
+	return { buckets: map, occupancy: data.occupancy };
 }
 
 function createGeometryFromPayload(
 	payload: VoxelGeometryBufferPayload
 ): Map<string, THREE.BufferGeometry> {
 	const result = new Map<string, THREE.BufferGeometry>();
-	for (const [key, buffers] of payload) {
+	for (const [key, buffers] of payload.buckets) {
 		result.set(key, createVoxelTerrainBufferGeometry(buffers));
 	}
 	return result;
@@ -137,6 +142,7 @@ export function useVoxelTerrainGeometryWorker(
 		if (cachedPayload) {
 			setResult({
 				buckets: createGeometryFromPayload(cachedPayload),
+				occupancy: cachedPayload.occupancy,
 				width,
 				length,
 				height,
@@ -159,6 +165,7 @@ export function useVoxelTerrainGeometryWorker(
 			cacheGeometryBuffers(terrainSignature, payload);
 			setResult({
 				buckets: createGeometryFromPayload(payload),
+				occupancy: payload.occupancy,
 				width,
 				length,
 				height,

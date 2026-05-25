@@ -1,10 +1,9 @@
 import type { Voxel, VoxelTerrain } from '../../../../domains/VoxelTerrain/VoxelTerrain';
 import { decodeVoxels } from '../../../../utils/terrain/data/VoxelDataUtils';
-import { VOXEL_AO_CURVE, VOXEL_FACE_DEFINITIONS } from './VoxelTerrainGeometryConstants';
+import { VOXEL_FACE_DEFINITIONS } from './VoxelTerrainGeometryConstants';
 import {
 	buildVoxelTerrainIndex,
 	voxelTopToRulesHeight,
-	type VoxelTerrainIndex,
 } from '../../../../utils/terrain/data/VoxelTerrainIndex';
 import {
 	getMaterialBucket,
@@ -26,15 +25,19 @@ export { getMaterialBucket, getMaterialOcclusionGroup };
 
 // ---------------------------------------------------------------------------
 // Raw geometry buffers
+//
+// Ambient occlusion is NOT baked into vertex data. It is computed per-fragment
+// in the material shader by sampling the voxel-occupancy 3D texture emitted
+// alongside these buffers (see VoxelTerrainOccupancy below). This decouples AO
+// from greedy meshing (so adjacent faces with different AO patterns merge
+// freely) and from voxel resolution (so the AO falloff is a world-space radius
+// independent of how many voxels make up a tactical tile).
 // ---------------------------------------------------------------------------
 
 export interface VoxelTerrainBuffers {
 	positions: Float32Array;
 	normals: Float32Array;
-	/** Pure palette RGB -- no AO baked in. AO is in the aoStrength attribute. */
 	colors: Float32Array;
-	/** Per-vertex AO multiplier (0.45 .. 1.0). Applied in the fragment shader. */
-	aoStrength: Float32Array;
 	/** Per-vertex mask for material vertex deformation. */
 	surfaceDeformStrength: Float32Array;
 	tileCoords: Float32Array;
@@ -43,8 +46,38 @@ export interface VoxelTerrainBuffers {
 	indices: Uint32Array;
 }
 
+/**
+ * Voxel-occupancy snapshot. One byte per voxel cell, 255 if occupied and 0 if
+ * empty, in `data[z * voxelWidth * voxelHeight + y * voxelWidth + x]` order
+ * (Z-major, then Y, then X -- the layout `THREE.Data3DTexture` expects).
+ *
+ * Sized in voxel units. The main thread wraps `data` in a `THREE.Data3DTexture`
+ * and feeds it to every terrain material as the AO sampler.
+ */
+export interface VoxelTerrainOccupancy {
+	data: Uint8Array;
+	voxelWidth: number;
+	voxelHeight: number;
+	voxelLength: number;
+	/** World coordinates of voxel (0,0,0)'s -X -Y -Z corner. */
+	worldOriginX: number;
+	worldOriginY: number;
+	worldOriginZ: number;
+	/** Terrain size in world units (= tactical width/height/length). */
+	worldSizeX: number;
+	worldSizeY: number;
+	worldSizeZ: number;
+	/** One voxel in world units (= 1 / resolution). */
+	voxelSize: number;
+}
+
 interface VoxelTerrainBufferOptions {
 	transferSafe?: boolean;
+}
+
+export interface VoxelTerrainBuildResult {
+	buckets: Map<string, VoxelTerrainBuffers>;
+	occupancy: VoxelTerrainOccupancy;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,7 +88,6 @@ interface BucketState {
 	positions: Float32Array;
 	normals: Float32Array;
 	colors: Float32Array;
-	aoStrength: Float32Array;
 	surfaceDeformStrength: Float32Array;
 	tileCoords: Float32Array;
 	tileHeights: Float32Array;
@@ -70,7 +102,6 @@ function createBucketState(maxVertices: number, maxIndices: number): BucketState
 		positions:          new Float32Array(maxVertices * 3),
 		normals:            new Float32Array(maxVertices * 3),
 		colors:             new Float32Array(maxVertices * 3),
-		aoStrength:         new Float32Array(maxVertices),
 		surfaceDeformStrength: new Float32Array(maxVertices),
 		tileCoords:         new Float32Array(maxVertices * 2),
 		tileHeights:        new Float32Array(maxVertices),
@@ -114,7 +145,6 @@ function ensureBucketCapacity(
 	bucket.positions = growFloat32Buffer(bucket.positions, requiredVertices * 3);
 	bucket.normals = growFloat32Buffer(bucket.normals, requiredVertices * 3);
 	bucket.colors = growFloat32Buffer(bucket.colors, requiredVertices * 3);
-	bucket.aoStrength = growFloat32Buffer(bucket.aoStrength, requiredVertices);
 	bucket.surfaceDeformStrength = growFloat32Buffer(
 		bucket.surfaceDeformStrength,
 		requiredVertices
@@ -144,11 +174,6 @@ interface GreedyFace {
 	tileX: number;
 	tileY: number;
 	tileHeight: number;
-	ao0: number;
-	ao1: number;
-	ao2: number;
-	ao3: number;
-	aoKey: number;
 }
 
 function trimFloat32Buffer(
@@ -167,52 +192,6 @@ function trimUint32Buffer(
 ): Uint32Array {
 	const view = buffer.subarray(0, length);
 	return transferSafe ? view.slice() : view;
-}
-
-// ---------------------------------------------------------------------------
-// Vertex ambient occlusion
-//
-// For a face vertex at corner (cx, cy, cz) on a face with normal (nx, ny, nz),
-// we check the three voxels that would cast shadow at that vertex:
-//   side1  -- one step in the normal direction + one tangent step
-//   side2  -- one step in the normal direction + the other tangent step
-//   corner -- one step in the normal direction + both tangent steps
-//
-// Result: 0 (most occluded) .. 3 (fully lit), matching the VOXEL_AO_CURVE index.
-// AO is computed from the global voxel index regardless of material bucket, so
-// voxels of different materials still darken each other's corners correctly.
-// ---------------------------------------------------------------------------
-function vertexAO(
-	vx: number, vy: number, vz: number,
-	nx: number, ny: number, nz: number,
-	cx: number, cy: number, cz: number,
-	index: VoxelTerrainIndex
-): number {
-	// Tangent step per axis: 0 for the normal axis, sign of corner component otherwise.
-	const tx = nx !== 0 ? 0 : (cx > 0 ? 1 : -1);
-	const ty = ny !== 0 ? 0 : (cy > 0 ? 1 : -1);
-	const tz = nz !== 0 ? 0 : (cz > 0 ? 1 : -1);
-
-	// Exactly two of (tx, ty, tz) are nonzero (the two tangent axes).
-	// Decompose into d1 and d2 without heap allocation, ordered X > Y > Z.
-	let d1x: number, d1y: number, d1z: number;
-	let d2x: number, d2y: number, d2z: number;
-	if (tx !== 0 && ty !== 0) {         // normal is Z-axis
-		d1x = tx; d1y = 0;  d1z = 0;
-		d2x = 0;  d2y = ty; d2z = 0;
-	} else if (tx !== 0 /* && tz !== 0 */) { // normal is Y-axis
-		d1x = tx; d1y = 0; d1z = 0;
-		d2x = 0;  d2y = 0; d2z = tz;
-	} else {                            // normal is X-axis (ty && tz nonzero)
-		d1x = 0; d1y = ty; d1z = 0;
-		d2x = 0; d2y = 0;  d2z = tz;
-	}
-
-	const side1  = index.hasVoxel(vx + nx + d1x,       vy + ny + d1y,       vz + nz + d1z      ) ? 1 : 0;
-	const side2  = index.hasVoxel(vx + nx + d2x,       vy + ny + d2y,       vz + nz + d2z      ) ? 1 : 0;
-	if (side1 === 1 && side2 === 1) return 0; // maximally occluded -- corner check is irrelevant
-	const corner = index.hasVoxel(vx + nx + d1x + d2x, vy + ny + d1y + d2y, vz + nz + d1z + d2z) ? 1 : 0;
-	return 3 - (side1 + side2 + corner);
 }
 
 function normalAxisOf(faceNormal: readonly [number, number, number]): number {
@@ -241,11 +220,10 @@ function getFaceSliceCoordinate(
 	return getAxisValue(voxel, normalAxis) + (normalSign > 0 ? 1 : 0);
 }
 
-function packAOKey(ao0: number, ao1: number, ao2: number, ao3: number): number {
-	return ao0 | (ao1 << 2) | (ao2 << 4) | (ao3 << 6);
-}
-
 function canMergeGreedyFaces(a: GreedyFace, b: GreedyFace | null): boolean {
+	// AO is no longer in this predicate: it's computed per-fragment from the
+	// voxel-occupancy 3D texture in the material shader, so adjacent faces with
+	// different AO patterns can merge freely.
 	return (
 		b !== null &&
 		!a.preserveVoxelFaces &&
@@ -254,8 +232,7 @@ function canMergeGreedyFaces(a: GreedyFace, b: GreedyFace | null): boolean {
 		a.deformsSurface === b.deformsSurface &&
 		a.deformsTopEdge === b.deformsTopEdge &&
 		a.color === b.color &&
-		a.tileHeight === b.tileHeight &&
-		a.aoKey === b.aoKey
+		a.tileHeight === b.tileHeight
 	);
 }
 
@@ -279,18 +256,20 @@ function getCornerGridValue(
 
 // ---------------------------------------------------------------------------
 // Core buffer builder -- no Three.js objects created, safe to run in a worker.
-// Returns a Map<bucketKey, VoxelTerrainBuffers> with properly-sized (sliced)
-// TypedArrays ready for transfer. Each bucket becomes its own draw call.
+// Returns:
+//   - buckets: Map<bucketKey, VoxelTerrainBuffers> with properly-sized (sliced)
+//     TypedArrays ready for transfer. Each bucket becomes its own draw call.
+//   - occupancy: voxel-occupancy snapshot used by the per-fragment AO shader.
 // ---------------------------------------------------------------------------
 export function buildVoxelTerrainBuffers(
 	terrain: VoxelTerrain,
 	createVoxelColor: VoxelColorFactory,
 	options: VoxelTerrainBufferOptions = {}
-): Map<string, VoxelTerrainBuffers> {
+): VoxelTerrainBuildResult {
 	// Decode once, share with the index so it doesn't re-decode for occupancy.
 	const voxels = Array.from(decodeVoxels(terrain.Voxels));
 	const index = buildVoxelTerrainIndex(terrain, voxels);
-	const { resolution, voxelCount } = index;
+	const { resolution, voxelCount, voxelWidth, voxelHeight, voxelLength } = index;
 	const transferSafe = options.transferSafe ?? false;
 
 	// Buckets grow on demand, so material-specific buckets only allocate storage
@@ -309,7 +288,7 @@ export function buildVoxelTerrainBuffers(
 		return b;
 	};
 
-	const voxelDimensions = [index.voxelWidth, index.voxelHeight, index.voxelLength] as const;
+	const voxelDimensions = [voxelWidth, voxelHeight, voxelLength] as const;
 	const colorCache = new Map<number, { r: number; g: number; b: number }>();
 
 	const getCachedColor = (voxel: Voxel) => {
@@ -320,6 +299,22 @@ export function buildVoxelTerrainBuffers(
 		colorCache.set(voxel.color, cachedColor);
 		return cachedColor;
 	};
+
+	// -----------------------------------------------------------------------
+	// Voxel-occupancy snapshot for per-fragment AO. One byte per voxel cell in
+	// Z-major (then Y, then X) order, which is the layout `THREE.Data3DTexture`
+	// expects. Built in this same pass since we already have the decoded voxels
+	// on hand.
+	// -----------------------------------------------------------------------
+	const occupancyData = new Uint8Array(voxelWidth * voxelHeight * voxelLength);
+	for (const voxel of voxels) {
+		if (
+			voxel.x < 0 || voxel.x >= voxelWidth ||
+			voxel.y < 0 || voxel.y >= voxelHeight ||
+			voxel.z < 0 || voxel.z >= voxelLength
+		) continue;
+		occupancyData[voxel.z * voxelWidth * voxelHeight + voxel.y * voxelWidth + voxel.x] = 255;
+	}
 
 	const writeGreedyQuad = (
 		face: typeof VOXEL_FACE_DEFINITIONS[number],
@@ -387,12 +382,6 @@ export function buildVoxelTerrainBuffers(
 			cornerGridValues[3][1]
 		);
 		const isTopFaceDeformed = greedyFace.deformsSurface && ny > 0.5;
-		const aoValues = [
-			VOXEL_AO_CURVE[greedyFace.ao0],
-			VOXEL_AO_CURVE[greedyFace.ao1],
-			VOXEL_AO_CURVE[greedyFace.ao2],
-			VOXEL_AO_CURVE[greedyFace.ao3],
-		] as const;
 
 		for (let ci = 0; ci < vertexCount; ci++) {
 			const [gridX, gridY, gridZ] = cornerGridValues[ci];
@@ -404,11 +393,9 @@ export function buildVoxelTerrainBuffers(
 			b.normals[p3] = nx;
 			b.normals[p3 + 1] = ny;
 			b.normals[p3 + 2] = nz;
-			// Pure palette color -- AO is written separately into aoStrength.
 			b.colors[p3] = greedyFace.r;
 			b.colors[p3 + 1] = greedyFace.g;
 			b.colors[p3 + 2] = greedyFace.b;
-			b.aoStrength[b.vp] = aoValues[ci];
 			const isSideTopEdgeDeformed = greedyFace.deformsTopEdge &&
 				ny === 0 &&
 				Math.abs(gridY - topGridY) < 0.0001;
@@ -423,34 +410,21 @@ export function buildVoxelTerrainBuffers(
 			b.vp++;
 		}
 
-		// Quad-flip anisotropy fix (Mikola Lysenko / 0fps.net):
-		// When AO values differ across the diagonal, the "wrong" triangle split
-		// creates a visible seam. Flip the winding when the sum of opposite corners
-		// is unequal, so the interpolation gradient is always consistent.
-		const flipQuad = greedyFace.ao0 + greedyFace.ao2 > greedyFace.ao1 + greedyFace.ao3;
-		if (!flipQuad) {
-			// Default winding: diagonal v0--v2
-			b.indices[b.ip] = faceStartVertex;
-			b.indices[b.ip + 1] = faceStartVertex + 1;
-			b.indices[b.ip + 2] = faceStartVertex + 2;
-			b.indices[b.ip + 3] = faceStartVertex;
-			b.indices[b.ip + 4] = faceStartVertex + 2;
-			b.indices[b.ip + 5] = faceStartVertex + 3;
-		} else {
-			// Flipped winding: diagonal v1--v3
-			b.indices[b.ip] = faceStartVertex;
-			b.indices[b.ip + 1] = faceStartVertex + 1;
-			b.indices[b.ip + 2] = faceStartVertex + 3;
-			b.indices[b.ip + 3] = faceStartVertex + 1;
-			b.indices[b.ip + 4] = faceStartVertex + 2;
-			b.indices[b.ip + 5] = faceStartVertex + 3;
-		}
+		// Default winding: v0 -- v1 -- v2 / v0 -- v2 -- v3. The old quad-flip
+		// fix was for vertex-AO diagonal anisotropy; with AO computed per
+		// fragment from a 3D texture, both winding choices interpolate the same
+		// colour, so a stable winding is all we need.
+		b.indices[b.ip] = faceStartVertex;
+		b.indices[b.ip + 1] = faceStartVertex + 1;
+		b.indices[b.ip + 2] = faceStartVertex + 2;
+		b.indices[b.ip + 3] = faceStartVertex;
+		b.indices[b.ip + 4] = faceStartVertex + 2;
+		b.indices[b.ip + 5] = faceStartVertex + 3;
 		b.ip += 6;
 	};
 
 	for (const face of VOXEL_FACE_DEFINITIONS) {
 		const [dx, dy, dz] = face.neighborOffset;
-		const [nx, ny, nz] = face.normal;
 		const normalAxis = normalAxisOf(face.normal);
 		const normalSign = face.normal[normalAxis];
 		const tangentAxes = ([0, 1, 2] as const).filter((axis) => axis !== normalAxis);
@@ -480,10 +454,6 @@ export function buildVoxelTerrainBuffers(
 				masks.set(sliceCoordinate, mask);
 			}
 
-			const ao0 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[0][0], face.corners[0][1], face.corners[0][2], index);
-			const ao1 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[1][0], face.corners[1][1], face.corners[1][2], index);
-			const ao2 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[2][0], face.corners[2][1], face.corners[2][2], index);
-			const ao3 = vertexAO(vx, vy, vz, nx, ny, nz, face.corners[3][0], face.corners[3][1], face.corners[3][2], index);
 			const color = getCachedColor(voxel);
 			const u = getAxisValue(voxel, uAxis);
 			const v = getAxisValue(voxel, vAxis);
@@ -501,18 +471,13 @@ export function buildVoxelTerrainBuffers(
 				bucket,
 				preserveVoxelFaces: getMaterialPreservesVoxelFaces(voxel.color),
 				deformsSurface,
-				deformsTopEdge: deformsSurface && ny === 0 && topEdgeExposed,
+				deformsTopEdge: deformsSurface && face.normal[1] === 0 && topEdgeExposed,
 				r: color.r,
 				g: color.g,
 				b: color.b,
 				tileX: Math.floor(vx / resolution),
 				tileY: Math.floor(vz / resolution),
 				tileHeight: voxelTopToRulesHeight(vy, resolution),
-				ao0,
-				ao1,
-				ao2,
-				ao3,
-				aoKey: packAOKey(ao0, ao1, ao2, ao3),
 			};
 		}
 
@@ -572,13 +537,12 @@ export function buildVoxelTerrainBuffers(
 	}
 
 	// Trim and package each bucket's buffers.
-	const result = new Map<string, VoxelTerrainBuffers>();
+	const bucketResult = new Map<string, VoxelTerrainBuffers>();
 	for (const [key, b] of buckets) {
-		result.set(key, {
+		bucketResult.set(key, {
 			positions:          trimFloat32Buffer(b.positions, b.vp * 3, transferSafe),
 			normals:            trimFloat32Buffer(b.normals, b.vp * 3, transferSafe),
 			colors:             trimFloat32Buffer(b.colors, b.vp * 3, transferSafe),
-			aoStrength:         trimFloat32Buffer(b.aoStrength, b.vp, transferSafe),
 			surfaceDeformStrength: trimFloat32Buffer(b.surfaceDeformStrength, b.vp, transferSafe),
 			tileCoords:         trimFloat32Buffer(b.tileCoords, b.vp * 2, transferSafe),
 			tileHeights:        trimFloat32Buffer(b.tileHeights, b.vp, transferSafe),
@@ -586,7 +550,22 @@ export function buildVoxelTerrainBuffers(
 			indices:            trimUint32Buffer(b.indices, b.ip, transferSafe),
 		});
 	}
-	return result;
+
+	const occupancy: VoxelTerrainOccupancy = {
+		data: occupancyData,
+		voxelWidth,
+		voxelHeight,
+		voxelLength,
+		worldOriginX: -terrain.Width / 2,
+		worldOriginY: -0.5,
+		worldOriginZ: -terrain.Length / 2,
+		worldSizeX: terrain.Width,
+		worldSizeY: terrain.Height,
+		worldSizeZ: terrain.Length,
+		voxelSize: 1 / resolution,
+	};
+
+	return { buckets: bucketResult, occupancy };
 }
 
 // ---------------------------------------------------------------------------
@@ -600,7 +579,6 @@ export function createVoxelTerrainBufferGeometry(
 	geometry.setAttribute('position', new THREE.BufferAttribute(buffers.positions, 3));
 	geometry.setAttribute('normal',   new THREE.BufferAttribute(buffers.normals, 3));
 	geometry.setAttribute('color',    new THREE.BufferAttribute(buffers.colors, 3));
-	geometry.setAttribute('aoStrength', new THREE.BufferAttribute(buffers.aoStrength, 1));
 	geometry.setAttribute(
 		'surfaceDeformStrength',
 		new THREE.BufferAttribute(buffers.surfaceDeformStrength, 1)

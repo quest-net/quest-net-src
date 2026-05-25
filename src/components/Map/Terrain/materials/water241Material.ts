@@ -27,6 +27,14 @@ import type {
 	MovementHighlightTexture,
 	TerrainMaterial,
 } from './materialTypes';
+import {
+	applyVoxelAoUniforms,
+	VOXEL_AO_CALL,
+	VOXEL_AO_FRAGMENT_HEADER,
+	VOXEL_AO_VERTEX_BEGIN,
+	VOXEL_AO_VERTEX_HEADER,
+	type VoxelAoTexture,
+} from '../shaders/voxelAoShader';
 
 // ---------------------------------------------------------------------------
 // Tuning knobs
@@ -49,7 +57,7 @@ const WATER_BODY_ALPHA = 0.86;
 const WATER_FOAM_ALPHA = 0.75;
 
 /** Surface ripple amplitude in world units (top-face vertex displacement). */
-const WATER_RIPPLE_AMPLITUDE = 0.045;
+const WATER_RIPPLE_AMPLITUDE = 0.115;
 /** Surface ripple spatial frequency (radians per world unit). */
 const WATER_RIPPLE_FREQUENCY = 2.4;
 /** Surface ripple temporal frequency (radians per second). */
@@ -107,9 +115,8 @@ const WATER_VORONOI_GLSL: string = [
 
 function waterCommonVertexHeader(): string[] {
 	return [
-		'attribute float aoStrength;',
 		'attribute float surfaceDeformStrength;',
-		'varying float vAoStrength;',
+		...VOXEL_AO_VERTEX_HEADER,
 		'varying vec3 vWaterWorldPosition;',
 		'varying vec3 vWaterWorldNormal;',
 		'uniform float uWaterTime;',
@@ -123,7 +130,6 @@ function waterCommonVertexBegin(): string[] {
 	// surface (top faces + exposed top edges of side faces). Sides below the
 	// rippling top stay rigid so the water never tears off its walls.
 	return [
-		'vAoStrength = aoStrength;',
 		'vWaterWorldNormal = normalize(mat3(modelMatrix) * normal);',
 		'vec3 waterWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;',
 		`float waterRippleA = sin(waterWorld.x * ${WATER_RIPPLE_FREQUENCY.toFixed(3)} + uWaterTime * ${WATER_RIPPLE_TIME_SCALE.toFixed(3)});`,
@@ -133,12 +139,13 @@ function waterCommonVertexBegin(): string[] {
 		// World position used by the fragment shader for Voronoi UVs: recompute
 		// after displacement so the pattern follows the rippling surface.
 		'vWaterWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+		...VOXEL_AO_VERTEX_BEGIN,
 	];
 }
 
 function waterCommonFragmentHeader(): string[] {
 	return [
-		'varying float vAoStrength;',
+		...VOXEL_AO_FRAGMENT_HEADER,
 		'varying vec3 vWaterWorldPosition;',
 		'varying vec3 vWaterWorldNormal;',
 		'uniform float uWaterTime;',
@@ -207,7 +214,7 @@ function waterColorFragment(): string[] {
 		'vec3 wBody = mix(W_DARK, W_MAIN, wRippleMask);',
 		'vec3 wColor = mix(wBody, W_FOAM, wFoamMask);',
 		'wColor *= 1.0 - wFoamHalo * 0.10;',
-		'wColor *= vAoStrength;',
+		`wColor *= ${VOXEL_AO_CALL};`,
 		`float wAlpha = mix(${WATER_BODY_ALPHA.toFixed(3)}, ${WATER_FOAM_ALPHA.toFixed(3)}, wFoamMask);`,
 		'diffuseColor = vec4(wColor, wAlpha);',
 	];
@@ -219,9 +226,11 @@ function waterColorFragment(): string[] {
 
 function installWaterAoShader(
 	material: THREE.MeshStandardMaterial,
-	timeUniform: { value: number }
+	timeUniform: { value: number },
+	voxelAo: VoxelAoTexture
 ): void {
 	material.onBeforeCompile = (shader) => {
+		applyVoxelAoUniforms(shader, voxelAo);
 		shader.uniforms.uWaterTime = timeUniform;
 
 		shader.vertexShader = shader.vertexShader.replace(
@@ -246,12 +255,14 @@ function installWaterAoShader(
 function installWaterHighlightShader(
 	material: THREE.MeshStandardMaterial,
 	timeUniform: { value: number },
-	highlight: MovementHighlightTexture
+	highlight: MovementHighlightTexture,
+	voxelAo: VoxelAoTexture
 ): void {
 	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
 	const heightLevels = highlight.heightLevels;
 
 	material.onBeforeCompile = (shader) => {
+		applyVoxelAoUniforms(shader, voxelAo);
 		shader.uniforms.uWaterTime = timeUniform;
 		shader.uniforms.movementHighlightMap = { value: highlight.texture };
 		shader.uniforms.movementHighlightSize = { value: highlightSize };
@@ -346,7 +357,7 @@ function installWaterHighlightShader(
 export const createWater241Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { acceptsMovementHighlight, movementHighlight } = params;
+	const { acceptsMovementHighlight, movementHighlight, voxelAo } = params;
 
 	// Per-instance time uniform. onAnimationFrame writes into this object;
 	// because three.js holds the same { value } reference inside its uniforms
@@ -366,9 +377,9 @@ export const createWater241Material: MaterialFactory = (
 	});
 
 	if (acceptsMovementHighlight && movementHighlight) {
-		installWaterHighlightShader(material, timeUniform, movementHighlight);
+		installWaterHighlightShader(material, timeUniform, movementHighlight, voxelAo);
 	} else {
-		installWaterAoShader(material, timeUniform);
+		installWaterAoShader(material, timeUniform, voxelAo);
 	}
 
 	const onAnimationFrame = (timeMs: number) => {
@@ -395,7 +406,7 @@ const water241Material: TerrainMaterial = {
 	// so the surface still renders where it meets the bank/floor.
 	occlusionGroup: 'water_241',
 	// Bump on shader-source change to invalidate the program cache.
-	shaderVersion: 5,
+	shaderVersion: 6,
 	geometry: {
 		// Preserve voxel faces so terrain resolution controls the water mesh
 		// density and deformed side top edges stay sealed to the surface.

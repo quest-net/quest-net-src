@@ -1,8 +1,9 @@
-// Ambient occlusion curve: maps AO level (0 = maximally occluded, 3 = fully lit)
-// to a per-vertex float multiplier written into the aoStrength attribute at
-// mesh-build time. Applied in the fragment shader (diffuseColor.rgb *= vAoStrength)
-// so it works correctly for any material variant including textured surfaces.
-export const VOXEL_AO_CURVE = [0.45, 0.65, 0.82, 1.0] as const;
+// Ambient occlusion is no longer baked at mesh-build time. It is computed per
+// fragment by sampling the voxel-occupancy 3D texture (see
+// `VoxelTerrainOccupancy` in VoxelTerrainGeometryUtils.ts and the
+// `applyVoxelAoPatch` helper in Terrain/shaders/voxelAoShader.ts). This file now
+// only contains the per-face geometry definitions consumed by the greedy
+// mesher.
 
 export interface VoxelFaceDefinition {
 	normal: [number, number, number];

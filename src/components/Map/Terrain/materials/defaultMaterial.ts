@@ -1,5 +1,5 @@
 // Default material (bucket 'default') -- opaque vertex-coloured terrain with
-// ambient occlusion and optional movement-highlight overlay.
+// per-fragment voxel AO and optional movement-highlight overlay.
 //
 // This file is one of the per-material definition files collected by
 // materials/index.ts. The default export is the TerrainMaterial record; the
@@ -15,39 +15,15 @@ import type {
 	MovementHighlightTexture,
 	TerrainMaterial,
 } from './materialTypes';
-
-// ---------------------------------------------------------------------------
-// AO-strength shader patch (shared by both variants)
-// ---------------------------------------------------------------------------
-
-/**
- * Patches the AO-strength attribute into a MeshStandardMaterial shader.
- * Applies to both the world-view and FP-view variants of every material.
- */
-export function applyAoStrengthPatch(
-	shader: THREE.WebGLProgramParametersWithUniforms
-): void {
-	shader.vertexShader = shader.vertexShader.replace(
-		'#include <common>',
-		[
-			'#include <common>',
-			'attribute float aoStrength;',
-			'varying float vAoStrength;',
-		].join('\n')
-	);
-	shader.vertexShader = shader.vertexShader.replace(
-		'#include <begin_vertex>',
-		'#include <begin_vertex>\nvAoStrength = aoStrength;'
-	);
-	shader.fragmentShader = shader.fragmentShader.replace(
-		'#include <common>',
-		['#include <common>', 'varying float vAoStrength;'].join('\n')
-	);
-	shader.fragmentShader = shader.fragmentShader.replace(
-		'#include <color_fragment>',
-		'#include <color_fragment>\ndiffuseColor.rgb *= vAoStrength;'
-	);
-}
+import {
+	applyVoxelAoPatch,
+	applyVoxelAoUniforms,
+	VOXEL_AO_CALL,
+	VOXEL_AO_FRAGMENT_HEADER,
+	VOXEL_AO_VERTEX_BEGIN,
+	VOXEL_AO_VERTEX_HEADER,
+	type VoxelAoTexture,
+} from '../shaders/voxelAoShader';
 
 // ---------------------------------------------------------------------------
 // AO-only variant (FP view, no highlight)
@@ -57,9 +33,12 @@ export function applyAoStrengthPatch(
  * Sets material.onBeforeCompile for the AO-only (no movement highlight) variant.
  * Used by the FP-view default material.
  */
-function installDefaultAoShader(material: THREE.MeshStandardMaterial): void {
+function installDefaultAoShader(
+	material: THREE.MeshStandardMaterial,
+	voxelAo: VoxelAoTexture
+): void {
 	material.onBeforeCompile = (shader) => {
-		applyAoStrengthPatch(shader);
+		applyVoxelAoPatch(shader, voxelAo);
 	};
 }
 
@@ -77,12 +56,14 @@ function installDefaultAoShader(material: THREE.MeshStandardMaterial): void {
  */
 function installDefaultHighlightShader(
 	material: THREE.MeshStandardMaterial,
-	highlight: MovementHighlightTexture
+	highlight: MovementHighlightTexture,
+	voxelAo: VoxelAoTexture
 ): void {
 	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
 	const heightLevels = highlight.heightLevels;
 
 	material.onBeforeCompile = (shader) => {
+		applyVoxelAoUniforms(shader, voxelAo);
 		shader.uniforms.movementHighlightMap          = { value: highlight.texture };
 		shader.uniforms.movementHighlightSize         = { value: highlightSize };
 		shader.uniforms.movementHighlightHeightLevels = { value: heightLevels };
@@ -93,8 +74,7 @@ function installDefaultHighlightShader(
 			'#include <common>',
 			[
 				'#include <common>',
-				'attribute float aoStrength;',
-				'varying float vAoStrength;',
+				...VOXEL_AO_VERTEX_HEADER,
 				'uniform vec2 movementHighlightSize;',
 				'attribute float tileHeight;',
 				'attribute float highlightStrength;',
@@ -108,7 +88,7 @@ function installDefaultHighlightShader(
 			'#include <begin_vertex>',
 			[
 				'#include <begin_vertex>',
-				'vAoStrength = aoStrength;',
+				...VOXEL_AO_VERTEX_BEGIN,
 				'vMovementHighlightHeight = tileHeight;',
 				'vMovementHighlightStrength = highlightStrength;',
 				'vMovementWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
@@ -119,7 +99,7 @@ function installDefaultHighlightShader(
 			'#include <common>',
 			[
 				'#include <common>',
-				'varying float vAoStrength;',
+				...VOXEL_AO_FRAGMENT_HEADER,
 				'uniform highp sampler3D movementHighlightMap;',
 				'uniform vec2 movementHighlightSize;',
 				'uniform float movementHighlightHeightLevels;',
@@ -131,7 +111,7 @@ function installDefaultHighlightShader(
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
-			'#include <color_fragment>\ndiffuseColor.rgb *= vAoStrength;'
+			`#include <color_fragment>\ndiffuseColor.rgb *= ${VOXEL_AO_CALL};`
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <dithering_fragment>',
@@ -174,7 +154,7 @@ function installDefaultHighlightShader(
 // ---------------------------------------------------------------------------
 
 export const createDefaultMaterial: MaterialFactory = (params: MaterialFactoryParams): MaterialFactoryResult => {
-	const { acceptsMovementHighlight, movementHighlight } = params;
+	const { acceptsMovementHighlight, movementHighlight, voxelAo } = params;
 
 	const material = new THREE.MeshStandardMaterial({
 		roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
@@ -183,9 +163,9 @@ export const createDefaultMaterial: MaterialFactory = (params: MaterialFactoryPa
 	});
 
 	if (acceptsMovementHighlight && movementHighlight) {
-		installDefaultHighlightShader(material, movementHighlight);
+		installDefaultHighlightShader(material, movementHighlight, voxelAo);
 	} else {
-		installDefaultAoShader(material);
+		installDefaultAoShader(material, voxelAo);
 	}
 	// customProgramCacheKey is set by the registry wrapper.
 
@@ -199,7 +179,7 @@ export const createDefaultMaterial: MaterialFactory = (params: MaterialFactoryPa
 const defaultMaterial: TerrainMaterial = {
 	bucketKey: 'default',
 	occlusionGroup: 'solid',
-	shaderVersion: 1,
+	shaderVersion: 2,
 	factory: createDefaultMaterial,
 	// No `special` block: this is the catch-all material for palette indices 0-239
 	// and any unassigned special index.

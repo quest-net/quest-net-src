@@ -1,4 +1,5 @@
 import type * as THREE from 'three';
+import type { VoxelAoTexture } from '../shaders/voxelAoShader';
 
 // ---------------------------------------------------------------------------
 // MovementHighlight resource
@@ -25,6 +26,12 @@ export interface MaterialFactoryParams {
 	acceptsMovementHighlight: boolean;
 	/** Required when acceptsMovementHighlight is true. */
 	movementHighlight?: MovementHighlightTexture;
+	/**
+	 * Voxel-occupancy sampler used by every material's per-fragment AO shader.
+	 * Required (even for pre-warm) -- the placeholder texture returned by
+	 * `createPlaceholderVoxelAoTexture()` is fine when no terrain is loaded.
+	 */
+	voxelAo: VoxelAoTexture;
 }
 
 export interface MaterialFactoryResult {

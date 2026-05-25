@@ -66,6 +66,11 @@ export type {
 	TerrainMaterialGeometry,
 	TerrainMaterial,
 } from './materialTypes';
+export {
+	createPlaceholderVoxelAoTexture,
+	createVoxelAoTexture,
+	type VoxelAoTexture,
+} from '../shaders/voxelAoShader';
 
 // ---------------------------------------------------------------------------
 // Editor swatch list (special materials only)
@@ -274,7 +279,6 @@ export function createDummyTerrainGeometry(): THREE.BufferGeometry {
 	geo.setAttribute('position',          new THREE.BufferAttribute(new Float32Array(v * 3), 3));
 	geo.setAttribute('normal',            new THREE.BufferAttribute(new Float32Array(v * 3), 3));
 	geo.setAttribute('color',             new THREE.BufferAttribute(new Float32Array(v * 3), 3));
-	geo.setAttribute('aoStrength',        new THREE.BufferAttribute(new Float32Array(v), 1));
 	geo.setAttribute('surfaceDeformStrength', new THREE.BufferAttribute(new Float32Array(v), 1));
 	geo.setAttribute('tileCoord',         new THREE.BufferAttribute(new Float32Array(v * 2), 2));
 	geo.setAttribute('tileHeight',        new THREE.BufferAttribute(new Float32Array(v), 1));

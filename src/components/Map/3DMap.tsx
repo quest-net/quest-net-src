@@ -51,8 +51,11 @@ import {
 import {
 	createMovementHighlightTexture,
 	createDummyTerrainGeometry,
+	createPlaceholderVoxelAoTexture,
+	createVoxelAoTexture,
 	TERRAIN_MATERIAL_REGISTRY,
 	type MovementHighlightTexture,
+	type VoxelAoTexture,
 } from './Terrain/materials';
 
 interface ThreeDMapProps {
@@ -74,6 +77,7 @@ interface TerrainRenderResources {
 	geometries: THREE.BufferGeometry[];
 	materials: THREE.MeshStandardMaterial[];
 	movementHighlight: MovementHighlightTexture;
+	voxelAo: VoxelAoTexture;
 	animationFrameCallbacks: ((timeMs: number) => void)[];
 }
 
@@ -81,6 +85,7 @@ function disposeTerrainResources(resources: TerrainRenderResources): void {
 	for (const geo of resources.geometries) geo.dispose();
 	for (const mat of resources.materials) mat.dispose();
 	resources.movementHighlight.texture.dispose();
+	resources.voxelAo.texture.dispose();
 }
 
 function getPanLimitRadius(width: number, length: number, maxElevation: number): number {
@@ -446,12 +451,14 @@ export default function ThreeDMap({
 			const dummyGeo = createDummyTerrainGeometry();
 			warmGeometryRef.current = dummyGeo;
 			const dummyHighlight = createMovementHighlightTexture(1, 1, 1);
+			const dummyVoxelAo = createPlaceholderVoxelAoTexture();
 			const warmMeshes: THREE.Mesh[] = [];
 			for (const [, factory] of TERRAIN_MATERIAL_REGISTRY) {
 				for (const acceptsMovementHighlight of [false, true]) {
 					const result = factory({
 						acceptsMovementHighlight,
 						movementHighlight: acceptsMovementHighlight ? dummyHighlight : undefined,
+						voxelAo: dummyVoxelAo,
 					});
 					const warmMesh = new THREE.Mesh(dummyGeo, result.material);
 					scene.add(warmMesh);
@@ -460,10 +467,15 @@ export default function ThreeDMap({
 			}
 			warmMeshesRef.current = warmMeshes;
 			await renderer.compileAsync(scene, camera);
-			if (cancelled) return;
+			if (cancelled) {
+				dummyHighlight.texture.dispose();
+				dummyVoxelAo.texture.dispose();
+				return;
+			}
 			for (const warmMesh of warmMeshes) scene.remove(warmMesh);
 			warmMeshesRef.current = [];
 			dummyHighlight.texture.dispose();
+			dummyVoxelAo.texture.dispose();
 			// Warm geometry and materials are intentionally kept alive (not disposed)
 			// so the compiled WebGL programs remain resident in the driver cache.
 			sceneResourcesRef.current = resources;
@@ -650,6 +662,7 @@ export default function ThreeDMap({
 			terrainGeometry.height + 1,
 			terrainGeometry.length
 		);
+		const voxelAo = createVoxelAoTexture(terrainGeometry.occupancy);
 
 		const meshes: THREE.Mesh[] = [];
 		const geometries: THREE.BufferGeometry[] = [];
@@ -660,7 +673,7 @@ export default function ThreeDMap({
 			const factory =
 				TERRAIN_MATERIAL_REGISTRY.get(bucketKey) ??
 				TERRAIN_MATERIAL_REGISTRY.get('default')!;
-			const result = factory({ acceptsMovementHighlight: true, movementHighlight });
+			const result = factory({ acceptsMovementHighlight: true, movementHighlight, voxelAo });
 			if (result.onAnimationFrame) {
 				resources.animationCallbacks.add(result.onAnimationFrame);
 				animationFrameCallbacks.push(result.onAnimationFrame);
@@ -687,7 +700,7 @@ export default function ThreeDMap({
 		resources.occlusionTargets.length = 0;
 		for (const mesh of meshes) resources.occlusionTargets.push(mesh);
 		resources.movementHighlight = movementHighlight;
-		terrainResourcesRef.current = { meshes, geometries, materials, movementHighlight, animationFrameCallbacks };
+		terrainResourcesRef.current = { meshes, geometries, materials, movementHighlight, voxelAo, animationFrameCallbacks };
 	}, [sceneResources, terrainGeometry]);
 
 	return (

@@ -14,6 +14,7 @@ import type { FirstPersonFrameInput } from "./types";
 import {
 	createMovementHighlightTexture,
 	createDummyTerrainGeometry,
+	createPlaceholderVoxelAoTexture,
 	TERRAIN_MATERIAL_REGISTRY,
 } from "../Terrain/materials";
 
@@ -119,16 +120,21 @@ export function useFirstPersonScene(
 		let cancelled = false;
 		void (async () => {
 			const dummyGeo = createDummyTerrainGeometry();
+			const dummyVoxelAo = createPlaceholderVoxelAoTexture();
 			const warmMeshes: THREE.Mesh[] = [];
 			for (const [, factory] of TERRAIN_MATERIAL_REGISTRY) {
-				const result = factory({ acceptsMovementHighlight: false });
+				const result = factory({ acceptsMovementHighlight: false, voxelAo: dummyVoxelAo });
 				const warmMesh = new THREE.Mesh(dummyGeo, result.material);
 				scene.add(warmMesh);
 				warmMeshes.push(warmMesh);
 			}
 			await renderer.compileAsync(scene, camera);
-			if (cancelled) return;
+			if (cancelled) {
+				dummyVoxelAo.texture.dispose();
+				return;
+			}
 			for (const warmMesh of warmMeshes) scene.remove(warmMesh);
+			dummyVoxelAo.texture.dispose();
 			// Warm geometry and materials are intentionally left undisposed so the
 			// compiled WebGL programs stay resident in the driver cache.
 			setSceneResources(resources);

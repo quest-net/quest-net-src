@@ -14,6 +14,14 @@ import type {
 	MovementHighlightTexture,
 	TerrainMaterial,
 } from './materialTypes';
+import {
+	applyVoxelAoUniforms,
+	VOXEL_AO_CALL,
+	VOXEL_AO_FRAGMENT_HEADER,
+	VOXEL_AO_VERTEX_BEGIN,
+	VOXEL_AO_VERTEX_HEADER,
+	type VoxelAoTexture,
+} from '../shaders/voxelAoShader';
 
 const STONE_BRICKS_TEXTURE_URL = '/materials/bricks_240/bricks_256x256.png';
 const STONE_BRICKS_SWATCH = '#8f8f8f';
@@ -40,8 +48,7 @@ function getStoneBricksTexture(): THREE.Texture {
 
 function stoneBricksShaderHeader(): string[] {
 	return [
-		'attribute float aoStrength;',
-		'varying float vAoStrength;',
+		...VOXEL_AO_VERTEX_HEADER,
 		'varying vec3 vStoneBricksWorldPosition;',
 		'varying vec3 vStoneBricksWorldNormal;',
 	];
@@ -49,7 +56,7 @@ function stoneBricksShaderHeader(): string[] {
 
 function stoneBricksBeginVertex(): string[] {
 	return [
-		'vAoStrength = aoStrength;',
+		...VOXEL_AO_VERTEX_BEGIN,
 		'vStoneBricksWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
 		'vStoneBricksWorldNormal = normalize(mat3(modelMatrix) * normal);',
 	];
@@ -57,7 +64,7 @@ function stoneBricksBeginVertex(): string[] {
 
 function stoneBricksFragmentHeader(): string[] {
 	return [
-		'varying float vAoStrength;',
+		...VOXEL_AO_FRAGMENT_HEADER,
 		'varying vec3 vStoneBricksWorldPosition;',
 		'varying vec3 vStoneBricksWorldNormal;',
 		'uniform sampler2D stoneBricksMap;',
@@ -77,15 +84,17 @@ function stoneBricksColorFragment(): string[] {
 		'vec4 stoneBricksTexel = texture2D(stoneBricksMap, stoneBricksUv);',
 		'diffuseColor.rgb *= stoneBricksTexel.rgb;',
 		'diffuseColor.a *= stoneBricksTexel.a;',
-		'diffuseColor.rgb *= vAoStrength;',
+		`diffuseColor.rgb *= ${VOXEL_AO_CALL};`,
 	];
 }
 
 function installStoneBricksAoShader(
 	material: THREE.MeshStandardMaterial,
-	texture: THREE.Texture
+	texture: THREE.Texture,
+	voxelAo: VoxelAoTexture
 ): void {
 	material.onBeforeCompile = (shader) => {
+		applyVoxelAoUniforms(shader, voxelAo);
 		shader.uniforms.stoneBricksMap = { value: texture };
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
@@ -109,12 +118,14 @@ function installStoneBricksAoShader(
 function installStoneBricksHighlightShader(
 	material: THREE.MeshStandardMaterial,
 	texture: THREE.Texture,
-	highlight: MovementHighlightTexture
+	highlight: MovementHighlightTexture,
+	voxelAo: VoxelAoTexture
 ): void {
 	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
 	const heightLevels = highlight.heightLevels;
 
 	material.onBeforeCompile = (shader) => {
+		applyVoxelAoUniforms(shader, voxelAo);
 		shader.uniforms.stoneBricksMap = { value: texture };
 		shader.uniforms.movementHighlightMap = { value: highlight.texture };
 		shader.uniforms.movementHighlightSize = { value: highlightSize };
@@ -202,7 +213,7 @@ function installStoneBricksHighlightShader(
 export const createStoneBricks240Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { acceptsMovementHighlight, movementHighlight } = params;
+	const { acceptsMovementHighlight, movementHighlight, voxelAo } = params;
 	const texture = getStoneBricksTexture();
 	const material = new THREE.MeshStandardMaterial({
 		roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
@@ -211,9 +222,9 @@ export const createStoneBricks240Material: MaterialFactory = (
 	});
 
 	if (acceptsMovementHighlight && movementHighlight) {
-		installStoneBricksHighlightShader(material, texture, movementHighlight);
+		installStoneBricksHighlightShader(material, texture, movementHighlight, voxelAo);
 	} else {
-		installStoneBricksAoShader(material, texture);
+		installStoneBricksAoShader(material, texture, voxelAo);
 	}
 
 	return { material, castShadow: true, receiveShadow: true };
@@ -222,7 +233,7 @@ export const createStoneBricks240Material: MaterialFactory = (
 const stoneBricks240Material: TerrainMaterial = {
 	bucketKey: 'stonebricks_240',
 	occlusionGroup: 'solid',
-	shaderVersion: 1,
+	shaderVersion: 2,
 	factory: createStoneBricks240Material,
 	special: {
 		paletteIndex: 240,
