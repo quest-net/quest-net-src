@@ -20,7 +20,7 @@ export function PlayerView() {
 	const navigate = useNavigate();
 
 	// Single source of truth for peer data - call hook once at view level
-	const { peers, connectionStatus } = usePeerTracking();
+	const { peers, selfPeer, totalInRoom, connectionStatus } = usePeerTracking();
 
 	// CampaignView guarantees ActiveCampaign matches the URL by the time we
 	// render — read directly from there.
@@ -59,7 +59,7 @@ export function PlayerView() {
 				{/* Header - Always Visible */}
 				<header className="navbar border-b-2 px-6 justify-between">
 					<div className="flex items-center gap-4">
-						<PeerStatus connectionStatus={connectionStatus} peers={peers} />
+						<PeerStatus connectionStatus={connectionStatus} peers={peers} selfPeer={selfPeer} totalInRoom={totalInRoom} />
 						<AppSettingsDisplay />
 					</div>
 					<h1 className="text-xl font-bold">{campaign.Name}</h1>

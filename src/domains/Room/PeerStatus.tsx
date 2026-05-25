@@ -7,15 +7,16 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 interface PeerStatusProps {
 	connectionStatus: "online" | "connected";
 	peers: PeerInfo[];
+	selfPeer: PeerInfo;
+	totalInRoom: number;
 }
 
-export function PeerStatus({ connectionStatus, peers }: PeerStatusProps) {
+export function PeerStatus({ connectionStatus, peers, selfPeer, totalInRoom }: PeerStatusProps) {
 	const [isOpen, setIsOpen] = useState(false);
 	const context = useQuestContext();
 	const windowRef = useRef<HTMLDivElement>(null);
 	const badgeRef = useRef<HTMLButtonElement>(null);
 
-	// Get the current campaign
 	const campaign = CampaignActions.getActiveCampaign(context);
 
 	useEffect(() => {
@@ -40,20 +41,86 @@ export function PeerStatus({ connectionStatus, peers }: PeerStatusProps) {
 		return connectionStatus === "online" ? "badge-warning" : "badge-success";
 	};
 
-	// Helper function to get character name for a peer
-	const getCharacterName = (peerId: string): string | null => {
-		const peer = peers.find((p) => p.peerId === peerId);
-		if (!peer) return null;
-
-		// IMPORTANT: Always use RoomCode as the key, since players use RoomCode
-		// (their sanitized campaigns have Id = RoomCode)
+	// Looks up the character name a peer has selected for this campaign.
+	// Takes the PeerInfo directly rather than searching by peerId.
+	const getCharacterName = (peer: PeerInfo): string | null => {
+		// IMPORTANT: Always use RoomCode as the key — players receive sanitized
+		// campaigns where Id has been replaced with RoomCode.
 		const selectedCharId = peer.user?.SelectedCharacters[campaign.RoomCode];
 		if (!selectedCharId) return null;
-
 		const character = campaign.GameState.Characters.find(
 			(c) => c.Id === selectedCharId
 		);
 		return character ? character.Name : null;
+	};
+
+	const renderPeerRow = (peer: PeerInfo, isSelf: boolean) => {
+		const isHost = peer.user?.Role === "dm";
+		const displayName = peer.user?.Name ?? (isSelf ? "You" : "Identifying peer");
+		const characterName = getCharacterName(peer);
+
+		return (
+			<div
+				key={peer.peerId}
+				className="p-3 bg-base-200 rounded-lg"
+			>
+				<div className="flex justify-between items-start mb-2">
+					<div className="flex-1 min-w-0">
+						<div className="flex items-center gap-2">
+							<p className="font-semibold truncate">{displayName}</p>
+							{isSelf && (
+								<span className="badge badge-xs badge-neutral shrink-0">You</span>
+							)}
+						</div>
+						<p className="text-xs opacity-60 truncate font-mono">
+							{peer.peerId}
+						</p>
+					</div>
+					<div className="ml-2 text-right">
+						{isSelf ? (
+							<p className="text-xs opacity-40">—</p>
+						) : peer.ping !== null ? (
+							<>
+								<p className="text-sm font-mono font-bold">
+									{peer.ping}ms
+								</p>
+								<p className="text-xs opacity-60">ping</p>
+							</>
+						) : (
+							<p className="text-xs opacity-60">measuring...</p>
+						)}
+					</div>
+				</div>
+
+				{/* Character / Role display */}
+				<div className="mt-2 pt-2 border-t border-base-300">
+					{!peer.user ? (
+						<div className="flex items-center gap-2 opacity-50">
+							<span className="icon-[mdi--account-question] w-4 h-4"></span>
+							<span className="text-sm italic">Loading peer details</span>
+						</div>
+					) : isHost ? (
+						<div className="flex items-center gap-2">
+							<span className="icon-[mdi--shield-crown] w-4 h-4 opacity-60"></span>
+							<span className="text-sm font-semibold">Host</span>
+						</div>
+					) : characterName ? (
+						<div className="flex items-center gap-2">
+							<span className="icon-[mdi--account] w-4 h-4 opacity-60"></span>
+							<span className="text-sm">
+								Playing as:{" "}
+								<span className="font-semibold">{characterName}</span>
+							</span>
+						</div>
+					) : (
+						<div className="flex items-center gap-2 opacity-50">
+							<span className="icon-[mdi--account-off] w-4 h-4"></span>
+							<span className="text-sm italic">No character selected</span>
+						</div>
+					)}
+				</div>
+			</div>
+		);
 	};
 
 	return (
@@ -69,7 +136,7 @@ export function PeerStatus({ connectionStatus, peers }: PeerStatusProps) {
 				) : (
 					<>
 						<span className="icon-[mdi--access-point-network] w-4 h-4"></span>
-						{peers.length}
+						{totalInRoom}
 					</>
 				)}
 			</button>
@@ -81,90 +148,22 @@ export function PeerStatus({ connectionStatus, peers }: PeerStatusProps) {
 				>
 					<div className="p-4">
 						<div className="flex justify-between items-center mb-3">
-							<h3 className="font-bold text-lg">Connected Peers</h3>
+							<h3 className="font-bold text-lg">People in Room</h3>
 							<span className="text-sm opacity-70">
-								{peers.length} {peers.length === 1 ? "peer" : "peers"}
+								{totalInRoom} {totalInRoom === 1 ? "person" : "people"}
 							</span>
 						</div>
 
-						{peers.length === 0 ? (
-							<div className="text-center py-6 opacity-50">
-								<p>No peers connected</p>
-							</div>
-						) : (
-							<div className="space-y-2">
-								{peers.map((peer) => {
-									const isHost = peer.user?.Role === "dm";
-									const displayName = peer.user?.Name ?? "Identifying peer";
-									const characterName = getCharacterName(peer.peerId);
+						<div className="space-y-2">
+							{/* Local user always shown first */}
+							{renderPeerRow(selfPeer, true)}
+							{peers.map((peer) => renderPeerRow(peer, false))}
+						</div>
 
-									return (
-										<div
-											key={peer.peerId}
-											className="p-3 bg-base-200 rounded-lg"
-										>
-											<div className="flex justify-between items-start mb-2">
-												<div className="flex-1 min-w-0">
-													<p className="font-semibold truncate">
-														{displayName}
-													</p>
-													<p className="text-xs opacity-60 truncate font-mono">
-														{peer.peerId}
-													</p>
-												</div>
-												<div className="ml-2 text-right">
-													{peer.ping !== null ? (
-														<>
-															<p className="text-sm font-mono font-bold">
-																{peer.ping}ms
-															</p>
-															<p className="text-xs opacity-60">ping</p>
-														</>
-													) : (
-														<p className="text-xs opacity-60">measuring...</p>
-													)}
-												</div>
-											</div>
-
-											{/* Character Selection Display */}
-											<div className="mt-2 pt-2 border-t border-base-300">
-												{!peer.user ? (
-													<div className="flex items-center gap-2 opacity-50">
-														<span className="icon-[mdi--account-question] w-4 h-4"></span>
-														<span className="text-sm italic">
-															Loading peer details
-														</span>
-													</div>
-												) : isHost ? (
-													<div className="flex items-center gap-2">
-														<span className="icon-[mdi--shield-crown] w-4 h-4 opacity-60"></span>
-														<span className="text-sm">
-															<span className="font-semibold">Host</span>
-														</span>
-													</div>
-												) : characterName ? (
-													<div className="flex items-center gap-2">
-														<span className="icon-[mdi--account] w-4 h-4 opacity-60"></span>
-														<span className="text-sm">
-															Playing as:{" "}
-															<span className="font-semibold">
-																{characterName}
-															</span>
-														</span>
-													</div>
-												) : (
-													<div className="flex items-center gap-2 opacity-50">
-														<span className="icon-[mdi--account-off] w-4 h-4"></span>
-														<span className="text-sm italic">
-															No character selected
-														</span>
-													</div>
-												)}
-											</div>
-										</div>
-									);
-								})}
-							</div>
+						{peers.length === 0 && (
+							<p className="text-center text-sm opacity-50 mt-3">
+								No other peers connected
+							</p>
 						)}
 
 						<div className="mt-3 pt-3 border-t border-base-300">

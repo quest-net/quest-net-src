@@ -56,7 +56,7 @@ export function DMView() {
 	const [activeTab, setActiveTab] = useState<TabView>("main");
 
 	// Call usePeerTracking once at the view level
-	const { peers, connectionStatus } = usePeerTracking();
+	const { peers, selfPeer, totalInRoom, connectionStatus } = usePeerTracking();
 
 	// CampaignView guarantees ActiveCampaign matches the URL by the time we
 	// render — so we read directly from there rather than re-resolving by
@@ -81,7 +81,7 @@ export function DMView() {
 							{campaign.RoomCode}
 							<span className="icon-[heroicons-solid--clipboard-copy] h-5 w-5"></span>
 						</button>
-						<PeerStatus connectionStatus={connectionStatus} peers={peers} />
+						<PeerStatus connectionStatus={connectionStatus} peers={peers} selfPeer={selfPeer} totalInRoom={totalInRoom} />
 						<AppSettingsDisplay />
 					</div>
 					<h1 className="text-xl font-bold">{campaign.Name}</h1>

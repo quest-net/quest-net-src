@@ -1,5 +1,6 @@
 // hooks/usePeerTracking.ts
 import { useEffect } from "react";
+import { selfId } from "trystero";
 import { useActionService } from "../services/Actions/ActionServiceProvider";
 import { useQuestContext } from "../domains/Context/ContextProvider";
 import { User } from "../domains/User/User";
@@ -11,11 +12,13 @@ export interface PeerInfo {
 }
 
 export interface PeerTrackingData {
+	/** Remote peers only — does not include the local user. */
 	peers: PeerInfo[];
+	/** The local user as a PeerInfo, for display alongside peers. */
+	selfPeer: PeerInfo;
+	/** Total people in the room: peers.length + 1 (self). */
+	totalInRoom: number;
 	connectionStatus: "online" | "connected";
-	getActorIdFromUserId: (userId: string) => string | null;
-	getUserIdFromActorId: (actorId: string) => string | null;
-	getUserFromActorId: (actorId: string) => User | null;
 	canAccessActor: (actorId: string) => boolean;
 }
 
@@ -59,38 +62,18 @@ export function usePeerTracking(): PeerTrackingData {
 		})
 	);
 
+	// Represent the local user as a PeerInfo so the UI can include them in the
+	// room list alongside remote peers. selfId is Trystero's ID for this peer.
+	const selfPeer: PeerInfo = {
+		peerId: selfId as string,
+		user: context.User,
+		ping: null,
+	};
+
+	const totalInRoom = peers.length + 1;
+
 	const connectionStatus: "online" | "connected" =
 		peers.length === 0 ? "online" : "connected";
-
-	const getActorIdFromUserId = (userId: string): string | null => {
-		if (!roomCode) return null;
-		for (const user of peerUsersMap.values()) {
-			if (user.Id === userId) {
-				return user.SelectedCharacters[roomCode] || null;
-			}
-		}
-		return null;
-	};
-
-	const getUserIdFromActorId = (actorId: string): string | null => {
-		if (!roomCode) return null;
-		for (const user of peerUsersMap.values()) {
-			if (user.SelectedCharacters[roomCode] === actorId) {
-				return user.Id;
-			}
-		}
-		return null;
-	};
-
-	const getUserFromActorId = (actorId: string): User | null => {
-		if (!roomCode) return null;
-		for (const user of peerUsersMap.values()) {
-			if (user.SelectedCharacters[roomCode] === actorId) {
-				return user;
-			}
-		}
-		return null;
-	};
 
 	const canAccessActor = (actorId: string): boolean => {
 		if (context.User.Role === "dm") return true;
@@ -100,10 +83,9 @@ export function usePeerTracking(): PeerTrackingData {
 
 	return {
 		peers,
+		selfPeer,
+		totalInRoom,
 		connectionStatus,
-		getActorIdFromUserId,
-		getUserIdFromActorId,
-		getUserFromActorId,
 		canAccessActor,
 	};
 }
