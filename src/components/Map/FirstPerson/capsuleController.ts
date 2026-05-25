@@ -844,10 +844,16 @@ export function worldPositionToRulesPosition(
 		ACTOR_TOKEN_PLACEMENT.TERRAIN_WORLD_Y_OFFSET -
 		ACTOR_TOKEN_PLACEMENT.BASE_Y_OFFSET;
 
+	// Use a small epsilon before flooring to absorb the ~0.01 undershoot that
+	// the capsule binary search introduces (the capsule rests just clear of the
+	// voxel surface, so world-Y converts to h_raw slightly below the exact
+	// rules-space surface height). 0.1 is safely above the observed undershoot
+	// and well below the tightest safe ceiling of 1/R = 0.25 at resolution 4.
+	const H_FLOOR_EPSILON = 0.1;
 	return {
 		x: Math.round(clamp(worldX + offsetX, 0, terrain.Width - 1)),
 		y: Math.round(clamp(worldZ + offsetZ, 0, terrain.Length - 1)),
-		h: Math.round(h),
+		h: Math.floor(h + H_FLOOR_EPSILON),
 	};
 }
 

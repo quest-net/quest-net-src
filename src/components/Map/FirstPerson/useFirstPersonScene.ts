@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
+import Stats from "three/examples/jsm/libs/stats.module.js";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import {
 	THREE_D_MAP_LIGHTING,
@@ -44,6 +45,9 @@ export function useFirstPersonScene(
 	directionalLightRef: RefObject<THREE.DirectionalLight | null>
 ): FirstPersonSceneState {
 	const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const statsRef = useRef<any>(null);
+	const triangleStatsRef = useRef<HTMLDivElement | null>(null);
 	const keysRef = useRef(new Set<string>());
 	const handlersRef = useRef(handlers);
 	const [sceneResources, setSceneResources] =
@@ -70,6 +74,32 @@ export function useFirstPersonScene(
 		renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 		container.appendChild(renderer.domElement);
 		rendererRef.current = renderer;
+
+		const stats = new Stats();
+		stats.showPanel(0);
+		stats.dom.style.position = "absolute";
+		stats.dom.style.top = "0px";
+		stats.dom.style.left = "0px";
+		stats.dom.style.display = "none";
+		container.appendChild(stats.dom);
+		statsRef.current = stats;
+
+		const triangleStats = document.createElement("div");
+		triangleStats.style.position = "absolute";
+		triangleStats.style.top = "48px";
+		triangleStats.style.left = "0px";
+		triangleStats.style.width = "80px";
+		triangleStats.style.boxSizing = "border-box";
+		triangleStats.style.padding = "2px 3px";
+		triangleStats.style.background = "rgba(0, 0, 0, 0.8)";
+		triangleStats.style.color = "#0ff";
+		triangleStats.style.font = "bold 9px Helvetica, Arial, sans-serif";
+		triangleStats.style.lineHeight = "11px";
+		triangleStats.style.pointerEvents = "none";
+		triangleStats.style.display = "none";
+		triangleStats.textContent = "TRIS 0";
+		container.appendChild(triangleStats);
+		triangleStatsRef.current = triangleStats;
 
 		const scene = new THREE.Scene();
 		scene.background = null;
@@ -160,7 +190,12 @@ export function useFirstPersonScene(
 			for (const callback of resources.animationCallbacks) {
 				callback(now);
 			}
+			stats.begin();
 			renderer.render(scene, camera);
+			if (triangleStats.style.display !== "none") {
+				triangleStats.textContent = `TRIS ${renderer.info.render.triangles.toLocaleString()}`;
+			}
+			stats.end();
 		};
 		rafId = requestAnimationFrame(animate);
 
@@ -256,8 +291,32 @@ export function useFirstPersonScene(
 			if (renderer.domElement.parentElement === container) {
 				container.removeChild(renderer.domElement);
 			}
+			if (statsRef.current?.dom?.parentElement === container) {
+				container.removeChild(statsRef.current.dom);
+			}
+			statsRef.current = null;
+			if (triangleStatsRef.current?.parentElement === container) {
+				container.removeChild(triangleStatsRef.current);
+			}
+			triangleStatsRef.current = null;
 		};
 	}, [containerRef, cameraRef, directionalLightRef]);
+
+	// Backtick (`) shortcut to toggle the Stats.js overlay
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== "`" || e.ctrlKey || e.metaKey || e.altKey) return;
+			const stats = statsRef.current;
+			if (!stats) return;
+			const nextDisplay = stats.dom.style.display === "none" ? "block" : "none";
+			stats.dom.style.display = nextDisplay;
+			if (triangleStatsRef.current) {
+				triangleStatsRef.current.style.display = nextDisplay;
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, []);
 
 	return {
 		sceneResources,
