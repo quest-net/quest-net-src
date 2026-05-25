@@ -185,6 +185,9 @@ const VOX_RESOLUTION_LABELS: Record<number, string> = {
 const UNDO_LIMIT = 50;
 const MIN_BRUSH_SIZE = 1;
 const MAX_BRUSH_SIZE = 8;
+const MIN_SMOOTH_PASSES = 1;
+const MAX_SMOOTH_PASSES = 6;
+const DEFAULT_SMOOTH_PASSES = 2;
 const PICK_EPSILON = 0.0001;
 const GRID_LINE_OFFSET = 0.008;
 const HOVER_FACE_OFFSET = 0.014;
@@ -200,6 +203,8 @@ const LIGHTING_ROTATION_MIN = 0;
 const LIGHTING_ROTATION_MAX = 360;
 const LIGHTING_ELEVATION_MIN = 0;
 const LIGHTING_ELEVATION_MAX = 90;
+const BOX_SELECTION_COLOR = 0xef4444;
+const BOX_SELECTION_PREVIEW_COLOR = 0xfacc15;
 
 function clampNumber(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
@@ -315,6 +320,31 @@ function editGridGetColor(
 	if (vx < 0 || vx >= vW || vy < 0 || vy >= vH || vz < 0 || vz >= vL) return null;
 	const index = editGridIndex(vx, vy, vz, vW, vL);
 	return editGridHasVoxelAtIndex(grid, index) ? grid.colors[index] : null;
+}
+
+function getColumnTopInRange(
+	grid: EditGrid,
+	dims: ChunkDims,
+	x: number,
+	z: number,
+	minY: number,
+	maxY: number,
+): { height: number; color: number | null } {
+	const { vW, vH, vL } = dims;
+	if (x < 0 || x >= vW || z < 0 || z >= vL) {
+		return { height: minY - 1, color: null };
+	}
+
+	const clampedMinY = clamp(minY, 0, Math.max(0, vH - 1));
+	const clampedMaxY = clamp(maxY, clampedMinY, Math.max(0, vH - 1));
+	for (let y = clampedMaxY; y >= clampedMinY; y--) {
+		const index = editGridIndex(x, y, z, vW, vL);
+		if (editGridHasVoxelAtIndex(grid, index)) {
+			return { height: y, color: grid.colors[index] };
+		}
+	}
+
+	return { height: minY - 1, color: null };
 }
 
 function buildEditGrid(terrain: VoxelTerrain, index: VoxelTerrainIndex): EditGrid {
@@ -1147,6 +1177,191 @@ function applySelectionEdit(
 	return { changed, countDelta };
 }
 
+function smoothColumnIndex(
+	x: number,
+	z: number,
+	bounds: VoxelSelectionBounds,
+	width: number,
+): number {
+	return (x - bounds.min.x) + (z - bounds.min.z) * width;
+}
+
+function resolveSmoothFillColor(
+	grid: EditGrid,
+	dims: ChunkDims,
+	bounds: VoxelSelectionBounds,
+	colors: Uint8Array,
+	hasSurface: Uint8Array,
+	width: number,
+	x: number,
+	z: number,
+): number {
+	const ownIndex = smoothColumnIndex(x, z, bounds, width);
+	if (hasSurface[ownIndex] !== 0) return colors[ownIndex];
+
+	for (let radius = 1; radius <= 4; radius++) {
+		for (
+			let nz = Math.max(bounds.min.z, z - radius);
+			nz <= Math.min(bounds.max.z, z + radius);
+			nz++
+		) {
+			for (
+				let nx = Math.max(bounds.min.x, x - radius);
+				nx <= Math.min(bounds.max.x, x + radius);
+				nx++
+			) {
+				if (Math.max(Math.abs(nx - x), Math.abs(nz - z)) !== radius) continue;
+				const idx = smoothColumnIndex(nx, nz, bounds, width);
+				if (hasSurface[idx] !== 0) return colors[idx];
+			}
+		}
+	}
+
+	for (let radius = 1; radius <= 4; radius++) {
+		for (
+			let nz = Math.max(0, z - radius);
+			nz <= Math.min(dims.vL - 1, z + radius);
+			nz++
+		) {
+			for (
+				let nx = Math.max(0, x - radius);
+				nx <= Math.min(dims.vW - 1, x + radius);
+				nx++
+			) {
+				if (Math.max(Math.abs(nx - x), Math.abs(nz - z)) !== radius) continue;
+				const top = getColumnTopInRange(grid, dims, nx, nz, bounds.min.y, bounds.max.y);
+				if (top.color !== null) return top.color;
+			}
+		}
+	}
+
+	return DEFAULT_TERRAIN_COLOR_INDEX;
+}
+
+function applyBoxSelectionSmooth(
+	grid: EditGrid,
+	dirtyChunks: Set<number>,
+	dims: ChunkDims,
+	bounds: VoxelSelectionBounds,
+	passes: number,
+	beforeMutation?: (gIdx: number) => void,
+): { changed: boolean; countDelta: number } {
+	const { vW, vH, vL } = dims;
+	const minX = clamp(bounds.min.x, 0, Math.max(0, vW - 1));
+	const maxX = clamp(bounds.max.x, minX, Math.max(0, vW - 1));
+	const minY = clamp(bounds.min.y, 0, Math.max(0, vH - 1));
+	const maxY = clamp(bounds.max.y, minY, Math.max(0, vH - 1));
+	const minZ = clamp(bounds.min.z, 0, Math.max(0, vL - 1));
+	const maxZ = clamp(bounds.max.z, minZ, Math.max(0, vL - 1));
+	const clampedBounds = {
+		min: { x: minX, y: minY, z: minZ },
+		max: { x: maxX, y: maxY, z: maxZ },
+	};
+	const width = maxX - minX + 1;
+	const columnCount = width * (maxZ - minZ + 1);
+	const floorHeight = minY - 1;
+	let heights = new Int16Array(columnCount);
+	let nextHeights = new Int16Array(columnCount);
+	const colors = new Uint8Array(columnCount);
+	const hasSurface = new Uint8Array(columnCount);
+
+	for (let z = minZ; z <= maxZ; z++) {
+		for (let x = minX; x <= maxX; x++) {
+			const idx = smoothColumnIndex(x, z, clampedBounds, width);
+			const top = getColumnTopInRange(grid, dims, x, z, minY, maxY);
+			heights[idx] = top.height;
+			if (top.color !== null) {
+				colors[idx] = normalizeVoxelPaletteIndex(top.color);
+				hasSurface[idx] = 1;
+			}
+		}
+	}
+
+	const passCount = clamp(Math.floor(passes) || DEFAULT_SMOOTH_PASSES, MIN_SMOOTH_PASSES, MAX_SMOOTH_PASSES);
+	const sampleHeight = (x: number, z: number): number | null => {
+		if (x < 0 || x >= vW || z < 0 || z >= vL) return null;
+		if (x >= minX && x <= maxX && z >= minZ && z <= maxZ) {
+			return heights[smoothColumnIndex(x, z, clampedBounds, width)];
+		}
+		return getColumnTopInRange(grid, dims, x, z, minY, maxY).height;
+	};
+
+	for (let pass = 0; pass < passCount; pass++) {
+		for (let z = minZ; z <= maxZ; z++) {
+			for (let x = minX; x <= maxX; x++) {
+				let weightedSum = 0;
+				let totalWeight = 0;
+				for (let dz = -1; dz <= 1; dz++) {
+					for (let dx = -1; dx <= 1; dx++) {
+						const sample = sampleHeight(x + dx, z + dz);
+						if (sample === null) continue;
+						const weight = dx === 0 && dz === 0 ? 4 : dx === 0 || dz === 0 ? 2 : 1;
+						weightedSum += sample * weight;
+						totalWeight += weight;
+					}
+				}
+				const idx = smoothColumnIndex(x, z, clampedBounds, width);
+				const current = heights[idx];
+				const averaged = totalWeight > 0 ? Math.round(weightedSum / totalWeight) : current;
+				const step = clamp(averaged - current, -1, 1);
+				nextHeights[idx] = clamp(current + step, floorHeight, maxY);
+			}
+		}
+		const swap = heights;
+		heights = nextHeights;
+		nextHeights = swap;
+	}
+
+	let changed = false;
+	let countDelta = 0;
+	for (let z = minZ; z <= maxZ; z++) {
+		for (let x = minX; x <= maxX; x++) {
+			const columnIndex = smoothColumnIndex(x, z, clampedBounds, width);
+			const targetTop = heights[columnIndex];
+			const fillColor = resolveSmoothFillColor(
+				grid,
+				dims,
+				clampedBounds,
+				colors,
+				hasSurface,
+				width,
+				x,
+				z
+			);
+
+			for (let y = minY; y <= maxY; y++) {
+				const gIdx = editGridIndex(x, y, z, vW, vL);
+				const occupied = editGridHasVoxelAtIndex(grid, gIdx);
+				const shouldOccupy = y <= targetTop;
+
+				if (shouldOccupy) {
+					if (!occupied) {
+						beforeMutation?.(gIdx);
+						grid.colors[gIdx] = fillColor;
+						editGridSetOccupiedAtIndex(grid, gIdx, true);
+						changed = true;
+						countDelta++;
+					}
+					continue;
+				}
+
+				if (occupied) {
+					beforeMutation?.(gIdx);
+					editGridSetOccupiedAtIndex(grid, gIdx, false);
+					changed = true;
+					countDelta--;
+				}
+			}
+		}
+	}
+
+	if (changed) {
+		markVoxelRangeDirtyChunks(clampedBounds, dirtyChunks, dims);
+	}
+
+	return { changed, countDelta };
+}
+
 // ---------------------------------------------------------------------------
 // Three.js scene helpers
 // ---------------------------------------------------------------------------
@@ -1598,7 +1813,7 @@ function updateHoverIndicator(
 		const geometry = createSelectionCellGhostGeometry(dims, index, bounds);
 		if (!geometry) return;
 		const material = new THREE.MeshBasicMaterial({
-			color: 0x38bdf8,
+			color: BOX_SELECTION_COLOR,
 			transparent: true,
 			opacity: 0.28,
 			depthWrite: false,
@@ -1698,7 +1913,7 @@ function updateSelectionIndicator(
 			createSelectionBoundsFrame(
 				bounds,
 				dims,
-				previewBounds ? 0xfacc15 : 0x38bdf8,
+				previewBounds ? BOX_SELECTION_PREVIEW_COLOR : BOX_SELECTION_COLOR,
 				previewBounds ? 0.95 : 0.86,
 			)
 		);
@@ -1833,6 +2048,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	const [tool,              setTool]              = useState<EditorTool>("place");
 	const [granularity,       setGranularity]       = useState<EditGranularity>("tactical");
 	const [brushSize,         setBrushSize]         = useState(1);
+	const [smoothPasses,      setSmoothPasses]      = useState(DEFAULT_SMOOTH_PASSES);
 	const [selectedColorIndex, setSelectedColorIndex] = useState(DEFAULT_TERRAIN_COLOR_INDEX);
 	// Grid visibility is derived from `granularity`: the tile brush shows the
 	// tactical grid only; the voxel brush shows the voxel grid only.
@@ -2391,6 +2607,33 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		setBoxSelectionAnchor,
 		setTerrainSelection,
 	]);
+
+	const smoothBoxSelection = useCallback(() => {
+		if (readOnlyRef.current) return;
+		const activeSelection = selectionRef.current;
+		if (!activeSelection || activeSelection.kind !== "box") return;
+		const dims = chunkDimsRef.current;
+		if (!dims) return;
+
+		strokeDeltaRef.current = null;
+		const result = applyBoxSelectionSmooth(
+			editGridRef.current,
+			dirtyChunksRef.current,
+			dims,
+			activeSelection.bounds,
+			smoothPasses,
+			recordVoxelBefore,
+		);
+		if (!result.changed) {
+			strokeDeltaRef.current = null;
+			return;
+		}
+
+		occupiedVoxelCountRef.current += result.countDelta;
+		recordUndo();
+		refreshSelectionRef.current?.();
+		commitDraftChange();
+	}, [commitDraftChange, recordUndo, recordVoxelBefore, smoothPasses]);
 
 	// -------------------------------------------------------------------------
 	// Stamp mode entry/exit
@@ -3127,6 +3370,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		setBrushSize(clamp(Math.floor(value) || MIN_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE));
 	};
 
+	const handleSmoothPassesChange = (value: number) => {
+		setSmoothPasses(clamp(Math.floor(value) || DEFAULT_SMOOTH_PASSES, MIN_SMOOTH_PASSES, MAX_SMOOTH_PASSES));
+	};
+
 	const showPreview = () => {
 		refreshPreviewTerrain();
 		setActiveView("preview");
@@ -3753,6 +4000,47 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 											}
 										/>
 									))}
+								</div>
+							)}
+							{selection?.kind === "box" && (
+								<div className="border-t border-base-300 pt-2 space-y-2">
+									<div className="flex items-center justify-between gap-2">
+										<span className="font-medium text-base-content">Smooth</span>
+										<button
+											type="button"
+											className="btn btn-primary btn-xs"
+											onClick={smoothBoxSelection}
+											disabled={readOnly}
+											title="Smooth selected surface"
+										>
+											<span className="icon-[mdi--blur] w-4 h-4" />
+											Smooth
+										</button>
+									</div>
+									<div className="flex items-center gap-2">
+										<span className="text-base-content/70">Passes</span>
+										<input
+											type="range"
+											min={MIN_SMOOTH_PASSES}
+											max={MAX_SMOOTH_PASSES}
+											value={smoothPasses}
+											onChange={(e) => handleSmoothPassesChange(Number(e.target.value))}
+											className="range range-xs range-primary flex-1"
+											disabled={readOnly}
+											title="Smooth passes"
+										/>
+										<input
+											type="number"
+											min={MIN_SMOOTH_PASSES}
+											max={MAX_SMOOTH_PASSES}
+											value={smoothPasses}
+											onChange={(e) => handleSmoothPassesChange(Number(e.target.value))}
+											className="input input-bordered input-xs w-12 px-1 text-center"
+											disabled={readOnly}
+											readOnly={readOnly}
+											aria-label="Smooth passes"
+										/>
+									</div>
 								</div>
 							)}
 						</div>

@@ -36,6 +36,7 @@ import type {
 } from './materialTypes';
 
 import defaultMaterial from './defaultMaterial';
+import grass242Material from './grass242Material';
 import stoneBricks240Material from './stoneBricks240Material';
 import water241Material from './water241Material';
 
@@ -52,6 +53,7 @@ export const TERRAIN_MATERIALS: readonly TerrainMaterial[] = [
 	defaultMaterial,
 	stoneBricks240Material,
 	water241Material,
+	grass242Material,
 ];
 
 // ---------------------------------------------------------------------------
