@@ -47,7 +47,6 @@ function configureGrassTexture(texture: THREE.Texture): THREE.Texture {
 	texture.minFilter = THREE.LinearMipmapLinearFilter;
 	texture.anisotropy = GRASS_ANISOTROPY;
 	texture.generateMipmaps = true;
-	texture.needsUpdate = true;
 	return texture;
 }
 

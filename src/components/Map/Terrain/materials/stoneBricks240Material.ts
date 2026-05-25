@@ -41,7 +41,6 @@ function getStoneBricksTexture(): THREE.Texture {
 	texture.minFilter = THREE.LinearMipmapLinearFilter;
 	texture.anisotropy = STONE_BRICKS_ANISOTROPY;
 	texture.generateMipmaps = true;
-	texture.needsUpdate = true;
 	cachedTexture = texture;
 	return texture;
 }
