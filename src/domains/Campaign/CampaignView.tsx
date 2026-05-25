@@ -8,6 +8,7 @@ import {
 } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { useAutoReconnect } from "../../hooks/useAutoReconnect";
+import { useRelayWatchdog } from "../../hooks/useRelayWatchdog";
 import { CampaignActions } from "./CampaignActions";
 import { ContextActions } from "../Context/ContextActions";
 import { RoomActions } from "../Room/RoomActions";
@@ -52,6 +53,8 @@ export function CampaignView() {
 		);
 	}, [identifier]);
 
+	const onReconnect = () => setReconnectTrigger((prev) => prev + 1);
+
 	useAutoReconnect(
 		{
 			enabled: state.status === "ready", // Only auto-reconnect when we're supposed to be connected
@@ -64,10 +67,18 @@ export function CampaignView() {
 			peerlessReconnectDelayMs: isDMRoute ? 30000 : undefined,
 			// maxAttempts is Infinity by default - unlimited retries!
 		},
-		() => {
-			// Increment the trigger to force useEffect to re-run
-			setReconnectTrigger((prev) => prev + 1);
-		}
+		onReconnect
+	);
+
+	// Watches Trystero's relay WebSockets for unexpected closes. When a relay
+	// socket closes and reconnects, Trystero does not re-send its REQ
+	// subscriptions, silently breaking new-peer discovery while leaving
+	// existing direct WebRTC channels healthy. See useRelayWatchdog.ts for the
+	// full explanation. DM-only: the DM is the peer whose signaling
+	// subscription matters for new joiners.
+	useRelayWatchdog(
+		isDMRoute && state.status === "ready",
+		onReconnect
 	);
 
 	useEffect(() => {
@@ -302,10 +313,8 @@ export function CampaignView() {
 		return () => {
 			isSubscribed = false;
 
-			if (room) {
-				RoomActions.leave(room);
-			}
-
+			// service.cleanup() calls RoomActions.leave() internally —
+			// don't call it here too or Trystero's leave logic runs twice.
 			if (service) {
 				service.cleanup();
 			}

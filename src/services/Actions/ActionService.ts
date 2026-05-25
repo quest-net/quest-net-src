@@ -282,10 +282,9 @@ export class ActionService {
 		let didChange = false;
 
 		for (const peerId of activePeerIds) {
+			// addConnectedPeer already calls requestPeerUser when peerUsers is
+			// missing — no need to repeat the check here.
 			didChange = this.addConnectedPeer(peerId) || didChange;
-			if (!this.peerUsers.has(peerId)) {
-				this.requestPeerUser(peerId);
-			}
 		}
 
 		for (const peerId of Array.from(this.connectedPeerIds)) {

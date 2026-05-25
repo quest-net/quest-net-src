@@ -35,7 +35,13 @@ export class StateSync {
 	private updateCount = 0;
 
 	// Configuration
-	private fullStateInterval = 10000; // Send full state every N updates as fallback
+	// Periodic full-state fallback: send a full sync every N delta updates.
+	// In practice this never fires at normal TTRPG action rates (~dozens of
+	// actions per minute) — it would take hours to accumulate 10,000 deltas,
+	// and the counter resets on every peer join and explicit /REQUEST_FULL_SYNC.
+	// The version-mismatch detection path is the real desync recovery mechanism.
+	// Kept high intentionally; do not lower without profiling wire cost.
+	private fullStateInterval = 10000;
 
 	constructor(
 		room: Room,
@@ -94,8 +100,9 @@ export class StateSync {
 	broadcast(campaign: Campaign, force = false): void {
 		this.updateCount++;
 
-		// Sanitize campaign before broadcasting to hide DM's secret ID
-		const sanitizedCampaign = this.sanitizeForPlayers(campaign);
+		// Sanitize once here; sendFull/broadcastDelta both receive the
+		// already-sanitized copy so we never clone the campaign twice.
+		const sanitized = this.sanitizeForPlayers(campaign);
 
 		// Periodically send full state to recover from any desync
 		const shouldSendFull =
@@ -103,21 +110,25 @@ export class StateSync {
 			this.updateCount % this.fullStateInterval === 0;
 
 		if (shouldSendFull) {
-			this.broadcastFull(sanitizedCampaign);
+			this.sendFull(sanitized);
 		} else {
-			this.broadcastDelta(sanitizedCampaign, force);
+			this.broadcastDelta(sanitized, force);
 		}
-
-		// Store sanitized version for next comparison
-		this.lastBroadcastState = structuredClone(sanitizedCampaign);
 	}
 
 	/**
-	 * Broadcasts a full state update
+	 * Broadcasts a full state update. Sanitizes the campaign before sending.
+	 * Called externally by ActionService (new peer joins, force syncs).
 	 */
 	broadcastFull(campaign: Campaign): void {
-		const sanitized = this.sanitizeForPlayers(campaign);
+		this.sendFull(this.sanitizeForPlayers(campaign));
+	}
 
+	/**
+	 * Internal: queues a full-state send for an already-sanitized campaign.
+	 * Keeps broadcast() and broadcastFull() from each sanitizing independently.
+	 */
+	private sendFull(sanitized: Campaign): void {
 		const update: StateUpdate = {
 			type: "full",
 			timestamp: Date.now(),
@@ -126,10 +137,10 @@ export class StateSync {
 
 		this.queueStateSend(update);
 
-		// Store sanitized version for next comparison
+		// One clone for the baseline — not two.
 		this.lastBroadcastState = structuredClone(sanitized);
 
-		// Reset version counter on full state
+		// Reset counters on full state.
 		this.version = 0;
 		this.updateCount = 0;
 	}
@@ -138,9 +149,10 @@ export class StateSync {
 	 * Broadcasts a differential update
 	 */
 	private broadcastDelta(campaign: Campaign, force = false): void {
+		// campaign is already sanitized by the broadcast() caller — use
+		// sendFull (not broadcastFull) to avoid re-sanitizing it.
 		if (!this.lastBroadcastState) {
-			// Fallback to full state if we don't have a previous state
-			this.broadcastFull(campaign);
+			this.sendFull(campaign);
 			return;
 		}
 
@@ -150,7 +162,7 @@ export class StateSync {
 		if (patches.length === 0) {
 			if (force) {
 				// If forced and no changes, send full state to ensure sync
-				this.broadcastFull(campaign);
+				this.sendFull(campaign);
 			}
 			return;
 		}
@@ -164,6 +176,8 @@ export class StateSync {
 
 		this.queueStateSend(update);
 
+		// Advance the baseline so the next diff is against this state.
+		this.lastBroadcastState = structuredClone(campaign);
 		this.version++;
 	}
 

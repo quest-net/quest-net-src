@@ -175,10 +175,25 @@ export function useAutoReconnect(
 			const timerDrifted = didTimerDrift(now);
 			lastCheckTimeRef.current = now;
 
-			if (peerCount === 0 || timerDrifted) {
-				zeroPeersSinceRef.current = now;
-				scheduleReconnect(now);
+			if (peerCount > 0) {
+				// Healthy — reset zero-peer timer.
+				zeroPeersSinceRef.current = null;
+				return;
 			}
+
+			// peerCount === 0. Apply the same peerless guard as checkPeers:
+			// rooms that haven't opted into peerless reconnection (e.g. a
+			// player waiting for the DM) should not reconnect on wake.
+			const activeReconnectDelayMs = hasEverHadPeersRef.current
+				? reconnectDelayMs
+				: peerlessReconnectDelayMs;
+
+			if (activeReconnectDelayMs === undefined && !timerDrifted) {
+				return;
+			}
+
+			zeroPeersSinceRef.current = now;
+			scheduleReconnect(now);
 		};
 
 		const handleVisibilityChange = () => {

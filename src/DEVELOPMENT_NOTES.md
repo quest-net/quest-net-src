@@ -41,6 +41,44 @@
   a hard error with the underlying message. After `ready`, peer-level join
   failures are treated as transient and `useAutoReconnect` handles them.
 
+### Known Trystero bug: REQ subscriptions lost on relay WebSocket reconnect
+
+**Symptom**: The DM can maintain existing player connections indefinitely but
+new players cannot join after some indeterminate time. DM page refresh fixes
+it. Players already in the room are completely unaffected.
+
+**Root cause** (traced to `@trystero-p2p/nostr`): Trystero's Nostr strategy
+sends `REQ` subscription messages to each relay WebSocket exactly once, at
+`joinRoom()` time (`strategy.subscribe()` call). When a relay WebSocket closes
+and reconnects (via Trystero's own `socket.onclose → init()` handler), a fresh
+`WebSocket` is assigned to `client.socket` but the REQ messages are **never
+re-sent**. The relay gets a live connection with zero active subscriptions and
+delivers no signaling to the DM. Because existing `RTCPeerConnection` objects
+are fully peer-to-peer after ICE negotiation and never touch the relay again,
+all current players remain connected and functional.
+
+Trystero also has no WebSocket heartbeat or keepalive: it only attempts
+reconnect after `onclose` fires. If a NAT or firewall silently kills the idle
+TCP connection, `readyState` stays `1` (OPEN) but all sends are dropped
+silently. However, the subscription-loss-on-reconnect case above is the more
+common failure mode in practice.
+
+**Workaround** (`useRelayWatchdog`): Trystero exports `getRelaySockets()`,
+which returns the current `client.socket` for each relay URL at call time.
+`useRelayWatchdog` (DM-only) attaches `close` event listeners to these
+sockets. When a socket closes unexpectedly, a `leave()` + `joinRoom()` recovery
+is triggered after a short debounce (2 s). This re-establishes all relay
+clients and re-sends the REQ subscriptions. Existing players reconnect
+automatically via their own `useAutoReconnect` within ~10–20 s; the DM
+broadcasts full state on each `onPeerJoin` so they catch up immediately.
+
+A 15-second cooldown on recovery prevents the deliberate `leave()` call's own
+socket close events from triggering a second cycle.
+
+**Proper fix**: A Trystero PR that re-sends REQ subscriptions inside
+`makeSocket`'s `onclose → init()` handler would eliminate the need for this
+workaround entirely.
+
 ## Image Handling
 
 ### Architecture
