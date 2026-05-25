@@ -49,6 +49,7 @@ export function Main() {
 	const isDM = isDmAccess();
 	const [mapViewMode, setMapViewMode] = useState<MapViewMode>("world");
 	const [xRayActors, setXRayActors] = useState(false);
+	const [mapReady, setMapReady] = useState(false);
 
 	// Top tabs state (same for everyone)
 	const [activeTopTab, setActiveTopTab] = useState<TopTab>("calendar");
@@ -179,6 +180,13 @@ export function Main() {
 		}
 	}, [firstPersonActorId, isDM, mapViewMode]);
 
+	// Reset map-ready flag whenever the active terrain changes so the loading
+	// screen re-appears during the WebGL init + shader compile for the new terrain.
+	const activeTerrainId = campaign.GameState.VoxelTerrainId;
+	useEffect(() => {
+		setMapReady(false);
+	}, [activeTerrainId]);
+
 	// Handle tab changes and clear indicators
 	const handleBottomTabChange = (tab: PlayerBottomTab | DMBottomTab) => {
 		setActiveBottomTab(tab);
@@ -231,14 +239,15 @@ export function Main() {
 							entities={campaign.GameState.Entities}
 							terrain={hydratedActiveTerrain}
 							xRayActors={isDM && xRayActors}
+							onReady={() => setMapReady(true)}
 						/>
 					)}
-					{activeTerrain && !hydratedActiveTerrain && (
-						<div className="absolute inset-0 z-30 flex items-center justify-center bg-base-200/80">
-							<div className="flex items-center gap-3 rounded bg-base-100 px-4 py-3 shadow">
-								<span className="loading loading-spinner loading-sm" />
-								<span>Loading terrain...</span>
-							</div>
+					{activeTerrain && (!hydratedActiveTerrain || (mapViewMode === "world" && !mapReady)) && (
+						<div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-base-200/95 text-base-content">
+							<span className="icon-[mdi--compass] w-12 h-12 animate-spin text-primary" />
+							<span className="text-base font-medium tracking-wide">
+								Travelling to {activeTerrain.Name}...
+							</span>
 						</div>
 					)}
 					{mapViewMode === "world" && (showFirstPersonButton || isDM) && (

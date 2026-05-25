@@ -64,6 +64,7 @@ interface ThreeDMapProps {
 	characters?: Character[];
 	entities?: Entity[];
 	xRayActors?: boolean;
+	onReady?: () => void;
 }
 
 interface ThreeDMapCameraState {
@@ -118,10 +119,14 @@ export default function ThreeDMap({
 	characters = [],
 	entities = [],
 	xRayActors = false,
+	onReady,
 }: ThreeDMapProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const cameraStateRef = useRef<ThreeDMapCameraState | null>(null);
 	const sceneResourcesRef = useRef<ThreeDSceneResources | null>(null);
+	// Keep a stable ref to onReady so the terrain/scene effects don't need it as a dep.
+	const onReadyRef = useRef(onReady);
+	useEffect(() => { onReadyRef.current = onReady; });
 	const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const statsRef = useRef<any>(null);
@@ -716,7 +721,18 @@ export default function ThreeDMap({
 		resources.movementHighlight = movementHighlight;
 		terrainResourcesRef.current = { meshes, geometries, materials, movementHighlight, voxelAo, animationFrameCallbacks };
 		resources.requestShadowUpdate();
+		// Terrain meshes are now in the scene -- signal the host that the map is ready.
+		onReadyRef.current?.();
 	}, [sceneResources, terrainGeometry]);
+
+	// Signal ready immediately when the scene is up but there is no terrain to build
+	// (empty terrain or no terrain assigned), so the loading screen doesn't get stuck.
+	useEffect(() => {
+		if (!sceneResources) return;
+		if (terrain && getVoxelCount(terrain.Voxels) > 0) return;
+		onReadyRef.current?.();
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [sceneResources, terrain?.Id]);
 
 	return (
 		<div className="relative w-full h-full">
