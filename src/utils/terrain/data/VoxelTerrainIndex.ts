@@ -102,18 +102,29 @@ export function createTerrainRevision(
 	].join(":");
 }
 
-// Pack (x, y, z) into one 32-bit integer for runtime lookup caches.
-// x/y/z are 0..255.
+// Pack (x, y, z) into one numeric key for temporary coordinate sets/maps.
+// Stored voxel coordinates are 0..255, but editor ghost geometry can probe
+// neighbor keys at -1 or 256. Use wider lanes so those probes cannot alias
+// valid edge voxels.
+const VOXEL_KEY_AXIS_BITS = 10;
+const VOXEL_KEY_AXIS_SIZE = 1 << VOXEL_KEY_AXIS_BITS;
+const VOXEL_KEY_AXIS_MASK = VOXEL_KEY_AXIS_SIZE - 1;
+
 export function packVoxelKey(x: number, y: number, z: number): number {
-	return x + (y << 8) + (z << 16);
+	return (
+		x +
+		y * VOXEL_KEY_AXIS_SIZE +
+		z * VOXEL_KEY_AXIS_SIZE * VOXEL_KEY_AXIS_SIZE
+	);
 }
 
 /** Inverse of packVoxelKey. */
 export function unpackVoxelKey(key: number): { x: number; y: number; z: number } {
 	return {
-		x: key & 0xff,
-		y: (key >>> 8) & 0xff,
-		z: (key >>> 16) & 0xff,
+		x: key & VOXEL_KEY_AXIS_MASK,
+		y: Math.floor(key / VOXEL_KEY_AXIS_SIZE) & VOXEL_KEY_AXIS_MASK,
+		z: Math.floor(key / (VOXEL_KEY_AXIS_SIZE * VOXEL_KEY_AXIS_SIZE)) &
+			VOXEL_KEY_AXIS_MASK,
 	};
 }
 
@@ -135,6 +146,16 @@ function tacticalToCenterVoxel(
 	return candidate;
 }
 
+function voxelGridIndex(
+	vx: number,
+	vy: number,
+	vz: number,
+	voxelWidth: number,
+	voxelLayerSize: number
+): number {
+	return vx + vz * voxelWidth + vy * voxelLayerSize;
+}
+
 /**
  * Builds an index without touching the cache. Use this in workers, or pass
  * `decodedVoxels` to skip a redundant decode when the caller already has the
@@ -149,25 +170,38 @@ export function buildVoxelTerrainIndex(
 	const voxelLength = terrain.Length * resolution;
 	const voxelHeight = terrain.Height * resolution;
 	const revision = createTerrainRevision(terrain);
+	const voxelLayerSize = voxelWidth * voxelLength;
 
-	const occupied = new Set<number>();
-	const colors = new Map<number, number>();
-	const maxVoxelYs = new Int16Array(voxelWidth * voxelLength);
+	// Dense occupancy/color grid. 0 means empty; occupied cells store
+	// paletteIndex + 1 so all 0..255 palette values fit in Uint16.
+	const voxelColors = new Uint16Array(voxelLayerSize * voxelHeight);
+	const maxVoxelYs = new Int16Array(voxelLayerSize);
 	maxVoxelYs.fill(-1);
 	let maxVoxelY = -1;
+	let voxelCount = 0;
+
+	const inVoxelBounds = (vx: number, vy: number, vz: number): boolean =>
+		vx >= 0 && vx < voxelWidth &&
+		vy >= 0 && vy < voxelHeight &&
+		vz >= 0 && vz < voxelLength;
 
 	// Single decode pass: build occupancy + colors, track per-column maxima.
 	const voxels = decodedVoxels ?? Array.from(decodeVoxels(terrain.Voxels));
 	for (const voxel of voxels) {
-		const key = packVoxelKey(voxel.x, voxel.y, voxel.z);
-		occupied.add(key);
-		colors.set(key, voxel.color);
-		if (
-			voxel.x < 0 || voxel.z < 0 ||
-			voxel.x >= voxelWidth || voxel.z >= voxelLength
-		) {
+		if (!inVoxelBounds(voxel.x, voxel.y, voxel.z)) {
 			continue;
 		}
+
+		const key = voxelGridIndex(
+			voxel.x,
+			voxel.y,
+			voxel.z,
+			voxelWidth,
+			voxelLayerSize
+		);
+		if (voxelColors[key] === 0) voxelCount++;
+		voxelColors[key] = (voxel.color & 0xff) + 1;
+
 		const idx = voxel.z * voxelWidth + voxel.x;
 		if (voxel.y > maxVoxelYs[idx]) maxVoxelYs[idx] = voxel.y;
 		if (voxel.y > maxVoxelY) maxVoxelY = voxel.y;
@@ -184,13 +218,19 @@ export function buildVoxelTerrainIndex(
 	const rulesSets = new Map<string, Set<number>>();
 	const exactSets = new Map<string, Set<number>>();
 	for (const voxel of voxels) {
-		if (
-			voxel.x < 0 || voxel.z < 0 ||
-			voxel.x >= voxelWidth || voxel.z >= voxelLength
-		) {
+		if (!inVoxelBounds(voxel.x, voxel.y, voxel.z)) {
 			continue;
 		}
-		if (occupied.has(packVoxelKey(voxel.x, voxel.y + 1, voxel.z))) continue;
+		if (
+			voxel.y + 1 < voxelHeight &&
+			voxelColors[voxelGridIndex(
+				voxel.x,
+				voxel.y + 1,
+				voxel.z,
+				voxelWidth,
+				voxelLayerSize
+			)] !== 0
+		) continue;
 
 		const key = tileKey(
 			Math.floor(voxel.x / resolution),
@@ -229,25 +269,52 @@ export function buildVoxelTerrainIndex(
 		voxelHeight,
 		voxelLength,
 		voxelSize: 1 / resolution,
-		voxelCount: voxels.length,
+		voxelCount,
 		maxSurfaceHeight: voxelTopToTacticalHeight(maxVoxelY, resolution),
 		allSurfaces,
 		allSurfaceHeights,
 		hasVoxel(vx, vy, vz) {
-			return occupied.has(packVoxelKey(vx, vy, vz));
+			if (!inVoxelBounds(vx, vy, vz)) return false;
+			return voxelColors[voxelGridIndex(
+				vx,
+				vy,
+				vz,
+				voxelWidth,
+				voxelLayerSize
+			)] !== 0;
 		},
 		getVoxelColor(vx, vy, vz) {
-			const color = colors.get(packVoxelKey(vx, vy, vz));
-			return color === undefined ? null : color;
+			if (!inVoxelBounds(vx, vy, vz)) return null;
+			const color = voxelColors[voxelGridIndex(
+				vx,
+				vy,
+				vz,
+				voxelWidth,
+				voxelLayerSize
+			)];
+			return color === 0 ? null : color - 1;
 		},
 		isVoxelOccupiedAtTile(tileX, tileY, voxelY) {
+			if (voxelY < 0 || voxelY >= voxelHeight) return false;
 			const startX = tileX * resolution;
 			const endX = startX + resolution;
 			const startZ = tileY * resolution;
 			const endZ = startZ + resolution;
+			if (
+				startX < 0 || startZ < 0 ||
+				startX >= voxelWidth || startZ >= voxelLength
+			) {
+				return false;
+			}
 			for (let vz = startZ; vz < endZ; vz++) {
 				for (let vx = startX; vx < endX; vx++) {
-					if (occupied.has(packVoxelKey(vx, voxelY, vz))) return true;
+					if (voxelColors[voxelGridIndex(
+						vx,
+						voxelY,
+						vz,
+						voxelWidth,
+						voxelLayerSize
+					)] !== 0) return true;
 				}
 			}
 			return false;

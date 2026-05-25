@@ -51,6 +51,12 @@ import {
 	type VoxelTerrainIndex,
 } from "../../utils/terrain/data/VoxelTerrainIndex";
 import {
+	countSetBits,
+	createBitset,
+	isBitSet,
+	setBit,
+} from "../../utils/terrain/data/VoxelBitsetUtils";
+import {
 	buildTerrainFromVox,
 	getVoxResolutionOptions,
 	parseVoxFile,
@@ -65,6 +71,7 @@ import {
 	iterateVoxelSelectionSpace,
 	normalizeVoxelSelectionBounds,
 	type TerrainSelection,
+	type VoxelColorGrid,
 	type VoxelCoord,
 	type VoxelSelectionBounds,
 } from "../../utils/terrain/editor/VoxelTerrainSelectionUtils";
@@ -234,21 +241,51 @@ function isSelectionEditTool(tool: EditorTool): tool is SelectionEditTool {
 }
 
 // ---------------------------------------------------------------------------
-// Edit grid -- flat Uint8Array
+// Edit grid -- color bytes plus occupancy bitset
 //
 // Encoding: index = vx + vz * vW + vy * vW * vL
-//   0        = empty
-//   color+1  = occupied with palette index `color` (0..254)
+//   colors[index] stores palette index 0..255
+//   occupied[index] bit stores whether that color byte is a real voxel
 //
 // Reads and writes are O(1). The grid is decoded from terrain.Voxels once on
 // mount (or on shape change) so strokes do not mutate the encoded SVO payload
 // directly. The draft is re-encoded only at commit boundaries.
 // ---------------------------------------------------------------------------
 
-type EditGrid = Uint8Array;
+type EditGrid = VoxelColorGrid;
 
 function editGridIndex(vx: number, vy: number, vz: number, vW: number, vL: number): number {
 	return vx + vz * vW + vy * vW * vL;
+}
+
+function createEditGrid(length: number): EditGrid {
+	return {
+		colors: new Uint8Array(length),
+		occupied: createBitset(length),
+		length,
+	};
+}
+
+function cloneEditGrid(grid: EditGrid): EditGrid {
+	return {
+		colors: grid.colors.slice(),
+		occupied: grid.occupied.slice(),
+		length: grid.length,
+	};
+}
+
+function copyEditGrid(target: EditGrid, source: EditGrid): void {
+	target.colors.set(source.colors);
+	target.occupied.set(source.occupied);
+	target.length = source.length;
+}
+
+function editGridHasVoxelAtIndex(grid: EditGrid, index: number): boolean {
+	return isBitSet(grid.occupied, index);
+}
+
+function editGridSetOccupiedAtIndex(grid: EditGrid, index: number, occupied: boolean): void {
+	setBit(grid.occupied, index, occupied);
 }
 
 function editGridHasVoxel(
@@ -257,7 +294,7 @@ function editGridHasVoxel(
 	vW: number, vH: number, vL: number,
 ): boolean {
 	if (vx < 0 || vx >= vW || vy < 0 || vy >= vH || vz < 0 || vz >= vL) return false;
-	return grid[editGridIndex(vx, vy, vz, vW, vL)] !== 0;
+	return editGridHasVoxelAtIndex(grid, editGridIndex(vx, vy, vz, vW, vL));
 }
 
 function editGridGetColor(
@@ -266,16 +303,18 @@ function editGridGetColor(
 	vW: number, vH: number, vL: number,
 ): number | null {
 	if (vx < 0 || vx >= vW || vy < 0 || vy >= vH || vz < 0 || vz >= vL) return null;
-	const val = grid[editGridIndex(vx, vy, vz, vW, vL)];
-	return val === 0 ? null : val - 1;
+	const index = editGridIndex(vx, vy, vz, vW, vL);
+	return editGridHasVoxelAtIndex(grid, index) ? grid.colors[index] : null;
 }
 
 function buildEditGrid(terrain: VoxelTerrain, index: VoxelTerrainIndex): EditGrid {
 	const { voxelWidth: vW, voxelHeight: vH, voxelLength: vL } = index;
-	const grid = new Uint8Array(vW * vH * vL);
+	const grid = createEditGrid(vW * vH * vL);
 	for (const v of decodeVoxels(terrain.Voxels)) {
 		if (v.x < 0 || v.x >= vW || v.y < 0 || v.y >= vH || v.z < 0 || v.z >= vL) continue;
-		grid[editGridIndex(v.x, v.y, v.z, vW, vL)] = normalizeVoxelPaletteIndex(v.color) + 1;
+		const index = editGridIndex(v.x, v.y, v.z, vW, vL);
+		grid.colors[index] = normalizeVoxelPaletteIndex(v.color);
+		editGridSetOccupiedAtIndex(grid, index, true);
 	}
 	return grid;
 }
@@ -285,8 +324,10 @@ function encodeEditGrid(grid: EditGrid, vW: number, vH: number, vL: number): str
 	for (let y = 0; y < vH; y++) {
 		for (let z = 0; z < vL; z++) {
 			for (let x = 0; x < vW; x++) {
-				const val = grid[editGridIndex(x, y, z, vW, vL)];
-				if (val !== 0) voxels.push({ x, y, z, color: val - 1 });
+				const index = editGridIndex(x, y, z, vW, vL);
+				if (editGridHasVoxelAtIndex(grid, index)) {
+					voxels.push({ x, y, z, color: grid.colors[index] });
+				}
 			}
 		}
 	}
@@ -294,11 +335,7 @@ function encodeEditGrid(grid: EditGrid, vW: number, vH: number, vL: number): str
 }
 
 function countEditGridVoxels(grid: EditGrid): number {
-	let count = 0;
-	for (let i = 0; i < grid.length; i++) {
-		if (grid[i] !== 0) count++;
-	}
-	return count;
+	return countSetBits(grid.occupied);
 }
 
 function computeChunkDimsForShape(
@@ -373,14 +410,15 @@ function reshapeEditGrid(
 		shape.height,
 		shape.resolution
 	);
-	const nextGrid = new Uint8Array(nextDims.vW * nextDims.vH * nextDims.vL);
+	const nextGrid = createEditGrid(nextDims.vW * nextDims.vH * nextDims.vL);
 	let count = 0;
 
 	for (let y = 0; y < oldDims.vH; y++) {
 		for (let z = 0; z < oldDims.vL; z++) {
 			for (let x = 0; x < oldDims.vW; x++) {
-				const val = grid[editGridIndex(x, y, z, oldDims.vW, oldDims.vL)];
-				if (val === 0) continue;
+				const oldIndex = editGridIndex(x, y, z, oldDims.vW, oldDims.vL);
+				if (!editGridHasVoxelAtIndex(grid, oldIndex)) continue;
+				const color = grid.colors[oldIndex];
 
 				const xRange = getRescaledVoxelRange(
 					x,
@@ -406,8 +444,11 @@ function reshapeEditGrid(
 					for (let ny = yRange.start; ny < yRange.end; ny++) {
 						for (let nx = xRange.start; nx < xRange.end; nx++) {
 							const nextIdx = editGridIndex(nx, ny, nz, nextDims.vW, nextDims.vL);
-							if (nextGrid[nextIdx] === 0) count++;
-							nextGrid[nextIdx] = val;
+							if (!editGridHasVoxelAtIndex(nextGrid, nextIdx)) {
+								count++;
+								editGridSetOccupiedAtIndex(nextGrid, nextIdx, true);
+							}
+							nextGrid.colors[nextIdx] = color;
 						}
 					}
 				}
@@ -600,10 +641,10 @@ function buildChunkGeometry(
 	for (let vy = startY; vy < endY; vy++) {
 		for (let vz = startZ; vz < endZ; vz++) {
 			for (let vx = startX; vx < endX; vx++) {
-				const val = grid[editGridIndex(vx, vy, vz, vW, vL)];
-				if (val === 0) continue;
+				const voxelIndex = editGridIndex(vx, vy, vz, vW, vL);
+				if (!editGridHasVoxelAtIndex(grid, voxelIndex)) continue;
 
-				const paletteIndex = normalizeVoxelPaletteIndex(val - 1);
+				const paletteIndex = normalizeVoxelPaletteIndex(grid.colors[voxelIndex]);
 				CHUNK_VOXEL_COLOR.set(terrainPaletteIndexToVoxelColor(paletteIndex));
 				const isSpecial = isSpecialPaletteIndex(paletteIndex) ? 1 : 0;
 
@@ -621,7 +662,7 @@ function buildChunkGeometry(
 					// Cull face if neighbor is occupied (or out-of-bounds = no face).
 					const neighborOccupied =
 						nx2 >= 0 && nx2 < vW && ny2 >= 0 && ny2 < vH && nz2 >= 0 && nz2 < vL &&
-						grid[editGridIndex(nx2, ny2, nz2, vW, vL)] !== 0;
+						editGridHasVoxelAtIndex(grid, editGridIndex(nx2, ny2, nz2, vW, vL));
 					if (neighborOccupied) continue;
 
 					const vertexIndex = positions.length / 3;
@@ -894,11 +935,15 @@ function applyStampToGrid(
 		if (x < 0 || x >= vW || y < 0 || y >= vH || z < 0 || z >= vL) continue;
 
 		const gIdx = editGridIndex(x, y, z, vW, vL);
-		const next = offset.color + 1;
-		if (grid[gIdx] === next) continue;
+		const next = normalizeVoxelPaletteIndex(offset.color);
+		const occupied = editGridHasVoxelAtIndex(grid, gIdx);
+		if (occupied && grid.colors[gIdx] === next) continue;
 		beforeMutation?.();
-		if (grid[gIdx] === 0) countDelta++;
-		grid[gIdx] = next;
+		if (!occupied) {
+			countDelta++;
+			editGridSetOccupiedAtIndex(grid, gIdx, true);
+		}
+		grid.colors[gIdx] = next;
 		markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 		changed = true;
 	}
@@ -938,9 +983,9 @@ function applyVoxelEdit(
 		const gIdx = editGridIndex(x, y, z, vW, vL);
 
 		if (tool === "erase") {
-			if (grid[gIdx] !== 0) {
+			if (editGridHasVoxelAtIndex(grid, gIdx)) {
 				beforeMutation?.();
-				grid[gIdx] = 0;
+				editGridSetOccupiedAtIndex(grid, gIdx, false);
 				markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 				changed = true;
 				countDelta--;
@@ -949,10 +994,10 @@ function applyVoxelEdit(
 		}
 
 		if (tool === "paint") {
-			const cur = grid[gIdx];
-			if (cur !== 0 && cur - 1 !== colorIndex) {
+			const occupied = editGridHasVoxelAtIndex(grid, gIdx);
+			if (occupied && grid.colors[gIdx] !== colorIndex) {
 				beforeMutation?.();
-				grid[gIdx] = colorIndex + 1;
+				grid.colors[gIdx] = colorIndex;
 				markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 				changed = true;
 			}
@@ -960,9 +1005,10 @@ function applyVoxelEdit(
 		}
 
 		// place
-		if (grid[gIdx] === 0) {
+		if (!editGridHasVoxelAtIndex(grid, gIdx)) {
 			beforeMutation?.();
-			grid[gIdx] = colorIndex + 1;
+			grid.colors[gIdx] = colorIndex;
+			editGridSetOccupiedAtIndex(grid, gIdx, true);
 			markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 			changed = true;
 			countDelta++;
@@ -982,7 +1028,7 @@ function applySelectionEdit(
 	beforeMutation?: () => void,
 ): { changed: boolean; countDelta: number } {
 	const { vW, vH, vL } = dims;
-	const next = colorIndex + 1;
+	const next = normalizeVoxelPaletteIndex(colorIndex);
 	let changed = false;
 	let countDelta = 0;
 	let changedMin: VoxelCoord | null = null;
@@ -1006,12 +1052,13 @@ function applySelectionEdit(
 		if (x < 0 || x >= vW || y < 0 || y >= vH || z < 0 || z >= vL) continue;
 
 		const gIdx = editGridIndex(x, y, z, vW, vL);
-		const cur = grid[gIdx];
+		const occupied = editGridHasVoxelAtIndex(grid, gIdx);
+		const cur = grid.colors[gIdx];
 
 		if (tool === "erase") {
-			if (cur === 0) continue;
+			if (!occupied) continue;
 			beforeMutation?.();
-			grid[gIdx] = 0;
+			editGridSetOccupiedAtIndex(grid, gIdx, false);
 			changed = true;
 			countDelta--;
 			markChanged(x, y, z);
@@ -1019,18 +1066,21 @@ function applySelectionEdit(
 		}
 
 		if (tool === "paint") {
-			if (cur === 0 || cur === next) continue;
+			if (!occupied || cur === next) continue;
 			beforeMutation?.();
-			grid[gIdx] = next;
+			grid.colors[gIdx] = next;
 			changed = true;
 			markChanged(x, y, z);
 			continue;
 		}
 
-		if (cur === next) continue;
+		if (occupied && cur === next) continue;
 		beforeMutation?.();
-		if (cur === 0) countDelta++;
-		grid[gIdx] = next;
+		if (!occupied) {
+			countDelta++;
+			editGridSetOccupiedAtIndex(grid, gIdx, true);
+		}
+		grid.colors[gIdx] = next;
 		changed = true;
 		markChanged(x, y, z);
 	}
@@ -1161,8 +1211,11 @@ function* iterateTopExposedVoxels(
 	for (let y = 0; y < vH; y++) {
 		for (let z = 0; z < vL; z++) {
 			for (let x = 0; x < vW; x++) {
-				if (grid[editGridIndex(x, y, z, vW, vL)] === 0) continue;
-				const atTop = y + 1 >= vH || grid[editGridIndex(x, y + 1, z, vW, vL)] === 0;
+				const index = editGridIndex(x, y, z, vW, vL);
+				if (!editGridHasVoxelAtIndex(grid, index)) continue;
+				const atTop =
+					y + 1 >= vH ||
+					!editGridHasVoxelAtIndex(grid, editGridIndex(x, y + 1, z, vW, vL));
 				if (atTop) yield { x, y, z };
 			}
 		}
@@ -1665,15 +1718,15 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	// Canonical committed terrain. Updated at stroke end, undo/redo, external prop.
 	const terrainRef     = useRef(terrain);
 	// Live voxel state. Written per-voxel during editing; never re-encoded mid-stroke.
-	const editGridRef    = useRef<EditGrid>(new Uint8Array(0));
+	const editGridRef    = useRef<EditGrid>(createEditGrid(0));
 	const occupiedVoxelCountRef = useRef(0);
 	// Chunk system: meshes + pending rebuild set.
 	const chunkMeshesRef = useRef<Map<number, THREE.Mesh | null>>(new Map());
 	const dirtyChunksRef = useRef<Set<number>>(new Set());
 	const chunkDimsRef   = useRef<ChunkDims | null>(null);
-	// Undo history stored as flat-array snapshots (~25 KB each at 40x40x16 voxels).
-	const undoStackRef   = useRef<Uint8Array[]>([]);
-	const redoStackRef   = useRef<Uint8Array[]>([]);
+	// Undo history stores color bytes plus a compact occupancy bitset.
+	const undoStackRef   = useRef<EditGrid[]>([]);
+	const redoStackRef   = useRef<EditGrid[]>([]);
 	// Tool/brush state mirrors kept as refs for the event-handler hot path.
 	const toolRef          = useRef<EditorTool>("place");
 	const granularityRef   = useRef<EditGranularity>("tactical");
@@ -1688,7 +1741,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	// Stroke state.
 	const activeStrokeRef         = useRef<ActiveStroke | null>(null);
 	const strokeStartedRef        = useRef(false);
-	const strokeStartSnapshotRef  = useRef<Uint8Array | null>(null);
+	const strokeStartSnapshotRef  = useRef<EditGrid | null>(null);
 	const lastEditKeyRef          = useRef<string | null>(null);
 	// Shape change detection for camera framing.
 	const lastShapeSignatureRef   = useRef<string | null>(null);
@@ -1943,7 +1996,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		// Rebuild editGrid (or resize it if grid dimensions changed).
 		const newGrid = buildEditGrid(terrain, index);
 		if (editGridRef.current.length === newGrid.length) {
-			editGridRef.current.set(newGrid);
+			copyEditGrid(editGridRef.current, newGrid);
 		} else {
 			editGridRef.current = newGrid;
 		}
@@ -2075,7 +2128,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const dims = chunkDimsRef.current;
 		if (!dims) return;
 
-		const currentSnapshot  = editGridRef.current.slice();
+		const currentSnapshot  = cloneEditGrid(editGridRef.current);
 		const previousSnapshot = undoStackRef.current[undoStackRef.current.length - 1];
 
 		redoStackRef.current = [currentSnapshot, ...redoStackRef.current].slice(0, UNDO_LIMIT);
@@ -2083,7 +2136,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		setUndoDepth(undoStackRef.current.length);
 		setRedoDepth(redoStackRef.current.length);
 
-		editGridRef.current.set(previousSnapshot);
+		copyEditGrid(editGridRef.current, previousSnapshot);
 		markAllChunksDirty(dirtyChunksRef.current, dims);
 		occupiedVoxelCountRef.current = countEditGridVoxels(previousSnapshot);
 		refreshSelectionRef.current?.();
@@ -2097,7 +2150,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const dims = chunkDimsRef.current;
 		if (!dims) return;
 
-		const currentSnapshot = editGridRef.current.slice();
+		const currentSnapshot = cloneEditGrid(editGridRef.current);
 		const nextSnapshot    = redoStackRef.current[0];
 
 		undoStackRef.current = [...undoStackRef.current.slice(-(UNDO_LIMIT - 1)), currentSnapshot];
@@ -2105,7 +2158,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		setUndoDepth(undoStackRef.current.length);
 		setRedoDepth(redoStackRef.current.length);
 
-		editGridRef.current.set(nextSnapshot);
+		copyEditGrid(editGridRef.current, nextSnapshot);
 		markAllChunksDirty(dirtyChunksRef.current, dims);
 		occupiedVoxelCountRef.current = countEditGridVoxels(nextSnapshot);
 		refreshSelectionRef.current?.();
@@ -2120,7 +2173,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 	const captureUndoSnapshot = useCallback(() => {
 		if (!strokeStartSnapshotRef.current) {
-			strokeStartSnapshotRef.current = editGridRef.current.slice();
+			strokeStartSnapshotRef.current = cloneEditGrid(editGridRef.current);
 		}
 	}, []);
 
@@ -2341,7 +2394,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 		const hit = raycastVoxelGrid(
 			raycaster.ray,
-			editGridRef.current,
+			editGridRef.current.occupied,
 			dims.vW, dims.vH, dims.vL,
 			dims.resolution,
 			dims.tW, dims.tL,

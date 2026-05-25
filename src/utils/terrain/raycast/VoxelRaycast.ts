@@ -1,15 +1,14 @@
 // src/utils/VoxelRaycast.ts
 //
 // Amanatides & Woo "Fast Voxel Traversal Algorithm" (1987) for picking in a
-// regular voxel grid. No mesh or BVH required -- occupancy is read directly
-// from a flat Uint8Array. Shared by VoxelTerrainEditor (Phase 1) and, once
-// Phase 2 is complete, the gameplay map raycasting paths.
+// regular voxel grid. No mesh or BVH required. The editor path reads from a
+// compact occupancy bitset; gameplay-map paths read from VoxelTerrainIndex.
 //
 // Reference: http://www.cse.yorku.ca/~amana/research/grid.pdf
 //
 // Grid coordinate conventions (matching the editor edit grid):
 //   index = vx + vz * vW + vy * vW * vL
-//   value = 0 (empty) | (paletteIndex + 1) (occupied)
+//   occupancy bit = 0 (empty) | 1 (occupied)
 //
 // World-to-grid transform:
 //   vx = (worldX + tW / 2) * resolution
@@ -31,6 +30,7 @@
 // -------------------------------------------------------------------------
 
 import * as THREE from 'three';
+import { isBitSet } from '../data/VoxelBitsetUtils';
 import type { VoxelTerrainIndex } from '../data/VoxelTerrainIndex';
 
 export interface VoxelRayHit {
@@ -44,29 +44,22 @@ export interface VoxelRayHit {
 	nz: number;
 }
 
-/**
- * Cast a ray through a flat voxel occupancy grid using DDA traversal.
- * Returns the first occupied voxel hit, or null if none.
- *
- * @param ray        THREE.Ray in world space.
- * @param grid       Flat Uint8Array: index = vx + vz*vW + vy*vW*vL. 0 = empty.
- * @param vW         Grid width  in voxels.
- * @param vH         Grid height in voxels.
- * @param vL         Grid length in voxels.
- * @param resolution Voxels per tactical unit (e.g. 1, 2, or 3).
- * @param tW         Terrain width  in tactical units.
- * @param tL         Terrain length in tactical units.
- */
-export function raycastVoxelGrid(
+interface VoxelRaycastSpace {
+	vW: number;
+	vH: number;
+	vL: number;
+	resolution: number;
+	tW: number;
+	tL: number;
+	hasVoxel(vx: number, vy: number, vz: number): boolean;
+}
+
+function raycastVoxelSpace(
 	ray: THREE.Ray,
-	grid: Uint8Array,
-	vW: number,
-	vH: number,
-	vL: number,
-	resolution: number,
-	tW: number,
-	tL: number,
+	space: VoxelRaycastSpace
 ): VoxelRayHit | null {
+	const { vW, vH, vL, resolution, tW, tL, hasVoxel } = space;
+
 	// Transform ray origin into fractional voxel coordinates.
 	// Direction is also scaled by resolution so tDelta values are in the same
 	// units; the DDA result is identical (just a uniform time rescaling).
@@ -157,7 +150,7 @@ export function raycastVoxelGrid(
 	let vz = Math.min(Math.max(Math.floor(ez), 0), vL - 1);
 
 	// Check the entry voxel itself.
-	if (grid[vx + vz * vW + vy * vW * vL] !== 0) {
+	if (hasVoxel(vx, vy, vz)) {
 		return { vx, vy, vz, nx, ny, nz };
 	}
 
@@ -207,7 +200,7 @@ export function raycastVoxelGrid(
 		// We started inside the grid, so any out-of-bounds step means we exited.
 		if (vx < 0 || vx >= vW || vy < 0 || vy >= vH || vz < 0 || vz >= vL) break;
 
-		if (grid[vx + vz * vW + vy * vW * vL] !== 0) {
+		if (hasVoxel(vx, vy, vz)) {
 			return { vx, vy, vz, nx, ny, nz };
 		}
 	}
@@ -216,8 +209,43 @@ export function raycastVoxelGrid(
 }
 
 /**
- * Same DDA traversal as raycastVoxelGrid but reads occupancy from a
- * VoxelTerrainIndex (via hasVoxel) instead of a raw Uint8Array.
+ * Cast a ray through a flat voxel occupancy bitset using DDA traversal.
+ * Returns the first occupied voxel hit, or null if none.
+ *
+ * @param ray        THREE.Ray in world space.
+ * @param occupancy  Bitset over index = vx + vz*vW + vy*vW*vL.
+ * @param vW         Grid width  in voxels.
+ * @param vH         Grid height in voxels.
+ * @param vL         Grid length in voxels.
+ * @param resolution Voxels per tactical unit (e.g. 1, 2, or 3).
+ * @param tW         Terrain width  in tactical units.
+ * @param tL         Terrain length in tactical units.
+ */
+export function raycastVoxelGrid(
+	ray: THREE.Ray,
+	occupancy: Uint8Array,
+	vW: number,
+	vH: number,
+	vL: number,
+	resolution: number,
+	tW: number,
+	tL: number,
+): VoxelRayHit | null {
+	const layerSize = vW * vL;
+	return raycastVoxelSpace(ray, {
+		vW,
+		vH,
+		vL,
+		resolution,
+		tW,
+		tL,
+		hasVoxel: (vx, vy, vz) => isBitSet(occupancy, vx + vz * vW + vy * layerSize),
+	});
+}
+
+/**
+ * Reads occupancy from a VoxelTerrainIndex (via hasVoxel) instead of a raw
+ * bitset.
  * Use this from gameplay-map call sites that already hold an index
  * (ThreeDMovementLayer, ThreeDActorLayer, ThreeDPingLayer) so they
  * don't need to expose or copy the raw grid buffer.
@@ -226,105 +254,13 @@ export function raycastVoxelIndex(
 	ray: THREE.Ray,
 	index: VoxelTerrainIndex,
 ): VoxelRayHit | null {
-	const { voxelWidth: vW, voxelHeight: vH, voxelLength: vL, resolution, width: tW, length: tL } = index;
-
-	const ox = (ray.origin.x + tW / 2) * resolution;
-	const oy = (ray.origin.y + 0.5)    * resolution;
-	const oz = (ray.origin.z + tL / 2) * resolution;
-	const dx = ray.direction.x * resolution;
-	const dy = ray.direction.y * resolution;
-	const dz = ray.direction.z * resolution;
-
-	// Slab clipping -- identical to raycastVoxelGrid.
-	let tEntry = 0;
-	let tExit  = Infinity;
-	let nx = 0, ny = 0, nz = 0;
-
-	if (dx !== 0) {
-		const ta = (0  - ox) / dx;
-		const tb = (vW - ox) / dx;
-		const tNear = Math.min(ta, tb);
-		const tFar  = Math.max(ta, tb);
-		if (tNear > tEntry) { tEntry = tNear; nx = dx > 0 ? -1 : 1; ny = 0; nz = 0; }
-		tExit = Math.min(tExit, tFar);
-	} else if (ox < 0 || ox >= vW) {
-		return null;
-	}
-
-	if (dy !== 0) {
-		const ta = (0  - oy) / dy;
-		const tb = (vH - oy) / dy;
-		const tNear = Math.min(ta, tb);
-		const tFar  = Math.max(ta, tb);
-		if (tNear > tEntry) { tEntry = tNear; nx = 0; ny = dy > 0 ? -1 : 1; nz = 0; }
-		tExit = Math.min(tExit, tFar);
-	} else if (oy < 0 || oy >= vH) {
-		return null;
-	}
-
-	if (dz !== 0) {
-		const ta = (0  - oz) / dz;
-		const tb = (vL - oz) / dz;
-		const tNear = Math.min(ta, tb);
-		const tFar  = Math.max(ta, tb);
-		if (tNear > tEntry) { tEntry = tNear; nx = 0; ny = 0; nz = dz > 0 ? -1 : 1; }
-		tExit = Math.min(tExit, tFar);
-	} else if (oz < 0 || oz >= vL) {
-		return null;
-	}
-
-	if (tExit <= tEntry) return null;
-
-	const ex = ox + tEntry * dx;
-	const ey = oy + tEntry * dy;
-	const ez = oz + tEntry * dz;
-
-	let vx = Math.min(Math.max(Math.floor(ex), 0), vW - 1);
-	let vy = Math.min(Math.max(Math.floor(ey), 0), vH - 1);
-	let vz = Math.min(Math.max(Math.floor(ez), 0), vL - 1);
-
-	if (index.hasVoxel(vx, vy, vz)) {
-		return { vx, vy, vz, nx, ny, nz };
-	}
-
-	const stepX = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
-	const stepY = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
-	const stepZ = dz > 0 ? 1 : (dz < 0 ? -1 : 0);
-
-	const tDeltaX = dx !== 0 ? Math.abs(1 / dx) : Infinity;
-	const tDeltaY = dy !== 0 ? Math.abs(1 / dy) : Infinity;
-	const tDeltaZ = dz !== 0 ? Math.abs(1 / dz) : Infinity;
-
-	const bX = dx >= 0 ? vx + 1 : vx;
-	const bY = dy >= 0 ? vy + 1 : vy;
-	const bZ = dz >= 0 ? vz + 1 : vz;
-	let tMaxX = dx !== 0 ? (bX - ox) / dx : Infinity;
-	let tMaxY = dy !== 0 ? (bY - oy) / dy : Infinity;
-	let tMaxZ = dz !== 0 ? (bZ - oz) / dz : Infinity;
-
-	const maxSteps = vW + vH + vL + 8;
-
-	for (let step = 0; step < maxSteps; step++) {
-		if (tMaxX <= tMaxY && tMaxX <= tMaxZ) {
-			vx += stepX;
-			nx = -stepX; ny = 0; nz = 0;
-			tMaxX += tDeltaX;
-		} else if (tMaxY <= tMaxZ) {
-			vy += stepY;
-			nx = 0; ny = -stepY; nz = 0;
-			tMaxY += tDeltaY;
-		} else {
-			vz += stepZ;
-			nx = 0; ny = 0; nz = -stepZ;
-			tMaxZ += tDeltaZ;
-		}
-
-		if (vx < 0 || vx >= vW || vy < 0 || vy >= vH || vz < 0 || vz >= vL) break;
-
-		if (index.hasVoxel(vx, vy, vz)) {
-			return { vx, vy, vz, nx, ny, nz };
-		}
-	}
-
-	return null;
+	return raycastVoxelSpace(ray, {
+		vW: index.voxelWidth,
+		vH: index.voxelHeight,
+		vL: index.voxelLength,
+		resolution: index.resolution,
+		tW: index.width,
+		tL: index.length,
+		hasVoxel: (vx, vy, vz) => index.hasVoxel(vx, vy, vz),
+	});
 }

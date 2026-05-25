@@ -1,3 +1,5 @@
+import { isBitSet } from "../data/VoxelBitsetUtils";
+
 export interface VoxelCoord {
 	x: number;
 	y: number;
@@ -8,6 +10,12 @@ export interface VoxelGridDims {
 	vW: number;
 	vH: number;
 	vL: number;
+}
+
+export interface VoxelColorGrid {
+	colors: Uint8Array;
+	occupied: Uint8Array;
+	length: number;
 }
 
 export interface VoxelSelectionBounds {
@@ -88,7 +96,7 @@ export function getVoxelSelectionBounds(
 	selection: TerrainSelection | null
 ): VoxelSelectionBounds | null {
 	if (!selection) return null;
-	return selection.kind === "box" ? selection.bounds : selection.bounds;
+	return selection.bounds;
 }
 
 export function getVoxelSelectionSpaceCount(selection: TerrainSelection): number {
@@ -115,19 +123,18 @@ export function editGridOffsetToVoxelCoord(
 }
 
 export function createColorVoxelSelection(
-	grid: Uint8Array,
+	grid: VoxelColorGrid,
 	dims: VoxelGridDims,
 	colorIndex: number,
 	id: number
 ): TerrainSelection {
 	const mask = new Uint8Array(grid.length);
-	const target = colorIndex + 1;
 	let selectedCount = 0;
 	let min: VoxelCoord | null = null;
 	let max: VoxelCoord | null = null;
 
 	for (let i = 0; i < grid.length; i++) {
-		if (grid[i] !== target) continue;
+		if (!isBitSet(grid.occupied, i) || grid.colors[i] !== colorIndex) continue;
 
 		mask[i] = 1;
 		selectedCount++;
@@ -178,21 +185,4 @@ export function* iterateVoxelSelectionSpace(
 			yield editGridOffsetToVoxelCoord(i, dims);
 		}
 	}
-}
-
-export function countSelectedOccupiedVoxels(
-	selection: TerrainSelection,
-	grid: Uint8Array,
-	dims: VoxelGridDims
-): number {
-	let count = 0;
-
-	for (const { x, y, z } of iterateVoxelSelectionSpace(selection, dims)) {
-		if (x < 0 || x >= dims.vW || y < 0 || y >= dims.vH || z < 0 || z >= dims.vL) {
-			continue;
-		}
-		if (grid[x + z * dims.vW + y * dims.vW * dims.vL] !== 0) count++;
-	}
-
-	return count;
 }
