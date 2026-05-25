@@ -43,7 +43,6 @@ export class ActionService {
 	private lastBroadcastUserJson = "";
 
 	constructor(context: Context, room: Room) {
-		console.log("[ActionService] Initializing...");
 		this.context = context;
 		this.room = room;
 		this.stateSync = new StateSync(room, this.execute.bind(this));
@@ -521,7 +520,6 @@ export class ActionService {
 	}
 
 	cleanup(): void {
-		console.log("[ActionService] Cleaning up...");
 		if (this.peerReconcileInterval) {
 			clearInterval(this.peerReconcileInterval);
 			this.peerReconcileInterval = undefined;

@@ -24,7 +24,6 @@ export class LocalStorageUtilities {
 		try {
 			const json = localStorage.getItem(key);
 			if (!json) {
-				console.log(`[LocalStorage] No data found for key: ${key}`);
 				return null;
 			}
 

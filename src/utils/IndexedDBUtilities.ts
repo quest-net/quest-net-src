@@ -140,7 +140,6 @@ export class IndexedDBUtilities {
 						metadata: request.result.metadata || {},
 					});
 				} else {
-					console.log(`[IndexedDB] No data found for id: ${id}`);
 					resolve(null);
 				}
 			};

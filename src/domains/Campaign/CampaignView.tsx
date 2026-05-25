@@ -231,7 +231,6 @@ export function CampaignView() {
 				};
 
 				room = RoomActions.join(roomCode!, callbacks);
-				console.log(`[CampaignView] Joined room: ${roomCode}`);
 
 				// =====================================================================
 				// STEP 3: Create ActionService

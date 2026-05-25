@@ -163,7 +163,6 @@ export function AudioPlayer() {
 			const newIndex = youtubeIds.findIndex(id => id === currentVideoId);
 			
 			if (newIndex !== -1 && newIndex !== currentTrackIndex) {
-				console.log(`[AudioPlayer] Track changed from ${currentTrackIndex} to ${newIndex}`);
 				setCurrentTrackIndex(newIndex);
 			}
 		} catch (e) {
