@@ -214,6 +214,24 @@ function numberInputValue(value: string, fallback: number): number {
 // ~80 chunks for a 40x40x16 voxel grid. A single-voxel edit touches 1-2 chunks.
 const CHUNK_SIZE = 8;
 
+// ---------------------------------------------------------------------------
+// Module-level scratch THREE objects -- reused across every pick/hover call
+// to eliminate per-event allocation and GC pressure.
+// IMPORTANT: these are single-use temporaries. Callers must never hold a
+// reference to them across an await or another pick call.  The plane fields
+// in PickInfo are always cloned by the pointer-down handler before storage.
+// ---------------------------------------------------------------------------
+const _pickMouse    = new THREE.Vector2();
+const _pickRay      = new THREE.Raycaster();
+const _pickNormal   = new THREE.Vector3();
+const _pickCenter   = new THREE.Vector3();   // voxel-centre / ground-point
+const _pickPlane    = new THREE.Plane();
+const _lockPt       = new THREE.Vector3();   // locked-plane intersection
+const _lockNormal   = new THREE.Vector3();   // normal / offset scratch
+const _actorVec     = new THREE.Vector3();   // actor-marker projection
+// Constant ground plane (Y-up, y = -0.5 in world space).
+const _groundPlane  = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.5);
+
 const TOOL_BUTTONS: Array<{
 	id: EditorTool;
 	label: string;
@@ -263,14 +281,6 @@ function createEditGrid(length: number): EditGrid {
 		colors: new Uint8Array(length),
 		occupied: createBitset(length),
 		length,
-	};
-}
-
-function cloneEditGrid(grid: EditGrid): EditGrid {
-	return {
-		colors: grid.colors.slice(),
-		occupied: grid.occupied.slice(),
-		length: grid.length,
 	};
 }
 
@@ -336,6 +346,51 @@ function encodeEditGrid(grid: EditGrid, vW: number, vH: number, vL: number): str
 
 function countEditGridVoxels(grid: EditGrid): number {
 	return countSetBits(grid.occupied);
+}
+
+// ---------------------------------------------------------------------------
+// Delta-based undo/redo
+//
+// GridDelta records only the voxels that changed during a stroke.
+// oldStates / newStates pack the occupancy flag into bit 8 and the palette
+// index into bits 0-7, stored in Uint16Arrays for compact memory.
+// On undo we apply oldStates; on redo we apply newStates.
+// Both the undo and redo stacks store the same UndoEntry object -- the
+// direction of application is determined by which function calls it.
+// ---------------------------------------------------------------------------
+
+interface GridDelta {
+	indices:    Uint32Array;  // flat voxel indices
+	oldStates:  Uint16Array;  // bit 8 = was occupied, bits 0-7 = old color
+	newStates:  Uint16Array;  // bit 8 = is  occupied, bits 0-7 = new color
+	countDelta: number;       // net change in occupied-voxel count
+}
+
+type UndoEntry = GridDelta;
+
+function applyDeltaToGrid(
+	grid:        EditGrid,
+	delta:       GridDelta,
+	direction:   "undo" | "redo",
+	dirtyChunks: Set<number>,
+	dims:        ChunkDims,
+): void {
+	const states = direction === "undo" ? delta.oldStates : delta.newStates;
+	const { vW, vL } = dims;
+	for (let i = 0; i < delta.indices.length; i++) {
+		const idx      = delta.indices[i];
+		const packed   = states[i];
+		const occupied = (packed & 0x100) !== 0;
+		const color    = packed & 0xFF;
+		grid.colors[idx] = color;
+		editGridSetOccupiedAtIndex(grid, idx, occupied);
+		// Derive vx, vy, vz from flat index: idx = vx + vz*vW + vy*vW*vL
+		const vx  = idx % vW;
+		const rem = (idx / vW) | 0;
+		const vz  = rem % vL;
+		const vy  = (rem / vL) | 0;
+		markVoxelDirtyChunks(vx, vy, vz, dirtyChunks, dims);
+	}
 }
 
 function computeChunkDimsForShape(
@@ -922,7 +977,7 @@ function applyStampToGrid(
 	anchor: VoxelCoord,
 	source: VoxelTerrain,
 	transform: StampTransform,
-	beforeMutation?: () => void,
+	beforeMutation?: (gIdx: number) => void,
 ): { changed: boolean; countDelta: number } {
 	const { vW, vH, vL, resolution } = dims;
 	let changed = false;
@@ -938,7 +993,7 @@ function applyStampToGrid(
 		const next = normalizeVoxelPaletteIndex(offset.color);
 		const occupied = editGridHasVoxelAtIndex(grid, gIdx);
 		if (occupied && grid.colors[gIdx] === next) continue;
-		beforeMutation?.();
+		beforeMutation?.(gIdx);
 		if (!occupied) {
 			countDelta++;
 			editGridSetOccupiedAtIndex(grid, gIdx, true);
@@ -965,7 +1020,7 @@ function applyVoxelEdit(
 	granularity: EditGranularity,
 	brushSize: number,
 	colorIndex: number,
-	beforeMutation?: () => void,
+	beforeMutation?: (gIdx: number) => void,
 ): { changed: boolean; sampledColor: number | null; countDelta: number } {
 	const { vW, vH, vL } = dims;
 
@@ -984,7 +1039,7 @@ function applyVoxelEdit(
 
 		if (tool === "erase") {
 			if (editGridHasVoxelAtIndex(grid, gIdx)) {
-				beforeMutation?.();
+				beforeMutation?.(gIdx);
 				editGridSetOccupiedAtIndex(grid, gIdx, false);
 				markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 				changed = true;
@@ -996,7 +1051,7 @@ function applyVoxelEdit(
 		if (tool === "paint") {
 			const occupied = editGridHasVoxelAtIndex(grid, gIdx);
 			if (occupied && grid.colors[gIdx] !== colorIndex) {
-				beforeMutation?.();
+				beforeMutation?.(gIdx);
 				grid.colors[gIdx] = colorIndex;
 				markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 				changed = true;
@@ -1006,7 +1061,7 @@ function applyVoxelEdit(
 
 		// place
 		if (!editGridHasVoxelAtIndex(grid, gIdx)) {
-			beforeMutation?.();
+			beforeMutation?.(gIdx);
 			grid.colors[gIdx] = colorIndex;
 			editGridSetOccupiedAtIndex(grid, gIdx, true);
 			markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
@@ -1025,7 +1080,7 @@ function applySelectionEdit(
 	selection: TerrainSelection,
 	tool: SelectionEditTool,
 	colorIndex: number,
-	beforeMutation?: () => void,
+	beforeMutation?: (gIdx: number) => void,
 ): { changed: boolean; countDelta: number } {
 	const { vW, vH, vL } = dims;
 	const next = normalizeVoxelPaletteIndex(colorIndex);
@@ -1057,7 +1112,7 @@ function applySelectionEdit(
 
 		if (tool === "erase") {
 			if (!occupied) continue;
-			beforeMutation?.();
+			beforeMutation?.(gIdx);
 			editGridSetOccupiedAtIndex(grid, gIdx, false);
 			changed = true;
 			countDelta--;
@@ -1067,7 +1122,7 @@ function applySelectionEdit(
 
 		if (tool === "paint") {
 			if (!occupied || cur === next) continue;
-			beforeMutation?.();
+			beforeMutation?.(gIdx);
 			grid.colors[gIdx] = next;
 			changed = true;
 			markChanged(x, y, z);
@@ -1075,7 +1130,7 @@ function applySelectionEdit(
 		}
 
 		if (occupied && cur === next) continue;
-		beforeMutation?.();
+		beforeMutation?.(gIdx);
 		if (!occupied) {
 			countDelta++;
 			editGridSetOccupiedAtIndex(grid, gIdx, true);
@@ -1724,9 +1779,9 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	const chunkMeshesRef = useRef<Map<number, THREE.Mesh | null>>(new Map());
 	const dirtyChunksRef = useRef<Set<number>>(new Set());
 	const chunkDimsRef   = useRef<ChunkDims | null>(null);
-	// Undo history stores color bytes plus a compact occupancy bitset.
-	const undoStackRef   = useRef<EditGrid[]>([]);
-	const redoStackRef   = useRef<EditGrid[]>([]);
+	// Undo history: delta entries (typical) or full-grid snapshots (fallback).
+	const undoStackRef   = useRef<UndoEntry[]>([]);
+	const redoStackRef   = useRef<UndoEntry[]>([]);
 	// Tool/brush state mirrors kept as refs for the event-handler hot path.
 	const toolRef          = useRef<EditorTool>("place");
 	const granularityRef   = useRef<EditGranularity>("tactical");
@@ -1740,8 +1795,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	const actorOverlayRef  = useRef<HTMLDivElement>(null);
 	// Stroke state.
 	const activeStrokeRef         = useRef<ActiveStroke | null>(null);
-	const strokeStartedRef        = useRef(false);
-	const strokeStartSnapshotRef  = useRef<EditGrid | null>(null);
+	const strokeStartedRef  = useRef(false);
+	// Delta accumulator: maps flat voxel index -> packed pre-stroke state
+	// (bit 8 = was occupied, bits 0-7 = old color).  Null when no stroke is
+	// in progress.
+	const strokeDeltaRef    = useRef<Map<number, number> | null>(null);
 	const lastEditKeyRef          = useRef<string | null>(null);
 	// Shape change detection for camera framing.
 	const lastShapeSignatureRef   = useRef<string | null>(null);
@@ -2115,9 +2173,31 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	// -------------------------------------------------------------------------
 
 	const recordUndo = useCallback(() => {
-		const snapshot = strokeStartSnapshotRef.current;
-		if (!snapshot) return;
-		undoStackRef.current = [...undoStackRef.current.slice(-(UNDO_LIMIT - 1)), snapshot];
+		const acc = strokeDeltaRef.current;
+		strokeDeltaRef.current = null;
+		if (!acc || acc.size === 0) return;
+
+		// Finalise the delta: pair each pre-stroke (old) state with the
+		// current grid state (new) and compute the net occupancy change.
+		const n          = acc.size;
+		const indices    = new Uint32Array(n);
+		const oldStates  = new Uint16Array(n);
+		const newStates  = new Uint16Array(n);
+		let   countDelta = 0;
+		let   i          = 0;
+		for (const [idx, oldPacked] of acc) {
+			const newOccupied = editGridHasVoxelAtIndex(editGridRef.current, idx);
+			const newColor    = editGridRef.current.colors[idx];
+			const newPacked   = (newOccupied ? 0x100 : 0) | newColor;
+			indices[i]   = idx;
+			oldStates[i] = oldPacked;
+			newStates[i] = newPacked;
+			countDelta  += (newOccupied ? 1 : 0) - ((oldPacked & 0x100) ? 1 : 0);
+			i++;
+		}
+
+		const delta: GridDelta = { indices, oldStates, newStates, countDelta };
+		undoStackRef.current = [...undoStackRef.current.slice(-(UNDO_LIMIT - 1)), delta];
 		redoStackRef.current = [];
 		setUndoDepth(undoStackRef.current.length);
 		setRedoDepth(0);
@@ -2128,19 +2208,17 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const dims = chunkDimsRef.current;
 		if (!dims) return;
 
-		const currentSnapshot  = cloneEditGrid(editGridRef.current);
-		const previousSnapshot = undoStackRef.current[undoStackRef.current.length - 1];
-
-		redoStackRef.current = [currentSnapshot, ...redoStackRef.current].slice(0, UNDO_LIMIT);
+		const delta = undoStackRef.current[undoStackRef.current.length - 1];
 		undoStackRef.current = undoStackRef.current.slice(0, -1);
+
+		applyDeltaToGrid(editGridRef.current, delta, "undo", dirtyChunksRef.current, dims);
+		occupiedVoxelCountRef.current -= delta.countDelta;
+		// Same delta on the redo stack; redo applies newStates.
+		redoStackRef.current = [delta, ...redoStackRef.current].slice(0, UNDO_LIMIT);
+
 		setUndoDepth(undoStackRef.current.length);
 		setRedoDepth(redoStackRef.current.length);
-
-		copyEditGrid(editGridRef.current, previousSnapshot);
-		markAllChunksDirty(dirtyChunksRef.current, dims);
-		occupiedVoxelCountRef.current = countEditGridVoxels(previousSnapshot);
 		refreshSelectionRef.current?.();
-
 		bumpEditGen();
 		markDraftDirty();
 	}, [bumpEditGen, markDraftDirty]);
@@ -2150,19 +2228,17 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const dims = chunkDimsRef.current;
 		if (!dims) return;
 
-		const currentSnapshot = cloneEditGrid(editGridRef.current);
-		const nextSnapshot    = redoStackRef.current[0];
-
-		undoStackRef.current = [...undoStackRef.current.slice(-(UNDO_LIMIT - 1)), currentSnapshot];
+		const delta = redoStackRef.current[0];
 		redoStackRef.current = redoStackRef.current.slice(1);
+
+		applyDeltaToGrid(editGridRef.current, delta, "redo", dirtyChunksRef.current, dims);
+		occupiedVoxelCountRef.current += delta.countDelta;
+		// Same delta back onto the undo stack; undo applies oldStates.
+		undoStackRef.current = [...undoStackRef.current.slice(-(UNDO_LIMIT - 1)), delta];
+
 		setUndoDepth(undoStackRef.current.length);
 		setRedoDepth(redoStackRef.current.length);
-
-		copyEditGrid(editGridRef.current, nextSnapshot);
-		markAllChunksDirty(dirtyChunksRef.current, dims);
-		occupiedVoxelCountRef.current = countEditGridVoxels(nextSnapshot);
 		refreshSelectionRef.current?.();
-
 		bumpEditGen();
 		markDraftDirty();
 	}, [bumpEditGen, markDraftDirty]);
@@ -2171,10 +2247,19 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 	// Apply edit (writes directly to editGrid -- no React, no encode)
 	// -------------------------------------------------------------------------
 
-	const captureUndoSnapshot = useCallback(() => {
-		if (!strokeStartSnapshotRef.current) {
-			strokeStartSnapshotRef.current = cloneEditGrid(editGridRef.current);
+	// Called by edit functions (as beforeMutation) immediately before each
+	// individual voxel is modified.  Records the voxel's pre-stroke state in
+	// the accumulator so we can build a precise delta at stroke end.
+	const recordVoxelBefore = useCallback((gIdx: number) => {
+		let acc = strokeDeltaRef.current;
+		if (acc === null) {
+			strokeDeltaRef.current = new Map();
+			acc = strokeDeltaRef.current;
 		}
+		if (acc.has(gIdx)) return; // already recorded for this stroke
+		const occupied = editGridHasVoxelAtIndex(editGridRef.current, gIdx);
+		const color    = editGridRef.current.colors[gIdx];
+		acc.set(gIdx, (occupied ? 0x100 : 0) | color);
 	}, []);
 
 	const applyEdit = useCallback((pick: PickInfo): boolean => {
@@ -2227,14 +2312,13 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				activeSelection,
 				toolRef.current,
 				selectedColorRef.current,
-				captureUndoSnapshot,
+				recordVoxelBefore,
 			);
 			if (!selectionResult.changed) return false;
 			occupiedVoxelCountRef.current += selectionResult.countDelta;
 			refreshSelectionRef.current?.();
 
 			if (!strokeStartedRef.current) {
-				recordUndo();
 				strokeStartedRef.current = true;
 			}
 			return true;
@@ -2259,12 +2343,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				anchor,
 				source,
 				stampTransformRef.current,
-				captureUndoSnapshot,
+				recordVoxelBefore,
 			);
 			if (!stampResult.changed) return false;
 			occupiedVoxelCountRef.current += stampResult.countDelta;
 			if (!strokeStartedRef.current) {
-				recordUndo();
 				strokeStartedRef.current = true;
 			}
 			return true;
@@ -2280,7 +2363,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			granularityRef.current,
 			brushSizeRef.current,
 			selectedColorRef.current,
-			captureUndoSnapshot,
+			recordVoxelBefore,
 		);
 
 		if (result.sampledColor !== null) {
@@ -2295,7 +2378,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		occupiedVoxelCountRef.current += result.countDelta;
 
 		if (!strokeStartedRef.current) {
-			recordUndo();
 			strokeStartedRef.current = true;
 		}
 
@@ -2303,9 +2385,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		// automatically; persisted encoding is deferred until the form saves.
 		return true;
 	}, [
-		captureUndoSnapshot,
+		recordVoxelBefore,
 		nextSelectionId,
-		recordUndo,
 		selectVoxelsByColor,
 		setBoxSelectionAnchor,
 		setTerrainSelection,
@@ -2384,16 +2465,14 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		if (!dims) return null;
 
 		const rect = resources.renderer.domElement.getBoundingClientRect();
-		const mouse = new THREE.Vector2(
+		_pickMouse.set(
 			((event.clientX - rect.left) / rect.width)  *  2 - 1,
 			-((event.clientY - rect.top)  / rect.height) *  2 + 1,
 		);
-
-		const raycaster = new THREE.Raycaster();
-		raycaster.setFromCamera(mouse, resources.camera);
+		_pickRay.setFromCamera(_pickMouse, resources.camera);
 
 		const hit = raycastVoxelGrid(
-			raycaster.ray,
+			_pickRay.ray,
 			editGridRef.current.occupied,
 			dims.vW, dims.vH, dims.vL,
 			dims.resolution,
@@ -2402,31 +2481,32 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 		if (hit) {
 			const { vx, vy, vz, nx, ny, nz } = hit;
-			const normal = new THREE.Vector3(nx, ny, nz);
-			const voxelCenter = new THREE.Vector3(
-				(vx + 0.5) / dims.resolution - dims.tW / 2,
-				(vy + 0.5) / dims.resolution - 0.5,
-				(vz + 0.5) / dims.resolution - dims.tL / 2,
-			);
-			const facePoint = voxelCenter.clone().addScaledVector(normal, 0.5 / dims.resolution);
+			_pickNormal.set(nx, ny, nz);
+			// Compute face-centre point: voxel-centre + normal * halfVoxelSize.
+			_pickCenter
+				.set(
+					(vx + 0.5) / dims.resolution - dims.tW / 2,
+					(vy + 0.5) / dims.resolution - 0.5,
+					(vz + 0.5) / dims.resolution - dims.tL / 2,
+				)
+				.addScaledVector(_pickNormal, 0.5 / dims.resolution);
+			_pickPlane.setFromNormalAndCoplanarPoint(_pickNormal, _pickCenter);
 			return {
 				voxel:  { x: vx, y: vy, z: vz },
 				normal: { x: nx, y: ny, z: nz },
 				ground: false,
-				plane:  new THREE.Plane().setFromNormalAndCoplanarPoint(normal, facePoint),
+				plane:  _pickPlane,  // cloned by handlePointerDown before storage
 			};
 		}
 
 		// Fall back to ground plane hit.
 		const index = getVoxelTerrainIndex(terrainRef.current);
-		const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.5);
-		const groundPoint = new THREE.Vector3();
-		if (!raycaster.ray.intersectPlane(groundPlane, groundPoint)) return null;
+		if (!_pickRay.ray.intersectPlane(_groundPlane, _pickCenter)) return null;
 
 		const voxel = {
-			x: Math.floor((groundPoint.x + index.width  / 2) * index.resolution),
+			x: Math.floor((_pickCenter.x + index.width  / 2) * index.resolution),
 			y: 0,
-			z: Math.floor((groundPoint.z + index.length / 2) * index.resolution),
+			z: Math.floor((_pickCenter.z + index.length / 2) * index.resolution),
 		};
 		if (!isVoxelInBounds(index, voxel)) return null;
 
@@ -2434,7 +2514,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			voxel,
 			normal: { x: 0, y: 1, z: 0 },
 			ground: true,
-			plane:  groundPlane.clone(),
+			plane:  _groundPlane,  // cloned by handlePointerDown before storage
 		};
 	}, []);
 
@@ -2447,28 +2527,30 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 		const index = getVoxelTerrainIndex(terrainRef.current);
 		const rect  = resources.renderer.domElement.getBoundingClientRect();
-		const mouse = new THREE.Vector2(
+		// Reuse module-level scratch objects -- no per-call allocation.
+		_pickMouse.set(
 			((event.clientX - rect.left) / rect.width)  *  2 - 1,
 			-((event.clientY - rect.top)  / rect.height) *  2 + 1,
 		);
+		_pickRay.setFromCamera(_pickMouse, resources.camera);
 
-		const raycaster = new THREE.Raycaster();
-		raycaster.setFromCamera(mouse, resources.camera);
-
-		const pt = new THREE.Vector3();
-		if (!raycaster.ray.intersectPlane(lockedPlane.plane, pt)) return null;
+		// Intersect into _lockPt (scratch); do NOT hold a reference past this fn.
+		if (!_pickRay.ray.intersectPlane(lockedPlane.plane, _lockPt)) return null;
 
 		const voxel = lockedPlane.ground
 			? {
-				x: Math.floor((pt.x + index.width  / 2) * index.resolution),
+				x: Math.floor((_lockPt.x + index.width  / 2) * index.resolution),
 				y: 0,
-				z: Math.floor((pt.z + index.length / 2) * index.resolution),
+				z: Math.floor((_lockPt.z + index.length / 2) * index.resolution),
 			}
 			: pointToVoxelCoord(
-				pt.clone().addScaledVector(
-					new THREE.Vector3(lockedPlane.normal.x, lockedPlane.normal.y, lockedPlane.normal.z).normalize(),
-					-PICK_EPSILON,
-				),
+				// _lockNormal = normal direction; add(-PICK_EPSILON) then add _lockPt
+				// to get a point just inside the face -- zero extra allocations.
+				_lockNormal
+					.set(lockedPlane.normal.x, lockedPlane.normal.y, lockedPlane.normal.z)
+					.normalize()
+					.multiplyScalar(-PICK_EPSILON)
+					.add(_lockPt),
 				index,
 			);
 
@@ -2626,11 +2708,12 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				const worldX = actor.position.x + 0.5 - currTerrain.Width  / 2;
 				const worldZ = actor.position.y + 0.5 - currTerrain.Length / 2;
 				const worldY = terrainHeightToWorldY(actor.position.h) + ACTOR_OVERLAY_FLOAT_Y;
-				const vec = new THREE.Vector3(worldX, worldY, worldZ);
-				vec.project(camera);
-				if (vec.z > 1) { el.style.display = "none"; continue; }
-				const sx = ((vec.x + 1) / 2) * canvasW;
-				const sy = ((-vec.y + 1) / 2) * canvasH;
+				// Reuse module-level _actorVec -- eliminates one Vector3 allocation per
+				// actor per rAF frame. Safe because project() writes its result in-place.
+				_actorVec.set(worldX, worldY, worldZ).project(camera);
+				if (_actorVec.z > 1) { el.style.display = "none"; continue; }
+				const sx = ((_actorVec.x + 1) / 2) * canvasW;
+				const sy = ((-_actorVec.y + 1) / 2) * canvasH;
 				el.style.display = "";
 				el.style.transform = `translate(calc(${sx}px - 50%), calc(${sy}px - 50%))`;
 			}
@@ -2770,10 +2853,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		};
 
 		const clearStrokeState = () => {
-			activeStrokeRef.current        = null;
-			strokeStartedRef.current       = false;
-			strokeStartSnapshotRef.current = null;
-			lastEditKeyRef.current         = null;
+			activeStrokeRef.current  = null;
+			strokeStartedRef.current = false;
+			strokeDeltaRef.current   = null;
+			lastEditKeyRef.current   = null;
 		};
 
 		// --- Pointer handlers ---
@@ -2804,8 +2887,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			if (lastEditKeyRef.current === editKey) return;
 			lastEditKeyRef.current = editKey;
 
-			applyEdit(pick);
-			refreshHover(getPickForStroke(event, activeStroke));
+			// Only re-run refreshHover when the edit actually mutated the grid.
+			// If nothing changed the hover ghost from line above is still accurate,
+			// so we skip a full raycast + geometry rebuild.
+			const changed = applyEdit(pick);
+			if (changed) refreshHover(getPickForStroke(event, activeStroke));
 		};
 
 		const handlePointerDown = (event: PointerEvent) => {
@@ -2830,10 +2916,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					ground: pick.ground,
 				},
 			};
-			activeStrokeRef.current        = activeStroke;
-			strokeStartedRef.current       = false;
-			strokeStartSnapshotRef.current = null;
-			lastEditKeyRef.current         = getEditKey(pick);
+			activeStrokeRef.current  = activeStroke;
+			strokeStartedRef.current = false;
+			strokeDeltaRef.current   = null;
+			lastEditKeyRef.current   = getEditKey(pick);
 
 			const wasSelectionTool =
 				toolRef.current === "boxSelect" || toolRef.current === "colorSelect";
@@ -2857,6 +2943,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				renderer.domElement.releasePointerCapture(event.pointerId);
 			}
 			if (strokeStartedRef.current) {
+				recordUndo();
 				commitDraftChange();
 			}
 			clearStrokeState();
