@@ -196,7 +196,7 @@ export const EntityActions = {
 		);
 
 		if (params.validateActors !== false && getActiveVoxelTerrain(campaign)) {
-			VoxelTerrainActions.validateActors(context);
+			VoxelTerrainActions.repairActors(context);
 		}
 	},
 

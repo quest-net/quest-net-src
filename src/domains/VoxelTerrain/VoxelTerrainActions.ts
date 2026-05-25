@@ -1,6 +1,6 @@
 // domains/VoxelTerrain/VoxelTerrainActions.ts
 
-import type { Actor } from "../Actor/Actor";
+import type { Actor, Position } from "../Actor/Actor";
 import type { Character } from "../Character/Character";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import type { Campaign } from "../Campaign/Campaign";
@@ -10,7 +10,6 @@ import { LogActions } from "../Log/LogActions";
 import {
 	getActiveVoxelTerrain,
 	getMaxVoxelSurfaceHeight,
-	getVoxelRulesSurfaceHeight,
 } from "../../utils/terrain/data/VoxelTerrainUtils";
 import {
 	getVoxelTerrainIndex,
@@ -27,11 +26,29 @@ const FLYING_ACTOR_CLEARANCE_BY_SIZE = {
 	large: 1.75,
 } as const;
 
+const POSITION_HEIGHT_EPSILON = 1e-6;
+
+export type ActorPositionValidationResult =
+	| {
+			ok: true;
+			position: Position;
+			mode: "standing" | "flying" | "item";
+	  }
+	| {
+			ok: false;
+			position?: Position;
+			reason: string;
+	  };
+
 function getCenterTile(terrain: VoxelTerrain): { x: number; y: number } {
 	return {
 		x: Math.max(0, Math.min(terrain.Width - 1, Math.floor(terrain.Width / 2))),
 		y: Math.max(0, Math.min(terrain.Length - 1, Math.floor(terrain.Length / 2))),
 	};
+}
+
+function isInBounds(x: number, y: number, terrain: VoxelTerrain): boolean {
+	return x >= 0 && x < terrain.Width && y >= 0 && y < terrain.Length;
 }
 
 function findTileFromCenter<T>(
@@ -47,7 +64,7 @@ function findTileFromCenter<T>(
 				if (Math.max(Math.abs(x - center.x), Math.abs(y - center.y)) !== radius) {
 					continue;
 				}
-				if (!VoxelTerrainActions.isInBounds(x, y, terrain)) {
+				if (!isInBounds(x, y, terrain)) {
 					continue;
 				}
 
@@ -70,42 +87,61 @@ function getSurfaceHeights(
 	return index.allSurfaces.get(`${x},${y}`) ?? [];
 }
 
-function getClosestHeight(heights: readonly number[], target: number): number {
-	let closest = heights[0];
-	let minDiff = Math.abs(target - closest);
+function getFlyingActorClearance(actor: Actor): number {
+	return FLYING_ACTOR_CLEARANCE_BY_SIZE[actor.Size ?? "small"];
+}
 
-	for (const height of heights) {
-		const diff = Math.abs(target - height);
-		if (diff < minDiff) {
-			minDiff = diff;
-			closest = height;
+function normalizeHeight(height: number): number {
+	const rounded = Math.round(height);
+	return Math.abs(height - rounded) <= POSITION_HEIGHT_EPSILON
+		? rounded
+		: height;
+}
+
+function normalizePositionForValidation(position: Position): Position | null {
+	if (
+		!Number.isFinite(position.x) ||
+		!Number.isFinite(position.y) ||
+		!Number.isFinite(position.h)
+	) {
+		return null;
+	}
+
+	return {
+		x: Math.round(position.x),
+		y: Math.round(position.y),
+		h: normalizeHeight(position.h),
+	};
+}
+
+function positionKey(position: Position): string {
+	return `${position.x},${position.y},${normalizeHeight(position.h)}`;
+}
+
+function getMaxActorHeight(terrain: VoxelTerrain): number {
+	return Math.ceil(Math.max(terrain.Height, getMaxVoxelSurfaceHeight(terrain)));
+}
+
+function getStandingSurfaceHeight(
+	index: VoxelTerrainIndex,
+	x: number,
+	y: number,
+	h: number
+): number | null {
+	const exactSurfaces = index.allSurfaceHeights.get(`${x},${y}`) ?? [];
+	let rulesHeightSurface: number | null = null;
+
+	for (const surfaceHeight of exactSurfaces) {
+		if (Math.abs(surfaceHeight - h) <= POSITION_HEIGHT_EPSILON) {
+			return surfaceHeight;
+		}
+
+		if (Math.abs(Math.floor(surfaceHeight) - h) <= POSITION_HEIGHT_EPSILON) {
+			rulesHeightSurface = surfaceHeight;
 		}
 	}
 
-	return closest;
-}
-
-function getAdjustedActorHeight(
-	actor: Actor,
-	terrain: VoxelTerrain,
-	index: VoxelTerrainIndex
-): number {
-	const surfaces = getSurfaceHeights(index, actor.Position.x, actor.Position.y);
-	if (surfaces.includes(actor.Position.h)) return actor.Position.h;
-
-	if (actor.CanFly) {
-		return actor.Position.h;
-	}
-
-	if (surfaces.length === 0) {
-		return getVoxelRulesSurfaceHeight(terrain, actor.Position.x, actor.Position.y);
-	}
-
-	return getClosestHeight(surfaces, actor.Position.h);
-}
-
-function getFlyingActorClearance(actor: Actor): number {
-	return FLYING_ACTOR_CLEARANCE_BY_SIZE[actor.Size ?? "small"];
+	return rulesHeightSurface;
 }
 
 function isFlyingHeightClear(
@@ -116,13 +152,9 @@ function isFlyingHeightClear(
 	y: number,
 	h: number
 ): boolean {
-	if (!VoxelTerrainActions.isInBounds(x, y, terrain)) return false;
+	if (!isInBounds(x, y, terrain)) return false;
 	if (h < 0) return false;
-	if (
-		h > Math.ceil(Math.max(terrain.Height, getMaxVoxelSurfaceHeight(terrain)))
-	) {
-		return false;
-	}
+	if (h > getMaxActorHeight(terrain)) return false;
 
 	const { resolution } = index;
 	const startVoxelY = Math.max(0, Math.floor(h * resolution));
@@ -136,6 +168,135 @@ function isFlyingHeightClear(
 	}
 
 	return true;
+}
+
+function validateActorPositionForTerrain(
+	actor: Actor,
+	position: Position,
+	terrain: VoxelTerrain,
+	index: VoxelTerrainIndex,
+	occupiedTiles?: ReadonlySet<string>
+): ActorPositionValidationResult {
+	const normalized = normalizePositionForValidation(position);
+	if (!normalized) {
+		return { ok: false, reason: "position is not finite" };
+	}
+
+	if (!isInBounds(normalized.x, normalized.y, terrain)) {
+		return {
+			ok: false,
+			position: normalized,
+			reason: "position is outside the active terrain",
+		};
+	}
+
+	if (normalized.h < 0 || normalized.h > getMaxActorHeight(terrain)) {
+		return {
+			ok: false,
+			position: normalized,
+			reason: "height is outside the active terrain",
+		};
+	}
+
+	const standingSurfaceHeight = getStandingSurfaceHeight(
+		index,
+		normalized.x,
+		normalized.y,
+		normalized.h
+	);
+
+	if (standingSurfaceHeight !== null) {
+		const standingPosition = {
+			...normalized,
+			h: Math.floor(standingSurfaceHeight),
+		};
+		if (!isItemEntity(actor) && occupiedTiles?.has(positionKey(standingPosition))) {
+			return {
+				ok: false,
+				position: standingPosition,
+				reason: "position is occupied",
+			};
+		}
+		return {
+			ok: true,
+			position: standingPosition,
+			mode: isItemEntity(actor) ? "item" : "standing",
+		};
+	}
+
+	if (isItemEntity(actor)) {
+		if (
+			normalized.h === 0 &&
+			getSurfaceHeights(index, normalized.x, normalized.y).length === 0
+		) {
+			return { ok: true, position: normalized, mode: "item" };
+		}
+
+		return {
+			ok: false,
+			position: normalized,
+			reason: "item position is not on a terrain surface",
+		};
+	}
+
+	if (actor.CanFly) {
+		if (occupiedTiles?.has(positionKey(normalized))) {
+			return {
+				ok: false,
+				position: normalized,
+				reason: "position is occupied",
+			};
+		}
+
+		if (isFlyingHeightClear(actor, terrain, index, normalized.x, normalized.y, normalized.h)) {
+			return { ok: true, position: normalized, mode: "flying" };
+		}
+
+		return {
+			ok: false,
+			position: normalized,
+			reason: "flying position is blocked by terrain",
+		};
+	}
+
+	return {
+		ok: false,
+		position: normalized,
+		reason: "position is not on a walkable surface",
+	};
+}
+
+function getOccupiedActorPositionKeys(
+	campaign: Campaign,
+	terrain: VoxelTerrain,
+	index: VoxelTerrainIndex,
+	excludeActorId?: string
+): Set<string> {
+	const occupied = new Set<string>();
+	const actors = [
+		...campaign.GameState.Entities,
+		...campaign.GameState.Characters,
+	];
+
+	for (const actor of actors) {
+		if (actor.Id === excludeActorId || isItemEntity(actor)) continue;
+
+		const validation = validateActorPositionForTerrain(
+			actor,
+			actor.Position,
+			terrain,
+			index
+		);
+		const position =
+			validation.ok
+				? validation.position
+				: normalizePositionForValidation(actor.Position);
+		if (position) {
+			occupied.add(positionKey(position));
+		}
+	}
+
+	return occupied;
 }
 
 function returnCharacterToRoster(
@@ -238,7 +399,7 @@ export const VoxelTerrainActions = {
 		);
 
 		if (params.validateActors !== false) {
-			VoxelTerrainActions.validateActors(context);
+			VoxelTerrainActions.repairActors(context);
 		}
 	},
 
@@ -310,7 +471,7 @@ export const VoxelTerrainActions = {
 		);
 
 		if (params.validateActors !== false) {
-			VoxelTerrainActions.validateActors(context);
+			VoxelTerrainActions.repairActors(context);
 		}
 	},
 
@@ -343,11 +504,11 @@ export const VoxelTerrainActions = {
 		);
 	},
 
-	validateActors(context: Context): void {
+	repairActors(context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 		const terrain = getActiveVoxelTerrain(campaign);
 		if (!terrain) {
-			console.warn("No active voxel terrain found for validation");
+			console.warn("No active voxel terrain found for actor repair");
 			return;
 		}
 
@@ -394,58 +555,31 @@ export const VoxelTerrainActions = {
 			);
 			if (validPosition) {
 				actor.Position = validPosition;
-				occupiedTiles.add(
-					`${validPosition.x},${validPosition.y},${validPosition.h}`
-				);
+				occupiedTiles.add(positionKey(validPosition));
 			} else {
 				toRemove.push(actor.Id);
 			}
 		};
 
 		for (const actor of actors) {
-			actor.Position.x = Math.round(actor.Position.x);
-			actor.Position.y = Math.round(actor.Position.y);
-			actor.Position.h = Math.round(actor.Position.h);
-
-			if (!VoxelTerrainActions.isInBounds(actor.Position.x, actor.Position.y, terrain)) {
-				reposition(actor);
-				continue;
-			}
-
 			const isItem = isItemEntity(actor);
-			if (
-				!isItem &&
-				!actor.CanFly &&
-				getSurfaceHeights(index, actor.Position.x, actor.Position.y).length === 0
-			) {
+			const validation = validateActorPositionForTerrain(
+				actor,
+				actor.Position,
+				terrain,
+				index,
+				occupiedTiles
+			);
+
+			if (!validation.ok) {
 				reposition(actor);
 				continue;
 			}
 
-			VoxelTerrainActions.adjustHeight(actor, terrain, index);
+			actor.Position = validation.position;
 
-			if (
-				actor.CanFly &&
-				!isFlyingHeightClear(
-					actor,
-					terrain,
-					index,
-					actor.Position.x,
-					actor.Position.y,
-					actor.Position.h
-				)
-			) {
-				reposition(actor);
-				continue;
-			}
-
-			if (isItem) continue;
-
-			const tileKey = `${actor.Position.x},${actor.Position.y},${actor.Position.h}`;
-			if (occupiedTiles.has(tileKey)) {
-				reposition(actor);
-			} else {
-				occupiedTiles.add(tileKey);
+			if (!isItem) {
+				occupiedTiles.add(positionKey(validation.position));
 			}
 		}
 
@@ -475,15 +609,57 @@ export const VoxelTerrainActions = {
 	},
 
 	isInBounds(x: number, y: number, terrain: VoxelTerrain): boolean {
-		return x >= 0 && x < terrain.Width && y >= 0 && y < terrain.Length;
+		return isInBounds(x, y, terrain);
 	},
 
-	adjustHeight(
+	validateActorPosition(
 		actor: Actor,
+		position: Position,
 		terrain: VoxelTerrain,
-		index: VoxelTerrainIndex = getVoxelTerrainIndex(terrain)
-	): void {
-		actor.Position.h = getAdjustedActorHeight(actor, terrain, index);
+		index: VoxelTerrainIndex = getVoxelTerrainIndex(terrain),
+		occupiedTiles?: ReadonlySet<string>
+	): ActorPositionValidationResult {
+		return validateActorPositionForTerrain(
+			actor,
+			position,
+			terrain,
+			index,
+			occupiedTiles
+		);
+	},
+
+	validateActors(context: Context): void {
+		VoxelTerrainActions.repairActors(context);
+	},
+
+	validateActorMove(
+		actor: Actor,
+		position: Position,
+		campaign: Campaign
+	): ActorPositionValidationResult {
+		const terrain = getActiveVoxelTerrain(campaign);
+		if (!terrain) {
+			const normalized = normalizePositionForValidation(position);
+			return normalized
+				? { ok: true, position: normalized, mode: isItemEntity(actor) ? "item" : "standing" }
+				: { ok: false, reason: "position is not finite" };
+		}
+
+		const index = getVoxelTerrainIndex(terrain);
+		const occupiedTiles = getOccupiedActorPositionKeys(
+			campaign,
+			terrain,
+			index,
+			actor.Id
+		);
+
+		return validateActorPositionForTerrain(
+			actor,
+			position,
+			terrain,
+			index,
+			occupiedTiles
+		);
 	},
 
 	findValidPosition(
@@ -492,72 +668,80 @@ export const VoxelTerrainActions = {
 		occupiedTiles: Set<string>,
 		index: VoxelTerrainIndex = getVoxelTerrainIndex(terrain)
 	): { x: number; y: number; h: number } | null {
-		const maxHeight = Math.ceil(Math.max(terrain.Height, getMaxVoxelSurfaceHeight(terrain)));
-		const isPositionAvailable = (x: number, y: number, h: number): boolean =>
-			VoxelTerrainActions.isInBounds(x, y, terrain) &&
-			!occupiedTiles.has(`${x},${y},${h}`) &&
-			(!actor.CanFly || isFlyingHeightClear(actor, terrain, index, x, y, h));
+		const maxHeight = getMaxActorHeight(terrain);
+		const normalizedCurrent =
+			normalizePositionForValidation(actor.Position) ?? actor.Position;
+		const isPositionAvailable = (x: number, y: number, h: number): Position | null => {
+			const validation = validateActorPositionForTerrain(
+				actor,
+				{ x, y, h },
+				terrain,
+				index,
+				occupiedTiles
+			);
+			return validation.ok ? validation.position : null;
+		};
 
-		const findAvailableHeight = (x: number, y: number): number | null => {
-			if (!VoxelTerrainActions.isInBounds(x, y, terrain)) return null;
+		const findAvailablePosition = (x: number, y: number): Position | null => {
+			if (!isInBounds(x, y, terrain)) return null;
+
+			if (isItemEntity(actor)) {
+				const surfaces = getSurfaceHeights(index, x, y);
+				return isPositionAvailable(x, y, surfaces[0] ?? 0);
+			}
 
 			if (!actor.CanFly) {
 				const surfaces = getSurfaceHeights(index, x, y);
-				if (surfaces.length === 0) return null;
 				for (const h of surfaces) {
-					if (isPositionAvailable(x, y, h)) return h;
+					const position = isPositionAvailable(x, y, h);
+					if (position) return position;
 				}
 				return null;
 			}
 
-			const preferredH = Math.max(0, Math.min(maxHeight, actor.Position.h));
-			for (let h = preferredH; h <= maxHeight; h++) {
-				if (isPositionAvailable(x, y, h)) return h;
+			const preferredH = Math.max(0, Math.min(maxHeight, normalizedCurrent.h));
+			const triedHeights = new Set<number>();
+			const tryHeight = (h: number): Position | null => {
+				const normalizedH = normalizeHeight(h);
+				if (triedHeights.has(normalizedH)) return null;
+				triedHeights.add(normalizedH);
+				return isPositionAvailable(x, y, normalizedH);
+			};
+
+			const preferredPosition = tryHeight(preferredH);
+			if (preferredPosition) return preferredPosition;
+
+			for (let h = Math.ceil(preferredH); h <= maxHeight; h++) {
+				const position = tryHeight(h);
+				if (position) return position;
 			}
-			for (let h = preferredH - 1; h >= 0; h--) {
-				if (isPositionAvailable(x, y, h)) return h;
+			for (let h = Math.floor(preferredH); h >= 0; h--) {
+				const position = tryHeight(h);
+				if (position) return position;
 			}
 			return null;
 		};
 
-		const currentX = actor.Position.x;
-		const currentY = actor.Position.y;
-		const currentH = actor.Position.h;
-
-		// Step 1: prefer keeping the actor exactly where they are if their
-		// incoming tile (same column AND same height) is still valid and
-		// available. This is the no-op path for actors that didn't actually
-		// conflict with anything.
-		const currentColumnSurfaceValid = actor.CanFly
-			? VoxelTerrainActions.isInBounds(currentX, currentY, terrain)
-			: VoxelTerrainActions.isInBounds(currentX, currentY, terrain) &&
-				getSurfaceHeights(index, currentX, currentY).includes(currentH);
-		if (
-			currentColumnSurfaceValid &&
-			isPositionAvailable(currentX, currentY, currentH)
-		) {
-			return { x: currentX, y: currentY, h: currentH };
-		}
+		// Step 1: keep the actor exactly where they are if the requested
+		// position is valid and available.
+		const currentPosition = isPositionAvailable(
+			normalizedCurrent.x,
+			normalizedCurrent.y,
+			normalizedCurrent.h
+		);
+		if (currentPosition) return currentPosition;
 
 		// Step 2: prefer horizontal displacement to a nearby tile. We deliberately
 		// skip the actor's own column here so a collision doesn't "teleport" them
-		// up to the next surface in the same column (e.g. onto walls, tables, or
-		// the upper floor of a multi-storey terrain).
+		// up to the next surface in the same column.
 		const displaced = findTileFromCenter(terrain, (x, y) => {
-			if (x === currentX && y === currentY) return null;
-			const h = findAvailableHeight(x, y);
-			return h === null ? null : { x, y, h };
+			if (x === normalizedCurrent.x && y === normalizedCurrent.y) return null;
+			return findAvailablePosition(x, y);
 		});
 		if (displaced) return displaced;
 
-		// Step 3: last resort -- fall back to any other surface in the original
-		// column. This preserves the previous stacking behaviour when there is
-		// genuinely nowhere else to put the actor.
-		const fallbackH = findAvailableHeight(currentX, currentY);
-		if (fallbackH !== null) {
-			return { x: currentX, y: currentY, h: fallbackH };
-		}
-
-		return null;
+		// Step 3: last resort -- fall back to another valid height in the original
+		// column.
+		return findAvailablePosition(normalizedCurrent.x, normalizedCurrent.y);
 	},
 };

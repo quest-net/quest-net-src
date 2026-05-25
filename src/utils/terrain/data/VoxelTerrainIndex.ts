@@ -7,7 +7,6 @@
 //   - getVoxelColor(x, y, z)          -- palette index at a voxel, or null
 //   - isVoxelOccupiedAtTile(...)      -- actor flight clearance
 //   - allSurfaces / allSurfaceHeights -- per-tactical-tile walkable surfaces
-//   - columnSurfaceHeight(x, z)       -- "where's the ground" fallback
 //   - maxSurfaceHeight                -- global ceiling for framing / spawning
 //
 // Cache strategy: keyed on revision (= shape + Voxels string), not on terrain
@@ -76,13 +75,6 @@ export interface VoxelTerrainIndex {
 	 */
 	getVoxelColor(vx: number, vy: number, vz: number): number | null;
 	isVoxelOccupiedAtTile(tileX: number, tileY: number, voxelY: number): boolean;
-	/**
-	 * Exact top-of-terrain height in the center sub-voxel column of tactical
-	 * tile (x, z). Returns 0 if the column is empty. This is the
-	 * "where's the ground" fallback used when a tile has no walkable surfaces;
-	 * unlike `allSurfaceHeights` it does not require the voxel to be unblocked.
-	 */
-	columnSurfaceHeight(x: number, z: number): number;
 }
 
 const REVISION_NONE = "none";
@@ -130,20 +122,6 @@ export function unpackVoxelKey(key: number): { x: number; y: number; z: number }
 
 function tileKey(tileX: number, tileY: number): string {
 	return `${tileX},${tileY}`;
-}
-
-// Mirrors the old `tacticalCoordinateToCachedVoxelIndex` semantics:
-// "center sub-column of tactical tile (coordinate)". Clamped to [0, voxelMax-1].
-function tacticalToCenterVoxel(
-	coordinate: number,
-	maxTactical: number,
-	resolution: number
-): number {
-	const voxelMax = maxTactical * resolution - 1;
-	const candidate = Math.floor((coordinate + 0.5) * resolution);
-	if (candidate < 0) return 0;
-	if (candidate > voxelMax) return voxelMax;
-	return candidate;
 }
 
 function voxelGridIndex(
@@ -205,11 +183,6 @@ export function buildVoxelTerrainIndex(
 		const idx = voxel.z * voxelWidth + voxel.x;
 		if (voxel.y > maxVoxelYs[idx]) maxVoxelYs[idx] = voxel.y;
 		if (voxel.y > maxVoxelY) maxVoxelY = voxel.y;
-	}
-
-	const surfaceHeights = new Float32Array(maxVoxelYs.length);
-	for (let i = 0; i < maxVoxelYs.length; i++) {
-		surfaceHeights[i] = voxelTopToTacticalHeight(maxVoxelYs[i], resolution);
 	}
 
 	// Walkable surfaces by tactical tile: a voxel is a top surface if nothing
@@ -318,11 +291,6 @@ export function buildVoxelTerrainIndex(
 				}
 			}
 			return false;
-		},
-		columnSurfaceHeight(x, z) {
-			const vx = tacticalToCenterVoxel(x, width, resolution);
-			const vz = tacticalToCenterVoxel(z, length, resolution);
-			return surfaceHeights[vz * voxelWidth + vx] ?? 0;
 		},
 	};
 }

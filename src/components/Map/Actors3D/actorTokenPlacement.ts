@@ -1,6 +1,5 @@
 import * as THREE from "three";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { getVoxelRulesSurfaceHeight } from "../../../utils/terrain/data/VoxelTerrainUtils";
 import { getVoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	ACTOR_TOKEN_BASE,
@@ -25,9 +24,7 @@ export function getActorSupportHeight(actor: ActorTokenDescriptor, terrain: Voxe
 		return exactHeightAtRulesHeight;
 	}
 
-	if (surfaces.length === 0) {
-		return getVoxelRulesSurfaceHeight(terrain, actor.position.x, actor.position.y);
-	}
+	if (surfaces.length === 0) return 0;
 
 	let supportHeight: number | null = null;
 	for (const surface of surfaces) {

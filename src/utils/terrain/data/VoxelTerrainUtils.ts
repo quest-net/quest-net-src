@@ -28,20 +28,42 @@ export function getMaxVoxelSurfaceHeight(terrain: VoxelTerrain): number {
 	return getVoxelTerrainIndex(terrain).maxSurfaceHeight;
 }
 
-export function getVoxelSurfaceHeight(
-	terrain: VoxelTerrain,
-	x: number,
-	z: number
-): number {
-	return getVoxelTerrainIndex(terrain).columnSurfaceHeight(x, z);
+function getCenterTile(terrain: VoxelTerrain): { x: number; y: number } {
+	return {
+		x: Math.max(0, Math.min(terrain.Width - 1, Math.floor(terrain.Width / 2))),
+		y: Math.max(0, Math.min(terrain.Length - 1, Math.floor(terrain.Length / 2))),
+	};
 }
 
-export function getVoxelRulesSurfaceHeight(
-	terrain: VoxelTerrain,
-	x: number,
-	z: number
-): number {
-	return Math.floor(getVoxelSurfaceHeight(terrain, x, z));
+function findSpawnSurface(terrain: VoxelTerrain): Position | null {
+	const index = getVoxelTerrainIndex(terrain);
+	const center = getCenterTile(terrain);
+	const maxRadius = Math.max(terrain.Width, terrain.Length);
+
+	for (let radius = 0; radius <= maxRadius; radius++) {
+		for (let y = center.y - radius; y <= center.y + radius; y++) {
+			for (let x = center.x - radius; x <= center.x + radius; x++) {
+				if (Math.max(Math.abs(x - center.x), Math.abs(y - center.y)) !== radius) {
+					continue;
+				}
+				if (x < 0 || y < 0 || x >= terrain.Width || y >= terrain.Length) {
+					continue;
+				}
+
+				const surfaces = index.allSurfaces.get(`${x},${y}`) ?? [];
+				if (surfaces.length > 0) {
+					return { x, y, h: surfaces[0] };
+				}
+			}
+		}
+	}
+
+	return null;
+}
+
+function getFallbackSpawnPosition(terrain: VoxelTerrain): Position {
+	const center = getCenterTile(terrain);
+	return { x: center.x, y: center.y, h: 0 };
 }
 
 export function getDefaultVoxelSpawnPosition(
@@ -52,21 +74,17 @@ export function getDefaultVoxelSpawnPosition(
 		return getFlyingVoxelSpawnPosition(terrain);
 	}
 
-	const x = Math.floor(terrain.Width / 2);
-	const y = Math.floor(terrain.Length / 2);
-	return { x, y, h: getVoxelRulesSurfaceHeight(terrain, x, y) };
+	return findSpawnSurface(terrain) ?? getFallbackSpawnPosition(terrain);
 }
 
 export function getFlyingVoxelSpawnPosition(terrain: VoxelTerrain): Position {
-	const x = Math.floor(terrain.Width / 2);
-	const y = Math.floor(terrain.Length / 2);
-	const surfaceHeight = getVoxelRulesSurfaceHeight(terrain, x, y);
-	const maxHeight = Math.max(surfaceHeight, terrain.Height);
+	const surface = findSpawnSurface(terrain) ?? getFallbackSpawnPosition(terrain);
+	const maxHeight = Math.max(surface.h, terrain.Height);
 
 	return {
-		x,
-		y,
-		h: Math.min(surfaceHeight + FLYING_SPAWN_ELEVATION, maxHeight),
+		x: surface.x,
+		y: surface.y,
+		h: Math.min(surface.h + FLYING_SPAWN_ELEVATION, maxHeight),
 	};
 }
 

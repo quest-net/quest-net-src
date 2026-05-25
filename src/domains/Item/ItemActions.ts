@@ -711,7 +711,7 @@ export const ItemActions = {
 		slots.splice(slotIndex, 1);
 
 		if (getActiveVoxelTerrain(campaign)) {
-			VoxelTerrainActions.validateActors(context);
+			VoxelTerrainActions.repairActors(context);
 		}
 
 		LogActions.create(
@@ -822,7 +822,7 @@ export const ItemActions = {
 		);
 		campaign.GameState.Entities.push(entity);
 		if (getActiveVoxelTerrain(campaign)) {
-			VoxelTerrainActions.validateActors(context);
+			VoxelTerrainActions.repairActors(context);
 		}
 
 		LogActions.create(

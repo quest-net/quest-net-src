@@ -3,7 +3,6 @@ import * as THREE from "three";
 import { PING_DURATION_MS } from "../../../domains/Ping/Ping";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
-import { getVoxelSurfaceHeight } from "../../../utils/terrain/data/VoxelTerrainUtils";
 import type { ActivePing } from "../hooks/useActivePings";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import { terrainHeightToWorldY } from "../Actors3D/actorTokenPlacement";
@@ -18,7 +17,7 @@ interface ThreeDPingLayerProps {
 	terrain: VoxelTerrain;
 	terrainIndex: VoxelTerrainIndex;
 	activePings: ActivePing[];
-	onPingTile: (tile: { x: number; y: number }) => void;
+	onPingTile: (tile: { x: number; y: number; h: number }) => void;
 }
 
 interface PingVisual {
@@ -34,17 +33,22 @@ interface PingVisual {
 
 function createPingSignature(activePings: ActivePing[]): string {
 	return activePings
-		.map((ping) => `${ping.id}:${ping.x},${ping.y},${ping.timestamp}`)
+		.map((ping) => `${ping.id}:${ping.x},${ping.y},${ping.h},${ping.timestamp}`)
 		.sort()
 		.join("|");
 }
 
-function getPingWorldPosition(terrain: VoxelTerrain, x: number, y: number): THREE.Vector3 | null {
+function getPingWorldPosition(
+	terrain: VoxelTerrain,
+	x: number,
+	y: number,
+	h: number
+): THREE.Vector3 | null {
 	if (x < 0 || x >= terrain.Width || y < 0 || y >= terrain.Length) return null;
 
 	const offsetX = (terrain.Width - 1) / 2;
 	const offsetZ = (terrain.Length - 1) / 2;
-	const surfaceHeight = getVoxelSurfaceHeight(terrain, x, y);
+	const surfaceHeight = THREE.MathUtils.clamp(h, 0, terrain.Height);
 
 	return new THREE.Vector3(
 		x - offsetX,
@@ -114,7 +118,7 @@ function createPingVisual(
 	terrain: VoxelTerrain,
 	arrowTexture: THREE.Texture
 ): PingVisual | null {
-	const position = getPingWorldPosition(terrain, ping.x, ping.y);
+	const position = getPingWorldPosition(terrain, ping.x, ping.y, ping.h);
 	if (!position) return null;
 
 	const group = new THREE.Group();
@@ -193,7 +197,7 @@ function getPingTileFromPointer(
 	terrainIndex: VoxelTerrainIndex,
 	raycaster: THREE.Raycaster,
 	pointer: THREE.Vector2
-): { x: number; y: number } | null {
+): { x: number; y: number; h: number } | null {
 	const rect = resources.domElement.getBoundingClientRect();
 	pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
 	pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -202,7 +206,11 @@ function getPingTileFromPointer(
 	const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex);
 	if (!terrainHit) return null;
 
-	return { x: terrainHit.tileX, y: terrainHit.tileZ };
+	return {
+		x: terrainHit.tileX,
+		y: terrainHit.tileZ,
+		h: (terrainHit.vy + 1) / terrainIndex.resolution,
+	};
 }
 
 function isPingGesture(event: PointerEvent): boolean {

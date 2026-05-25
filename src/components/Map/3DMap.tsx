@@ -315,7 +315,7 @@ export default function ThreeDMap({
 	);
 
 	const handlePingTile = useCallback(
-		(tile: { x: number; y: number }) => {
+		(tile: { x: number; y: number; h: number }) => {
 			if (!actionService) return;
 			const now = Date.now();
 			if (now - lastPingTimeRef.current < PING_DURATION_MS) return;
@@ -323,6 +323,7 @@ export default function ThreeDMap({
 			actionService.execute("ping:create", {
 				x: tile.x,
 				y: tile.y,
+				h: tile.h,
 				actorId: pingActiveActorId,
 			});
 			lastPingTimeRef.current = now;

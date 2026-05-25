@@ -7,7 +7,6 @@ import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import type { LiveActorPose } from "../../../services/ActorPoseService";
 import {
 	getMaxVoxelSurfaceHeight,
-	getVoxelRulesSurfaceHeight,
 } from "../../../utils/terrain/data/VoxelTerrainUtils";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import type { SelectedActor } from "../MapStateProvider";
@@ -771,9 +770,7 @@ function getActorHeightRange(
 	const surfaces =
 		terrainIndex.allSurfaces.get(`${actor.position.x},${actor.position.y}`) ??
 		[];
-	const min =
-		surfaces[0] ??
-		getVoxelRulesSurfaceHeight(terrain, actor.position.x, actor.position.y);
+	const min = surfaces[0] ?? 0;
 	const max = Math.ceil(Math.max(terrain.Height, getMaxVoxelSurfaceHeight(terrain)));
 	return { min, max: Math.max(min, max) };
 }

@@ -45,13 +45,26 @@ export const ActorActions = {
 			return;
 		}
 
+		const validation = VoxelTerrainActions.validateActorMove(
+			actor,
+			params.position,
+			campaign
+		);
+		if (!validation.ok) {
+			console.warn(
+				`Invalid ${type} move position for ${params.actorId}: ${validation.reason}`
+			);
+			return;
+		}
+
 		const oldPosition = { ...actor.Position };
-		actor.Position = { ...params.position };
+		const nextPosition = validation.position;
+		actor.Position = { ...nextPosition };
 
 		LogActions.create(
 			{
 				action: `${type} moved`,
-				details: `${actor.Name} moved from (${oldPosition.x}, ${oldPosition.y}, h=${oldPosition.h}) to (${params.position.x}, ${params.position.y}, h=${params.position.h})`,
+				details: `${actor.Name} moved from (${oldPosition.x}, ${oldPosition.y}, h=${oldPosition.h}) to (${nextPosition.x}, ${nextPosition.y}, h=${nextPosition.h})`,
 				category: "movement",
 				level: "verbose",
 				visibility: ["all"],
@@ -60,9 +73,6 @@ export const ActorActions = {
 			context
 		);
 
-		if (getActiveVoxelTerrain(campaign)) {
-			VoxelTerrainActions.validateActors(context);
-		}
 	},
 
 	/**
@@ -111,7 +121,7 @@ export const ActorActions = {
 			previousCanFly !== actor.CanFly &&
 			getActiveVoxelTerrain(campaign)
 		) {
-			VoxelTerrainActions.validateActors(context);
+			VoxelTerrainActions.repairActors(context);
 		}
 
 		LogActions.create(

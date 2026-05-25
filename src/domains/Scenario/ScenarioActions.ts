@@ -187,7 +187,7 @@ export const ScenarioActions = {
         );
 
         if (getActiveVoxelTerrain(campaign)) {
-            VoxelTerrainActions.validateActors(context);
+            VoxelTerrainActions.repairActors(context);
         }
 
         LogActions.create(

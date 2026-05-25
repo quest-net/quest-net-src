@@ -5,7 +5,7 @@
 // place on a tile to draw attention to it during tactical discussion.
 // Pings ride on top of the Log system: each ping is recorded as a
 // LogEntry with Category === "ping". Visual rendering on the map and
-// expiration are handled by useActivePings + MapWorldLayer.
+// expiration are handled by useActivePings + the 3D ping layer.
 
 import { Context } from "../Context/Context";
 import { LogActions } from "../Log/LogActions";
@@ -14,7 +14,7 @@ import { serializePingDetails, PING_DURATION_MS } from "./Ping";
 
 export const PingActions = {
 	/**
-	 * Records a ping at the given tile coordinates.
+	 * Records a ping at the clicked tile and surface height.
 	 *
 	 * Players see the ping on the map and as a log entry. The DM is treated
 	 * the same as players for ping visibility (visibility: "all").
@@ -25,13 +25,15 @@ export const PingActions = {
 	 * against stale/replayed/peer-injected requests.
 	 */
 	create(
-		params: { x: number; y: number; actorId?: string },
+		params: { x: number; y: number; h: number; actorId?: string },
 		context: Context
 	): void {
 		if (context.IsOptimistic) return;
+		if (typeof params.h !== "number" || !Number.isFinite(params.h)) return;
 
 		const x = Math.round(params.x);
 		const y = Math.round(params.y);
+		let h = params.h;
 
 		const campaign = CampaignActions.getActiveCampaign(context);
 
@@ -44,6 +46,7 @@ export const PingActions = {
 			if (x < 0 || y < 0 || x >= terrain.Width || y >= terrain.Length) {
 				return;
 			}
+			h = Math.max(0, Math.min(terrain.Height, h));
 		}
 
 		// Per-actor cooldown. Skip if this actor already has a ping on the
@@ -67,8 +70,8 @@ export const PingActions = {
 
 		LogActions.create(
 			{
-				action: `pinged location (${x}, ${y})`,
-				details: serializePingDetails({ x, y }),
+				action: `pinged location (${x}, ${y}, ${h})`,
+				details: serializePingDetails({ x, y, h }),
 				category: "ping",
 				level: "info",
 				visibility: ["all"],

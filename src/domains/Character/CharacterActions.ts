@@ -120,7 +120,7 @@ export const CharacterActions = {
 		);
 
 		if (getActiveVoxelTerrain(campaign)) {
-			VoxelTerrainActions.validateActors(context);
+			VoxelTerrainActions.repairActors(context);
 		}
 	},
 
@@ -180,7 +180,7 @@ export const CharacterActions = {
 		);
 
 		if (getActiveVoxelTerrain(campaign)) {
-			VoxelTerrainActions.validateActors(context);
+			VoxelTerrainActions.repairActors(context);
 		}
 	},
 

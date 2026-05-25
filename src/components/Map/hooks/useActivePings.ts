@@ -18,6 +18,7 @@ export interface ActivePing {
 	id: string;
 	x: number;
 	y: number;
+	h: number;
 	actorId?: string;
 	timestamp: number;
 }
@@ -67,6 +68,7 @@ export function useActivePings(): UseActivePingsResult {
 				id: entry.Id,
 				x: parsed.x,
 				y: parsed.y,
+				h: parsed.h,
 				actorId: entry.ActorId,
 				timestamp: entry.Timestamp,
 			});
