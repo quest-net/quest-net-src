@@ -29,12 +29,17 @@ export interface VoxelAoTexture {
 	voxelSize: number;
 }
 
-function configureOccupancyTexture(texture: THREE.Data3DTexture): void {
+function configureOccupancyTexture(
+	texture: THREE.Data3DTexture,
+	_performanceMode = false
+): void {
 	texture.format = THREE.RedFormat;
 	texture.type = THREE.UnsignedByteType;
 	// Linear filtering gives smooth AO transitions at voxel boundaries. Even
 	// with binary input (0 / 255), the filtered read produces 0..1 gradients
-	// the AO formula consumes directly.
+	// the AO formula consumes directly. Performance mode keeps this filtering
+	// because nearest sampling reads as hard shadowing instead of ambient
+	// occlusion.
 	texture.magFilter = THREE.LinearFilter;
 	texture.minFilter = THREE.LinearFilter;
 	texture.wrapS = THREE.ClampToEdgeWrapping;
@@ -45,14 +50,17 @@ function configureOccupancyTexture(texture: THREE.Data3DTexture): void {
 }
 
 /** Build a sampler-ready AO texture from a worker occupancy snapshot. */
-export function createVoxelAoTexture(occupancy: VoxelTerrainOccupancy): VoxelAoTexture {
+export function createVoxelAoTexture(
+	occupancy: VoxelTerrainOccupancy,
+	options: { performanceMode?: boolean } = {}
+): VoxelAoTexture {
 	const texture = new THREE.Data3DTexture(
 		occupancy.data,
 		occupancy.voxelWidth,
 		occupancy.voxelHeight,
 		occupancy.voxelLength
 	);
-	configureOccupancyTexture(texture);
+	configureOccupancyTexture(texture, options.performanceMode ?? false);
 	return {
 		texture,
 		origin: new THREE.Vector3(
@@ -149,6 +157,45 @@ export const VOXEL_AO_FRAGMENT_HEADER: readonly string[] = [
 	'}',
 ];
 
+export const VOXEL_AO_FRAGMENT_HEADER_PERFORMANCE: readonly string[] = [
+	'uniform highp sampler3D voxelAoOccupancy;',
+	'uniform vec3 voxelAoOrigin;',
+	'uniform vec3 voxelAoSize;',
+	'uniform float voxelAoRadius;',
+	'uniform float voxelAoVoxelSize;',
+	'varying vec3 vVoxelAoWorldPosition;',
+	'varying vec3 vVoxelAoWorldNormal;',
+	'float sampleVoxelAoOccupancy(vec3 worldPos) {',
+	'	vec3 uvw = (worldPos - voxelAoOrigin) / voxelAoSize;',
+	'	if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0)))) return 0.0;',
+	'	return texture(voxelAoOccupancy, uvw).r;',
+	'}',
+	'float computeVoxelAo(vec3 worldPos, vec3 normal) {',
+	'	vec3 absN = abs(normal);',
+	'	vec3 T1; vec3 T2;',
+	'	if (absN.y > 0.5)      { T1 = vec3(1.0, 0.0, 0.0); T2 = vec3(0.0, 0.0, 1.0); }',
+	'	else if (absN.x > 0.5) { T1 = vec3(0.0, 1.0, 0.0); T2 = vec3(0.0, 0.0, 1.0); }',
+	'	else                   { T1 = vec3(1.0, 0.0, 0.0); T2 = vec3(0.0, 1.0, 0.0); }',
+	'	vec3 base = worldPos + normal * (voxelAoVoxelSize * 0.5);',
+	'	float r = voxelAoRadius;',
+	'	float sides = 0.0;',
+	'	sides += sampleVoxelAoOccupancy(base + T1 * r);',
+	'	sides += sampleVoxelAoOccupancy(base - T1 * r);',
+	'	sides += sampleVoxelAoOccupancy(base + T2 * r);',
+	'	sides += sampleVoxelAoOccupancy(base - T2 * r);',
+	'	float occ = sides / 4.0;',
+	'	return mix(0.52, 1.0, 1.0 - occ);',
+	'}',
+];
+
+export function getVoxelAoFragmentHeader(
+	performanceMode = false
+): readonly string[] {
+	return performanceMode
+		? VOXEL_AO_FRAGMENT_HEADER_PERFORMANCE
+		: VOXEL_AO_FRAGMENT_HEADER;
+}
+
 /** GLSL expression: the AO multiplier (1.0 = fully lit) for this fragment. */
 export const VOXEL_AO_CALL = 'computeVoxelAo(vVoxelAoWorldPosition, vVoxelAoWorldNormal)';
 
@@ -171,7 +218,8 @@ export function applyVoxelAoUniforms(
  */
 export function applyVoxelAoPatch(
 	shader: THREE.WebGLProgramParametersWithUniforms,
-	ao: VoxelAoTexture
+	ao: VoxelAoTexture,
+	performanceMode = false
 ): void {
 	applyVoxelAoUniforms(shader, ao);
 	shader.vertexShader = shader.vertexShader.replace(
@@ -184,7 +232,7 @@ export function applyVoxelAoPatch(
 	);
 	shader.fragmentShader = shader.fragmentShader.replace(
 		'#include <common>',
-		['#include <common>', ...VOXEL_AO_FRAGMENT_HEADER].join('\n')
+		['#include <common>', ...getVoxelAoFragmentHeader(performanceMode)].join('\n')
 	);
 	shader.fragmentShader = shader.fragmentShader.replace(
 		'#include <color_fragment>',

@@ -29,8 +29,8 @@ import type {
 } from './materialTypes';
 import {
 	applyVoxelAoUniforms,
+	getVoxelAoFragmentHeader,
 	VOXEL_AO_CALL,
-	VOXEL_AO_FRAGMENT_HEADER,
 	VOXEL_AO_VERTEX_BEGIN,
 	VOXEL_AO_VERTEX_HEADER,
 	type VoxelAoTexture,
@@ -60,6 +60,7 @@ const WATER_BOTTOM_ALPHA = 0.48;
 
 /** Surface ripple amplitude in world units (top-face vertex displacement). */
 const WATER_RIPPLE_AMPLITUDE = 0.115;
+const WATER_PERFORMANCE_RIPPLE_AMPLITUDE = 0.045;
 /** Surface ripple spatial frequency (radians per world unit). */
 const WATER_RIPPLE_FREQUENCY = 2.4;
 /** Surface ripple temporal frequency (radians per second). */
@@ -125,7 +126,10 @@ function waterCommonVertexHeader(): string[] {
 	];
 }
 
-function waterCommonVertexBegin(): string[] {
+function waterCommonVertexBegin(performanceMode: boolean): string[] {
+	const rippleAmplitude = performanceMode
+		? WATER_PERFORMANCE_RIPPLE_AMPLITUDE
+		: WATER_RIPPLE_AMPLITUDE;
 	// Ripple displacement is applied on the LOCAL position before the standard
 	// modelMatrix is consumed downstream. We perturb only the Y component, and
 	// only where the geometry worker said this vertex belongs to a deformable
@@ -136,7 +140,7 @@ function waterCommonVertexBegin(): string[] {
 		'vec3 waterWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;',
 		`float waterRippleA = sin(waterWorld.x * ${WATER_RIPPLE_FREQUENCY.toFixed(3)} + uWaterTime * ${WATER_RIPPLE_TIME_SCALE.toFixed(3)});`,
 		`float waterRippleB = cos(waterWorld.z * ${WATER_RIPPLE_FREQUENCY.toFixed(3)} * 1.13 + uWaterTime * ${WATER_RIPPLE_TIME_SCALE.toFixed(3)} * 0.87);`,
-		`float waterDisplacement = (waterRippleA + waterRippleB) * 0.5 * ${WATER_RIPPLE_AMPLITUDE.toFixed(4)} * surfaceDeformStrength;`,
+		`float waterDisplacement = (waterRippleA + waterRippleB) * 0.5 * ${rippleAmplitude.toFixed(4)} * surfaceDeformStrength;`,
 		'transformed.y += waterDisplacement;',
 		// World position used by the fragment shader for Voronoi UVs: recompute
 		// after displacement so the pattern follows the rippling surface.
@@ -145,20 +149,53 @@ function waterCommonVertexBegin(): string[] {
 	];
 }
 
-function waterCommonFragmentHeader(): string[] {
-	return [
-		...VOXEL_AO_FRAGMENT_HEADER,
+function waterCommonFragmentHeader(performanceMode: boolean): string[] {
+	const header = [
+		...getVoxelAoFragmentHeader(performanceMode),
 		'varying vec3 vWaterWorldPosition;',
 		'varying vec3 vWaterWorldNormal;',
 		'uniform float uWaterTime;',
 		`const vec3 W_FOAM = vec3(${WATER_FOAM_COLOR[0].toFixed(3)}, ${WATER_FOAM_COLOR[1].toFixed(3)}, ${WATER_FOAM_COLOR[2].toFixed(3)});`,
 		`const vec3 W_MAIN = vec3(${WATER_MAIN_BLUE[0].toFixed(3)}, ${WATER_MAIN_BLUE[1].toFixed(3)}, ${WATER_MAIN_BLUE[2].toFixed(3)});`,
 		`const vec3 W_DARK = vec3(${WATER_DARK_BLUE[0].toFixed(3)}, ${WATER_DARK_BLUE[1].toFixed(3)}, ${WATER_DARK_BLUE[2].toFixed(3)});`,
-		WATER_VORONOI_GLSL,
 	];
+	if (!performanceMode) header.push(WATER_VORONOI_GLSL);
+	return header;
 }
 
-function waterColorFragment(): string[] {
+function waterColorFragment(performanceMode: boolean): string[] {
+	if (performanceMode) {
+		return [
+			'vec3 wNrm = normalize(vWaterWorldNormal);',
+			'bool wIsTopSurface = wNrm.y > 0.5;',
+			'bool wIsBottomSurface = wNrm.y < -0.5;',
+			'if (wIsBottomSurface) {',
+			`	diffuseColor = vec4(W_MAIN * ${VOXEL_AO_CALL}, ${WATER_BOTTOM_ALPHA.toFixed(3)});`,
+			'} else {',
+			'float wWave = 0.0;',
+			'float wFoamMask = 0.0;',
+			'if (wIsTopSurface) {',
+			'	vec2 wUv = vWaterWorldPosition.xz;',
+			'	wWave = 0.5 + 0.5 * sin(wUv.x * 4.0 + uWaterTime * 1.7 + cos(wUv.y * 2.0));',
+			'	wFoamMask = smoothstep(0.88, 1.0, wWave);',
+			'} else {',
+			'	float wFallH = (abs(wNrm.x) > abs(wNrm.z)) ? vWaterWorldPosition.z : vWaterWorldPosition.x;',
+			`	vec2 wFallUv = vec2(wFallH / ${WATER_FALL_RIPPLE_WIDTH.toFixed(3)}, vWaterWorldPosition.y / ${WATER_FALL_RIPPLE_HEIGHT.toFixed(3)} + uWaterTime * ${WATER_FALL_RIPPLE_SPEED.toFixed(3)});`,
+			'	float wFallColumn = sin(wFallUv.x * 6.283);',
+			'	float wFallA = 0.5 + 0.5 * sin(wFallUv.y * 6.283 + wFallColumn * 1.1);',
+			'	float wFallB = 0.5 + 0.5 * sin(wFallUv.y * 11.0 + wFallUv.x * 2.3);',
+			'	wWave = clamp(wFallA * 0.72 + wFallB * 0.28, 0.0, 1.0);',
+			'	wFoamMask = 0.0;',
+			'}',
+			'vec3 wBody = mix(W_DARK, W_MAIN, wWave);',
+			'vec3 wColor = mix(wBody, W_FOAM, wFoamMask * 0.65);',
+			`wColor *= ${VOXEL_AO_CALL};`,
+			`float wAlpha = mix(${WATER_BODY_ALPHA.toFixed(3)}, ${WATER_FOAM_ALPHA.toFixed(3)}, wFoamMask);`,
+			'diffuseColor = vec4(wColor, wAlpha);',
+			'}',
+		];
+	}
+
 	// Replaces #include <color_fragment>. Top faces show the full foam-over-blue
 	// look; side faces show only the falling blue tracery. Bottom faces are a
 	// cheap translucent blue because they are rarely inspected and do not need
@@ -236,7 +273,8 @@ function waterColorFragment(): string[] {
 function installWaterAoShader(
 	material: THREE.MeshStandardMaterial,
 	timeUniform: { value: number },
-	voxelAo: VoxelAoTexture
+	voxelAo: VoxelAoTexture,
+	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
@@ -248,15 +286,15 @@ function installWaterAoShader(
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...waterCommonVertexBegin()].join('\n')
+			['#include <begin_vertex>', ...waterCommonVertexBegin(performanceMode)].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...waterCommonFragmentHeader()].join('\n')
+			['#include <common>', ...waterCommonFragmentHeader(performanceMode)].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
-			waterColorFragment().join('\n')
+			waterColorFragment(performanceMode).join('\n')
 		);
 	};
 }
@@ -265,7 +303,8 @@ function installWaterHighlightShader(
 	material: THREE.MeshStandardMaterial,
 	timeUniform: { value: number },
 	highlight: MovementHighlightTexture,
-	voxelAo: VoxelAoTexture
+	voxelAo: VoxelAoTexture,
+	performanceMode: boolean
 ): void {
 	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
 	const heightLevels = highlight.heightLevels;
@@ -295,7 +334,7 @@ function installWaterHighlightShader(
 			'#include <begin_vertex>',
 			[
 				'#include <begin_vertex>',
-				...waterCommonVertexBegin(),
+				...waterCommonVertexBegin(performanceMode),
 				'vMovementHighlightHeight = tileHeight;',
 				'vMovementHighlightStrength = highlightStrength;',
 				'vMovementWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
@@ -306,7 +345,7 @@ function installWaterHighlightShader(
 			'#include <common>',
 			[
 				'#include <common>',
-				...waterCommonFragmentHeader(),
+				...waterCommonFragmentHeader(performanceMode),
 				'uniform highp sampler3D movementHighlightMap;',
 				'uniform vec2 movementHighlightSize;',
 				'uniform float movementHighlightHeightLevels;',
@@ -318,7 +357,7 @@ function installWaterHighlightShader(
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
-			waterColorFragment().join('\n')
+			waterColorFragment(performanceMode).join('\n')
 		);
 		// Movement-highlight overlay -- same pattern as default and stone bricks.
 		// We deliberately keep this identical so a tile that spans water and
@@ -366,7 +405,7 @@ function installWaterHighlightShader(
 export const createWater241Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { acceptsMovementHighlight, movementHighlight, voxelAo } = params;
+	const { acceptsMovementHighlight, movementHighlight, voxelAo, performanceMode = false } = params;
 
 	// Per-instance time uniform. onAnimationFrame writes into this object;
 	// because three.js holds the same { value } reference inside its uniforms
@@ -386,9 +425,9 @@ export const createWater241Material: MaterialFactory = (
 	});
 
 	if (acceptsMovementHighlight && movementHighlight) {
-		installWaterHighlightShader(material, timeUniform, movementHighlight, voxelAo);
+		installWaterHighlightShader(material, timeUniform, movementHighlight, voxelAo, performanceMode);
 	} else {
-		installWaterAoShader(material, timeUniform, voxelAo);
+		installWaterAoShader(material, timeUniform, voxelAo, performanceMode);
 	}
 
 	const onAnimationFrame = (timeMs: number) => {

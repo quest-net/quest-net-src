@@ -155,6 +155,8 @@ export default function ThreeDMap({
 	const { pings: activePings } = useActivePings();
 	const liveActorPoses = useLiveActorPoseOverrides(terrain, characters, entities);
 	const lastPingTimeRef = useRef(0);
+	const performanceModeRef = useRef(AppSettingActions.getPerformanceMode(context));
+	const performanceMode = performanceModeRef.current;
 	const isDM = context.User.Role === "dm";
 	const imageService = (actionService as any)?.imageService ?? null;
 	const campaign = CampaignActions.getActiveCampaign(context);
@@ -368,7 +370,14 @@ export default function ThreeDMap({
 		if (!container) return;
 
 		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-		renderer.setPixelRatio(Math.min(window.devicePixelRatio, THREE_D_MAP_RENDERER.MAX_PIXEL_RATIO));
+		renderer.setPixelRatio(
+			Math.min(
+				window.devicePixelRatio,
+				performanceMode
+					? THREE_D_MAP_RENDERER.PERFORMANCE_MAX_PIXEL_RATIO
+					: THREE_D_MAP_RENDERER.MAX_PIXEL_RATIO
+			)
+		);
 		renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
 		renderer.outputColorSpace = THREE.SRGBColorSpace;
 		renderer.info.autoReset = false;
@@ -433,7 +442,10 @@ export default function ThreeDMap({
 			Math.PI * THREE_D_MAP_LIGHTING.DIRECTIONAL_INTENSITY_MULTIPLIER
 		);
 		dirLight.castShadow = true;
-		dirLight.shadow.mapSize.set(THREE_D_MAP_SHADOW.MAP_SIZE, THREE_D_MAP_SHADOW.MAP_SIZE);
+		const shadowMapSize = performanceMode
+			? THREE_D_MAP_SHADOW.PERFORMANCE_MAP_SIZE
+			: THREE_D_MAP_SHADOW.MAP_SIZE;
+		dirLight.shadow.mapSize.set(shadowMapSize, shadowMapSize);
 		dirLight.shadow.bias = THREE_D_MAP_SHADOW.BIAS;
 		dirLight.shadow.normalBias = THREE_D_MAP_SHADOW.NORMAL_BIAS;
 		scene.add(dirLight);
@@ -449,7 +461,9 @@ export default function ThreeDMap({
 		controls.update();
 		controlsRef.current = controls;
 
-		const postProcessing = createThreeDMapPostProcessing(renderer, scene, camera);
+		const postProcessing = createThreeDMapPostProcessing(renderer, scene, camera, {
+			performanceMode,
+		});
 
 		const movementHighlight = createMovementHighlightTexture(1, 1, 1);
 		const resources: ThreeDSceneResources = {
@@ -479,6 +493,7 @@ export default function ThreeDMap({
 				for (const acceptsMovementHighlight of [false, true]) {
 					const result = factory({
 						acceptsMovementHighlight,
+						performanceMode,
 						movementHighlight: acceptsMovementHighlight ? dummyHighlight : undefined,
 						voxelAo: dummyVoxelAo,
 					});
@@ -688,7 +703,9 @@ export default function ThreeDMap({
 			terrainGeometry.height + 1,
 			terrainGeometry.length
 		);
-		const voxelAo = createVoxelAoTexture(terrainGeometry.occupancy);
+		const voxelAo = createVoxelAoTexture(terrainGeometry.occupancy, {
+			performanceMode,
+		});
 
 		const meshes: THREE.Mesh[] = [];
 		const geometries: THREE.BufferGeometry[] = [];
@@ -699,7 +716,12 @@ export default function ThreeDMap({
 			const factory =
 				TERRAIN_MATERIAL_REGISTRY.get(bucketKey) ??
 				TERRAIN_MATERIAL_REGISTRY.get('default')!;
-			const result = factory({ acceptsMovementHighlight: true, movementHighlight, voxelAo });
+			const result = factory({
+				acceptsMovementHighlight: true,
+				performanceMode,
+				movementHighlight,
+				voxelAo,
+			});
 			if (result.onAnimationFrame) {
 				resources.animationCallbacks.add(result.onAnimationFrame);
 				animationFrameCallbacks.push(result.onAnimationFrame);

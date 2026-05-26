@@ -43,7 +43,8 @@ export function useFirstPersonScene(
 	containerRef: RefObject<HTMLDivElement | null>,
 	handlers: FirstPersonSceneHandlers,
 	cameraRef: RefObject<THREE.PerspectiveCamera | null>,
-	directionalLightRef: RefObject<THREE.DirectionalLight | null>
+	directionalLightRef: RefObject<THREE.DirectionalLight | null>,
+	performanceMode = false
 ): FirstPersonSceneState {
 	const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -65,7 +66,12 @@ export function useFirstPersonScene(
 
 		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 		renderer.setPixelRatio(
-			Math.min(window.devicePixelRatio, THREE_D_MAP_RENDERER.MAX_PIXEL_RATIO)
+			Math.min(
+				window.devicePixelRatio,
+				performanceMode
+					? THREE_D_MAP_RENDERER.PERFORMANCE_MAX_PIXEL_RATIO
+					: THREE_D_MAP_RENDERER.MAX_PIXEL_RATIO
+			)
 		);
 		renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
 		renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -128,17 +134,19 @@ export function useFirstPersonScene(
 			Math.PI * THREE_D_MAP_LIGHTING.DIRECTIONAL_INTENSITY_MULTIPLIER
 		);
 		dirLight.castShadow = true;
-		dirLight.shadow.mapSize.set(
-			THREE_D_MAP_SHADOW.MAP_SIZE,
-			THREE_D_MAP_SHADOW.MAP_SIZE
-		);
+		const shadowMapSize = performanceMode
+			? THREE_D_MAP_SHADOW.PERFORMANCE_MAP_SIZE
+			: THREE_D_MAP_SHADOW.MAP_SIZE;
+		dirLight.shadow.mapSize.set(shadowMapSize, shadowMapSize);
 		dirLight.shadow.bias = THREE_D_MAP_SHADOW.BIAS;
 		dirLight.shadow.normalBias = THREE_D_MAP_SHADOW.NORMAL_BIAS;
 		scene.add(dirLight);
 		scene.add(dirLight.target);
 		directionalLightRef.current = dirLight;
 
-		const postProcessing = createThreeDMapPostProcessing(renderer, scene, camera);
+		const postProcessing = createThreeDMapPostProcessing(renderer, scene, camera, {
+			performanceMode,
+		});
 
 		const resources: ThreeDSceneResources = {
 			scene,
@@ -162,7 +170,11 @@ export function useFirstPersonScene(
 			const dummyVoxelAo = createPlaceholderVoxelAoTexture();
 			const warmMeshes: THREE.Mesh[] = [];
 			for (const [, factory] of TERRAIN_MATERIAL_REGISTRY) {
-				const result = factory({ acceptsMovementHighlight: false, voxelAo: dummyVoxelAo });
+				const result = factory({
+					acceptsMovementHighlight: false,
+					performanceMode,
+					voxelAo: dummyVoxelAo,
+				});
 				const warmMesh = new THREE.Mesh(dummyGeo, result.material);
 				scene.add(warmMesh);
 				warmMeshes.push(warmMesh);
@@ -306,7 +318,7 @@ export function useFirstPersonScene(
 			}
 			triangleStatsRef.current = null;
 		};
-	}, [containerRef, cameraRef, directionalLightRef]);
+	}, [containerRef, cameraRef, directionalLightRef, performanceMode]);
 
 	// Backtick (`) shortcut to toggle the Stats.js overlay
 	useEffect(() => {

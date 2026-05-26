@@ -36,6 +36,10 @@ export function AppSettingEdit() {
     AppSettingActions.getPreserveFlyingHeightOnTileMove(context)
   );
 
+  const [performanceMode, setPerformanceMode] = useState<boolean>(
+    AppSettingActions.getPerformanceMode(context)
+  );
+
   // --- Image generation settings ---
   const [imageService, setImageService] = useState<string>(
     AppSettingActions.getImageService(context)
@@ -85,6 +89,7 @@ export function AppSettingEdit() {
       { preserve: preserveFlyingHeightOnTileMove },
       context
     );
+    AppSettingActions.setPerformanceMode({ enabled: performanceMode }, context);
 
     // Image service selection
     AppSettingActions.setImageService({ providerId: imageService }, context);
@@ -240,6 +245,23 @@ export function AppSettingEdit() {
                 <p className="text-xs opacity-70">
                   Flying actors stay at their current height unless the
                   destination column has terrain at or above them.
+                </p>
+              </div>
+
+              <div className="form-control">
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-primary"
+                    checked={performanceMode}
+                    onChange={(e) => setPerformanceMode(e.target.checked)}
+                  />
+                  <span className="label-text">Performance mode</span>
+                </label>
+                <p className="text-xs opacity-70">
+                  Uses lower renderer quality and simplified voxel terrain for
+                  older laptops. Refresh after changing this from the quick
+                  settings menu.
                 </p>
               </div>
             </div>

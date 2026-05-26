@@ -16,8 +16,8 @@ import type {
 } from './materialTypes';
 import {
 	applyVoxelAoUniforms,
+	getVoxelAoFragmentHeader,
 	VOXEL_AO_CALL,
-	VOXEL_AO_FRAGMENT_HEADER,
 	VOXEL_AO_VERTEX_BEGIN,
 	VOXEL_AO_VERTEX_HEADER,
 	type VoxelAoTexture,
@@ -27,22 +27,47 @@ const WOOD_TEXTURE_URL = '/materials/wood_244/wood_256x256.png';
 const WOOD_SWATCH = '#8b5a2b';
 const WOOD_TEXTURE_REPEAT = 1.0;
 const WOOD_ANISOTROPY = 8;
+const WOOD_PERFORMANCE_ANISOTROPY = 1;
 
 let cachedTexture: THREE.Texture | null = null;
+let cachedPerformanceTexture: THREE.Texture | null = null;
 
-function getWoodTexture(): THREE.Texture {
-	if (cachedTexture) return cachedTexture;
-
-	const texture = new THREE.TextureLoader().load(WOOD_TEXTURE_URL);
+function configureWoodTexture(
+	texture: THREE.Texture,
+	performanceMode: boolean
+): THREE.Texture {
 	texture.colorSpace = THREE.SRGBColorSpace;
 	texture.wrapS = THREE.RepeatWrapping;
 	texture.wrapT = THREE.RepeatWrapping;
 	texture.magFilter = THREE.LinearFilter;
-	texture.minFilter = THREE.LinearMipmapLinearFilter;
-	texture.anisotropy = WOOD_ANISOTROPY;
-	texture.generateMipmaps = true;
-	cachedTexture = texture;
+	texture.minFilter = performanceMode
+		? THREE.LinearFilter
+		: THREE.LinearMipmapLinearFilter;
+	texture.anisotropy = performanceMode
+		? WOOD_PERFORMANCE_ANISOTROPY
+		: WOOD_ANISOTROPY;
+	texture.generateMipmaps = !performanceMode;
 	return texture;
+}
+
+function getWoodTexture(performanceMode: boolean): THREE.Texture {
+	if (performanceMode) {
+		if (!cachedPerformanceTexture) {
+			cachedPerformanceTexture = configureWoodTexture(
+				new THREE.TextureLoader().load(WOOD_TEXTURE_URL),
+				true
+			);
+		}
+		return cachedPerformanceTexture;
+	}
+
+	if (!cachedTexture) {
+		cachedTexture = configureWoodTexture(
+			new THREE.TextureLoader().load(WOOD_TEXTURE_URL),
+			false
+		);
+	}
+	return cachedTexture;
 }
 
 function woodShaderHeader(): string[] {
@@ -61,9 +86,9 @@ function woodBeginVertex(): string[] {
 	];
 }
 
-function woodFragmentHeader(): string[] {
+function woodFragmentHeader(performanceMode: boolean): string[] {
 	return [
-		...VOXEL_AO_FRAGMENT_HEADER,
+		...getVoxelAoFragmentHeader(performanceMode),
 		'varying vec3 vWoodWorldPosition;',
 		'varying vec3 vWoodWorldNormal;',
 		'uniform sampler2D woodMap;',
@@ -90,7 +115,8 @@ function woodColorFragment(): string[] {
 function installWoodAoShader(
 	material: THREE.MeshStandardMaterial,
 	texture: THREE.Texture,
-	voxelAo: VoxelAoTexture
+	voxelAo: VoxelAoTexture,
+	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
@@ -105,7 +131,7 @@ function installWoodAoShader(
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...woodFragmentHeader()].join('\n')
+			['#include <common>', ...woodFragmentHeader(performanceMode)].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
@@ -118,7 +144,8 @@ function installWoodHighlightShader(
 	material: THREE.MeshStandardMaterial,
 	texture: THREE.Texture,
 	highlight: MovementHighlightTexture,
-	voxelAo: VoxelAoTexture
+	voxelAo: VoxelAoTexture,
+	performanceMode: boolean
 ): void {
 	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
 	const heightLevels = highlight.heightLevels;
@@ -159,7 +186,7 @@ function installWoodHighlightShader(
 			'#include <common>',
 			[
 				'#include <common>',
-				...woodFragmentHeader(),
+				...woodFragmentHeader(performanceMode),
 				'uniform highp sampler3D movementHighlightMap;',
 				'uniform vec2 movementHighlightSize;',
 				'uniform float movementHighlightHeightLevels;',
@@ -212,8 +239,8 @@ function installWoodHighlightShader(
 export const createWood244Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { acceptsMovementHighlight, movementHighlight, voxelAo } = params;
-	const texture = getWoodTexture();
+	const { acceptsMovementHighlight, movementHighlight, voxelAo, performanceMode = false } = params;
+	const texture = getWoodTexture(performanceMode);
 	const material = new THREE.MeshStandardMaterial({
 		roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
 		metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
@@ -221,9 +248,9 @@ export const createWood244Material: MaterialFactory = (
 	});
 
 	if (acceptsMovementHighlight && movementHighlight) {
-		installWoodHighlightShader(material, texture, movementHighlight, voxelAo);
+		installWoodHighlightShader(material, texture, movementHighlight, voxelAo, performanceMode);
 	} else {
-		installWoodAoShader(material, texture, voxelAo);
+		installWoodAoShader(material, texture, voxelAo, performanceMode);
 	}
 
 	return { material, castShadow: true, receiveShadow: true };

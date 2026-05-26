@@ -13,15 +13,39 @@ export interface ThreeDMapPostProcessing {
 	dispose: () => void;
 }
 
+interface ThreeDMapPostProcessingOptions {
+	performanceMode?: boolean;
+}
+
 export function createThreeDMapPostProcessing(
 	renderer: THREE.WebGLRenderer,
 	scene: THREE.Scene,
-	camera: THREE.Camera
+	camera: THREE.Camera,
+	options: ThreeDMapPostProcessingOptions = {}
 ): ThreeDMapPostProcessing {
+	const bloom = options.performanceMode
+		? {
+				intensity: THREE_D_MAP_BLOOM.PERFORMANCE_INTENSITY,
+				luminanceThreshold: THREE_D_MAP_BLOOM.PERFORMANCE_LUMINANCE_THRESHOLD,
+				luminanceSmoothing: THREE_D_MAP_BLOOM.PERFORMANCE_LUMINANCE_SMOOTHING,
+				radius: THREE_D_MAP_BLOOM.PERFORMANCE_RADIUS,
+				levels: THREE_D_MAP_BLOOM.PERFORMANCE_LEVELS,
+				multisampling: THREE_D_MAP_BLOOM.PERFORMANCE_MULTISAMPLING,
+				mipmapBlur: false,
+		  }
+		: {
+				intensity: THREE_D_MAP_BLOOM.INTENSITY,
+				luminanceThreshold: THREE_D_MAP_BLOOM.LUMINANCE_THRESHOLD,
+				luminanceSmoothing: THREE_D_MAP_BLOOM.LUMINANCE_SMOOTHING,
+				radius: THREE_D_MAP_BLOOM.RADIUS,
+				levels: THREE_D_MAP_BLOOM.LEVELS,
+				multisampling: THREE_D_MAP_BLOOM.MULTISAMPLING,
+				mipmapBlur: true,
+		  };
 	const composer = new EffectComposer(renderer, {
 		frameBufferType: THREE.HalfFloatType,
 		multisampling: renderer.capabilities.isWebGL2
-			? THREE_D_MAP_BLOOM.MULTISAMPLING
+			? bloom.multisampling
 			: 0,
 	});
 
@@ -29,12 +53,12 @@ export function createThreeDMapPostProcessing(
 	composer.addPass(new EffectPass(
 		camera,
 		new BloomEffect({
-			intensity: THREE_D_MAP_BLOOM.INTENSITY,
-			luminanceThreshold: THREE_D_MAP_BLOOM.LUMINANCE_THRESHOLD,
-			luminanceSmoothing: THREE_D_MAP_BLOOM.LUMINANCE_SMOOTHING,
-			mipmapBlur: true,
-			radius: THREE_D_MAP_BLOOM.RADIUS,
-			levels: THREE_D_MAP_BLOOM.LEVELS,
+			intensity: bloom.intensity,
+			luminanceThreshold: bloom.luminanceThreshold,
+			luminanceSmoothing: bloom.luminanceSmoothing,
+			mipmapBlur: bloom.mipmapBlur,
+			radius: bloom.radius,
+			levels: bloom.levels,
 		})
 	));
 

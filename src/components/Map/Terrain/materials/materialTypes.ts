@@ -24,6 +24,8 @@ export interface MaterialFactoryParams {
 	 * Must match the acceptsMovementHighlight flag used in customProgramCacheKey.
 	 */
 	acceptsMovementHighlight: boolean;
+	/** Enables lower-cost shader variants while preserving material semantics. */
+	performanceMode?: boolean;
 	/** Required when acceptsMovementHighlight is true. */
 	movementHighlight?: MovementHighlightTexture;
 	/**

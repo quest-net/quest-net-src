@@ -16,8 +16,8 @@ import type {
 } from './materialTypes';
 import {
 	applyVoxelAoUniforms,
+	getVoxelAoFragmentHeader,
 	VOXEL_AO_CALL,
-	VOXEL_AO_FRAGMENT_HEADER,
 	VOXEL_AO_VERTEX_BEGIN,
 	VOXEL_AO_VERTEX_HEADER,
 	type VoxelAoTexture,
@@ -34,26 +34,47 @@ const GRASS_AO_STRENGTH = 0.45;
 const GRASS_ROUGHNESS_MIN = 0.86;
 const GRASS_ROUGHNESS_MAX = 1.0;
 const GRASS_ANISOTROPY = 8;
+const GRASS_PERFORMANCE_ANISOTROPY = 1;
 
 let cachedTexture: THREE.Texture | null = null;
+let cachedPerformanceTexture: THREE.Texture | null = null;
 let cachedNormalTexture: THREE.Texture | null = null;
 let cachedRoughnessTexture: THREE.Texture | null = null;
 let cachedAoTexture: THREE.Texture | null = null;
 
-function configureGrassTexture(texture: THREE.Texture): THREE.Texture {
+function configureGrassTexture(
+	texture: THREE.Texture,
+	performanceMode = false
+): THREE.Texture {
 	texture.wrapS = THREE.RepeatWrapping;
 	texture.wrapT = THREE.RepeatWrapping;
 	texture.magFilter = THREE.LinearFilter;
-	texture.minFilter = THREE.LinearMipmapLinearFilter;
-	texture.anisotropy = GRASS_ANISOTROPY;
-	texture.generateMipmaps = true;
+	texture.minFilter = performanceMode
+		? THREE.LinearFilter
+		: THREE.LinearMipmapLinearFilter;
+	texture.anisotropy = performanceMode
+		? GRASS_PERFORMANCE_ANISOTROPY
+		: GRASS_ANISOTROPY;
+	texture.generateMipmaps = !performanceMode;
 	return texture;
 }
 
-function getGrassTexture(): THREE.Texture {
+function getGrassTexture(performanceMode: boolean): THREE.Texture {
+	if (performanceMode) {
+		if (!cachedPerformanceTexture) {
+			const texture = configureGrassTexture(
+				new THREE.TextureLoader().load(GRASS_TEXTURE_URL),
+				true
+			);
+			texture.colorSpace = THREE.SRGBColorSpace;
+			cachedPerformanceTexture = texture;
+		}
+		return cachedPerformanceTexture;
+	}
+
 	if (cachedTexture) return cachedTexture;
 
-	const texture = configureGrassTexture(new THREE.TextureLoader().load(GRASS_TEXTURE_URL));
+	const texture = configureGrassTexture(new THREE.TextureLoader().load(GRASS_TEXTURE_URL), false);
 	texture.colorSpace = THREE.SRGBColorSpace;
 	cachedTexture = texture;
 	return texture;
@@ -62,7 +83,7 @@ function getGrassTexture(): THREE.Texture {
 function getGrassNormalTexture(): THREE.Texture {
 	if (cachedNormalTexture) return cachedNormalTexture;
 
-	const texture = configureGrassTexture(new THREE.TextureLoader().load(GRASS_NORMAL_TEXTURE_URL));
+	const texture = configureGrassTexture(new THREE.TextureLoader().load(GRASS_NORMAL_TEXTURE_URL), false);
 	cachedNormalTexture = texture;
 	return texture;
 }
@@ -70,7 +91,7 @@ function getGrassNormalTexture(): THREE.Texture {
 function getGrassRoughnessTexture(): THREE.Texture {
 	if (cachedRoughnessTexture) return cachedRoughnessTexture;
 
-	const texture = configureGrassTexture(new THREE.TextureLoader().load(GRASS_ROUGHNESS_TEXTURE_URL));
+	const texture = configureGrassTexture(new THREE.TextureLoader().load(GRASS_ROUGHNESS_TEXTURE_URL), false);
 	cachedRoughnessTexture = texture;
 	return texture;
 }
@@ -78,7 +99,7 @@ function getGrassRoughnessTexture(): THREE.Texture {
 function getGrassAoTexture(): THREE.Texture {
 	if (cachedAoTexture) return cachedAoTexture;
 
-	const texture = configureGrassTexture(new THREE.TextureLoader().load(GRASS_AO_TEXTURE_URL));
+	const texture = configureGrassTexture(new THREE.TextureLoader().load(GRASS_AO_TEXTURE_URL), false);
 	cachedAoTexture = texture;
 	return texture;
 }
@@ -99,12 +120,30 @@ function grassBeginVertex(): string[] {
 	];
 }
 
-function grassFragmentHeader(): string[] {
-	return [
-		...VOXEL_AO_FRAGMENT_HEADER,
+function grassFragmentHeader(performanceMode: boolean): string[] {
+	const header = [
+		...getVoxelAoFragmentHeader(false),
 		'varying vec3 vGrassWorldPosition;',
 		'varying vec3 vGrassWorldNormal;',
 		'uniform sampler2D grassMap;',
+	];
+	if (performanceMode) {
+		return [
+			...getVoxelAoFragmentHeader(true),
+			'varying vec3 vGrassWorldPosition;',
+			'varying vec3 vGrassWorldNormal;',
+			'uniform sampler2D grassMap;',
+			'vec2 getGrassUv(vec3 worldPosition, vec3 worldNormal) {',
+			'	vec3 n = abs(normalize(worldNormal));',
+			'	if (n.y >= n.x && n.y >= n.z) return worldPosition.xz;',
+			'	if (n.x >= n.z) return worldPosition.zy;',
+			'	return worldPosition.xy;',
+			'}',
+		];
+	}
+
+	return [
+		...header,
 		'uniform sampler2D grassNormalMap;',
 		'uniform sampler2D grassRoughnessMap;',
 		'uniform sampler2D grassAoMap;',
@@ -130,17 +169,24 @@ function grassFragmentHeader(): string[] {
 	];
 }
 
-function grassColorFragment(): string[] {
-	return [
+function grassColorFragment(performanceMode: boolean): string[] {
+	const lines = [
 		'#include <color_fragment>',
 		`vec2 grassUv = getGrassUv(vGrassWorldPosition, vGrassWorldNormal) * ${GRASS_TEXTURE_REPEAT.toFixed(2)};`,
 		'vec4 grassTexel = texture2D(grassMap, grassUv);',
-		'float grassMicroAo = mix(1.0, texture2D(grassAoMap, grassUv).r, ' + GRASS_AO_STRENGTH.toFixed(2) + ');',
 		'diffuseColor.rgb *= grassTexel.rgb;',
-		'diffuseColor.rgb *= grassMicroAo;',
 		'diffuseColor.a *= grassTexel.a;',
 		`diffuseColor.rgb *= ${VOXEL_AO_CALL};`,
 	];
+	if (performanceMode) return lines;
+
+	lines.splice(
+		3,
+		0,
+		'float grassMicroAo = mix(1.0, texture2D(grassAoMap, grassUv).r, ' + GRASS_AO_STRENGTH.toFixed(2) + ');',
+		'diffuseColor.rgb *= grassMicroAo;'
+	);
+	return lines;
 }
 
 function grassRoughnessFragment(): string[] {
@@ -164,17 +210,20 @@ function grassNormalFragment(): string[] {
 function installGrassAoShader(
 	material: THREE.MeshStandardMaterial,
 	texture: THREE.Texture,
-	normalTexture: THREE.Texture,
-	roughnessTexture: THREE.Texture,
-	aoTexture: THREE.Texture,
-	voxelAo: VoxelAoTexture
+	normalTexture: THREE.Texture | null,
+	roughnessTexture: THREE.Texture | null,
+	aoTexture: THREE.Texture | null,
+	voxelAo: VoxelAoTexture,
+	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
 		shader.uniforms.grassMap = { value: texture };
-		shader.uniforms.grassNormalMap = { value: normalTexture };
-		shader.uniforms.grassRoughnessMap = { value: roughnessTexture };
-		shader.uniforms.grassAoMap = { value: aoTexture };
+		if (!performanceMode && normalTexture && roughnessTexture && aoTexture) {
+			shader.uniforms.grassNormalMap = { value: normalTexture };
+			shader.uniforms.grassRoughnessMap = { value: roughnessTexture };
+			shader.uniforms.grassAoMap = { value: aoTexture };
+		}
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
 			['#include <common>', ...grassShaderHeader()].join('\n')
@@ -185,31 +234,34 @@ function installGrassAoShader(
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...grassFragmentHeader()].join('\n')
+			['#include <common>', ...grassFragmentHeader(performanceMode)].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
-			grassColorFragment().join('\n')
+			grassColorFragment(performanceMode).join('\n')
 		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <roughnessmap_fragment>',
-			grassRoughnessFragment().join('\n')
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <normal_fragment_maps>',
-			grassNormalFragment().join('\n')
-		);
+		if (!performanceMode) {
+			shader.fragmentShader = shader.fragmentShader.replace(
+				'#include <roughnessmap_fragment>',
+				grassRoughnessFragment().join('\n')
+			);
+			shader.fragmentShader = shader.fragmentShader.replace(
+				'#include <normal_fragment_maps>',
+				grassNormalFragment().join('\n')
+			);
+		}
 	};
 }
 
 function installGrassHighlightShader(
 	material: THREE.MeshStandardMaterial,
 	texture: THREE.Texture,
-	normalTexture: THREE.Texture,
-	roughnessTexture: THREE.Texture,
-	aoTexture: THREE.Texture,
+	normalTexture: THREE.Texture | null,
+	roughnessTexture: THREE.Texture | null,
+	aoTexture: THREE.Texture | null,
 	highlight: MovementHighlightTexture,
-	voxelAo: VoxelAoTexture
+	voxelAo: VoxelAoTexture,
+	performanceMode: boolean
 ): void {
 	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
 	const heightLevels = highlight.heightLevels;
@@ -217,9 +269,11 @@ function installGrassHighlightShader(
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
 		shader.uniforms.grassMap = { value: texture };
-		shader.uniforms.grassNormalMap = { value: normalTexture };
-		shader.uniforms.grassRoughnessMap = { value: roughnessTexture };
-		shader.uniforms.grassAoMap = { value: aoTexture };
+		if (!performanceMode && normalTexture && roughnessTexture && aoTexture) {
+			shader.uniforms.grassNormalMap = { value: normalTexture };
+			shader.uniforms.grassRoughnessMap = { value: roughnessTexture };
+			shader.uniforms.grassAoMap = { value: aoTexture };
+		}
 		shader.uniforms.movementHighlightMap = { value: highlight.texture };
 		shader.uniforms.movementHighlightSize = { value: highlightSize };
 		shader.uniforms.movementHighlightHeightLevels = { value: heightLevels };
@@ -253,7 +307,7 @@ function installGrassHighlightShader(
 			'#include <common>',
 			[
 				'#include <common>',
-				...grassFragmentHeader(),
+				...grassFragmentHeader(performanceMode),
 				'uniform highp sampler3D movementHighlightMap;',
 				'uniform vec2 movementHighlightSize;',
 				'uniform float movementHighlightHeightLevels;',
@@ -265,16 +319,18 @@ function installGrassHighlightShader(
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
-			grassColorFragment().join('\n')
+			grassColorFragment(performanceMode).join('\n')
 		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <roughnessmap_fragment>',
-			grassRoughnessFragment().join('\n')
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <normal_fragment_maps>',
-			grassNormalFragment().join('\n')
-		);
+		if (!performanceMode) {
+			shader.fragmentShader = shader.fragmentShader.replace(
+				'#include <roughnessmap_fragment>',
+				grassRoughnessFragment().join('\n')
+			);
+			shader.fragmentShader = shader.fragmentShader.replace(
+				'#include <normal_fragment_maps>',
+				grassNormalFragment().join('\n')
+			);
+		}
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <dithering_fragment>',
 			[
@@ -314,11 +370,11 @@ function installGrassHighlightShader(
 export const createGrass242Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { acceptsMovementHighlight, movementHighlight, voxelAo } = params;
-	const texture = getGrassTexture();
-	const normalTexture = getGrassNormalTexture();
-	const roughnessTexture = getGrassRoughnessTexture();
-	const aoTexture = getGrassAoTexture();
+	const { acceptsMovementHighlight, movementHighlight, voxelAo, performanceMode = false } = params;
+	const texture = getGrassTexture(performanceMode);
+	const normalTexture = performanceMode ? null : getGrassNormalTexture();
+	const roughnessTexture = performanceMode ? null : getGrassRoughnessTexture();
+	const aoTexture = performanceMode ? null : getGrassAoTexture();
 	const material = new THREE.MeshStandardMaterial({
 		roughness: GRASS_ROUGHNESS_MAX,
 		metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
@@ -326,9 +382,9 @@ export const createGrass242Material: MaterialFactory = (
 	});
 
 	if (acceptsMovementHighlight && movementHighlight) {
-		installGrassHighlightShader(material, texture, normalTexture, roughnessTexture, aoTexture, movementHighlight, voxelAo);
+		installGrassHighlightShader(material, texture, normalTexture, roughnessTexture, aoTexture, movementHighlight, voxelAo, performanceMode);
 	} else {
-		installGrassAoShader(material, texture, normalTexture, roughnessTexture, aoTexture, voxelAo);
+		installGrassAoShader(material, texture, normalTexture, roughnessTexture, aoTexture, voxelAo, performanceMode);
 	}
 
 	return { material, castShadow: true, receiveShadow: true };

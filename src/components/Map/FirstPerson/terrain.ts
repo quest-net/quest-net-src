@@ -39,7 +39,8 @@ export function useFirstPersonTerrain(
 	resources: ThreeDSceneResources | null,
 	terrain: VoxelTerrain | null | undefined,
 	terrainSignature: string,
-	directionalLightRef: RefObject<THREE.DirectionalLight | null>
+	directionalLightRef: RefObject<THREE.DirectionalLight | null>,
+	performanceMode = false
 ): void {
 	const terrainResourcesRef = useRef<TerrainRenderResources | null>(null);
 	const resourcesRef = useRef<ThreeDSceneResources | null>(null);
@@ -136,14 +137,20 @@ export function useFirstPersonTerrain(
 		const meshes: THREE.Mesh[] = [];
 		const geometries: THREE.BufferGeometry[] = [];
 		const materials: THREE.MeshStandardMaterial[] = [];
-		const voxelAo = createVoxelAoTexture(terrainGeometry.occupancy);
+		const voxelAo = createVoxelAoTexture(terrainGeometry.occupancy, {
+			performanceMode,
+		});
 		const animationFrameCallbacks: ((timeMs: number) => void)[] = [];
 
 		for (const [bucketKey, geometry] of terrainGeometry.buckets) {
 			const factory =
 				TERRAIN_MATERIAL_REGISTRY.get(bucketKey) ??
 				TERRAIN_MATERIAL_REGISTRY.get('default')!;
-			const result = factory({ acceptsMovementHighlight: false, voxelAo });
+			const result = factory({
+				acceptsMovementHighlight: false,
+				performanceMode,
+				voxelAo,
+			});
 			if (result.onAnimationFrame) {
 				resources.animationCallbacks.add(result.onAnimationFrame);
 				animationFrameCallbacks.push(result.onAnimationFrame);
@@ -171,5 +178,5 @@ export function useFirstPersonTerrain(
 		for (const mesh of meshes) resources.occlusionTargets.push(mesh);
 		terrainResourcesRef.current = { meshes, geometries, materials, voxelAo, animationFrameCallbacks };
 		resources.requestShadowUpdate();
-	}, [resources, terrainGeometry]);
+	}, [resources, terrainGeometry, performanceMode]);
 }

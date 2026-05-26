@@ -34,6 +34,7 @@ export const AppSettingActions = {
       theme: "light",
       volume: 100,
       preserveFlyingHeightOnTileMove: false,
+      performanceMode: false,
     };
   },
 
@@ -82,6 +83,18 @@ export const AppSettingActions = {
 
   getPreserveFlyingHeightOnTileMove(context: Context): boolean {
     return context.AppSettings.preserveFlyingHeightOnTileMove === "true";
+  },
+
+  setPerformanceMode(
+    params: { enabled: boolean },
+    context: Context
+  ): void {
+    context.AppSettings.performanceMode = params.enabled ? "true" : "false";
+    ContextActions.save(context);
+  },
+
+  getPerformanceMode(context: Context): boolean {
+    return context.AppSettings.performanceMode === "true";
   },
 
   // ---------------------------------------------------------------------------
@@ -180,6 +193,7 @@ export const AppSettingActions = {
       sfxVolume: this.getSfxVolume(),
       preserveFlyingHeightOnTileMove:
         this.getPreserveFlyingHeightOnTileMove(context),
+      performanceMode: this.getPerformanceMode(context),
       imagePromptTemplate: this.getImagePromptTemplate(context),
       imageService: this.getImageService(context),
       imageApiKeys: getJson<Record<string, string>>(context, "imageApiKeys"),

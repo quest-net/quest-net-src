@@ -16,6 +16,10 @@ export function AppSettingsDisplay() {
 	);
 	const [preserveFlyingHeightOnTileMove, setPreserveFlyingHeightOnTileMove] =
 		useState(AppSettingActions.getPreserveFlyingHeightOnTileMove(context));
+	const [performanceMode, setPerformanceMode] = useState(
+		AppSettingActions.getPerformanceMode(context)
+	);
+	const [performanceModeChanged, setPerformanceModeChanged] = useState(false);
 	const windowRef = useRef<HTMLDivElement>(null);
 	const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -24,6 +28,7 @@ export function AppSettingsDisplay() {
 		setPreserveFlyingHeightOnTileMove(
 			AppSettingActions.getPreserveFlyingHeightOnTileMove(context)
 		);
+		setPerformanceMode(AppSettingActions.getPerformanceMode(context));
 	}, [context]);
 
 	useEffect(() => {
@@ -79,6 +84,13 @@ export function AppSettingsDisplay() {
 			{ preserve },
 			context
 		);
+		triggerContextUpdate();
+	};
+
+	const handlePerformanceModeChange = (enabled: boolean) => {
+		setPerformanceMode(enabled);
+		setPerformanceModeChanged(true);
+		AppSettingActions.setPerformanceMode({ enabled }, context);
 		triggerContextUpdate();
 	};
 
@@ -172,6 +184,29 @@ export function AppSettingsDisplay() {
 								}
 								aria-label="Keep flying height"
 							/>
+						</div>
+
+						<div className="space-y-1">
+							<div className="flex items-center justify-between gap-4">
+								<div className="flex items-center gap-2">
+									<span className="icon-[mdi--speedometer] w-5 h-5 opacity-70" />
+									<span className="font-medium">Performance Mode</span>
+								</div>
+								<input
+									type="checkbox"
+									className="toggle toggle-primary toggle-sm"
+									checked={performanceMode}
+									onChange={(event) =>
+										handlePerformanceModeChange(event.target.checked)
+									}
+									aria-label="Performance mode"
+								/>
+							</div>
+							{performanceModeChanged && (
+								<p className="text-xs text-warning">
+									your mode has changed. please refresh to apply
+								</p>
+							)}
 						</div>
 					</div>
 				</div>

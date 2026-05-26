@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Position } from "../../../domains/Actor/Actor";
+import { AppSettingActions } from "../../../domains/AppSetting/AppSettingActions";
 import { CampaignActions } from "../../../domains/Campaign/CampaignActions";
 import { useQuestContext } from "../../../domains/Context/ContextProvider";
 import { PING_DURATION_MS } from "../../../domains/Ping/Ping";
@@ -158,6 +159,8 @@ export default function FirstPersonMap({
 	const activeStickers = useActiveStickers();
 	const { pings: activePings } = useActivePings();
 	const liveActorPoses = useLiveActorPoseOverrides(terrain, characters, entities);
+	const performanceModeRef = useRef(AppSettingActions.getPerformanceMode(context));
+	const performanceMode = performanceModeRef.current;
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const imageService = (actionService as any)?.imageService ?? null;
 	const userRole = context.User.Role === "dm" ? "dm" : "player";
@@ -668,14 +671,16 @@ export default function FirstPersonMap({
 			onControlReleased: commitCurrentPosition,
 		},
 		cameraRef,
-		directionalLightRef
+		directionalLightRef,
+		performanceMode
 	);
 
 	useFirstPersonTerrain(
 		sceneResources,
 		terrain,
 		terrainSignature,
-		directionalLightRef
+		directionalLightRef,
+		performanceMode
 	);
 
 	useEffect(() => {

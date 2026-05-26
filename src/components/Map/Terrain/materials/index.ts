@@ -204,11 +204,15 @@ export function isSpecialPaletteIndex(paletteIndex: number): boolean {
 
 function wrapFactoryWithCacheKey(material: TerrainMaterial): MaterialFactory {
 	const { bucketKey, shaderVersion, factory } = material;
-	const keyHighlight  = `terrain-${bucketKey}-v${shaderVersion}-hl`;
-	const keyNoHighlight = `terrain-${bucketKey}-v${shaderVersion}-nh`;
 	return (params: MaterialFactoryParams): MaterialFactoryResult => {
 		const result = factory(params);
-		const key = params.acceptsMovementHighlight ? keyHighlight : keyNoHighlight;
+		const key = [
+			'terrain',
+			bucketKey,
+			`v${shaderVersion}`,
+			params.acceptsMovementHighlight ? 'hl' : 'nh',
+			params.performanceMode ? 'perf' : 'full',
+		].join('-');
 		result.material.customProgramCacheKey = () => key;
 		result.material.needsUpdate = true;
 		return result;

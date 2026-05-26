@@ -16,8 +16,8 @@ import type {
 } from './materialTypes';
 import {
 	applyVoxelAoUniforms,
+	getVoxelAoFragmentHeader,
 	VOXEL_AO_CALL,
-	VOXEL_AO_FRAGMENT_HEADER,
 	VOXEL_AO_VERTEX_BEGIN,
 	VOXEL_AO_VERTEX_HEADER,
 	type VoxelAoTexture,
@@ -27,22 +27,47 @@ const STONE_BRICKS_TEXTURE_URL = '/materials/bricks_240/bricks_256x256.png';
 const STONE_BRICKS_SWATCH = '#8f8f8f';
 const STONE_BRICKS_TEXTURE_REPEAT = 1.0;
 const STONE_BRICKS_ANISOTROPY = 8;
+const STONE_BRICKS_PERFORMANCE_ANISOTROPY = 1;
 
 let cachedTexture: THREE.Texture | null = null;
+let cachedPerformanceTexture: THREE.Texture | null = null;
 
-function getStoneBricksTexture(): THREE.Texture {
-	if (cachedTexture) return cachedTexture;
-
-	const texture = new THREE.TextureLoader().load(STONE_BRICKS_TEXTURE_URL);
+function configureStoneBricksTexture(
+	texture: THREE.Texture,
+	performanceMode: boolean
+): THREE.Texture {
 	texture.colorSpace = THREE.SRGBColorSpace;
 	texture.wrapS = THREE.RepeatWrapping;
 	texture.wrapT = THREE.RepeatWrapping;
 	texture.magFilter = THREE.LinearFilter;
-	texture.minFilter = THREE.LinearMipmapLinearFilter;
-	texture.anisotropy = STONE_BRICKS_ANISOTROPY;
-	texture.generateMipmaps = true;
-	cachedTexture = texture;
+	texture.minFilter = performanceMode
+		? THREE.LinearFilter
+		: THREE.LinearMipmapLinearFilter;
+	texture.anisotropy = performanceMode
+		? STONE_BRICKS_PERFORMANCE_ANISOTROPY
+		: STONE_BRICKS_ANISOTROPY;
+	texture.generateMipmaps = !performanceMode;
 	return texture;
+}
+
+function getStoneBricksTexture(performanceMode: boolean): THREE.Texture {
+	if (performanceMode) {
+		if (!cachedPerformanceTexture) {
+			cachedPerformanceTexture = configureStoneBricksTexture(
+				new THREE.TextureLoader().load(STONE_BRICKS_TEXTURE_URL),
+				true
+			);
+		}
+		return cachedPerformanceTexture;
+	}
+
+	if (!cachedTexture) {
+		cachedTexture = configureStoneBricksTexture(
+			new THREE.TextureLoader().load(STONE_BRICKS_TEXTURE_URL),
+			false
+		);
+	}
+	return cachedTexture;
 }
 
 function stoneBricksShaderHeader(): string[] {
@@ -61,9 +86,9 @@ function stoneBricksBeginVertex(): string[] {
 	];
 }
 
-function stoneBricksFragmentHeader(): string[] {
+function stoneBricksFragmentHeader(performanceMode: boolean): string[] {
 	return [
-		...VOXEL_AO_FRAGMENT_HEADER,
+		...getVoxelAoFragmentHeader(performanceMode),
 		'varying vec3 vStoneBricksWorldPosition;',
 		'varying vec3 vStoneBricksWorldNormal;',
 		'uniform sampler2D stoneBricksMap;',
@@ -90,7 +115,8 @@ function stoneBricksColorFragment(): string[] {
 function installStoneBricksAoShader(
 	material: THREE.MeshStandardMaterial,
 	texture: THREE.Texture,
-	voxelAo: VoxelAoTexture
+	voxelAo: VoxelAoTexture,
+	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
@@ -105,7 +131,7 @@ function installStoneBricksAoShader(
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...stoneBricksFragmentHeader()].join('\n')
+			['#include <common>', ...stoneBricksFragmentHeader(performanceMode)].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
@@ -118,7 +144,8 @@ function installStoneBricksHighlightShader(
 	material: THREE.MeshStandardMaterial,
 	texture: THREE.Texture,
 	highlight: MovementHighlightTexture,
-	voxelAo: VoxelAoTexture
+	voxelAo: VoxelAoTexture,
+	performanceMode: boolean
 ): void {
 	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
 	const heightLevels = highlight.heightLevels;
@@ -159,7 +186,7 @@ function installStoneBricksHighlightShader(
 			'#include <common>',
 			[
 				'#include <common>',
-				...stoneBricksFragmentHeader(),
+				...stoneBricksFragmentHeader(performanceMode),
 				'uniform highp sampler3D movementHighlightMap;',
 				'uniform vec2 movementHighlightSize;',
 				'uniform float movementHighlightHeightLevels;',
@@ -212,8 +239,8 @@ function installStoneBricksHighlightShader(
 export const createStoneBricks240Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { acceptsMovementHighlight, movementHighlight, voxelAo } = params;
-	const texture = getStoneBricksTexture();
+	const { acceptsMovementHighlight, movementHighlight, voxelAo, performanceMode = false } = params;
+	const texture = getStoneBricksTexture(performanceMode);
 	const material = new THREE.MeshStandardMaterial({
 		roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
 		metalness: THREE_D_TERRAIN_MATERIAL.METALNESS,
@@ -221,9 +248,9 @@ export const createStoneBricks240Material: MaterialFactory = (
 	});
 
 	if (acceptsMovementHighlight && movementHighlight) {
-		installStoneBricksHighlightShader(material, texture, movementHighlight, voxelAo);
+		installStoneBricksHighlightShader(material, texture, movementHighlight, voxelAo, performanceMode);
 	} else {
-		installStoneBricksAoShader(material, texture, voxelAo);
+		installStoneBricksAoShader(material, texture, voxelAo, performanceMode);
 	}
 
 	return { material, castShadow: true, receiveShadow: true };

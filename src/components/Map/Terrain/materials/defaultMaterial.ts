@@ -18,8 +18,8 @@ import type {
 import {
 	applyVoxelAoPatch,
 	applyVoxelAoUniforms,
+	getVoxelAoFragmentHeader,
 	VOXEL_AO_CALL,
-	VOXEL_AO_FRAGMENT_HEADER,
 	VOXEL_AO_VERTEX_BEGIN,
 	VOXEL_AO_VERTEX_HEADER,
 	type VoxelAoTexture,
@@ -35,10 +35,11 @@ import {
  */
 function installDefaultAoShader(
 	material: THREE.MeshStandardMaterial,
-	voxelAo: VoxelAoTexture
+	voxelAo: VoxelAoTexture,
+	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
-		applyVoxelAoPatch(shader, voxelAo);
+		applyVoxelAoPatch(shader, voxelAo, performanceMode);
 	};
 }
 
@@ -57,7 +58,8 @@ function installDefaultAoShader(
 function installDefaultHighlightShader(
 	material: THREE.MeshStandardMaterial,
 	highlight: MovementHighlightTexture,
-	voxelAo: VoxelAoTexture
+	voxelAo: VoxelAoTexture,
+	performanceMode: boolean
 ): void {
 	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
 	const heightLevels = highlight.heightLevels;
@@ -99,7 +101,7 @@ function installDefaultHighlightShader(
 			'#include <common>',
 			[
 				'#include <common>',
-				...VOXEL_AO_FRAGMENT_HEADER,
+				...getVoxelAoFragmentHeader(performanceMode),
 				'uniform highp sampler3D movementHighlightMap;',
 				'uniform vec2 movementHighlightSize;',
 				'uniform float movementHighlightHeightLevels;',
@@ -154,7 +156,7 @@ function installDefaultHighlightShader(
 // ---------------------------------------------------------------------------
 
 export const createDefaultMaterial: MaterialFactory = (params: MaterialFactoryParams): MaterialFactoryResult => {
-	const { acceptsMovementHighlight, movementHighlight, voxelAo } = params;
+	const { acceptsMovementHighlight, movementHighlight, voxelAo, performanceMode = false } = params;
 
 	const material = new THREE.MeshStandardMaterial({
 		roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
@@ -163,9 +165,9 @@ export const createDefaultMaterial: MaterialFactory = (params: MaterialFactoryPa
 	});
 
 	if (acceptsMovementHighlight && movementHighlight) {
-		installDefaultHighlightShader(material, movementHighlight, voxelAo);
+		installDefaultHighlightShader(material, movementHighlight, voxelAo, performanceMode);
 	} else {
-		installDefaultAoShader(material, voxelAo);
+		installDefaultAoShader(material, voxelAo, performanceMode);
 	}
 	// customProgramCacheKey is set by the registry wrapper.
 
