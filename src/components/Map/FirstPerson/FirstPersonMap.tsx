@@ -622,7 +622,9 @@ export default function FirstPersonMap({
 
 					const rulesPosition = firstPersonCapsuleToRulesPosition(
 						currentTerrain,
-						state
+						state,
+						index,
+						currentActor.actor.CanFly ?? false
 					);
 					const settled = isFirstPersonCapsuleSettled(
 						state,
@@ -711,7 +713,9 @@ export default function FirstPersonMap({
 		const authoritativeState = createFirstPersonCapsuleState(actor, terrain);
 		const authoritativeRules = firstPersonCapsuleToRulesPosition(
 			terrain,
-			authoritativeState
+			authoritativeState,
+			voxelTerrainIndex,
+			actor.actor.CanFly ?? false
 		);
 		if (!capsuleStateRef.current || !capsuleInitializedRef.current) {
 			capsuleStateRef.current = authoritativeState;
@@ -719,7 +723,9 @@ export default function FirstPersonMap({
 		}
 		const currentRules = firstPersonCapsuleToRulesPosition(
 			terrain,
-			capsuleStateRef.current
+			capsuleStateRef.current,
+			voxelTerrainIndex,
+			actor.actor.CanFly ?? false
 		);
 		const sameTile =
 			capsuleInitializedRef.current &&

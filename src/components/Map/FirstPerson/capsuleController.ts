@@ -859,14 +859,52 @@ export function worldPositionToRulesPosition(
 
 export function firstPersonCapsuleToRulesPosition(
 	terrain: VoxelTerrain,
-	state: FirstPersonCapsuleState
+	state: FirstPersonCapsuleState,
+	index?: VoxelTerrainIndex | null,
+	canFly = false
 ): Position {
-	return worldPositionToRulesPosition(
-		terrain,
-		state.position.x,
-		state.position.y,
-		state.position.z
-	);
+	const offsetX = (terrain.Width - 1) / 2;
+	const offsetZ = (terrain.Length - 1) / 2;
+	const tileX = Math.round(clamp(state.position.x + offsetX, 0, terrain.Width - 1));
+	const tileZ = Math.round(clamp(state.position.z + offsetZ, 0, terrain.Length - 1));
+	const h_raw =
+		state.position.y -
+		ACTOR_TOKEN_PLACEMENT.TERRAIN_WORLD_Y_OFFSET -
+		ACTOR_TOKEN_PLACEMENT.BASE_Y_OFFSET;
+	const H_FLOOR_EPSILON = 0.1;
+	let h_floored = Math.floor(h_raw + H_FLOOR_EPSILON);
+
+	// When a terrain index is available and the actor is standing (not flying),
+	// clamp h_floored to the highest exposed surface at this tile whose rules
+	// height does not exceed h_floored.
+	//
+	// Why this is needed: H_FLOOR_EPSILON = 0.1 is intentionally larger than the
+	// systematic BASE_Y_OFFSET undershoot (~0.01) so that integer-valued exact
+	// surface heights (e.g. T = 5.0) round up correctly. But if the capsule
+	// briefly rests on a *covered* voxel at tile-boundary geometry -- where the
+	// voxel is geometrically reachable but not listed as an exposed surface for
+	// this tile -- h_raw can land in the range (T - 0.11, T - 0.01), causing
+	// the epsilon to push it over T and produce a rules height that the validator
+	// has no surface for. Snapping h down to the highest valid surface at this
+	// tile matches exactly what the validator's getStandingSurfaceHeight accepts.
+	if (index && !canFly) {
+		const exactSurfaces = index.allSurfaceHeights.get(`${tileX},${tileZ}`) ?? [];
+		const hasMatch = exactSurfaces.some(s => Math.floor(s) === h_floored);
+		if (!hasMatch && exactSurfaces.length > 0) {
+			let bestH = -1;
+			for (const s of exactSurfaces) {
+				const sh = Math.floor(s);
+				if (sh <= h_floored && sh > bestH) bestH = sh;
+			}
+			if (bestH >= 0) h_floored = bestH;
+		}
+	}
+
+	return {
+		x: tileX,
+		y: tileZ,
+		h: h_floored,
+	};
 }
 
 export function isFirstPersonCapsuleSettled(

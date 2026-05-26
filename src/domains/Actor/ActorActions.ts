@@ -118,7 +118,8 @@ export const ActorActions = {
 		if (
 			isSpawnedActor &&
 			"CanFly" in params.updates &&
-			previousCanFly !== actor.CanFly &&
+			!previousCanFly &&
+			actor.CanFly &&
 			getActiveVoxelTerrain(campaign)
 		) {
 			VoxelTerrainActions.repairActors(context);
