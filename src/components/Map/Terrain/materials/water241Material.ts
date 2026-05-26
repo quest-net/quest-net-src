@@ -55,6 +55,8 @@ const WATER_DARK_BLUE:  readonly [number, number, number] = [0.00, 0.20, 0.40];
 const WATER_BODY_ALPHA = 0.86;
 /** Alpha at foam crests (top faces only). Lower than body = foam reads translucent. */
 const WATER_FOAM_ALPHA = 0.75;
+/** Simple underside alpha. Bottom faces skip detailed foam/ripple work. */
+const WATER_BOTTOM_ALPHA = 0.48;
 
 /** Surface ripple amplitude in world units (top-face vertex displacement). */
 const WATER_RIPPLE_AMPLITUDE = 0.115;
@@ -157,19 +159,25 @@ function waterCommonFragmentHeader(): string[] {
 }
 
 function waterColorFragment(): string[] {
-	// Replaces #include <color_fragment>. Top/bottom faces show the full
-	// foam-over-blue look; side faces show only the falling blue tracery.
+	// Replaces #include <color_fragment>. Top faces show the full foam-over-blue
+	// look; side faces show only the falling blue tracery. Bottom faces are a
+	// cheap translucent blue because they are rarely inspected and do not need
+	// the Voronoi detail.
 	// Each branch computes exactly what it needs -- nothing is computed
 	// then discarded.
 	return [
 		'vec3 wNrm = normalize(vWaterWorldNormal);',
-		'bool wIsHorizontalSurface = abs(wNrm.y) > 0.5;',
+		'bool wIsTopSurface = wNrm.y > 0.5;',
+		'bool wIsBottomSurface = wNrm.y < -0.5;',
 		'float wRippleMask = 0.0;',
 		'float wFoamMask = 0.0;',
 		'float wFoamHalo = 0.0;',
-		'if (wIsHorizontalSurface) {',
-		// Top / bottom: omnidirectional world-XZ pattern with time-driven warp
-		// on both UV axes (matches the source Shadertoy's adapted to world space).
+		'if (wIsBottomSurface) {',
+		`	diffuseColor = vec4(W_MAIN * ${VOXEL_AO_CALL}, ${WATER_BOTTOM_ALPHA.toFixed(3)});`,
+		'} else {',
+		'if (wIsTopSurface) {',
+		// Top: omnidirectional world-XZ pattern with time-driven warp on both
+		// UV axes (matches the source Shadertoy's adapted to world space).
 		`	vec2 wUvFoam   = vWaterWorldPosition.xz / ${WATER_FOAM_CELL_SIZE.toFixed(3)};`,
 		`	vec2 wUvRipple = vWaterWorldPosition.xz / ${WATER_RIPPLE_CELL_SIZE.toFixed(3)};`,
 		'	vec2 wUvFoamD = wUvFoam + vec2(',
@@ -217,6 +225,7 @@ function waterColorFragment(): string[] {
 		`wColor *= ${VOXEL_AO_CALL};`,
 		`float wAlpha = mix(${WATER_BODY_ALPHA.toFixed(3)}, ${WATER_FOAM_ALPHA.toFixed(3)}, wFoamMask);`,
 		'diffuseColor = vec4(wColor, wAlpha);',
+		'}',
 	];
 }
 
@@ -406,7 +415,7 @@ const water241Material: TerrainMaterial = {
 	// so the surface still renders where it meets the bank/floor.
 	occlusionGroup: 'water_241',
 	// Bump on shader-source change to invalidate the program cache.
-	shaderVersion: 6,
+	shaderVersion: 7,
 	geometry: {
 		vertexColors: false,
 		// Preserve voxel faces so terrain resolution controls the water mesh

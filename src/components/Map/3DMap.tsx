@@ -34,6 +34,7 @@ import { useLiveActorPoseOverrides } from './hooks/useLiveActorPoseOverrides';
 import { PING_DURATION_MS } from '../../domains/Ping/Ping';
 import { usePeerTracking } from '../../hooks/usePeerTracking';
 import { getShadowCameraBounds } from './shadowCameraBounds';
+import { createThreeDMapPostProcessing } from './mapPostProcessing';
 import {
 	applyVoxelTerrainBackground,
 	applyVoxelTerrainDirectionalLight,
@@ -370,6 +371,7 @@ export default function ThreeDMap({
 		renderer.setPixelRatio(Math.min(window.devicePixelRatio, THREE_D_MAP_RENDERER.MAX_PIXEL_RATIO));
 		renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
 		renderer.outputColorSpace = THREE.SRGBColorSpace;
+		renderer.info.autoReset = false;
 		renderer.shadowMap.enabled = true;
 		renderer.shadowMap.autoUpdate = false;
 		renderer.shadowMap.needsUpdate = true;
@@ -447,6 +449,8 @@ export default function ThreeDMap({
 		controls.update();
 		controlsRef.current = controls;
 
+		const postProcessing = createThreeDMapPostProcessing(renderer, scene, camera);
+
 		const movementHighlight = createMovementHighlightTexture(1, 1, 1);
 		const resources: ThreeDSceneResources = {
 			scene,
@@ -509,7 +513,8 @@ export default function ThreeDMap({
 			}
 			controls.update();
 			stats.begin();
-			renderer.render(scene, camera);
+			renderer.info.reset();
+			postProcessing.render();
 			if (triangleStats.style.display !== 'none') {
 				triangleStats.textContent = `TRIS ${renderer.info.render.triangles.toLocaleString()}`;
 			}
@@ -528,7 +533,7 @@ export default function ThreeDMap({
 			camera.top = halfSize;
 			camera.bottom = -halfSize;
 			camera.updateProjectionMatrix();
-			renderer.setSize(w, h);
+			postProcessing.setSize(w, h);
 		};
 
 		const ro = new ResizeObserver(updateCameraProjection);
@@ -564,6 +569,7 @@ export default function ThreeDMap({
 				resources.movementHighlight.texture.dispose();
 			}
 			sceneResourcesRef.current = null;
+			postProcessing.dispose();
 			renderer.dispose();
 			rendererRef.current = null;
 			controlsRef.current = null;

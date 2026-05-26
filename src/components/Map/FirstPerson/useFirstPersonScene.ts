@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import Stats from "three/examples/jsm/libs/stats.module.js";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
+import { createThreeDMapPostProcessing } from "../mapPostProcessing";
 import {
 	THREE_D_MAP_LIGHTING,
 	THREE_D_MAP_RENDERER,
@@ -68,6 +69,7 @@ export function useFirstPersonScene(
 		);
 		renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
 		renderer.outputColorSpace = THREE.SRGBColorSpace;
+		renderer.info.autoReset = false;
 		renderer.shadowMap.enabled = true;
 		renderer.shadowMap.autoUpdate = false;
 		renderer.shadowMap.needsUpdate = true;
@@ -136,6 +138,8 @@ export function useFirstPersonScene(
 		scene.add(dirLight.target);
 		directionalLightRef.current = dirLight;
 
+		const postProcessing = createThreeDMapPostProcessing(renderer, scene, camera);
+
 		const resources: ThreeDSceneResources = {
 			scene,
 			camera,
@@ -191,7 +195,8 @@ export function useFirstPersonScene(
 				callback(now);
 			}
 			stats.begin();
-			renderer.render(scene, camera);
+			renderer.info.reset();
+			postProcessing.render();
 			if (triangleStats.style.display !== "none") {
 				triangleStats.textContent = `TRIS ${renderer.info.render.triangles.toLocaleString()}`;
 			}
@@ -205,7 +210,7 @@ export function useFirstPersonScene(
 			if (w === 0 || h === 0) return;
 			camera.aspect = w / h;
 			camera.updateProjectionMatrix();
-			renderer.setSize(w, h);
+			postProcessing.setSize(w, h);
 		};
 
 		const releaseControl = () => {
@@ -286,6 +291,7 @@ export function useFirstPersonScene(
 			resources.movementHighlight.texture.dispose();
 			cameraRef.current = null;
 			directionalLightRef.current = null;
+			postProcessing.dispose();
 			renderer.dispose();
 			rendererRef.current = null;
 			if (renderer.domElement.parentElement === container) {
