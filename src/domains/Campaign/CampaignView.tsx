@@ -64,7 +64,7 @@ export function CampaignView() {
 			// we leave-and-rejoin the room ourselves.
 			checkIntervalMs: 10000,
 			reconnectDelayMs: 8000,
-			peerlessReconnectDelayMs: isDMRoute ? 30000 : undefined,
+			peerlessReconnectDelayMs: isDMRoute ? 30000 : 20000,
 			// maxAttempts is Infinity by default - unlimited retries!
 		},
 		onReconnect
