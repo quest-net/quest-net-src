@@ -36,9 +36,11 @@ import type {
 } from './materialTypes';
 
 import defaultMaterial from './defaultMaterial';
+import flesh250Material from './flesh250Material';
 import glass246Material from './glass246Material';
 import gold247Material from './gold247Material';
 import grass242Material from './grass242Material';
+import ironBars249Material from './ironBars249Material';
 import lava245Material from './lava245Material';
 import light243Material from './light243Material';
 import silver248Material from './silver248Material';
@@ -66,6 +68,8 @@ export const TERRAIN_MATERIALS: readonly TerrainMaterial[] = [
 	glass246Material,
 	gold247Material,
 	silver248Material,
+	ironBars249Material,
+	flesh250Material,
 ];
 
 // ---------------------------------------------------------------------------
