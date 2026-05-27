@@ -8,6 +8,7 @@ export interface WikiSection {
 	title: string;
 	body: ReactNode;
 	order?: number;
+	level?: number;
 }
 
 export interface WikiPage {

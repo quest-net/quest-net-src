@@ -36,9 +36,15 @@ export function WikiArticleRail({ visiblePage }: WikiArticleRailProps) {
 											block: "start",
 										})
 									}
-									className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors hover:bg-base-200"
+									className={`flex w-full items-center gap-3 rounded-md py-2 text-left transition-colors hover:bg-base-200 ${
+										(section.level ?? 0) > 0 ? "px-3 pl-8 text-xs" : "px-3"
+									}`}
 								>
-									<span className={`h-2 w-2 rounded-full ${categoryStyle.tintClass}`} />
+									<span
+										className={`rounded-full ${categoryStyle.tintClass} ${
+											(section.level ?? 0) > 0 ? "h-1.5 w-1.5" : "h-2 w-2"
+										}`}
+									/>
 									<span className="font-mono text-xs opacity-50">
 										{String(index + 1).padStart(2, "0")}
 									</span>

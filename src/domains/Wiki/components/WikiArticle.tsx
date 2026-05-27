@@ -65,15 +65,25 @@ export function WikiArticle({ pageExists, visiblePage }: WikiArticleProps) {
 					<section
 						key={section.id}
 						id={section.id}
-						className={`scroll-mt-24 border-l-4 px-5 py-7 sm:px-7 ${categoryStyle.sectionClass}`}
+						className={`scroll-mt-24 border-l-4 px-5 py-7 sm:px-7 ${
+							(section.level ?? 0) > 0
+								? "ml-4 bg-base-200/35 sm:ml-7"
+								: ""
+						} ${categoryStyle.sectionClass}`}
 					>
 						<div className="mb-3 flex items-center gap-3">
 							<span className="font-mono text-sm font-bold opacity-50">
 								{String(index + 1).padStart(2, "0")}
 							</span>
-							<h2 className="text-2xl font-black">{section.title}</h2>
+							<h2
+								className={`font-black ${
+									(section.level ?? 0) > 0 ? "text-xl" : "text-2xl"
+								}`}
+							>
+								{section.title}
+							</h2>
 						</div>
-						<div className="max-w-4xl text-base leading-8 opacity-90">
+						<div className="max-w-4xl text-base leading-8 opacity-90 [&_code]:rounded [&_code]:bg-base-content [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm [&_code]:font-semibold [&_code]:text-base-100">
 							{section.body}
 						</div>
 					</section>
