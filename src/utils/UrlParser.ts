@@ -3,6 +3,22 @@
 const GUID_LENGTH = 36;
 
 /**
+ * Route segments that are reserved by the app router and must not be used as
+ * room codes. If a room code collides with one of these, navigating to it
+ * loads the wrong page instead of CampaignView.
+ *
+ * Keep in sync with the static <Route> entries in App.tsx.
+ */
+export const RESERVED_ROUTE_KEYWORDS = ["campaigns", "settings", "wiki"] as const;
+
+/**
+ * Returns true if the given string is a reserved app route keyword.
+ */
+export function isReservedRouteKeyword(code: string): boolean {
+	return (RESERVED_ROUTE_KEYWORDS as readonly string[]).includes(code.toLowerCase());
+}
+
+/**
  * Gets the URL identifier from hash (room code or campaign ID)
  * Extracts only the first segment, ignoring nested routes
  * Examples:

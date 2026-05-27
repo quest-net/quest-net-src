@@ -42,13 +42,22 @@ export function Home() {
 				/>
 			</div>
 			<div className="fixed top-3 right-3 z-50">
-				<button
-					onClick={() => navigate("/settings")}
-					className="btn btn-md btn- gap-2 shadow-md"
-				>
-					<span className="icon-[mdi--cog] w-4 h-4" />
-					Settings
-				</button>
+				<div className="flex flex-wrap justify-end gap-2">
+					<button
+						onClick={() => navigate("/wiki/")}
+						className="btn btn-md btn-primary gap-2 shadow-md"
+					>
+						<span className="icon-[mdi--book-open-page-variant] w-4 h-4" />
+						Wiki
+					</button>
+					<button
+						onClick={() => navigate("/settings")}
+						className="btn btn-md btn-neutral gap-2 shadow-md"
+					>
+						<span className="icon-[mdi--cog] w-4 h-4" />
+						Settings
+					</button>
+				</div>
 			</div>
 			{/* Vertically Centered Content */}
 			<div className="relative flex h-full flex-col items-center justify-center">

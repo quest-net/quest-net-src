@@ -124,3 +124,22 @@ body {
 .animate-slide-in {
 	animation: slide-in 0.3s ease-out;
 }
+
+.wiki-halftone {
+	position: relative;
+	overflow: hidden;
+}
+
+.wiki-halftone > :not(svg) {
+	position: relative;
+	z-index: 1;
+}
+
+.wiki-halftone > svg {
+	position: absolute;
+	z-index: 0;
+}
+
+[data-theme="dark"] .wiki-halftone > svg {
+	opacity: 0.14;
+}

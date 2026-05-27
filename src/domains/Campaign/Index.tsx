@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 import CircularText from "../../components/CircularText/CircularText";
 import PixelBlast from "../../components/PixelBlast/PixelBlast";
 import { useThemeColors } from "../../utils/ThemeUtils";
-import { isGUID } from "../../utils/UrlParser";
+import { isGUID, isReservedRouteKeyword } from "../../utils/UrlParser";
 
 export function CampaignIndex() {
 	const context = useQuestContext();
@@ -79,6 +79,10 @@ export function CampaignIndex() {
 				alert("Room code can only contain lowercase letters, numbers, and hyphens");
 				return;
 			}
+			if (isReservedRouteKeyword(roomCode)) {
+				alert(`"${roomCode}" is a reserved app route and cannot be used as a room code`);
+				return;
+			}
 			// Check for duplicates
 			if (context.Campaigns.some(c => c.RoomCode === roomCode)) {
 				alert("This room code is already in use");
@@ -105,6 +109,11 @@ export function CampaignIndex() {
 	const handleJoinCampaign = () => {
 		if (!joinRoomCode.trim()) {
 			alert("Please enter a room code");
+			return;
+		}
+
+		if (isReservedRouteKeyword(joinRoomCode)) {
+			alert(`"${joinRoomCode.toLowerCase()}" is not a valid room code`);
 			return;
 		}
 
@@ -145,6 +154,11 @@ export function CampaignIndex() {
 
 		if (!/^[a-z0-9-]+$/.test(roomCode)) {
 			alert("Room code can only contain lowercase letters, numbers, and hyphens");
+			return;
+		}
+
+		if (isReservedRouteKeyword(roomCode)) {
+			alert(`"${roomCode}" is a reserved app route and cannot be used as a room code`);
 			return;
 		}
 

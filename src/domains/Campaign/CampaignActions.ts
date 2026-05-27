@@ -1,7 +1,7 @@
 import { Context } from "../Context/Context";
 import { Campaign } from "./Campaign";
 import { CampaignInfo } from "./CampaignInfo";
-import { getUrlIdentifier } from "../../utils/UrlParser";
+import { getUrlIdentifier, isReservedRouteKeyword } from "../../utils/UrlParser";
 import { ContextActions } from "../Context/ContextActions";
 import { CampaignSettingActions } from "../CampaignSetting/CampaignSettingActions";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
@@ -96,6 +96,12 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 		LogHead: 0,
 		Settings: CampaignSettingActions.createDefault(),
 	};
+}
+
+function assertUsableRoomCode(roomCode?: string): void {
+	if (roomCode && isReservedRouteKeyword(roomCode)) {
+		throw new Error(`"${roomCode}" is a reserved app route and cannot be used as a room code`);
+	}
 }
 
 
@@ -240,6 +246,7 @@ export const CampaignActions = {
 		params: { name: string; roomCode?: string },
 		context: Context
 	): Promise<CampaignInfo> {
+		assertUsableRoomCode(params.roomCode);
 		const campaign = createBlankCampaign(params.name, params.roomCode);
 
 		await CampaignLoadingService.saveCampaign(campaign);
@@ -353,6 +360,7 @@ export const CampaignActions = {
 		params: { campaignId: string; updates: Partial<Campaign> },
 		context: Context
 	): Promise<void> {
+		assertUsableRoomCode(params.updates.RoomCode);
 		const info = context.Campaigns.find((c) => c.Id === params.campaignId);
 
 		if (!info) {

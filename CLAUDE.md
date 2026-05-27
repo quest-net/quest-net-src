@@ -1,6 +1,6 @@
 # Quest-Net
 
-Quest-Net is a real-time collaborative TTRPG (tabletop role-playing game) manager built with React, TypeScript, and Vite. It enables a DM and players to connect peer-to-peer via Trystero (WebRTC/MQTT) and run game sessions with an isometric map, character management, combat, dice rolling, and more.
+Quest-Net is a real-time collaborative TTRPG (tabletop role-playing game) manager built with React, TypeScript, and Vite. It enables a DM and players to connect peer-to-peer via Trystero (WebRTC/Nostr) and run game sessions with an isometric map, character management, combat, dice rolling, and more.
 
 ## Note for Claude
 
@@ -8,15 +8,18 @@ The sandboxed Linux shell sees a stale/truncated view of files in this repo (bas
 
 ## Tech Stack
 
-- **React 19** with **TypeScript** (strict mode) and **React Router** (HashRouter)
-- **Vite** for build/dev
-- **Tailwind CSS** + **DaisyUI** for styling
-- **Three.js** (`three@0.180`) for the voxel-based 3D map (`3DMap.tsx`). Core imports: `import * as THREE from 'three'`. Addon imports (OrbitControls etc.) use `three/examples/jsm/`, **not** `three/addons/` — the `addons/` directory does not physically exist in the installed version even though it appears in the package exports map. Example: `import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'`. Use `MeshStandardMaterial` (not `MeshLambertMaterial`) for voxels — Lambert is legacy and unreliable with InstancedMesh vertex colors in r180. **Do not use Unicode box-drawing characters (e.g. `──`) in comments inside `3DMap.tsx`** — they cause the Write tool to truncate the file silently; use plain ASCII `--` instead.
-- **three-mesh-bvh** for accelerated raycasting over voxel geometry
-- **Trystero** for peer-to-peer networking (MQTT strategy, app ID `'quest-net'`)
+- **React 19** with **TypeScript** (strict mode) and **React Router v7** (HashRouter)
+- **Vite v7** for build/dev
+- **Tailwind CSS v4** + **DaisyUI v5** for styling; configured via the `@tailwindcss/vite` Vite plugin (no PostCSS). Icons via `@iconify/tailwind4` + `@iconify/json`.
+- **Three.js** (`three@0.180`) for the voxel-based 3D map (`3DMap.tsx`). Core imports: `import * as THREE from 'three'`. Addon imports (OrbitControls etc.) use `three/examples/jsm/`, **not** `three/addons/` — the `addons/` directory does not physically exist in the installed version even though it appears in the package exports map. Example: `import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'`. Use `MeshStandardMaterial` (not `MeshLambertMaterial`) for voxels — Lambert is legacy and unreliable with InstancedMesh vertex colors in r180. **Do not use Unicode box-drawing characters (e.g. `--`) in comments inside `3DMap.tsx`** — they cause the Write tool to truncate the file silently; use plain ASCII `--` instead.
+- **postprocessing** for post-processing effects on the 3D map
+- **gsap** and **motion** for animations
+- **react-rnd** for resizable/draggable UI panels
+- **colorjs.io** for color manipulation
+- **Trystero** (`^0.24`) for peer-to-peer networking (Nostr strategy by default, app ID `'quest-net'`)
 - **fast-json-patch** for delta state synchronization
 - **mathjs** for dice/formula evaluation
-- **IndexedDB** for image binary storage; **localStorage** for app state
+- **IndexedDB** for image binary storage and large terrain voxel data; **localStorage** for app state (Context)
 
 ## Architecture Overview
 
@@ -26,7 +29,7 @@ The DM holds the canonical game state. Players send action requests over Tryster
 
 ### State Management
 
-A single `Context` object (User, Campaigns[], AppSettings) lives in React context and is persisted to localStorage. `triggerContextUpdate()` forces re-renders globally. Images are stored separately in IndexedDB and exchanged over dedicated Trystero channels.
+A single `Context` object lives in React context and is persisted to localStorage. It holds: `User`, `Campaigns: CampaignInfo[]` (lightweight metadata only — full campaign payloads live in IndexedDB), `ActiveCampaign: Campaign | null` (the currently open campaign, unpacked from IndexedDB), `AppSettings: Record<string, string>`, `version`, `IsOptimistic?`, and `SecretModes?`. `triggerContextUpdate()` forces re-renders globally. Images are stored separately in IndexedDB and exchanged over dedicated Trystero channels.
 
 ### Action System (Command Pattern)
 
@@ -34,11 +37,11 @@ All state mutations go through `ACTION_REGISTRY` — a map of `"domain:action"` 
 
 ### State Sync
 
-`StateSync` broadcasts campaign state to peers using delta patches (fast-json-patch). A full-state fallback fires periodically or on desync detection. The DM's secret `Campaign.Id` is replaced with the public `RoomCode` before broadcast to players.
+`StateSync` broadcasts campaign state to peers using delta patches (fast-json-patch) with compression via `StateUpdateCompression`. A full-state fallback fires periodically or on desync detection. The DM's secret `Campaign.Id` is replaced with the public `RoomCode` before broadcast to players.
 
 ### Migration System
 
-Versioned migrations in `src/updates/` transform saved Context objects across schema changes. On migration failure, backups are written to localStorage. Legacy v1 save imports are also supported.
+Versioned migrations in `src/migrations/` transform saved Context objects across schema changes. On migration failure, backups are written to localStorage.
 
 ## Project Structure
 
@@ -48,49 +51,70 @@ src/
 │   ├── Form/           # FormWrapper, FormContext (CRUD forms)
 │   ├── IndexView/      # Paginated table/list with search, folders, tags
 │   ├── CollectionView/ # Grid/list display for items, skills, etc.
-│   ├── Map/            # Three.js 3D voxel map (3DMap, actor/movement/sticker/ping layers)
+│   ├── Map/            # Three.js 3D voxel map (3DMap, layer subdirs, terrain, first-person)
+│   ├── Dice/           # Dice roller UI
+│   ├── StatBar/        # Stat bar display
+│   ├── ActionBubbles/  # Combat action bubble overlay
+│   ├── AttributesSection/ # Actor attributes display
 │   └── inputs/         # Domain-specific inputs (ImagePicker, TagEditor, etc.)
 ├── domains/            # Feature domains (model + actions + UI per domain)
-├── services/           # ActionService, StateSync, ImageService, SoundEffectService
-├── hooks/              # usePeerTracking, useAutoReconnect, etc.
-├── utils/              # DiceUtils, FolderUtils, TerrainUtils, LocalStorageUtilities, etc.
-├── updates/            # Version migration scripts
-└── legacy/             # V1 import support
+├── services/           # Actions/, StateSync, ImageService, SoundEffectService,
+│                       #   TerrainStorageService, ImageGenerationService, etc.
+├── hooks/              # usePeerTracking, useAutoReconnect, useRelayWatchdog
+├── utils/              # DiceUtils, FolderUtils, terrain/, Audio/, LocalStorageUtilities, etc.
+├── migrations/         # Version migration scripts
+├── data/               # Static data (defaultVoxelStamps.ts)
+└── App.tsx / index.tsx / version.ts
 ```
 
 ## Domains
 
 Each domain typically has a model file (`Domain.ts`), an actions file (`DomainActions.ts`), and optional UI components (Edit, Index, Display, Modal). Key domains include:
 
-- **Campaign** — Root container; holds roster, templates, game state, settings, logs
-- **Actor / Character / Entity** — Characters are player-controlled actors; Entities are NPCs/enemies. Both share the Actor base (stats, actions, inventory, equipment, skills, statuses, position)
-- **GameState** — Live session state: active characters/entities, combat state, scene, terrain, audio, calendar
-- **Item / Skill / Status** — Templates stored on the campaign; instances slotted onto actors
-- **VoxelTerrain** — 3D voxel grid (base64-encoded Uint32Array); each voxel stores x/y/z position and a palette color index. Supports configurable resolution (1–3 voxels per tactical unit). `Campaign.VoxelTerrains[]` holds all terrains; `GameState.VoxelTerrainId` points to the active one.
-- **Scene** — Environment and focus images for the current encounter
-- **Image** — Metadata in campaign, binary data in IndexedDB via ImageService
-- **Audio** — Background music and sound effects
-- **Log** — Categorized activity journal with visibility levels (dm/player/owner/all)
-- **CampaignSetting** — Configurable stat definitions, action definitions, calendar, rest rules, movement costs, shared inventories
-- **Combat** — Turn-based battle management (initiative, turn order)
-- **Calendar** — In-world date/time tracking
-- **Scenario** — Pre-built encounters
-- **Note** — Character-level private notes
-- **Room** — Trystero connection wrapper
-- **Context / User** — Global app state and current user session
+- **Campaign** — Root container; holds roster, templates, game state, settings, logs. `Campaign.Id` is the DM's private GUID; `Campaign.RoomCode` is the public join code (max 32 chars).
+- **Actor / Character / Entity** — Characters are player-controlled actors; Entities are NPCs/enemies. Both extend the Actor base (stats, actions, attributes, inventory, equipment, skills, statuses, position, color, size). `Character` additionally has `Notes: Note[]` and `CritMessage?`.
+- **GameState** — Live session state: active characters/entities, combat state, scene, terrain IDs (`TerrainId`, `VoxelTerrainId`), audio list, volume, calendar day, remaining short rests.
+- **Item / Skill / Status** — Templates stored on the campaign; instances slotted onto actors.
+- **VoxelTerrain** — 3D voxel grid encoded as a **base64-encoded Sparse Voxel Octree (SVO)**; voxel positions are implicit in the octree structure and colors are stored as a parallel byte stream. Supports configurable resolution (1–3 voxels per tactical unit). Has `Lighting` and `Background` properties. Large terrain voxel data is offloaded to IndexedDB via `TerrainStorageService`; the `Voxels` field may be a stub until hydrated. `Campaign.VoxelTerrains[]` holds all terrains; `GameState.VoxelTerrainId` points to the active one.
+- **Terrain** — UI wrapper (Edit/Index/Display) for creating and managing VoxelTerrains.
+- **Scene** — Environment and focus images for the current encounter.
+- **Image** — Metadata in campaign, binary data in IndexedDB via ImageService.
+- **Audio** — Background music and sound effects.
+- **Log** — Categorized activity journal with visibility levels (dm/player/owner/all).
+- **CampaignSetting** — Configurable stat definitions, action definitions, attribute definitions, initiative settings, calendar, rest rules, movement costs, shared inventories, terrain environment presets.
+- **Combat** — Turn-based battle management. `CombatState` tracks `currentRound`, `initiativeSide` ("party" | "enemies"), and `RoundCompleted[]`. Supports party mode (sides alternate) and individual mode (every actor in one order), configured via `InitiativeSettings`.
+- **Calendar** — In-world date/time tracking.
+- **Scenario** — Pre-built encounters.
+- **Note** — Character-level private notes (stored on `Character`, not as a standalone collection).
+- **Ping** — Ephemeral animated ping markers on the map.
+- **Sticker** — Emoji stickers placed on terrain surfaces.
+- **SharedInventory** — Shared inventory pools accessible by multiple actors.
+- **AppSetting** — User-facing app preferences (stored in `Context.AppSettings`).
+- **Room** — Trystero connection wrapper (`Room` type = `ReturnType<typeof joinRoom>`).
+- **Context / User** — Global app state and current user session.
 
 ## Key Components
 
 ### Map (`src/components/Map/`)
 
-3D voxel renderer built on Three.js. `3DMap.tsx` is the root component; it sets up an orthographic camera with isometric framing, OrbitControls (pan/zoom/rotate), PCFSoft shadows, and BVH-accelerated raycasting. Key sub-components:
+3D voxel renderer built on Three.js. `3DMap.tsx` is the root component; it sets up an orthographic camera with isometric framing, OrbitControls (pan/zoom/rotate), PCFSoft shadows, post-processing effects, and custom DDA raycasting (Amanatides & Woo algorithm — no external BVH library). Map state is provided by `MapStateProvider.tsx`. Key sub-directories:
 
-- **ThreeDActorLayer** — Renders actor standees (cutout images) with selection highlights and height-dragging for Z placement
-- **ThreeDMovementLayer** — Movement range highlighting via shader-patched MeshStandardMaterial, Dijkstra pathfinding for movement costs, raycasting for tile selection
-- **ThreeDStickerLayer** — Emoji stickers placed on terrain surfaces
-- **ThreeDPingLayer** — Animated ping markers
+- **Actors3D/** (`ThreeDActorLayer.tsx`) — Renders actor standees (cutout images) with selection highlights and height-dragging for Z placement.
+- **Movement3D/** (`ThreeDMovementLayer.tsx`) — Movement range highlighting via shader-patched MeshStandardMaterial, Dijkstra pathfinding for movement costs, raycasting for tile selection.
+- **Stickers3D/** (`ThreeDStickerLayer.tsx`) — Emoji stickers placed on terrain surfaces.
+- **Pings3D/** (`ThreeDPingLayer.tsx`) — Animated ping markers.
+- **Terrain/** — Voxel terrain geometry (`VoxelTerrainGeometryUtils.ts`, web worker `voxelGeometryWorker.ts`), named palette materials (one `MeshStandardMaterial` per special palette index: `stoneBricks240`, `water241`, `grass242`, `light243`, `wood244`, `lava245`, `glass246`, `gold247`, `silver248`, `ironBars249`, `flesh250`, plus `defaultMaterial`), and AO shader (`voxelAoShader.ts`).
+- **FirstPerson/** — First-person view mode with capsule controller and HUD.
 
-Supporting utilities: `VoxelTerrainGeometryUtils` (BufferGeometry + BVH building, face culling), `VoxelTerrainUtils` (surface height, resolution conversion), `VoxelDataUtils` (base64 encode/decode, binary search), `VoxelMovementUtilities` (Dijkstra with climbing costs), `TerrainPaletteUtils` (240-color OKLch palette), `threeDMapConstants` (camera, lighting, shadow, controls, and material tuning constants).
+Supporting files: `terrainEnvironment.ts` (apply lighting/background to scene), `shadowCameraBounds.ts`, `mapPostProcessing.ts`, `threeDMapConstants.ts` (camera, lighting, shadow, controls, and material tuning constants).
+
+Supporting utilities in `src/utils/terrain/`:
+- `data/` — `VoxelDataUtils` (SVO encode/decode), `VoxelSVOCodec` (SVO implementation), `VoxelTerrainUtils` (surface height, resolution), `VoxelTerrainIndex` (spatial index), `VoxelBitsetUtils`
+- `editor/` — `VoxelTerrainEditorUtils`, `VoxelStampUtils`, `VoxelTerrainSelectionUtils`
+- `import/` — `VoxImportUtils`
+- `movement/` — `VoxelMovementUtilities` (Dijkstra with climbing costs), `VoxelMovementAdjacency`
+- `palette/` — `TerrainPaletteUtils` (240-color OKLch palette)
+- `raycast/` — `VoxelRaycast` (Amanatides & Woo DDA, reads from occupancy bitset or `VoxelTerrainIndex`)
 
 ### FormWrapper (`src/components/Form/`)
 
@@ -106,17 +130,39 @@ Grid/list toggle for displaying rich items (with images, badges, descriptions, a
 
 ### Input Components (`src/components/inputs/`)
 
-Specialized editors: `ImagePicker`, `ActorPicker`, `TagEditor`, `StatDefinitionEditor`, `ActionDefinitionEditor`, `VoxelTerrainEditor`, `CalendarConfigEditor`, `RestoreRuleEditor`, `MovementSettingsEditor`, and others. `VoxelTerrainEditor` has two modes: **Normal** (tactical-tile paint/raise/lower/set via a 2D orthographic grid view) and **Sculpt** (voxel-level brush with shape, size, and depth range controls); supports 50-step undo history.
+Specialized editors: `ImagePicker`, `ImageUpload`, `ImageGenerator` (AI image generation), `ActorPicker`, `ObjectPicker`, `ImpersonationPicker`, `TagEditor`, `StatDefinitionEditor`, `StatCostEditor`, `StatOverridesEditor`, `ActionDefinitionEditor`, `ActionCostEditor`, `AttributeDefinitionEditor`, `AttributeEditor`, `InitiativeSettingsEditor`, `CalendarConfigEditor`, `VoxelTerrainEditor`, `MovementSettingsEditor`, `RestoreRuleEditor`, `SharedInventoriesEditor`, `SecretModeToggle`.
+
+`VoxelTerrainEditor` has two modes: **Normal** (tactical-tile paint/raise/lower/set via a 2D orthographic grid view) and **Sculpt** (voxel-level brush with shape, size, and depth range controls); supports 50-step undo history.
 
 ## Networking Details
 
-Trystero channels (max 12-byte names): `actionReq`, `stateSync`, `imgReq`, `imgData`, `imgUpload`, `imgCreated`. Room codes are max 32 characters; anything longer is treated as a DM GUID. See `README_trystero.md` and `src/DEVELOPMENT_NOTES.md` for constraints and implementation details.
+Trystero strategy: **Nostr** (root `trystero` package defaults to Nostr in 0.24+). App ID: `'quest-net'`. Room codes are max 32 characters; anything longer is treated as a DM GUID. Action name limit: **32 bytes** (increased from 12 in pre-0.23).
+
+Trystero channels: `actionReq`, `stateSync`, `imgReq`, `imgData`, `imgUpload`, `imgCreated`, `actorPose`, `userReq`, `userUpdate`.
+
+Initial peer identity is exchanged via the `onPeerHandshake` callback (passed to `joinRoom` in `CampaignView`). Runtime user updates flow through `userUpdate`; missing metadata is repaired via `userReq`.
+
+`useRelayWatchdog` (DM-only) works around a Trystero/Nostr bug where relay REQ subscriptions are lost on WebSocket reconnect. It monitors relay sockets via `getRelaySockets()` and triggers a `leave()` + `joinRoom()` recovery cycle when a socket closes unexpectedly.
+
+See `src/DEVELOPMENT_NOTES.md` for full networking constraints and implementation details.
+
+## Services (`src/services/`)
+
+- **Actions/** — `ActionRegistry.ts`, `ActionService.ts`, `ActionServiceProvider.tsx` — the action dispatch system
+- **StateSync.ts** — delta/full-state broadcast to peers
+- **ImageService.ts** — IndexedDB image storage and peer transfer
+- **ImageGenerationService.ts** + `imageGenerationProviders/` — AI image generation (Google Gemini Flash, OpenAI GPT-Image, Flux2Pro, Kling)
+- **TerrainStorageService.ts** — stores large voxel data blobs in IndexedDB separately from the campaign object
+- **ActorPoseService.ts** — live actor pose overrides (synced via `actorPose` channel)
+- **CampaignLoadingService.ts** — campaign load/save orchestration
+- **SoundEffectService.ts** — sound effect playback
 
 ## Build & Deploy
 
 ```bash
 npm run dev       # Local dev server (port 3000)
-npm run build     # tsc && vite build → build/
+npm run build     # tsc && vite build -> build/
+npm run preview   # Preview the production build locally
 npm run deploy    # GitHub Pages (master branch)
 npm run deploy:beta
 npm run deploy:2.0
@@ -128,5 +174,6 @@ npm run deploy:2.0
 - All state mutations flow through the action registry — never mutate campaign state directly in components
 - Role permissions are checked via `canPerformAction(user, actionKey)`
 - Images are always metadata-in-campaign, binary-in-IndexedDB
+- Large terrain voxel data is always stored in IndexedDB via `TerrainStorageService`; never embed large `Voxels` strings directly in the campaign object or localStorage
 - Tags double as folder paths for hierarchical organization (via FolderUtils)
 - Dice notation follows D&D conventions: `2d6`, `1d20+5`, `2d20kh1` (keep highest), etc.
