@@ -17,10 +17,10 @@ interface WikiSectionModule {
 const pageModules = import.meta.glob<WikiPageModule>(
 	["./**/*.tsx", "!./**/sections/*.tsx"],
 	{ eager: true }
-);
+) as Record<string, WikiPageModule>;
 const sectionModules = import.meta.glob<WikiSectionModule>("./**/sections/*.tsx", {
 	eager: true,
-});
+}) as Record<string, WikiSectionModule>;
 
 function toKebab(value: string): string {
 	return value
@@ -102,7 +102,7 @@ export const WIKI_PAGES: WikiPage[] = sortPages(
 		const definition = module.default;
 		const slug = definition.slug ?? derivePageSlug(path);
 		const sections = [
-			...(definition.sections ?? []).map((section, index) => ({
+			...(definition.sections ?? []).map((section: WikiSection, index: number) => ({
 				...section,
 				order: section.order ?? index,
 			})),
