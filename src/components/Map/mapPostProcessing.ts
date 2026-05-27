@@ -11,6 +11,7 @@ export interface ThreeDMapPostProcessing {
 	render: () => void;
 	setSize: (width: number, height: number) => void;
 	dispose: () => void;
+	setCamera: (camera: THREE.Camera) => void;
 }
 
 interface ThreeDMapPostProcessingOptions {
@@ -49,8 +50,8 @@ export function createThreeDMapPostProcessing(
 			: 0,
 	});
 
-	composer.addPass(new RenderPass(scene, camera));
-	composer.addPass(new EffectPass(
+	const renderPass = new RenderPass(scene, camera);
+	const effectPass = new EffectPass(
 		camera,
 		new BloomEffect({
 			intensity: bloom.intensity,
@@ -60,11 +61,17 @@ export function createThreeDMapPostProcessing(
 			radius: bloom.radius,
 			levels: bloom.levels,
 		})
-	));
+	);
+	composer.addPass(renderPass);
+	composer.addPass(effectPass);
 
 	return {
 		render: () => composer.render(),
 		setSize: (width, height) => composer.setSize(width, height),
 		dispose: () => composer.dispose(),
+		setCamera: (newCamera: THREE.Camera) => {
+			renderPass.mainCamera = newCamera;
+			effectPass.mainCamera = newCamera;
+		},
 	};
 }

@@ -8,6 +8,14 @@ export const THREE_D_MAP_RENDERER = {
 export const THREE_D_MAP_CAMERA = {
 	FRAMING_MULTIPLIER: 0.85,
 	DISTANCE_MULTIPLIER: 2.5,
+	PERSPECTIVE_FOV: 75,
+	// Perspective/freecam initial distance from target, as a multiple of halfSize.
+	// ~1/tan(FOV/2) so the terrain fills the viewport vertically at startup.
+	PERSPECTIVE_DISTANCE_MULTIPLIER: 1.3,
+} as const;
+
+export const THREE_D_MAP_FREECAM = {
+	MOVE_SPEED: 10,
 } as const;
 
 export const THREE_D_MAP_LIGHTING = {

@@ -2,7 +2,7 @@
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
-import ThreeDMap from "../../components/Map/3DMap";
+import ThreeDMap, { type CameraPreference } from "../../components/Map/3DMap";
 import FirstPersonMap from "../../components/Map/FirstPersonMap";
 import { useEffect, useRef, useState } from "react";
 import { MapStateProvider } from "../../components/Map/MapStateProvider";
@@ -49,6 +49,12 @@ export function Main() {
 	const isDM = isDmAccess();
 	const [mapViewMode, setMapViewMode] = useState<MapViewMode>("world");
 	const [xRayActors, setXRayActors] = useState(false);
+	const [cameraPreference, setCameraPreference] = useState<CameraPreference>(() => {
+		const saved = localStorage.getItem("quest-net:cameraPreference");
+		if (saved === "perspective") return "perspective";
+		if (saved === "freecam" && isDM) return "freecam";
+		return "ortho";
+	});
 	const [mapReady, setMapReady] = useState(false);
 
 	// Top tabs state (same for everyone)
@@ -180,6 +186,10 @@ export function Main() {
 		}
 	}, [firstPersonActorId, isDM, mapViewMode]);
 
+	useEffect(() => {
+		localStorage.setItem("quest-net:cameraPreference", cameraPreference);
+	}, [cameraPreference]);
+
 	// Reset map-ready flag whenever the active terrain changes so the loading
 	// screen re-appears during the WebGL init + shader compile for the new terrain.
 	const activeTerrainId = campaign.GameState.VoxelTerrainId;
@@ -239,6 +249,7 @@ export function Main() {
 							entities={campaign.GameState.Entities}
 							terrain={hydratedActiveTerrain}
 							xRayActors={isDM && xRayActors}
+							cameraPreference={cameraPreference}
 							onReady={() => setMapReady(true)}
 						/>
 					)}
@@ -250,29 +261,68 @@ export function Main() {
 							</span>
 						</div>
 					)}
-					{mapViewMode === "world" && (showFirstPersonButton || isDM) && (
-						<div className="absolute left-3 top-3 z-20 flex items-center gap-2">
-							{showFirstPersonButton && (
-								<div
-									className="tooltip tooltip-right"
-									data-tip="Enter first-person mode"
-								>
+					{mapViewMode === "world" && (
+						<div className="absolute left-3 top-3 z-20">
+							<div className="join shadow-sm">
+								{showFirstPersonButton && (
 									<button
-										className="btn btn-sm btn-square btn-neutral"
+										className="btn btn-sm btn-neutral join-item tooltip tooltip-right"
+										data-tip="First-person mode"
 										onClick={() => setMapViewMode("first-person")}
 										aria-label="Enter first-person mode"
 									>
 										<span className="icon-[mdi--camera-control] w-5 h-5" />
 									</button>
-								</div>
-							)}
-							{isDM && (
-								<div
-									className="tooltip tooltip-right"
-									data-tip={xRayActors ? "Disable actor X-Ray" : "Enable actor X-Ray"}
-								>
+								)}
+								<div className="dropdown dropdown-bottom">
 									<button
-										className={`btn btn-sm btn-square ${xRayActors ? "btn-primary" : "btn-neutral"}`}
+										tabIndex={0}
+										role="button"
+										className="btn btn-sm btn-neutral join-item"
+										aria-label="Camera mode"
+									>
+										<span className="icon-[mdi--camera] w-5 h-5" />
+										<span className="icon-[mdi--chevron-down] w-3 h-3 opacity-60" />
+									</button>
+									<ul
+										tabIndex={0}
+										className="dropdown-content menu bg-base-200 border border-base-300 rounded-box z-50 w-44 p-1 shadow-lg mt-1"
+									>
+										<li>
+											<button
+												className={cameraPreference === "ortho" ? "active" : ""}
+												onClick={() => setCameraPreference("ortho")}
+											>
+												<span className="icon-[mdi--cube-outline] w-4 h-4" />
+												Isometric
+											</button>
+										</li>
+										<li>
+											<button
+												className={cameraPreference === "perspective" ? "active" : ""}
+												onClick={() => setCameraPreference("perspective")}
+											>
+												<span className="icon-[mdi--axis-arrow] w-4 h-4" />
+												Perspective
+											</button>
+										</li>
+										{isDM && (
+											<li>
+												<button
+													className={cameraPreference === "freecam" ? "active" : ""}
+													onClick={() => setCameraPreference("freecam")}
+												>
+													<span className="icon-[mdi--camera-iris] w-4 h-4" />
+													Free camera
+												</button>
+											</li>
+										)}
+									</ul>
+								</div>
+								{isDM && (
+									<button
+										className={`btn btn-sm join-item tooltip tooltip-bottom ${xRayActors ? "btn-primary" : "btn-neutral"}`}
+										data-tip={xRayActors ? "Disable actor X-Ray" : "Actor X-Ray"}
 										onClick={() => setXRayActors((current) => !current)}
 										aria-label="Toggle actor X-Ray"
 										aria-pressed={xRayActors}
@@ -281,8 +331,8 @@ export function Main() {
 											className={`${xRayActors ? "icon-[mdi--account-search]" : "icon-[mdi--account-search-outline]"} w-5 h-5`}
 										/>
 									</button>
-								</div>
-							)}
+								)}
+							</div>
 						</div>
 					)}
 					<DiceRoller />

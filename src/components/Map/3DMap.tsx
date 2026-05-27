@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
 import type { Character } from '../../domains/Character/Character';
 import type { Entity } from '../../domains/Entity/Entity';
@@ -42,10 +43,12 @@ import {
 import {
 	THREE_D_MAP_CAMERA,
 	THREE_D_MAP_CONTROLS,
+	THREE_D_MAP_FREECAM,
 	THREE_D_MAP_LIGHTING,
 	THREE_D_MAP_RENDERER,
 	THREE_D_MAP_SHADOW,
 } from './threeDMapConstants';
+import type { ThreeDMapPostProcessing } from './mapPostProcessing';
 import {
 	createTerrainSignature,
 	useVoxelTerrainGeometryWorker,
@@ -60,11 +63,14 @@ import {
 	type VoxelAoTexture,
 } from './Terrain/materials';
 
+export type CameraPreference = 'ortho' | 'perspective' | 'freecam';
+
 interface ThreeDMapProps {
 	terrain?: VoxelTerrain | null;
 	characters?: Character[];
 	entities?: Entity[];
 	xRayActors?: boolean;
+	cameraPreference?: CameraPreference;
 	onReady?: () => void;
 }
 
@@ -120,6 +126,7 @@ export default function ThreeDMap({
 	characters = [],
 	entities = [],
 	xRayActors = false,
+	cameraPreference = 'ortho',
 	onReady,
 }: ThreeDMapProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -133,6 +140,13 @@ export default function ThreeDMap({
 	const statsRef = useRef<any>(null);
 	const triangleStatsRef = useRef<HTMLDivElement | null>(null);
 	const controlsRef = useRef<OrbitControls | null>(null);
+	const orthoCameraRef = useRef<THREE.OrthographicCamera | null>(null);
+	const perspCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+	const pointerLockControlsRef = useRef<PointerLockControls | null>(null);
+	const cameraPreferenceRef = useRef<CameraPreference>('ortho');
+	const freecamKeysRef = useRef({ w: false, a: false, s: false, d: false });
+	const postProcessingRef = useRef<ThreeDMapPostProcessing | null>(null);
+	const updateCameraProjectionRef = useRef<(() => void) | null>(null);
 	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
 	const terrainResourcesRef = useRef<TerrainRenderResources | null>(null);
 	const warmGeometryRef = useRef<THREE.BufferGeometry | null>(null);
@@ -419,7 +433,7 @@ export default function ThreeDMap({
 
 		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
 		const initialHalfSize = currentHalfSizeRef.current;
-		const camera = new THREE.OrthographicCamera(
+		const orthoCamera = new THREE.OrthographicCamera(
 			-initialHalfSize * aspect,
 			initialHalfSize * aspect,
 			initialHalfSize,
@@ -428,7 +442,19 @@ export default function ThreeDMap({
 			THREE_D_MAP_RENDERER.CAMERA_FAR
 		);
 		const camDist = initialHalfSize * THREE_D_MAP_CAMERA.DISTANCE_MULTIPLIER;
-		camera.position.set(camDist, camDist, camDist);
+		orthoCamera.position.set(camDist, camDist, camDist);
+		orthoCameraRef.current = orthoCamera;
+
+		const perspCamera = new THREE.PerspectiveCamera(
+			THREE_D_MAP_CAMERA.PERSPECTIVE_FOV,
+			aspect,
+			THREE_D_MAP_RENDERER.CAMERA_NEAR,
+			THREE_D_MAP_RENDERER.CAMERA_FAR
+		);
+		perspCamera.position.set(camDist, camDist, camDist);
+		perspCameraRef.current = perspCamera;
+
+		const camera = orthoCamera;
 
 		const hemi = new THREE.HemisphereLight(
 			THREE_D_MAP_LIGHTING.HEMISPHERE_SKY_COLOR,
@@ -461,9 +487,51 @@ export default function ThreeDMap({
 		controls.update();
 		controlsRef.current = controls;
 
+		const plc = new PointerLockControls(perspCamera, renderer.domElement);
+		pointerLockControlsRef.current = plc;
+
+		const onFreecamMouseDown = (e: MouseEvent) => {
+			if (cameraPreferenceRef.current === 'freecam' && e.button === 2) {
+				e.preventDefault();
+				plc.lock();
+			}
+		};
+		const onFreecamMouseUp = (e: MouseEvent) => {
+			if (cameraPreferenceRef.current === 'freecam' && e.button === 2) {
+				plc.unlock();
+			}
+		};
+		const onFreecamContextMenu = (e: Event) => {
+			if (cameraPreferenceRef.current === 'freecam') e.preventDefault();
+		};
+		renderer.domElement.addEventListener('mousedown', onFreecamMouseDown);
+		renderer.domElement.addEventListener('mouseup', onFreecamMouseUp);
+		renderer.domElement.addEventListener('contextmenu', onFreecamContextMenu);
+
+		const onFreecamKeyDown = (e: KeyboardEvent) => {
+			if (cameraPreferenceRef.current !== 'freecam') return;
+			switch (e.code) {
+				case 'KeyW': freecamKeysRef.current.w = true; break;
+				case 'KeyA': freecamKeysRef.current.a = true; break;
+				case 'KeyS': freecamKeysRef.current.s = true; break;
+				case 'KeyD': freecamKeysRef.current.d = true; break;
+			}
+		};
+		const onFreecamKeyUp = (e: KeyboardEvent) => {
+			switch (e.code) {
+				case 'KeyW': freecamKeysRef.current.w = false; break;
+				case 'KeyA': freecamKeysRef.current.a = false; break;
+				case 'KeyS': freecamKeysRef.current.s = false; break;
+				case 'KeyD': freecamKeysRef.current.d = false; break;
+			}
+		};
+		window.addEventListener('keydown', onFreecamKeyDown);
+		window.addEventListener('keyup', onFreecamKeyUp);
+
 		const postProcessing = createThreeDMapPostProcessing(renderer, scene, camera, {
 			performanceMode,
 		});
+		postProcessingRef.current = postProcessing;
 
 		const movementHighlight = createMovementHighlightTexture(1, 1, 1);
 		const resources: ThreeDSceneResources = {
@@ -519,14 +587,36 @@ export default function ThreeDMap({
 			setSceneResources(resources);
 		})();
 
+		// Pre-allocated vectors for freecam movement to avoid per-frame allocations.
+		const _freecamDir = new THREE.Vector3();
+		const _freecamRight = new THREE.Vector3();
+		const _worldUp = new THREE.Vector3(0, 1, 0);
+
 		let rafId = 0;
+		let lastFrameTime = performance.now();
 		const animate = () => {
 			rafId = requestAnimationFrame(animate);
 			const now = performance.now();
+			const delta = Math.min((now - lastFrameTime) / 1000, 0.1);
+			lastFrameTime = now;
 			for (const callback of resources.animationCallbacks) {
 				callback(now);
 			}
-			controls.update();
+			if (cameraPreferenceRef.current === 'freecam') {
+				if (plc.isLocked) {
+					const speed = THREE_D_MAP_FREECAM.MOVE_SPEED * delta;
+					const keys = freecamKeysRef.current;
+					// Move along the camera's true look direction (including vertical tilt).
+					perspCamera.getWorldDirection(_freecamDir);
+					_freecamRight.crossVectors(_freecamDir, _worldUp).normalize();
+					if (keys.w) perspCamera.position.addScaledVector(_freecamDir, speed);
+					if (keys.s) perspCamera.position.addScaledVector(_freecamDir, -speed);
+					if (keys.a) perspCamera.position.addScaledVector(_freecamRight, -speed);
+					if (keys.d) perspCamera.position.addScaledVector(_freecamRight, speed);
+				}
+			} else {
+				controls.update();
+			}
 			stats.begin();
 			renderer.info.reset();
 			postProcessing.render();
@@ -541,15 +631,22 @@ export default function ThreeDMap({
 			const w = container.clientWidth;
 			const h = container.clientHeight;
 			if (w === 0 || h === 0) return;
-			const halfSize = currentHalfSizeRef.current;
-			const a = w / h;
-			camera.left = -halfSize * a;
-			camera.right = halfSize * a;
-			camera.top = halfSize;
-			camera.bottom = -halfSize;
-			camera.updateProjectionMatrix();
+			const pref = cameraPreferenceRef.current;
+			if (pref === 'ortho') {
+				const halfSize = currentHalfSizeRef.current;
+				const a = w / h;
+				orthoCamera.left = -halfSize * a;
+				orthoCamera.right = halfSize * a;
+				orthoCamera.top = halfSize;
+				orthoCamera.bottom = -halfSize;
+				orthoCamera.updateProjectionMatrix();
+			} else {
+				perspCamera.aspect = w / h;
+				perspCamera.updateProjectionMatrix();
+			}
 			postProcessing.setSize(w, h);
 		};
+		updateCameraProjectionRef.current = updateCameraProjection;
 
 		const ro = new ResizeObserver(updateCameraProjection);
 		ro.observe(container);
@@ -557,15 +654,26 @@ export default function ThreeDMap({
 		return () => {
 			cancelled = true;
 			cameraStateRef.current = {
-				position: camera.position.clone(),
+				position: orthoCamera.position.clone(),
 				target: controls.target.clone(),
 				cursor: controls.cursor.clone(),
-				zoom: camera.zoom,
+				zoom: orthoCamera.zoom,
 			};
 			setSceneResources(null);
 			cancelAnimationFrame(rafId);
 			ro.disconnect();
 			controls.dispose();
+			plc.dispose();
+			renderer.domElement.removeEventListener('mousedown', onFreecamMouseDown);
+			renderer.domElement.removeEventListener('mouseup', onFreecamMouseUp);
+			renderer.domElement.removeEventListener('contextmenu', onFreecamContextMenu);
+			window.removeEventListener('keydown', onFreecamKeyDown);
+			window.removeEventListener('keyup', onFreecamKeyUp);
+			postProcessingRef.current = null;
+			updateCameraProjectionRef.current = null;
+			orthoCameraRef.current = null;
+			perspCameraRef.current = null;
+			pointerLockControlsRef.current = null;
 			// Clean up any warm meshes still in the scene (compileAsync may not have
 			// finished yet). The warm geometry and materials are left undisposed so
 			// the compiled WebGL programs stay resident until renderer.dispose().
@@ -625,12 +733,21 @@ export default function ThreeDMap({
 		currentHalfSizeRef.current = halfSize;
 
 		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
-		const camera = sceneResources.camera as THREE.OrthographicCamera;
-		camera.left = -halfSize * aspect;
-		camera.right = halfSize * aspect;
-		camera.top = halfSize;
-		camera.bottom = -halfSize;
-		camera.updateProjectionMatrix();
+		// Always reframe the ortho camera (it's the canonical reference for halfSize).
+		const orthoCamera = orthoCameraRef.current;
+		if (orthoCamera) {
+			orthoCamera.left = -halfSize * aspect;
+			orthoCamera.right = halfSize * aspect;
+			orthoCamera.top = halfSize;
+			orthoCamera.bottom = -halfSize;
+			orthoCamera.updateProjectionMatrix();
+		}
+		// Keep the perspective camera's aspect in sync.
+		const perspCamera = perspCameraRef.current;
+		if (perspCamera) {
+			perspCamera.aspect = aspect;
+			perspCamera.updateProjectionMatrix();
+		}
 
 		const shadowCamera = getShadowCameraBounds(W, L, maxSurfaceHeight);
 		applyVoxelTerrainDirectionalLight(
@@ -652,9 +769,10 @@ export default function ThreeDMap({
 		controls.maxTargetRadius = getPanLimitRadius(W, L, maxSurfaceHeight);
 		if (!hasFramedTerrainRef.current) {
 			const previousCameraState = cameraStateRef.current;
-			if (previousCameraState) {
-				camera.position.copy(previousCameraState.position);
-				camera.zoom = THREE.MathUtils.clamp(
+			const camDist = halfSize * THREE_D_MAP_CAMERA.DISTANCE_MULTIPLIER;
+			if (previousCameraState && orthoCamera) {
+				orthoCamera.position.copy(previousCameraState.position);
+				orthoCamera.zoom = THREE.MathUtils.clamp(
 					previousCameraState.zoom,
 					controls.minZoom,
 					controls.maxZoom
@@ -662,11 +780,17 @@ export default function ThreeDMap({
 				controls.target.copy(previousCameraState.target);
 				controls.cursor.copy(previousCameraState.cursor);
 			} else {
-				const camDist = halfSize * THREE_D_MAP_CAMERA.DISTANCE_MULTIPLIER;
-				camera.position.set(camDist, camDist, camDist);
+				if (orthoCamera) orthoCamera.position.set(camDist, camDist, camDist);
 				controls.target.set(0, terrainCenterY, 0);
 			}
-			camera.updateProjectionMatrix();
+			if (orthoCamera) orthoCamera.updateProjectionMatrix();
+			// Position perspective camera closer than ortho so the terrain fills the view.
+			if (perspCamera && orthoCamera) {
+				const orthoDir = new THREE.Vector3().subVectors(orthoCamera.position, controls.target).normalize();
+				const perspDist = halfSize * THREE_D_MAP_CAMERA.PERSPECTIVE_DISTANCE_MULTIPLIER;
+				perspCamera.position.copy(controls.target).addScaledVector(orthoDir, perspDist);
+				perspCamera.lookAt(controls.target);
+			}
 			controls.update();
 			hasFramedTerrainRef.current = true;
 		}
@@ -679,6 +803,46 @@ export default function ThreeDMap({
 		terrainLighting?.Rotation,
 		terrainLighting?.Elevation,
 	]);
+
+	useEffect(() => {
+		if (!sceneResources) return;
+		const orthoCamera = orthoCameraRef.current;
+		const perspCamera = perspCameraRef.current;
+		const controls = controlsRef.current;
+		const postProcessing = postProcessingRef.current;
+		if (!orthoCamera || !perspCamera || !controls || !postProcessing) return;
+
+		cameraPreferenceRef.current = cameraPreference;
+
+		const perspDir = new THREE.Vector3().subVectors(orthoCamera.position, controls.target).normalize();
+		const perspDist = currentHalfSizeRef.current * THREE_D_MAP_CAMERA.PERSPECTIVE_DISTANCE_MULTIPLIER;
+
+		if (cameraPreference === 'freecam') {
+			perspCamera.position.copy(controls.target).addScaledVector(perspDir, perspDist);
+			perspCamera.lookAt(controls.target);
+			controls.enabled = false;
+			sceneResources.camera = perspCamera;
+			postProcessing.setCamera(perspCamera);
+		} else if (cameraPreference === 'perspective') {
+			perspCamera.position.copy(controls.target).addScaledVector(perspDir, perspDist);
+			perspCamera.lookAt(controls.target);
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(controls as any).object = perspCamera;
+			controls.enabled = true;
+			sceneResources.camera = perspCamera;
+			postProcessing.setCamera(perspCamera);
+			controls.update();
+		} else {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			(controls as any).object = orthoCamera;
+			controls.enabled = true;
+			sceneResources.camera = orthoCamera;
+			postProcessing.setCamera(orthoCamera);
+			controls.update();
+		}
+
+		updateCameraProjectionRef.current?.();
+	}, [cameraPreference, sceneResources]);
 
 	useEffect(() => {
 		if (!sceneResources) return;
