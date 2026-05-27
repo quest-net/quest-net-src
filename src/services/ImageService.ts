@@ -313,8 +313,12 @@ export class ImageService {
 	 */
 	private requestFromDM(imageId: string): Promise<Blob> {
 		return new Promise((resolve, reject) => {
-			// Set up one-time listener for this specific image
+			// Set up one-time listener for this specific image.
+			// IMPORTANT: both the timeout AND the success path must clear
+			// the poller, otherwise a single timed-out request leaks a
+			// 10Hz IndexedDB read for the rest of the page's lifetime.
 			const timeout = setTimeout(() => {
+				clearInterval(checkCache);
 				reject(new Error(`Timeout waiting for image ${imageId}`));
 			}, 30000); // 30 second timeout
 
