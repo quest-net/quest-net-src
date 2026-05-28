@@ -415,16 +415,17 @@ export default function ThreeDMap({
 		triangleStats.style.position = 'absolute';
 		triangleStats.style.top = '48px';
 		triangleStats.style.left = '0px';
-		triangleStats.style.width = '80px';
+		triangleStats.style.width = '110px';
 		triangleStats.style.boxSizing = 'border-box';
 		triangleStats.style.padding = '2px 3px';
 		triangleStats.style.background = 'rgba(0, 0, 0, 0.8)';
 		triangleStats.style.color = '#0ff';
 		triangleStats.style.font = 'bold 9px Helvetica, Arial, sans-serif';
 		triangleStats.style.lineHeight = '11px';
+		triangleStats.style.whiteSpace = 'pre';
 		triangleStats.style.pointerEvents = 'none';
 		triangleStats.style.display = 'none';
-		triangleStats.textContent = 'TRIS 0';
+		triangleStats.textContent = 'TRIS 0\nDRAW 0\nGEOM 0\nTEX  0\nPROG 0';
 		container.appendChild(triangleStats);
 		triangleStatsRef.current = triangleStats;
 
@@ -621,7 +622,14 @@ export default function ThreeDMap({
 			renderer.info.reset();
 			postProcessing.render();
 			if (triangleStats.style.display !== 'none') {
-				triangleStats.textContent = `TRIS ${renderer.info.render.triangles.toLocaleString()}`;
+				const info = renderer.info;
+				const tris = info.render.triangles.toLocaleString();
+				const draws = info.render.calls.toLocaleString();
+				const geoms = info.memory.geometries.toLocaleString();
+				const texs = info.memory.textures.toLocaleString();
+				const progs = (info.programs?.length ?? 0).toLocaleString();
+				triangleStats.textContent =
+					`TRIS ${tris}\nDRAW ${draws}\nGEOM ${geoms}\nTEX  ${texs}\nPROG ${progs}`;
 			}
 			stats.end();
 		};
