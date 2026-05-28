@@ -5,9 +5,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import Stats from 'three/examples/jsm/libs/stats.module.js';
+import { CameraRig, type CameraRigConfig } from '../../utils/camera/CameraRig';
 import type { Character } from '../../domains/Character/Character';
 import type { Entity } from '../../domains/Entity/Entity';
 import { useQuestContext } from '../../domains/Context/ContextProvider';
@@ -64,6 +63,40 @@ import {
 } from './Terrain/materials';
 
 export type CameraPreference = 'ortho' | 'perspective' | 'freecam';
+
+// Map tuning for the shared CameraRig. The per-terrain ortho framing, pan
+// limits and shadow camera are still driven by the effects below; this only
+// covers what the rig owns (cameras, controls, freecam).
+const MAP_CAMERA_RIG_CONFIG: CameraRigConfig = {
+	ortho: {
+		near: THREE_D_MAP_RENDERER.CAMERA_NEAR,
+		far: THREE_D_MAP_RENDERER.CAMERA_FAR,
+		initialHalfSize: THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS,
+		distanceMultiplier: THREE_D_MAP_CAMERA.DISTANCE_MULTIPLIER,
+		framing: {
+			floor: 0,
+			diagonalMultiplier: THREE_D_MAP_CAMERA.FRAMING_MULTIPLIER,
+			heightMultiplier: 0,
+		},
+	},
+	perspective: {
+		fov: THREE_D_MAP_CAMERA.PERSPECTIVE_FOV,
+		near: THREE_D_MAP_RENDERER.CAMERA_NEAR,
+		far: THREE_D_MAP_RENDERER.CAMERA_FAR,
+	},
+	controls: {
+		dampingFactor: THREE_D_MAP_CONTROLS.DAMPING_FACTOR,
+		minZoom: THREE_D_MAP_CONTROLS.MIN_ZOOM,
+		maxZoom: THREE_D_MAP_CONTROLS.MAX_ZOOM,
+	},
+	freecam: {
+		baseMoveSpeed: THREE_D_MAP_FREECAM.MOVE_SPEED,
+		minSpeedMult: 0.15,
+		maxSpeedMult: 6,
+		speedStep: 1.15,
+		initialDistanceMultiplier: THREE_D_MAP_CAMERA.PERSPECTIVE_DISTANCE_MULTIPLIER,
+	},
+};
 
 interface ThreeDMapProps {
 	terrain?: VoxelTerrain | null;
@@ -139,19 +172,13 @@ export default function ThreeDMap({
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	const statsRef = useRef<any>(null);
 	const triangleStatsRef = useRef<HTMLDivElement | null>(null);
-	const controlsRef = useRef<OrbitControls | null>(null);
-	const orthoCameraRef = useRef<THREE.OrthographicCamera | null>(null);
-	const perspCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-	const pointerLockControlsRef = useRef<PointerLockControls | null>(null);
-	const cameraPreferenceRef = useRef<CameraPreference>('ortho');
-	const freecamKeysRef = useRef({ w: false, a: false, s: false, d: false });
+	const rigRef = useRef<CameraRig | null>(null);
 	const postProcessingRef = useRef<ThreeDMapPostProcessing | null>(null);
 	const updateCameraProjectionRef = useRef<(() => void) | null>(null);
 	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
 	const terrainResourcesRef = useRef<TerrainRenderResources | null>(null);
 	const warmGeometryRef = useRef<THREE.BufferGeometry | null>(null);
 	const warmMeshesRef = useRef<THREE.Mesh[]>([]);
-	const currentHalfSizeRef = useRef<number>(THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS);
 	const hasFramedTerrainRef = useRef(false);
 	const context = useQuestContext();
 	const { actionService } = useActionService();
@@ -433,28 +460,14 @@ export default function ThreeDMap({
 		scene.background = null;
 
 		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
-		const initialHalfSize = currentHalfSizeRef.current;
-		const orthoCamera = new THREE.OrthographicCamera(
-			-initialHalfSize * aspect,
-			initialHalfSize * aspect,
-			initialHalfSize,
-			-initialHalfSize,
-			THREE_D_MAP_RENDERER.CAMERA_NEAR,
-			THREE_D_MAP_RENDERER.CAMERA_FAR
-		);
-		const camDist = initialHalfSize * THREE_D_MAP_CAMERA.DISTANCE_MULTIPLIER;
-		orthoCamera.position.set(camDist, camDist, camDist);
-		orthoCameraRef.current = orthoCamera;
-
-		const perspCamera = new THREE.PerspectiveCamera(
-			THREE_D_MAP_CAMERA.PERSPECTIVE_FOV,
-			aspect,
-			THREE_D_MAP_RENDERER.CAMERA_NEAR,
-			THREE_D_MAP_RENDERER.CAMERA_FAR
-		);
-		perspCamera.position.set(camDist, camDist, camDist);
-		perspCameraRef.current = perspCamera;
-
+		const rig = new CameraRig(renderer.domElement, aspect, MAP_CAMERA_RIG_CONFIG, {
+			onActiveCameraChange: (cam) => {
+				if (sceneResourcesRef.current) sceneResourcesRef.current.camera = cam;
+				postProcessingRef.current?.setCamera(cam);
+			},
+		});
+		rigRef.current = rig;
+		const orthoCamera = rig.orthoCamera;
 		const camera = orthoCamera;
 
 		const hemi = new THREE.HemisphereLight(
@@ -479,55 +492,12 @@ export default function ThreeDMap({
 		scene.add(dirLight.target);
 		directionalLightRef.current = dirLight;
 
-		const controls = new OrbitControls(camera, renderer.domElement);
-		controls.enableDamping = true;
-		controls.dampingFactor = THREE_D_MAP_CONTROLS.DAMPING_FACTOR;
-		controls.minZoom = THREE_D_MAP_CONTROLS.MIN_ZOOM;
-		controls.maxZoom = THREE_D_MAP_CONTROLS.MAX_ZOOM;
+		const controls = rig.controls;
 		controls.maxTargetRadius = THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS;
-		controls.update();
-		controlsRef.current = controls;
-
-		const plc = new PointerLockControls(perspCamera, renderer.domElement);
-		pointerLockControlsRef.current = plc;
-
-		const onFreecamMouseDown = (e: MouseEvent) => {
-			if (cameraPreferenceRef.current === 'freecam' && e.button === 2) {
-				e.preventDefault();
-				plc.lock();
-			}
-		};
-		const onFreecamMouseUp = (e: MouseEvent) => {
-			if (cameraPreferenceRef.current === 'freecam' && e.button === 2) {
-				plc.unlock();
-			}
-		};
-		const onFreecamContextMenu = (e: Event) => {
-			if (cameraPreferenceRef.current === 'freecam') e.preventDefault();
-		};
-		renderer.domElement.addEventListener('mousedown', onFreecamMouseDown);
-		renderer.domElement.addEventListener('mouseup', onFreecamMouseUp);
-		renderer.domElement.addEventListener('contextmenu', onFreecamContextMenu);
-
-		const onFreecamKeyDown = (e: KeyboardEvent) => {
-			if (cameraPreferenceRef.current !== 'freecam') return;
-			switch (e.code) {
-				case 'KeyW': freecamKeysRef.current.w = true; break;
-				case 'KeyA': freecamKeysRef.current.a = true; break;
-				case 'KeyS': freecamKeysRef.current.s = true; break;
-				case 'KeyD': freecamKeysRef.current.d = true; break;
-			}
-		};
-		const onFreecamKeyUp = (e: KeyboardEvent) => {
-			switch (e.code) {
-				case 'KeyW': freecamKeysRef.current.w = false; break;
-				case 'KeyA': freecamKeysRef.current.a = false; break;
-				case 'KeyS': freecamKeysRef.current.s = false; break;
-				case 'KeyD': freecamKeysRef.current.d = false; break;
-			}
-		};
-		window.addEventListener('keydown', onFreecamKeyDown);
-		window.addEventListener('keyup', onFreecamKeyUp);
+		rig.resize(container.clientWidth || 1, container.clientHeight || 1);
+		// Freecam input (right-hold to look, WASD/QE to fly, scroll for speed) is
+		// owned by the rig; it gates on the rig's own mode internally.
+		rig.attachInput();
 
 		const postProcessing = createThreeDMapPostProcessing(renderer, scene, camera, {
 			performanceMode,
@@ -588,11 +558,6 @@ export default function ThreeDMap({
 			setSceneResources(resources);
 		})();
 
-		// Pre-allocated vectors for freecam movement to avoid per-frame allocations.
-		const _freecamDir = new THREE.Vector3();
-		const _freecamRight = new THREE.Vector3();
-		const _worldUp = new THREE.Vector3(0, 1, 0);
-
 		let rafId = 0;
 		let lastFrameTime = performance.now();
 		const animate = () => {
@@ -603,21 +568,8 @@ export default function ThreeDMap({
 			for (const callback of resources.animationCallbacks) {
 				callback(now);
 			}
-			if (cameraPreferenceRef.current === 'freecam') {
-				if (plc.isLocked) {
-					const speed = THREE_D_MAP_FREECAM.MOVE_SPEED * delta;
-					const keys = freecamKeysRef.current;
-					// Move along the camera's true look direction (including vertical tilt).
-					perspCamera.getWorldDirection(_freecamDir);
-					_freecamRight.crossVectors(_freecamDir, _worldUp).normalize();
-					if (keys.w) perspCamera.position.addScaledVector(_freecamDir, speed);
-					if (keys.s) perspCamera.position.addScaledVector(_freecamDir, -speed);
-					if (keys.a) perspCamera.position.addScaledVector(_freecamRight, -speed);
-					if (keys.d) perspCamera.position.addScaledVector(_freecamRight, speed);
-				}
-			} else {
-				controls.update();
-			}
+			// Freecam movement while flying, otherwise damped orbit.
+			rig.update(delta);
 			stats.begin();
 			renderer.info.reset();
 			postProcessing.render();
@@ -639,19 +591,7 @@ export default function ThreeDMap({
 			const w = container.clientWidth;
 			const h = container.clientHeight;
 			if (w === 0 || h === 0) return;
-			const pref = cameraPreferenceRef.current;
-			if (pref === 'ortho') {
-				const halfSize = currentHalfSizeRef.current;
-				const a = w / h;
-				orthoCamera.left = -halfSize * a;
-				orthoCamera.right = halfSize * a;
-				orthoCamera.top = halfSize;
-				orthoCamera.bottom = -halfSize;
-				orthoCamera.updateProjectionMatrix();
-			} else {
-				perspCamera.aspect = w / h;
-				perspCamera.updateProjectionMatrix();
-			}
+			rig.resize(w, h);
 			postProcessing.setSize(w, h);
 		};
 		updateCameraProjectionRef.current = updateCameraProjection;
@@ -670,18 +610,11 @@ export default function ThreeDMap({
 			setSceneResources(null);
 			cancelAnimationFrame(rafId);
 			ro.disconnect();
-			controls.dispose();
-			plc.dispose();
-			renderer.domElement.removeEventListener('mousedown', onFreecamMouseDown);
-			renderer.domElement.removeEventListener('mouseup', onFreecamMouseUp);
-			renderer.domElement.removeEventListener('contextmenu', onFreecamContextMenu);
-			window.removeEventListener('keydown', onFreecamKeyDown);
-			window.removeEventListener('keyup', onFreecamKeyUp);
+			// Detaches freecam input and disposes both controls.
+			rig.dispose();
+			rigRef.current = null;
 			postProcessingRef.current = null;
 			updateCameraProjectionRef.current = null;
-			orthoCameraRef.current = null;
-			perspCameraRef.current = null;
-			pointerLockControlsRef.current = null;
 			// Clean up any warm meshes still in the scene (compileAsync may not have
 			// finished yet). The warm geometry and materials are left undisposed so
 			// the compiled WebGL programs stay resident until renderer.dispose().
@@ -703,7 +636,6 @@ export default function ThreeDMap({
 			postProcessing.dispose();
 			renderer.dispose();
 			rendererRef.current = null;
-			controlsRef.current = null;
 			directionalLightRef.current = null;
 			if (renderer.domElement.parentElement === container) {
 				container.removeChild(renderer.domElement);
@@ -728,34 +660,34 @@ export default function ThreeDMap({
 	useEffect(() => {
 		if (!sceneResources) return;
 		const container = containerRef.current;
-		const controls = controlsRef.current;
+		const rig = rigRef.current;
 		const dirLight = directionalLightRef.current;
-		if (!container || !controls || !dirLight) return;
+		if (!container || !rig || !dirLight) return;
 		if (!terrain || getVoxelCount(terrain.Voxels) === 0) return;
+
+		const controls = rig.controls;
+		const orthoCamera = rig.orthoCamera;
+		const perspCamera = rig.perspectiveCamera;
 
 		const W = terrain.Width;
 		const L = terrain.Length;
 		const maxSurfaceHeight = getMaxVoxelSurfaceHeight(terrain);
 		const terrainCenterY = (maxSurfaceHeight - 1) / 2;
 		const halfSize = (W + L) / Math.SQRT2 / 2 * THREE_D_MAP_CAMERA.FRAMING_MULTIPLIER;
-		currentHalfSizeRef.current = halfSize;
+
+		// Let the rig know the terrain extents so freecam entry framing is sized correctly.
+		rig.setTerrain({ width: W, length: L, height: maxSurfaceHeight });
 
 		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
 		// Always reframe the ortho camera (it's the canonical reference for halfSize).
-		const orthoCamera = orthoCameraRef.current;
-		if (orthoCamera) {
-			orthoCamera.left = -halfSize * aspect;
-			orthoCamera.right = halfSize * aspect;
-			orthoCamera.top = halfSize;
-			orthoCamera.bottom = -halfSize;
-			orthoCamera.updateProjectionMatrix();
-		}
+		orthoCamera.left = -halfSize * aspect;
+		orthoCamera.right = halfSize * aspect;
+		orthoCamera.top = halfSize;
+		orthoCamera.bottom = -halfSize;
+		orthoCamera.updateProjectionMatrix();
 		// Keep the perspective camera's aspect in sync.
-		const perspCamera = perspCameraRef.current;
-		if (perspCamera) {
-			perspCamera.aspect = aspect;
-			perspCamera.updateProjectionMatrix();
-		}
+		perspCamera.aspect = aspect;
+		perspCamera.updateProjectionMatrix();
 
 		const shadowCamera = getShadowCameraBounds(W, L, maxSurfaceHeight);
 		applyVoxelTerrainDirectionalLight(
@@ -778,7 +710,7 @@ export default function ThreeDMap({
 		if (!hasFramedTerrainRef.current) {
 			const previousCameraState = cameraStateRef.current;
 			const camDist = halfSize * THREE_D_MAP_CAMERA.DISTANCE_MULTIPLIER;
-			if (previousCameraState && orthoCamera) {
+			if (previousCameraState) {
 				orthoCamera.position.copy(previousCameraState.position);
 				orthoCamera.zoom = THREE.MathUtils.clamp(
 					previousCameraState.zoom,
@@ -788,17 +720,10 @@ export default function ThreeDMap({
 				controls.target.copy(previousCameraState.target);
 				controls.cursor.copy(previousCameraState.cursor);
 			} else {
-				if (orthoCamera) orthoCamera.position.set(camDist, camDist, camDist);
+				orthoCamera.position.set(camDist, camDist, camDist);
 				controls.target.set(0, terrainCenterY, 0);
 			}
-			if (orthoCamera) orthoCamera.updateProjectionMatrix();
-			// Position perspective camera closer than ortho so the terrain fills the view.
-			if (perspCamera && orthoCamera) {
-				const orthoDir = new THREE.Vector3().subVectors(orthoCamera.position, controls.target).normalize();
-				const perspDist = halfSize * THREE_D_MAP_CAMERA.PERSPECTIVE_DISTANCE_MULTIPLIER;
-				perspCamera.position.copy(controls.target).addScaledVector(orthoDir, perspDist);
-				perspCamera.lookAt(controls.target);
-			}
+			orthoCamera.updateProjectionMatrix();
 			controls.update();
 			hasFramedTerrainRef.current = true;
 		}
@@ -814,41 +739,13 @@ export default function ThreeDMap({
 
 	useEffect(() => {
 		if (!sceneResources) return;
-		const orthoCamera = orthoCameraRef.current;
-		const perspCamera = perspCameraRef.current;
-		const controls = controlsRef.current;
-		const postProcessing = postProcessingRef.current;
-		if (!orthoCamera || !perspCamera || !controls || !postProcessing) return;
+		const rig = rigRef.current;
+		if (!rig) return;
 
-		cameraPreferenceRef.current = cameraPreference;
-
-		const perspDir = new THREE.Vector3().subVectors(orthoCamera.position, controls.target).normalize();
-		const perspDist = currentHalfSizeRef.current * THREE_D_MAP_CAMERA.PERSPECTIVE_DISTANCE_MULTIPLIER;
-
-		if (cameraPreference === 'freecam') {
-			perspCamera.position.copy(controls.target).addScaledVector(perspDir, perspDist);
-			perspCamera.lookAt(controls.target);
-			controls.enabled = false;
-			sceneResources.camera = perspCamera;
-			postProcessing.setCamera(perspCamera);
-		} else if (cameraPreference === 'perspective') {
-			perspCamera.position.copy(controls.target).addScaledVector(perspDir, perspDist);
-			perspCamera.lookAt(controls.target);
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			(controls as any).object = perspCamera;
-			controls.enabled = true;
-			sceneResources.camera = perspCamera;
-			postProcessing.setCamera(perspCamera);
-			controls.update();
-		} else {
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any
-			(controls as any).object = orthoCamera;
-			controls.enabled = true;
-			sceneResources.camera = orthoCamera;
-			postProcessing.setCamera(orthoCamera);
-			controls.update();
-		}
-
+		// The rig swaps the active camera, rebinds controls, positions the
+		// perspective entry framing, and fires onActiveCameraChange (which updates
+		// sceneResources.camera and the post-processing camera).
+		rig.setMode(cameraPreference);
 		updateCameraProjectionRef.current?.();
 	}, [cameraPreference, sceneResources]);
 

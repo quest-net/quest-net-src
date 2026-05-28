@@ -106,10 +106,6 @@ import {
 	type EditorSceneResources,
 } from "./editorScene";
 import {
-	createFreecamRuntime,
-	isFreecamMovementKey,
-} from "./editorFreecam";
-import {
 	clearAllChunkMeshes,
 	rebuildChunk,
 } from "./editorChunkMeshes";
@@ -268,7 +264,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		// the user's preferred non-fly camera.
 		const cameraModeRef          = useRef<CameraMode>("ortho");
 		const lastNonFreecamModeRef  = useRef<CameraMode>("ortho");
-		const freecamRuntimeRef      = useRef(createFreecamRuntime());
 		const pointerLockedRef       = useRef(false);
 
 		// -------------------------------------------------------------------------
@@ -994,12 +989,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					}
 				}
 
-				// Camera-mode-specific input drive.
-				if (cameraModeRef.current === "freecam") {
-					freecamRuntimeRef.current.update(resources, dt, pointerLockedRef.current);
-				} else {
-					resources.controls.update();
-				}
+				// Freecam movement while flying, otherwise damped orbit.
+				resources.rig.update(dt);
 
 				resources.renderer.render(resources.scene, resources.camera);
 
@@ -1205,81 +1196,26 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			const preventContextMenu       = (e: MouseEvent) => e.preventDefault();
 			const preventMiddleMouseScroll = (e: MouseEvent) => { if (e.button === 1) e.preventDefault(); };
 
-			// --- Freecam: pointer-lock acquisition on right mouse hold ---
-			// Mirrors the 3DMap UX: press-and-hold right to lock+look+WASD;
-			// release to unlock for clicking. OrbitControls is disabled in
-			// freecam mode so right-click doesn't fight us for pan duty.
-			const handleFreecamRightDown = (event: MouseEvent) => {
-				if (event.button !== 2) return;
-				if (cameraModeRef.current !== "freecam") return;
-				event.preventDefault();
-				// Commit any in-progress stroke before we yield the cursor.
-				if (strokeStartedRef.current) {
-					recordUndo();
-					commitDraftChange();
-				}
-				clearStrokeState();
-				if (!pointerLockedRef.current) {
-					resources.pointerLockControls.lock();
-				}
-			};
-			const handleFreecamRightUp = (event: MouseEvent) => {
-				if (event.button !== 2) return;
-				if (cameraModeRef.current !== "freecam") return;
-				if (pointerLockedRef.current) {
-					resources.pointerLockControls.unlock();
-				}
-			};
-			const onPointerLock = () => {
-				pointerLockedRef.current = true;
-				clearObjectGroup(resources.hoverGroup);
-			};
-			const onPointerUnlock = () => {
-				pointerLockedRef.current = false;
-				freecamRuntimeRef.current.exit();
-			};
-			resources.pointerLockControls.addEventListener("lock", onPointerLock);
-			resources.pointerLockControls.addEventListener("unlock", onPointerUnlock);
-
-			// --- Freecam: WASD/QE tracking. Lives on window because key events
-			// while pointer-locked don't necessarily focus the canvas. ---
-			const handleFreecamKeyDown = (event: KeyboardEvent) => {
-				if (cameraModeRef.current !== "freecam") return;
-				if (!pointerLockedRef.current) return;
-				if (!isFreecamMovementKey(event.key)) return;
-				event.preventDefault();
-				const keys = freecamRuntimeRef.current.keys;
-				switch (event.key.toLowerCase()) {
-					case "w": keys.w = true; break;
-					case "a": keys.a = true; break;
-					case "s": keys.s = true; break;
-					case "d": keys.d = true; break;
-					case "q": keys.q = true; break;
-					case "e": keys.e = true; break;
-				}
-			};
-			const handleFreecamKeyUp = (event: KeyboardEvent) => {
-				if (!isFreecamMovementKey(event.key)) return;
-				const keys = freecamRuntimeRef.current.keys;
-				switch (event.key.toLowerCase()) {
-					case "w": keys.w = false; break;
-					case "a": keys.a = false; break;
-					case "s": keys.s = false; break;
-					case "d": keys.d = false; break;
-					case "q": keys.q = false; break;
-					case "e": keys.e = false; break;
-				}
-			};
-			window.addEventListener("keydown", handleFreecamKeyDown);
-			window.addEventListener("keyup",   handleFreecamKeyUp);
-
-			// --- Freecam: scroll-wheel adjusts move speed. ---
-			const handleFreecamWheel = (event: WheelEvent) => {
-				if (cameraModeRef.current !== "freecam") return;
-				event.preventDefault();
-				const mult = freecamRuntimeRef.current.bumpSpeed(event.deltaY);
-				setFreecamSpeedMult(mult);
-			};
+			// Freecam input (right-hold to look + WASD/QE to fly, scroll for speed)
+			// is owned by the CameraRig. Editor-specific side effects are wired in
+			// through callbacks: commit the in-flight stroke before yielding the
+			// cursor, hide the hover ghost while flying, and surface speed to the HUD.
+			resources.rig.setCallbacks({
+				onActiveCameraChange: (cam) => { resources.camera = cam; },
+				onPointerLockChange: (locked) => {
+					pointerLockedRef.current = locked;
+					if (locked) clearObjectGroup(resources.hoverGroup);
+				},
+				onFreecamSpeedChange: (mult) => setFreecamSpeedMult(mult),
+				beforePointerLock: () => {
+					if (strokeStartedRef.current) {
+						recordUndo();
+						commitDraftChange();
+					}
+					clearStrokeState();
+				},
+			});
+			resources.rig.attachInput();
 
 			const dom = resources.renderer.domElement;
 			dom.addEventListener("pointermove",   handlePointerMove);
@@ -1288,11 +1224,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			dom.addEventListener("pointercancel", finishStroke);
 			dom.addEventListener("pointerleave",  handlePointerLeave);
 			dom.addEventListener("mousedown",     preventMiddleMouseScroll, true);
-			dom.addEventListener("mousedown",     handleFreecamRightDown);
-			dom.addEventListener("mouseup",       handleFreecamRightUp);
 			dom.addEventListener("auxclick",      preventMiddleMouseScroll);
 			dom.addEventListener("contextmenu",   preventContextMenu);
-			dom.addEventListener("wheel",         handleFreecamWheel, { passive: false });
 
 			return () => {
 				cancelAnimationFrame(rafId);
@@ -1303,18 +1236,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				dom.removeEventListener("pointercancel", finishStroke);
 				dom.removeEventListener("pointerleave",  handlePointerLeave);
 				dom.removeEventListener("mousedown",     preventMiddleMouseScroll, true);
-				dom.removeEventListener("mousedown",     handleFreecamRightDown);
-				dom.removeEventListener("mouseup",       handleFreecamRightUp);
 				dom.removeEventListener("auxclick",      preventMiddleMouseScroll);
 				dom.removeEventListener("contextmenu",   preventContextMenu);
-				dom.removeEventListener("wheel",         handleFreecamWheel);
-				window.removeEventListener("keydown",    handleFreecamKeyDown);
-				window.removeEventListener("keyup",      handleFreecamKeyUp);
-				resources.pointerLockControls.removeEventListener("lock",   onPointerLock);
-				resources.pointerLockControls.removeEventListener("unlock", onPointerUnlock);
 				if (pointerLockedRef.current) resources.pointerLockControls.unlock();
-				resources.pointerLockControls.dispose();
-				resources.controls.dispose();
+				// Detaches freecam input and disposes both controls.
+				resources.rig.dispose();
 				clearAllChunkMeshes(resources.chunkGroup, chunkMeshesRef.current);
 				clearAllGridChunkLines(gridGroup);
 				resources.terrainMaterial.dispose();
@@ -1421,36 +1347,12 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			strokeDeltaRef.current   = null;
 			lastEditKeyRef.current   = null;
 
-			// Always release pointer-lock when leaving freecam, even if the
-			// caller targets perspective rather than ortho.
-			if (cameraModeRef.current === "freecam" && pointerLockedRef.current) {
-				resources.pointerLockControls.unlock();
-			}
-
-			// Pick the active camera and re-bind OrbitControls onto it. Three.js
-			// doesn't officially document `controls.object`, but it's been the
-			// supported re-bind path for years and 3DMap relies on it too.
-			const activeCamera =
-				next === "ortho" ? resources.orthoCamera : resources.freecamCamera;
-			resources.camera = activeCamera;
-			(resources.controls as unknown as { object: THREE.Camera }).object = activeCamera;
-
-			if (next === "freecam") {
-				freecamRuntimeRef.current.enter(resources, terrainRef.current);
-				resources.controls.enabled = false;
-				resources.pointerLockControls.enabled = true;
-			} else {
-				// ortho or perspective: OrbitControls drives the active camera.
-				resources.controls.enabled = true;
-				resources.pointerLockControls.enabled = false;
-				freecamRuntimeRef.current.exit();
-				if (next === "perspective") {
-					// Place the perspective camera at the same isometric viewpoint
-					// the user expects on first switch.
-					freecamRuntimeRef.current.enter(resources, terrainRef.current);
-				}
-				resources.controls.update();
-			}
+			// The rig handles camera selection, control re-binding, pointer-lock
+			// release, and the perspective/freecam entry framing (it reads the
+			// current terrain extents to start at a comfortable distance).
+			const t = terrainRef.current;
+			resources.rig.setTerrain({ width: t.Width, length: t.Length, height: t.Height });
+			resources.rig.setMode(next);
 
 			// Make sure projection matches the new active camera + container.
 			const container = containerRef.current;

@@ -1,36 +1,59 @@
 // Three.js scene setup for the voxel terrain editor.
 //
-// Builds two cameras up front:
-//   - orthoCamera   (THREE.OrthographicCamera) for the default isometric view
-//   - freecamCamera (THREE.PerspectiveCamera)  for free-roaming WASD flight
-// `resources.camera` points at whichever one is currently active. Picking,
-// rendering and projection all read through it so they're naturally
-// camera-agnostic. Each camera has its own controls (OrbitControls /
-// PointerLockControls); the toggle helper in `editorFreecam.ts` enables one
-// and disables the other.
+// The cameras, their controls, freecam movement and mode switching all live in
+// the shared `CameraRig` (src/utils/camera). This module owns the rest of the
+// editor scene -- renderer, lights, terrain material, grid/hover/selection/chunk
+// groups -- and configures a rig with the editor's tuning. `resources.camera`
+// points at whichever camera the rig has active; picking, rendering and
+// projection all read through it so they're naturally camera-agnostic.
 
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import { CameraRig, type CameraRigConfig } from "../../../utils/camera/CameraRig";
 import { installEditorTerrainShader } from "./editorTerrainShader";
 
-export const INITIAL_CAMERA_HALF_SIZE = 14;
-export const CAMERA_DISTANCE_MULTIPLIER = 1.65;
-export const FREECAM_FOV = 70;
-export const FREECAM_NEAR = 0.05;
-export const FREECAM_FAR = 1000;
 const EDITOR_PIXEL_RATIO = 1;
+
+const EDITOR_CAMERA_RIG_CONFIG: CameraRigConfig = {
+	ortho: {
+		near: -100,
+		far: 1000,
+		initialHalfSize: 14,
+		distanceMultiplier: 1.65,
+		// Wider than the freecam framing so the whole build stays in view, with a
+		// height term so tall terrains fit and a floor for tiny ones.
+		framing: { floor: 6, diagonalMultiplier: 1.15, heightMultiplier: 0.9 },
+	},
+	perspective: { fov: 70, near: 0.05, far: 1000 },
+	controls: {
+		dampingFactor: 0.08,
+		minZoom: 0.4,
+		maxZoom: 10,
+		// Left paints; middle orbits; right pans. (Right-hold acquires freecam
+		// look mode, handled by the rig when in freecam.)
+		mouseButtons: { LEFT: null, MIDDLE: THREE.MOUSE.ROTATE, RIGHT: THREE.MOUSE.PAN },
+	},
+	freecam: {
+		baseMoveSpeed: 10,
+		minSpeedMult: 0.15,
+		maxSpeedMult: 6,
+		speedStep: 1.15,
+		initialDistanceMultiplier: 1.3,
+	},
+};
 
 export interface EditorSceneResources {
 	scene: THREE.Scene;
 	renderer: THREE.WebGLRenderer;
-	/** Active camera. Points at orthoCamera or freecamCamera. */
+	/** Shared camera rig owning both cameras, controls and freecam input. */
+	rig: CameraRig;
+	/** Active camera. Points at the rig's ortho or perspective camera; updated
+	 *  by the rig's onActiveCameraChange callback on mode switch. */
 	camera: THREE.OrthographicCamera | THREE.PerspectiveCamera;
 	orthoCamera: THREE.OrthographicCamera;
 	freecamCamera: THREE.PerspectiveCamera;
-	controls: OrbitControls;
-	pointerLockControls: PointerLockControls;
+	controls: CameraRig["controls"];
+	pointerLockControls: CameraRig["pointerLockControls"];
 	gridGroup: THREE.Group;
 	hoverGroup: THREE.Group;
 	selectionGroup: THREE.Group;
@@ -61,39 +84,13 @@ export function createEditorScene(
 	const height = container.clientHeight || 1;
 	const aspect = width / height;
 
-	const orthoCamera = new THREE.OrthographicCamera(
-		-INITIAL_CAMERA_HALF_SIZE * aspect,
-		 INITIAL_CAMERA_HALF_SIZE * aspect,
-		 INITIAL_CAMERA_HALF_SIZE,
-		-INITIAL_CAMERA_HALF_SIZE,
-		-100, 1000,
-	);
-	const initialDist = INITIAL_CAMERA_HALF_SIZE * CAMERA_DISTANCE_MULTIPLIER;
-	orthoCamera.position.set(initialDist, initialDist, initialDist);
-
-	const freecamCamera = new THREE.PerspectiveCamera(FREECAM_FOV, aspect, FREECAM_NEAR, FREECAM_FAR);
-	freecamCamera.position.copy(orthoCamera.position);
-	freecamCamera.lookAt(0, 0, 0);
+	const rig = new CameraRig(renderer.domElement, aspect, EDITOR_CAMERA_RIG_CONFIG);
+	rig.resize(width, height);
 
 	scene.add(new THREE.HemisphereLight(0xffffff, 0x94a3b8, Math.PI * 0.75));
 	const directional = new THREE.DirectionalLight(0xffffff, Math.PI * 1.6);
 	directional.position.set(18, 32, 22);
 	scene.add(directional);
-
-	const controls = new OrbitControls(orthoCamera, renderer.domElement);
-	controls.enableDamping = true;
-	controls.dampingFactor = 0.08;
-	controls.minZoom = 0.4;
-	controls.maxZoom = 10;
-	controls.mouseButtons.LEFT   = null as unknown as THREE.MOUSE;
-	controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
-	controls.mouseButtons.RIGHT  = THREE.MOUSE.PAN;
-	controls.update();
-
-	// Created up front so we can lock/unlock on demand. Disabled by default
-	// (only the active camera's controls drive input).
-	const pointerLockControls = new PointerLockControls(freecamCamera, renderer.domElement);
-	pointerLockControls.enabled = false;
 
 	const gridGroup      = new THREE.Group();
 	const hoverGroup     = new THREE.Group();
@@ -113,9 +110,12 @@ export function createEditorScene(
 
 	return {
 		scene, renderer,
-		camera: orthoCamera,
-		orthoCamera, freecamCamera,
-		controls, pointerLockControls,
+		rig,
+		camera: rig.orthoCamera,
+		orthoCamera: rig.orthoCamera,
+		freecamCamera: rig.perspectiveCamera,
+		controls: rig.controls,
+		pointerLockControls: rig.pointerLockControls,
 		gridGroup, hoverGroup, selectionGroup, chunkGroup,
 		terrainMaterial,
 	};
@@ -127,18 +127,7 @@ export function resizeRenderer(
 ): void {
 	const width  = container.clientWidth  || 1;
 	const height = container.clientHeight || 1;
-	const aspect = width / height;
-
-	const ortho = resources.orthoCamera;
-	const halfSize = ortho.top;
-	ortho.left  = -halfSize * aspect;
-	ortho.right =  halfSize * aspect;
-	ortho.updateProjectionMatrix();
-
-	const freecam = resources.freecamCamera;
-	freecam.aspect = aspect;
-	freecam.updateProjectionMatrix();
-
+	resources.rig.resize(width, height);
 	resources.renderer.setSize(width, height);
 }
 
@@ -151,28 +140,12 @@ export function frameOrthoCamera(
 	terrain: VoxelTerrain,
 	container: HTMLDivElement,
 ): void {
-	const halfSize = Math.max(
-		6,
-		((terrain.Width + terrain.Length) / Math.SQRT2 / 2) * 1.15,
-		terrain.Height * 0.9,
-	);
-	const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
-	const camera   = resources.orthoCamera;
-	const controls = resources.controls;
-	const centerY  = Math.max(0, terrain.Height / 2 - 0.5);
-	const dist     = halfSize * CAMERA_DISTANCE_MULTIPLIER;
-
-	camera.left   = -halfSize * aspect;
-	camera.right  =  halfSize * aspect;
-	camera.top    =  halfSize;
-	camera.bottom = -halfSize;
-	camera.position.set(dist, dist, dist);
-	camera.zoom = 1;
-	camera.updateProjectionMatrix();
-	controls.target.set(0, centerY, 0);
-	controls.cursor.set(0, centerY, 0);
-	controls.maxTargetRadius = Math.max(8, Math.sqrt(terrain.Width ** 2 + terrain.Length ** 2));
-	controls.update();
+	resources.rig.resize(container.clientWidth || 1, container.clientHeight || 1);
+	resources.rig.frameOrtho({
+		width: terrain.Width,
+		length: terrain.Length,
+		height: terrain.Height,
+	});
 }
 
 // ---------------------------------------------------------------------------
