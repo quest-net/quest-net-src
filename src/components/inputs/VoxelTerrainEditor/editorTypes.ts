@@ -15,6 +15,9 @@ export type EditGranularityType = "tactical" | "voxel";
 
 export type SelectionEditTool = "place" | "erase" | "paint";
 
+/** Which camera the editor canvas is driven by. */
+export type CameraMode = "ortho" | "perspective" | "freecam";
+
 export function isSelectionEditTool(tool: EditorTool): tool is SelectionEditTool {
 	return tool === "place" || tool === "erase" || tool === "paint";
 }

@@ -101,10 +101,14 @@ import {
 	clearObjectGroup,
 	createEditorScene,
 	disposeObjectTree,
-	frameCamera,
+	frameOrthoCamera,
 	resizeRenderer,
 	type EditorSceneResources,
 } from "./editorScene";
+import {
+	createFreecamRuntime,
+	isFreecamMovementKey,
+} from "./editorFreecam";
 import {
 	clearAllChunkMeshes,
 	rebuildChunk,
@@ -132,6 +136,7 @@ import { PreviewSettingsPanel } from "./PreviewSettingsPanel";
 import { VoxImportModal, type VoxImportModalState } from "./VoxImportModal";
 import {
 	isSelectionEditTool,
+	type CameraMode,
 	type EditGranularityType,
 	type EditorTool,
 	type EditorView,
@@ -256,6 +261,15 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		// Hover ghost refresh helpers wired up by the scene effect.
 		const refreshHoverRef        = useRef<(() => void) | null>(null);
 		const refreshSelectionRef    = useRef<(() => void) | null>(null);
+		// Freecam state. cameraModeRef mirrors the React state for the rAF/event
+		// hot path. pointerLockedRef tracks PointerLockControls' lock state so
+		// the input handlers can gate hover/paint when the cursor is hidden.
+		// lastNonFreecamModeRef remembers ortho vs perspective so F can restore
+		// the user's preferred non-fly camera.
+		const cameraModeRef          = useRef<CameraMode>("ortho");
+		const lastNonFreecamModeRef  = useRef<CameraMode>("ortho");
+		const freecamRuntimeRef      = useRef(createFreecamRuntime());
+		const pointerLockedRef       = useRef(false);
 
 		// -------------------------------------------------------------------------
 		// React state
@@ -272,6 +286,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const [showActors,         setShowActors]         = useState(true);
 		const [undoDepth,          setUndoDepth]          = useState(0);
 		const [redoDepth,          setRedoDepth]          = useState(0);
+		const [cameraMode,         setCameraMode]         = useState<CameraMode>("ortho");
+		const [freecamSpeedMult,   setFreecamSpeedMult]   = useState(1);
 		const [voxImportModal,     setVoxImportModal]     = useState<VoxImportModalState | null>(null);
 		const voxFileInputRef = useRef<HTMLInputElement>(null);
 		const [stampSource,        setStampSource]        = useState<VoxelTerrain | null>(null);
@@ -426,6 +442,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		useEffect(() => { showActorsRef.current = showActors;   }, [showActors]);
 		useEffect(() => { activeViewRef.current = activeView;   }, [activeView]);
 		useEffect(() => {
+			cameraModeRef.current = cameraMode;
+			// Track the last non-freecam camera mode so F can restore it.
+			if (cameraMode !== "freecam") lastNonFreecamModeRef.current = cameraMode;
+		}, [cameraMode]);
+		useEffect(() => {
 			stampSourceRef.current = stampSource;
 			refreshHoverRef.current?.();
 		}, [stampSource]);
@@ -488,8 +509,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				rebuildBoundsFrame(gridGroup, newDims);
 				clearObjectGroup(resources.hoverGroup);
 				clearObjectGroup(resources.selectionGroup);
-				const container = containerRef.current;
-				if (container) frameCamera(resources, terrain, container);
+				// Skip auto-reframe in freecam -- the user's position is preserved.
+				if (cameraModeRef.current === "ortho") {
+					const container = containerRef.current;
+					if (container) frameOrthoCamera(resources, terrain, container);
+				}
 			}
 
 			markAllChunksDirty(dirtyChunksRef.current, newDims);
@@ -566,8 +590,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					clearObjectGroup(resources.hoverGroup);
 					clearObjectGroup(resources.selectionGroup);
 					markAllChunksDirty(dirtyChunksRef.current, result.dims);
-					const container = containerRef.current;
-					if (container) frameCamera(resources, nextTerrain, container);
+					if (cameraModeRef.current === "ortho") {
+						const container = containerRef.current;
+						if (container) frameOrthoCamera(resources, nextTerrain, container);
+					}
 				}
 
 				lastShapeSignatureRef.current = null;
@@ -920,7 +946,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			occupiedVoxelCountRef.current = countEditGridVoxels(editGridRef.current);
 			markAllChunksDirty(dirtyChunksRef.current, initDims);
 			rebuildBoundsFrame(gridGroup, initDims);
-			frameCamera(resources, initTerrain, container);
+			frameOrthoCamera(resources, initTerrain, container);
 			lastShapeSignatureRef.current =
 				`${initIndex.width}:${initIndex.length}:${initIndex.height}:${initIndex.resolution}`;
 
@@ -933,8 +959,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 			// --- rAF loop ---
 			let rafId = 0;
-			const animate = () => {
+			let lastFrameMs = 0;
+			const animate = (nowMs: number) => {
 				rafId = requestAnimationFrame(animate);
+				const dt = lastFrameMs > 0 ? Math.min(0.1, (nowMs - lastFrameMs) / 1000) : 1 / 60;
+				lastFrameMs = nowMs;
 
 				// Rebuild any chunks dirtied by edits this frame. Per-chunk grid
 				// lines rebuild in lockstep so a small edit only repaints the 1-2
@@ -965,7 +994,13 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					}
 				}
 
-				resources.controls.update();
+				// Camera-mode-specific input drive.
+				if (cameraModeRef.current === "freecam") {
+					freecamRuntimeRef.current.update(resources, dt, pointerLockedRef.current);
+				} else {
+					resources.controls.update();
+				}
+
 				resources.renderer.render(resources.scene, resources.camera);
 
 				const overlay = actorOverlayRef.current;
@@ -980,7 +1015,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					);
 				}
 			};
-			animate();
+			rafId = requestAnimationFrame(animate);
 
 			const resizeObserver = new ResizeObserver(() => {
 				resizeRenderer(resources, container);
@@ -1075,6 +1110,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			// --- Pointer handlers ---
 			const handlePointerMove = (event: PointerEvent) => {
 				if (activeViewRef.current !== "edit") return;
+				if (pointerLockedRef.current) return;
 				const activeStroke =
 					activeStrokeRef.current?.pointerId === event.pointerId
 						? activeStrokeRef.current : null;
@@ -1107,6 +1143,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 			const handlePointerDown = (event: PointerEvent) => {
 				if (activeViewRef.current !== "edit") return;
+				// Pointer-locked freecam consumes mouse motion -- skip paint dispatch.
+				if (pointerLockedRef.current) return;
 				if (event.button === 1) { event.preventDefault(); return; }
 				if (event.button !== 0 || readOnlyRef.current) return;
 				event.preventDefault();
@@ -1167,6 +1205,82 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			const preventContextMenu       = (e: MouseEvent) => e.preventDefault();
 			const preventMiddleMouseScroll = (e: MouseEvent) => { if (e.button === 1) e.preventDefault(); };
 
+			// --- Freecam: pointer-lock acquisition on right mouse hold ---
+			// Mirrors the 3DMap UX: press-and-hold right to lock+look+WASD;
+			// release to unlock for clicking. OrbitControls is disabled in
+			// freecam mode so right-click doesn't fight us for pan duty.
+			const handleFreecamRightDown = (event: MouseEvent) => {
+				if (event.button !== 2) return;
+				if (cameraModeRef.current !== "freecam") return;
+				event.preventDefault();
+				// Commit any in-progress stroke before we yield the cursor.
+				if (strokeStartedRef.current) {
+					recordUndo();
+					commitDraftChange();
+				}
+				clearStrokeState();
+				if (!pointerLockedRef.current) {
+					resources.pointerLockControls.lock();
+				}
+			};
+			const handleFreecamRightUp = (event: MouseEvent) => {
+				if (event.button !== 2) return;
+				if (cameraModeRef.current !== "freecam") return;
+				if (pointerLockedRef.current) {
+					resources.pointerLockControls.unlock();
+				}
+			};
+			const onPointerLock = () => {
+				pointerLockedRef.current = true;
+				clearObjectGroup(resources.hoverGroup);
+			};
+			const onPointerUnlock = () => {
+				pointerLockedRef.current = false;
+				freecamRuntimeRef.current.exit();
+			};
+			resources.pointerLockControls.addEventListener("lock", onPointerLock);
+			resources.pointerLockControls.addEventListener("unlock", onPointerUnlock);
+
+			// --- Freecam: WASD/QE tracking. Lives on window because key events
+			// while pointer-locked don't necessarily focus the canvas. ---
+			const handleFreecamKeyDown = (event: KeyboardEvent) => {
+				if (cameraModeRef.current !== "freecam") return;
+				if (!pointerLockedRef.current) return;
+				if (!isFreecamMovementKey(event.key)) return;
+				event.preventDefault();
+				const keys = freecamRuntimeRef.current.keys;
+				switch (event.key.toLowerCase()) {
+					case "w": keys.w = true; break;
+					case "a": keys.a = true; break;
+					case "s": keys.s = true; break;
+					case "d": keys.d = true; break;
+					case "q": keys.q = true; break;
+					case "e": keys.e = true; break;
+				}
+			};
+			const handleFreecamKeyUp = (event: KeyboardEvent) => {
+				if (!isFreecamMovementKey(event.key)) return;
+				const keys = freecamRuntimeRef.current.keys;
+				switch (event.key.toLowerCase()) {
+					case "w": keys.w = false; break;
+					case "a": keys.a = false; break;
+					case "s": keys.s = false; break;
+					case "d": keys.d = false; break;
+					case "q": keys.q = false; break;
+					case "e": keys.e = false; break;
+				}
+			};
+			window.addEventListener("keydown", handleFreecamKeyDown);
+			window.addEventListener("keyup",   handleFreecamKeyUp);
+
+			// --- Freecam: scroll-wheel adjusts move speed. ---
+			const handleFreecamWheel = (event: WheelEvent) => {
+				if (cameraModeRef.current !== "freecam") return;
+				event.preventDefault();
+				const mult = freecamRuntimeRef.current.bumpSpeed(event.deltaY);
+				setFreecamSpeedMult(mult);
+			};
+
 			const dom = resources.renderer.domElement;
 			dom.addEventListener("pointermove",   handlePointerMove);
 			dom.addEventListener("pointerdown",   handlePointerDown, true);
@@ -1174,8 +1288,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			dom.addEventListener("pointercancel", finishStroke);
 			dom.addEventListener("pointerleave",  handlePointerLeave);
 			dom.addEventListener("mousedown",     preventMiddleMouseScroll, true);
+			dom.addEventListener("mousedown",     handleFreecamRightDown);
+			dom.addEventListener("mouseup",       handleFreecamRightUp);
 			dom.addEventListener("auxclick",      preventMiddleMouseScroll);
 			dom.addEventListener("contextmenu",   preventContextMenu);
+			dom.addEventListener("wheel",         handleFreecamWheel, { passive: false });
 
 			return () => {
 				cancelAnimationFrame(rafId);
@@ -1186,8 +1303,17 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				dom.removeEventListener("pointercancel", finishStroke);
 				dom.removeEventListener("pointerleave",  handlePointerLeave);
 				dom.removeEventListener("mousedown",     preventMiddleMouseScroll, true);
+				dom.removeEventListener("mousedown",     handleFreecamRightDown);
+				dom.removeEventListener("mouseup",       handleFreecamRightUp);
 				dom.removeEventListener("auxclick",      preventMiddleMouseScroll);
 				dom.removeEventListener("contextmenu",   preventContextMenu);
+				dom.removeEventListener("wheel",         handleFreecamWheel);
+				window.removeEventListener("keydown",    handleFreecamKeyDown);
+				window.removeEventListener("keyup",      handleFreecamKeyUp);
+				resources.pointerLockControls.removeEventListener("lock",   onPointerLock);
+				resources.pointerLockControls.removeEventListener("unlock", onPointerUnlock);
+				if (pointerLockedRef.current) resources.pointerLockControls.unlock();
+				resources.pointerLockControls.dispose();
 				resources.controls.dispose();
 				clearAllChunkMeshes(resources.chunkGroup, chunkMeshesRef.current);
 				clearAllGridChunkLines(gridGroup);
@@ -1219,7 +1345,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 			if (lastShapeSignatureRef.current !== sig) {
 				clearObjectGroup(resources.hoverGroup);
-				frameCamera(resources, t, container);
+				// Reframe only the ortho camera; freecam stays where the user left it.
+				if (cameraModeRef.current === "ortho") {
+					frameOrthoCamera(resources, t, container);
+				}
 				lastShapeSignatureRef.current = sig;
 			}
 		}, [editGen]);
@@ -1272,6 +1401,73 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		}, [activeView, readOnly]);
 
 		// -------------------------------------------------------------------------
+		// Camera-mode selector (ortho / perspective / freecam)
+		// Declared before the keyboard-shortcuts effect since the F handler
+		// includes it in its dep array.
+		// -------------------------------------------------------------------------
+		const setCameraModeTo = useCallback((next: CameraMode) => {
+			const resources = resourcesRef.current;
+			if (!resources) return;
+			if (next === cameraModeRef.current) return;
+
+			// Commit any in-flight stroke before swapping cameras so the partial
+			// edit isn't lost in the camera transition.
+			if (strokeStartedRef.current) {
+				recordUndo();
+				commitDraftChange();
+			}
+			activeStrokeRef.current  = null;
+			strokeStartedRef.current = false;
+			strokeDeltaRef.current   = null;
+			lastEditKeyRef.current   = null;
+
+			// Always release pointer-lock when leaving freecam, even if the
+			// caller targets perspective rather than ortho.
+			if (cameraModeRef.current === "freecam" && pointerLockedRef.current) {
+				resources.pointerLockControls.unlock();
+			}
+
+			// Pick the active camera and re-bind OrbitControls onto it. Three.js
+			// doesn't officially document `controls.object`, but it's been the
+			// supported re-bind path for years and 3DMap relies on it too.
+			const activeCamera =
+				next === "ortho" ? resources.orthoCamera : resources.freecamCamera;
+			resources.camera = activeCamera;
+			(resources.controls as unknown as { object: THREE.Camera }).object = activeCamera;
+
+			if (next === "freecam") {
+				freecamRuntimeRef.current.enter(resources, terrainRef.current);
+				resources.controls.enabled = false;
+				resources.pointerLockControls.enabled = true;
+			} else {
+				// ortho or perspective: OrbitControls drives the active camera.
+				resources.controls.enabled = true;
+				resources.pointerLockControls.enabled = false;
+				freecamRuntimeRef.current.exit();
+				if (next === "perspective") {
+					// Place the perspective camera at the same isometric viewpoint
+					// the user expects on first switch.
+					freecamRuntimeRef.current.enter(resources, terrainRef.current);
+				}
+				resources.controls.update();
+			}
+
+			// Make sure projection matches the new active camera + container.
+			const container = containerRef.current;
+			if (container) resizeRenderer(resources, container);
+			cameraModeRef.current = next;
+			setCameraMode(next);
+			// Hover ghost depends on the active camera; force a refresh.
+			refreshHoverRef.current?.();
+		}, [commitDraftChange, recordUndo]);
+
+		// F toggles between the last non-freecam mode and freecam.
+		const toggleCameraMode = useCallback(() => {
+			const current = cameraModeRef.current;
+			setCameraModeTo(current === "freecam" ? lastNonFreecamModeRef.current : "freecam");
+		}, [setCameraModeTo]);
+
+		// -------------------------------------------------------------------------
 		// Keyboard shortcuts
 		// -------------------------------------------------------------------------
 		useEffect(() => {
@@ -1291,6 +1487,18 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				if (event.ctrlKey || event.metaKey || event.altKey) return;
 
 				const key = event.key.toLowerCase();
+
+				// F toggles freecam regardless of camera state (must work even when
+				// the cursor isn't focused on the canvas).
+				if (key === "f") {
+					event.preventDefault();
+					toggleCameraMode();
+					return;
+				}
+
+				// Suppress brush-tool shortcuts while flying so WASD navigation
+				// doesn't flip the active tool out from under the user.
+				if (pointerLockedRef.current) return;
 
 				if (toolRef.current === "stamp") {
 					if (key === "r") {
@@ -1337,7 +1545,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			};
 			window.addEventListener("keydown", handleKeyDown);
 			return () => window.removeEventListener("keydown", handleKeyDown);
-		}, [clearSelection, exitStampMode, redo, undo]);
+		}, [clearSelection, exitStampMode, redo, toggleCameraMode, undo]);
 
 		// -------------------------------------------------------------------------
 		// VOX import
@@ -1447,6 +1655,9 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 							onShowPreview={showPreview}
 							onVoxFileSelected={(file) => void handleVoxFile(file)}
 							voxFileInputRef={voxFileInputRef}
+							cameraMode={cameraMode}
+							onSelectCameraMode={setCameraModeTo}
+							freecamSpeedMult={freecamSpeedMult}
 						/>
 
 						<div className="relative flex-1 min-h-0 bg-base-200">

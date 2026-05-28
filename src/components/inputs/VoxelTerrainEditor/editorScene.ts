@@ -1,24 +1,36 @@
 // Three.js scene setup for the voxel terrain editor.
 //
-// Creates the orthographic camera, OrbitControls, renderer, light rig, and the
-// scene groups the editor renders into (gridGroup, hoverGroup, selectionGroup,
-// chunkGroup). Also exposes disposal helpers and the camera framing routine
-// run on shape changes.
+// Builds two cameras up front:
+//   - orthoCamera   (THREE.OrthographicCamera) for the default isometric view
+//   - freecamCamera (THREE.PerspectiveCamera)  for free-roaming WASD flight
+// `resources.camera` points at whichever one is currently active. Picking,
+// rendering and projection all read through it so they're naturally
+// camera-agnostic. Each camera has its own controls (OrbitControls /
+// PointerLockControls); the toggle helper in `editorFreecam.ts` enables one
+// and disables the other.
 
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { installEditorTerrainShader } from "./editorTerrainShader";
 
 export const INITIAL_CAMERA_HALF_SIZE = 14;
 export const CAMERA_DISTANCE_MULTIPLIER = 1.65;
+export const FREECAM_FOV = 70;
+export const FREECAM_NEAR = 0.05;
+export const FREECAM_FAR = 1000;
 const EDITOR_PIXEL_RATIO = 1;
 
 export interface EditorSceneResources {
 	scene: THREE.Scene;
-	camera: THREE.OrthographicCamera;
 	renderer: THREE.WebGLRenderer;
+	/** Active camera. Points at orthoCamera or freecamCamera. */
+	camera: THREE.OrthographicCamera | THREE.PerspectiveCamera;
+	orthoCamera: THREE.OrthographicCamera;
+	freecamCamera: THREE.PerspectiveCamera;
 	controls: OrbitControls;
+	pointerLockControls: PointerLockControls;
 	gridGroup: THREE.Group;
 	hoverGroup: THREE.Group;
 	selectionGroup: THREE.Group;
@@ -45,8 +57,11 @@ export function createEditorScene(
 	const scene = new THREE.Scene();
 	scene.background = null;
 
-	const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
-	const camera = new THREE.OrthographicCamera(
+	const width  = container.clientWidth  || 1;
+	const height = container.clientHeight || 1;
+	const aspect = width / height;
+
+	const orthoCamera = new THREE.OrthographicCamera(
 		-INITIAL_CAMERA_HALF_SIZE * aspect,
 		 INITIAL_CAMERA_HALF_SIZE * aspect,
 		 INITIAL_CAMERA_HALF_SIZE,
@@ -54,14 +69,18 @@ export function createEditorScene(
 		-100, 1000,
 	);
 	const initialDist = INITIAL_CAMERA_HALF_SIZE * CAMERA_DISTANCE_MULTIPLIER;
-	camera.position.set(initialDist, initialDist, initialDist);
+	orthoCamera.position.set(initialDist, initialDist, initialDist);
+
+	const freecamCamera = new THREE.PerspectiveCamera(FREECAM_FOV, aspect, FREECAM_NEAR, FREECAM_FAR);
+	freecamCamera.position.copy(orthoCamera.position);
+	freecamCamera.lookAt(0, 0, 0);
 
 	scene.add(new THREE.HemisphereLight(0xffffff, 0x94a3b8, Math.PI * 0.75));
 	const directional = new THREE.DirectionalLight(0xffffff, Math.PI * 1.6);
 	directional.position.set(18, 32, 22);
 	scene.add(directional);
 
-	const controls = new OrbitControls(camera, renderer.domElement);
+	const controls = new OrbitControls(orthoCamera, renderer.domElement);
 	controls.enableDamping = true;
 	controls.dampingFactor = 0.08;
 	controls.minZoom = 0.4;
@@ -70,6 +89,11 @@ export function createEditorScene(
 	controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE;
 	controls.mouseButtons.RIGHT  = THREE.MOUSE.PAN;
 	controls.update();
+
+	// Created up front so we can lock/unlock on demand. Disabled by default
+	// (only the active camera's controls drive input).
+	const pointerLockControls = new PointerLockControls(freecamCamera, renderer.domElement);
+	pointerLockControls.enabled = false;
 
 	const gridGroup      = new THREE.Group();
 	const hoverGroup     = new THREE.Group();
@@ -84,13 +108,14 @@ export function createEditorScene(
 	});
 	// "Specialness" hint: voxels painted with a special material (palette
 	// index >= 240) get a subtle world-space diagonal stripe so they read as
-	// distinct from a same-coloured normal voxel. The pattern is constant in
-	// world space (stable across camera moves) and gated by a per-vertex
-	// isSpecial flag so plain voxels are unaffected.
+	// distinct from a same-coloured normal voxel.
 	installEditorTerrainShader(terrainMaterial);
 
 	return {
-		scene, camera, renderer, controls,
+		scene, renderer,
+		camera: orthoCamera,
+		orthoCamera, freecamCamera,
+		controls, pointerLockControls,
 		gridGroup, hoverGroup, selectionGroup, chunkGroup,
 		terrainMaterial,
 	};
@@ -103,14 +128,25 @@ export function resizeRenderer(
 	const width  = container.clientWidth  || 1;
 	const height = container.clientHeight || 1;
 	const aspect = width / height;
-	const halfSize = resources.camera.top;
-	resources.camera.left  = -halfSize * aspect;
-	resources.camera.right =  halfSize * aspect;
-	resources.camera.updateProjectionMatrix();
+
+	const ortho = resources.orthoCamera;
+	const halfSize = ortho.top;
+	ortho.left  = -halfSize * aspect;
+	ortho.right =  halfSize * aspect;
+	ortho.updateProjectionMatrix();
+
+	const freecam = resources.freecamCamera;
+	freecam.aspect = aspect;
+	freecam.updateProjectionMatrix();
+
 	resources.renderer.setSize(width, height);
 }
 
-export function frameCamera(
+/**
+ * Reset the orthographic camera to its default isometric framing for the
+ * given terrain. Does not affect the freecam camera.
+ */
+export function frameOrthoCamera(
 	resources: EditorSceneResources,
 	terrain: VoxelTerrain,
 	container: HTMLDivElement,
@@ -121,7 +157,7 @@ export function frameCamera(
 		terrain.Height * 0.9,
 	);
 	const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
-	const camera   = resources.camera;
+	const camera   = resources.orthoCamera;
 	const controls = resources.controls;
 	const centerY  = Math.max(0, terrain.Height / 2 - 0.5);
 	const dist     = halfSize * CAMERA_DISTANCE_MULTIPLIER;

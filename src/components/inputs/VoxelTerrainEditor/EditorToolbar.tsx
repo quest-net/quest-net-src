@@ -6,7 +6,12 @@
 
 import type { RefObject } from "react";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import type { EditorView, EditorTool, EditGranularityType } from "./editorTypes";
+import type {
+	CameraMode,
+	EditorView,
+	EditorTool,
+	EditGranularityType,
+} from "./editorTypes";
 import {
 	MAX_BRUSH_SIZE,
 	MIN_BRUSH_SIZE,
@@ -50,6 +55,11 @@ interface EditorToolbarProps {
 	onShowPreview: () => void;
 	onVoxFileSelected: (file: File) => void;
 	voxFileInputRef: RefObject<HTMLInputElement | null>;
+	cameraMode: CameraMode;
+	onSelectCameraMode: (mode: CameraMode) => void;
+	/** Current freecam movement-speed multiplier (1 = base). Shown in the
+	 *  camera dropdown while in freecam mode. */
+	freecamSpeedMult: number;
 }
 
 export function EditorToolbar(props: EditorToolbarProps) {
@@ -77,6 +87,9 @@ export function EditorToolbar(props: EditorToolbarProps) {
 		onShowPreview,
 		onVoxFileSelected,
 		voxFileInputRef,
+		cameraMode,
+		onSelectCameraMode,
+		freecamSpeedMult,
 	} = props;
 
 	const fileRef = voxFileInputRef;
@@ -275,6 +288,13 @@ export function EditorToolbar(props: EditorToolbarProps) {
 						/>
 					</>
 				)}
+				{activeView === "edit" && (
+					<CameraModeDropdown
+						cameraMode={cameraMode}
+						onSelectCameraMode={onSelectCameraMode}
+						freecamSpeedMult={freecamSpeedMult}
+					/>
+				)}
 				<div className="join">
 					<button
 						type="button"
@@ -378,6 +398,46 @@ function ShortcutsHelpDropdown({ modKeyLabel }: { modKeyLabel: string }) {
 					</div>
 				</div>
 
+				<div className="mt-3 pt-2 border-t border-base-300">
+					<div className="font-semibold mb-2">Freecam</div>
+					<table className="w-full">
+						<tbody>
+							<tr>
+								<td className="opacity-70 py-0.5">Toggle freecam</td>
+								<td className="text-right"><kbd className="kbd kbd-sm">F</kbd></td>
+							</tr>
+							<tr>
+								<td className="opacity-70 py-0.5">Look around</td>
+								<td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Hold&nbsp;Right</kbd></td>
+							</tr>
+							<tr>
+								<td className="opacity-70 py-0.5">Fly</td>
+								<td className="text-right whitespace-nowrap">
+									<kbd className="kbd kbd-sm">W</kbd>
+									<kbd className="kbd kbd-sm">A</kbd>
+									<kbd className="kbd kbd-sm">S</kbd>
+									<kbd className="kbd kbd-sm">D</kbd>
+								</td>
+							</tr>
+							<tr>
+								<td className="opacity-70 py-0.5">Up / Down</td>
+								<td className="text-right whitespace-nowrap">
+									<kbd className="kbd kbd-sm">E</kbd>
+									<span className="mx-1 opacity-50">/</span>
+									<kbd className="kbd kbd-sm">Q</kbd>
+								</td>
+							</tr>
+							<tr>
+								<td className="opacity-70 py-0.5">Adjust fly speed</td>
+								<td className="text-right"><kbd className="kbd kbd-sm">Scroll</kbd></td>
+							</tr>
+						</tbody>
+					</table>
+					<div className="mt-1 text-xs opacity-70 leading-relaxed">
+						Release Right to bring the cursor back for painting.
+					</div>
+				</div>
+
 				<div className="mt-3 pt-2 border-t border-base-300 text-xs leading-relaxed">
 					<div className="font-semibold mb-1">Mid-stroke modifier</div>
 					<div className="opacity-80">
@@ -387,6 +447,77 @@ function ShortcutsHelpDropdown({ modKeyLabel }: { modKeyLabel: string }) {
 					</div>
 				</div>
 			</div>
+		</div>
+	);
+}
+
+interface CameraModeDropdownProps {
+	cameraMode: CameraMode;
+	onSelectCameraMode: (mode: CameraMode) => void;
+	freecamSpeedMult: number;
+}
+
+const CAMERA_MODE_LABELS: Record<CameraMode, string> = {
+	ortho:       "Isometric",
+	perspective: "Perspective",
+	freecam:     "Free camera",
+};
+
+const CAMERA_MODE_ICONS: Record<CameraMode, string> = {
+	ortho:       "icon-[mdi--cube-outline]",
+	perspective: "icon-[mdi--axis-arrow]",
+	freecam:     "icon-[mdi--camera-iris]",
+};
+
+function CameraModeDropdown({
+	cameraMode,
+	onSelectCameraMode,
+	freecamSpeedMult,
+}: CameraModeDropdownProps) {
+	const select = (mode: CameraMode) => {
+		onSelectCameraMode(mode);
+		// DaisyUI dropdowns stay open while any descendant has focus
+		// (:focus-within). Blur the menu item AND the trigger button on the
+		// next frame so React's commit doesn't put focus back on the menu.
+		requestAnimationFrame(() => {
+			const active = document.activeElement as HTMLElement | null;
+			active?.blur();
+		});
+	};
+
+	return (
+		<div className="dropdown dropdown-bottom dropdown-end">
+			<button
+				tabIndex={0}
+				type="button"
+				className="btn btn-sm btn-neutral"
+				title={
+					cameraMode === "freecam"
+						? `Free camera — hold Right to look + WASD to fly, QE up/down, scroll to change speed (${freecamSpeedMult.toFixed(2)}×). F to toggle.`
+						: `Camera: ${CAMERA_MODE_LABELS[cameraMode]} (F toggles freecam)`
+				}
+				aria-label="Camera mode"
+			>
+				<span className="icon-[mdi--camera] w-5 h-5" />
+				<span className="icon-[mdi--chevron-down] w-3 h-3 opacity-60" />
+			</button>
+			<ul
+				tabIndex={0}
+				className="dropdown-content menu bg-base-200 border border-base-300 rounded-box z-50 w-44 p-1 shadow-lg mt-1"
+			>
+				{(["ortho", "perspective", "freecam"] as const).map((mode) => (
+					<li key={mode}>
+						<button
+							type="button"
+							className={cameraMode === mode ? "active" : ""}
+							onClick={() => select(mode)}
+						>
+							<span className={`${CAMERA_MODE_ICONS[mode]} w-4 h-4`} />
+							{CAMERA_MODE_LABELS[mode]}
+						</button>
+					</li>
+				))}
+			</ul>
 		</div>
 	);
 }

@@ -291,7 +291,14 @@ export function Main() {
 										<li>
 											<button
 												className={cameraPreference === "ortho" ? "active" : ""}
-												onClick={() => setCameraPreference("ortho")}
+												onClick={() => {
+													setCameraPreference("ortho");
+													// Defer blur past React's commit so :focus-within
+													// can't be re-established on the rerendered menu.
+													requestAnimationFrame(() =>
+														(document.activeElement as HTMLElement | null)?.blur()
+													);
+												}}
 											>
 												<span className="icon-[mdi--cube-outline] w-4 h-4" />
 												Isometric
@@ -300,7 +307,12 @@ export function Main() {
 										<li>
 											<button
 												className={cameraPreference === "perspective" ? "active" : ""}
-												onClick={() => setCameraPreference("perspective")}
+												onClick={() => {
+													setCameraPreference("perspective");
+													requestAnimationFrame(() =>
+														(document.activeElement as HTMLElement | null)?.blur()
+													);
+												}}
 											>
 												<span className="icon-[mdi--axis-arrow] w-4 h-4" />
 												Perspective
@@ -310,7 +322,12 @@ export function Main() {
 											<li>
 												<button
 													className={cameraPreference === "freecam" ? "active" : ""}
-													onClick={() => setCameraPreference("freecam")}
+													onClick={() => {
+														setCameraPreference("freecam");
+														requestAnimationFrame(() =>
+															(document.activeElement as HTMLElement | null)?.blur()
+														);
+													}}
 												>
 													<span className="icon-[mdi--camera-iris] w-4 h-4" />
 													Free camera
