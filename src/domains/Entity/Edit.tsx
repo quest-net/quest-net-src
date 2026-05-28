@@ -109,6 +109,7 @@ export function EntityEdit({
 			createTitle="Create Entity"
 			editTitle="Edit Entity"
 			viewTitle="View Entity"
+			buttonConfig={{ keepButtonsVisible: true }}
 		>
 			<EntityForm />
 		</FormWrapper>

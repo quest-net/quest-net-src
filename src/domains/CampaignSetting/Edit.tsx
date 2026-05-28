@@ -119,6 +119,7 @@ export function CampaignSettingEdit() {
 					buttonConfig={{
 						showTopCancel: false,
 						showBottomButtons: false,
+						keepButtonsVisible: true,
 					}}
 				>
 					<CampaignSettingForm

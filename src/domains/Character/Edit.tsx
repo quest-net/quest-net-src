@@ -117,6 +117,7 @@ export function CharacterEdit({
 			createTitle="Create Character"
 			editTitle="Edit Character"
 			viewTitle="View Character"
+			buttonConfig={{ keepButtonsVisible: true }}
 		>
 			<CharacterForm />
 		</FormWrapper>

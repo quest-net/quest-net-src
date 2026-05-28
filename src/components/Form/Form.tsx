@@ -8,8 +8,10 @@ import {
 	useCallback,
 	ReactNode,
 	ReactElement,
+	RefObject,
 	cloneElement,
 } from "react";
+import { createPortal } from "react-dom";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { canPerformAction } from "../../services/Actions/ActionRegistry";
 
@@ -23,6 +25,12 @@ interface ButtonConfig {
 	showTopCancel?: boolean;
 	showTopSave?: boolean;
 	showBottomButtons?: boolean;
+	/**
+	 * When true, a floating action bar appears at the bottom-right of the
+	 * viewport whenever the form's real action buttons (header and bottom row)
+	 * are scrolled offscreen. Useful for long forms (settings, campaign config).
+	 */
+	keepButtonsVisible?: boolean;
 }
 
 interface FormContextValue {
@@ -47,6 +55,57 @@ export function useFormContext() {
 export function useFormReadOnly(): boolean {
 	const context = useContext(FormContext);
 	return context?.readOnly ?? false;
+}
+
+// ============================================================================
+// FLOATING ACTION BAR (keep buttons visible when scrolled offscreen)
+// ============================================================================
+
+/**
+ * Tracks whether the referenced element is currently scrolled out of the
+ * viewport. Returns false (i.e. "visible") while disabled or before the
+ * observer has reported. Re-attaches when the ref's element changes.
+ */
+export function useIsOffscreen<E extends HTMLElement>(
+	ref: RefObject<E | null>,
+	enabled: boolean
+): boolean {
+	const [offscreen, setOffscreen] = useState(false);
+
+	useEffect(() => {
+		const el = ref.current;
+		if (!enabled || !el) {
+			setOffscreen(false);
+			return;
+		}
+		const observer = new IntersectionObserver(
+			([entry]) => setOffscreen(!entry.isIntersecting),
+			{ threshold: 0 }
+		);
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, [ref, enabled]);
+
+	return enabled ? offscreen : false;
+}
+
+interface FloatingActionBarProps {
+	show: boolean;
+	children: ReactNode;
+}
+
+/**
+ * Renders its children as free-floating elements anchored to the bottom-right
+ * of the viewport via a portal (so it ignores transformed/overflow ancestors).
+ * No background/container chrome — just positioning. Rendered only when `show`
+ * is true.
+ */
+export function FloatingActionBar({ show, children }: FloatingActionBarProps) {
+	if (!show) return null;
+	return createPortal(
+		<div className="fixed bottom-4 right-4 z-[60] flex gap-2">{children}</div>,
+		document.body
+	);
 }
 
 // ============================================================================
@@ -96,6 +155,7 @@ export function FormWrapper<T extends Record<string, any>>({
 		showTopCancel = true,
 		showTopSave = true,
 		showBottomButtons = true,
+		keepButtonsVisible = false,
 	} = buttonConfig;
 
 	// Check permissions for this domain
@@ -119,6 +179,21 @@ export function FormWrapper<T extends Record<string, any>>({
 	// Delete confirmation state
 	const [isDeleteConfirm, setIsDeleteConfirm] = useState(false);
 	const [isDeleteCooldown, setIsDeleteCooldown] = useState(false);
+
+	// Floating-button tracking: show floating actions when the real button rows
+	// (header + optional bottom row) are scrolled out of view.
+	const headerButtonsRef = useRef<HTMLDivElement>(null);
+	const bottomButtonsRef = useRef<HTMLDivElement>(null);
+	const hasBottomButtons = !readOnly && showBottomButtons;
+	const headerOffscreen = useIsOffscreen(headerButtonsRef, keepButtonsVisible);
+	const bottomOffscreen = useIsOffscreen(
+		bottomButtonsRef,
+		keepButtonsVisible && hasBottomButtons
+	);
+	const showFloating =
+		keepButtonsVisible &&
+		headerOffscreen &&
+		(!hasBottomButtons || bottomOffscreen);
 
 	useEffect(() => {
 		if (mode === "create") {
@@ -218,12 +293,13 @@ export function FormWrapper<T extends Record<string, any>>({
 					showClone={mode === "edit" && !!onClone}
 					showCancel={showTopCancel}
 					showSave={showTopSave}
+					buttonsRef={headerButtonsRef}
 				/>
 
 				{childrenWithProps}
 
-				{!readOnly && showBottomButtons && (
-					<div className="flex justify-between gap-2">
+				{hasBottomButtons && (
+					<div ref={bottomButtonsRef} className="flex justify-between gap-2">
 						<div>
 							{canDelete && (
 								<button
@@ -246,6 +322,48 @@ export function FormWrapper<T extends Record<string, any>>({
 					</div>
 				)}
 			</div>
+
+			<FloatingActionBar show={showFloating}>
+				{canDelete && (
+					<button
+						onClick={handleDelete}
+						className="btn btn-circle btn-error shadow-lg opacity-60 transition-opacity hover:opacity-100 tooltip tooltip-left"
+						disabled={isDeleteCooldown}
+						data-tip={isDeleteConfirm ? "Click again to delete" : "Delete"}
+						aria-label={isDeleteConfirm ? "Click again to delete" : "Delete"}
+					>
+						<span className="icon-[mdi--trash-can] h-5 w-5" />
+					</button>
+				)}
+				{mode === "edit" && !!onClone && (
+					<button
+						onClick={handleClone}
+						className="btn btn-circle btn-neutral shadow-lg opacity-60 transition-opacity hover:opacity-100 tooltip tooltip-left"
+						data-tip="Clone"
+						aria-label="Clone"
+					>
+						<span className="icon-[mdi--content-copy] h-5 w-5" />
+					</button>
+				)}
+				<button
+					onClick={onClose}
+					className="btn btn-circle btn-neutral shadow-lg opacity-60 transition-opacity hover:opacity-100 tooltip tooltip-left"
+					data-tip={readOnly ? "Close" : "Cancel"}
+					aria-label={readOnly ? "Close" : "Cancel"}
+				>
+					<span className="icon-[mdi--close] h-5 w-5" />
+				</button>
+				{!readOnly && (
+					<button
+						onClick={handleSave}
+						className="btn btn-circle btn-primary shadow-lg opacity-60 transition-opacity hover:opacity-100 tooltip tooltip-left"
+						data-tip={mode === "create" ? "Create" : "Save Changes"}
+						aria-label={mode === "create" ? "Create" : "Save Changes"}
+					>
+						<span className="icon-[mdi--content-save] h-5 w-5" />
+					</button>
+				)}
+			</FloatingActionBar>
 		</FormContext.Provider>
 	);
 }
@@ -264,6 +382,7 @@ interface FormHeaderProps {
 	showClone: boolean;
 	showCancel: boolean;
 	showSave: boolean;
+	buttonsRef?: RefObject<HTMLDivElement | null>;
 }
 
 function FormHeader({
@@ -276,6 +395,7 @@ function FormHeader({
 	showClone,
 	showCancel,
 	showSave,
+	buttonsRef,
 }: FormHeaderProps) {
 	const { mode, readOnly, isDirty } = useFormContext();
 
@@ -285,7 +405,7 @@ function FormHeader({
 	return (
 		<div className="flex justify-between items-center">
 			<h2 className="text-2xl font-bold">{title}</h2>
-			<div className="flex items-center gap-4">
+			<div ref={buttonsRef} className="flex items-center gap-4">
 				{isDirty && !readOnly && (
 					<span className="text-sm text-warning italic">
 						You have unsaved changes

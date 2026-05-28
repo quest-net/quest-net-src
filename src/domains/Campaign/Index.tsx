@@ -11,10 +11,12 @@ import CircularText from "../../components/CircularText/CircularText";
 import PixelBlast from "../../components/PixelBlast/PixelBlast";
 import { useThemeColors } from "../../utils/ThemeUtils";
 import { isGUID, isReservedRouteKeyword } from "../../utils/UrlParser";
+import { useIsMobile } from "../../hooks/useIsMobile";
 
 export function CampaignIndex() {
 	const context = useQuestContext();
 	const navigate = useNavigate();
+	const isMobile = useIsMobile();
 	const [campaignName, setCampaignName] = useState("");
 	const [customRoomCode, setCustomRoomCode] = useState("");
 	const [joinRoomCode, setJoinRoomCode] = useState("");
@@ -300,11 +302,12 @@ export function CampaignIndex() {
 			</div>
 
 			{/* Main Content */}
-			<div className="relative z-1 h-full flex items-center justify-center p-8">
+			<div className="relative z-1 h-full flex items-start sm:items-center justify-center p-4 pt-20 sm:p-8 sm:pt-8 overflow-y-auto sm:overflow-visible">
 				<div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-8">
 					{/* Left Column - Create/Join Campaign */}
 					<div className="space-y-6">
-						{/* Create Campaign */}
+						{/* Create Campaign — hidden on mobile (enforced player-only experience) */}
+						{!isMobile && (
 						<div className="card bg-base-100 shadow-xl border-2 border-base-300">
 							<div className="card-body">
 								<h2 className="card-title text-2xl mb-4">Create New Campaign</h2>
@@ -349,6 +352,7 @@ export function CampaignIndex() {
 								</button>
 							</div>
 						</div>
+						)}
 
 						{/* Join Campaign */}
 						<div className="card bg-base-100 shadow-xl border-2 border-base-300">
@@ -391,24 +395,27 @@ export function CampaignIndex() {
 									Your Campaigns ({context.Campaigns.length})
 								</h2>
 								
-								<button
-									onClick={handleImportClick}
-									disabled={isImporting}
-									className="btn btn-sm btn-neutral gap-2"
-									title="Import campaign from JSON file"
-								>
-									{isImporting ? (
-										<>
-											<span className="loading loading-spinner loading-xs" />
-											Importing...
-										</>
-									) : (
-										<>
-											<span className="icon-[mdi--upload] w-4 h-4" />
-											Import
-										</>
-									)}
-								</button>
+								{/* Import is another way to create a campaign — hidden on mobile (player-only) */}
+								{!isMobile && (
+									<button
+										onClick={handleImportClick}
+										disabled={isImporting}
+										className="btn btn-sm btn-neutral gap-2"
+										title="Import campaign from JSON file"
+									>
+										{isImporting ? (
+											<>
+												<span className="loading loading-spinner loading-xs" />
+												Importing...
+											</>
+										) : (
+											<>
+												<span className="icon-[mdi--upload] w-4 h-4" />
+												Import
+											</>
+										)}
+									</button>
+								)}
 							</div>
 
 							{importProgress && (

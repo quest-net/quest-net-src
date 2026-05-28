@@ -1,11 +1,12 @@
 // domains/AppSetting/Edit.tsx
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   useQuestContext,
   triggerContextUpdate,
 } from "../Context/ContextProvider";
+import { useIsOffscreen, FloatingActionBar } from "../../components/Form/Form";
 import { AppSettingActions } from "./AppSettingActions";
 import {
   PROVIDER_REGISTRY,
@@ -15,6 +16,10 @@ import {
 export function AppSettingEdit() {
   const context = useQuestContext();
   const navigate = useNavigate();
+
+  // Floating save/cancel bar when the footer actions scroll offscreen.
+  const footerRef = useRef<HTMLDivElement>(null);
+  const footerOffscreen = useIsOffscreen(footerRef, true);
 
   // --- General settings ---
   const [theme, setTheme] = useState<"light" | "dark">(
@@ -393,7 +398,7 @@ export function AppSettingEdit() {
           </section>
 
           {/* Footer actions */}
-          <div className="flex justify-between mt-4">
+          <div ref={footerRef} className="flex justify-between mt-4">
             <button className="btn btn-ghost" onClick={handleCancel}>
               Cancel
             </button>
@@ -414,6 +419,30 @@ export function AppSettingEdit() {
           </div>
         </div>
       </div>
+
+      <FloatingActionBar show={footerOffscreen}>
+        <button
+          className="btn btn-circle btn-neutral shadow-lg opacity-60 transition-opacity hover:opacity-100 tooltip tooltip-left"
+          onClick={handleCancel}
+          data-tip="Cancel"
+          aria-label="Cancel"
+        >
+          <span className="icon-[mdi--close] h-5 w-5" />
+        </button>
+        <button
+          className="btn btn-circle btn-primary shadow-lg opacity-60 transition-opacity hover:opacity-100 tooltip tooltip-left"
+          onClick={handleSave}
+          disabled={isSaving}
+          data-tip="Save Settings"
+          aria-label="Save Settings"
+        >
+          {isSaving ? (
+            <span className="loading loading-spinner loading-sm" />
+          ) : (
+            <span className="icon-[mdi--content-save] h-5 w-5" />
+          )}
+        </button>
+      </FloatingActionBar>
     </div>
   );
 }

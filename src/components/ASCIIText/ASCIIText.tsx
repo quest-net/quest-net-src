@@ -234,10 +234,16 @@ class CanvasTxt {
   resize() {
     if (this.context) {
       this.context.font = this.font;
-      const metrics = this.context.measureText(this.txt);
+      const lines = this.txt.split('\n');
 
-      const textWidth = Math.ceil(metrics.width) + 20;
-      const textHeight = Math.ceil(metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) + 20;
+      let maxWidth = 0;
+      for (const line of lines) {
+        maxWidth = Math.max(maxWidth, this.context.measureText(line).width);
+      }
+
+      const lineHeight = this.fontSize * 1.1;
+      const textWidth = Math.ceil(maxWidth) + 20;
+      const textHeight = Math.ceil(lineHeight * lines.length) + 20;
 
       this.canvas.width = textWidth;
       this.canvas.height = textHeight;
@@ -249,11 +255,17 @@ class CanvasTxt {
       this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
       this.context.fillStyle = this.color;
       this.context.font = this.font;
+      this.context.textAlign = 'center';
 
-      const metrics = this.context.measureText(this.txt);
-      const yPos = 10 + metrics.actualBoundingBoxAscent;
+      const lines = this.txt.split('\n');
+      const lineHeight = this.fontSize * 1.1;
+      const metrics = this.context.measureText(lines[0]);
+      const cx = this.canvas.width / 2;
 
-      this.context.fillText(this.txt, 10, yPos);
+      for (let i = 0; i < lines.length; i++) {
+        const yPos = 10 + metrics.actualBoundingBoxAscent + i * lineHeight;
+        this.context.fillText(lines[i], cx, yPos);
+      }
     }
   }
 

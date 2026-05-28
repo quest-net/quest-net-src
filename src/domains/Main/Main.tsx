@@ -27,6 +27,7 @@ import { StickerPicker } from "../../components/Sticker/StickerPicker";
 import { SharedInventoryDisplay } from "../SharedInventory/SharedInventoryDisplay";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { findFirstPersonActor } from "../../components/Map/FirstPerson/actor";
+import { useIsMobile } from "../../hooks/useIsMobile";
 
 type TopTab = "music" | "calendar" | "terrain" | "combat";
 type MapViewMode = "world" | "first-person";
@@ -47,6 +48,13 @@ export function Main() {
 	const context = useQuestContext();
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const isDM = isDmAccess();
+	const isMobile = useIsMobile();
+	// On mobile the side panel overlays the map: collapsed = icon-only strip,
+	// open = slides over the map at full width. Map stays mounted underneath.
+	const [panelOpen, setPanelOpen] = useState(false);
+	// The top tab section (audio/calendar/terrain/combat) can be collapsed to
+	// just its tab row to give the bottom content more room.
+	const [topTabsCollapsed, setTopTabsCollapsed] = useState(false);
 	const [mapViewMode, setMapViewMode] = useState<MapViewMode>("world");
 	const [xRayActors, setXRayActors] = useState(false);
 	const [cameraPreference, setCameraPreference] = useState<CameraPreference>(() => {
@@ -201,6 +209,11 @@ export function Main() {
 	const handleBottomTabChange = (tab: PlayerBottomTab | DMBottomTab) => {
 		setActiveBottomTab(tab);
 
+		// On mobile, selecting a tab slides the panel open over the map.
+		if (isMobile) {
+			setPanelOpen(true);
+		}
+
 		// Clear indicators when switching to that tab
 		if (tab === "inventory") {
 			setShowInventoryIndicator(false);
@@ -215,6 +228,12 @@ export function Main() {
 
 	const switchToInspector = () => {
 		setActiveBottomTab("inspector");
+	};
+
+	// Selecting a top tab also expands the top section if it was collapsed.
+	const handleTopTabChange = (tab: TopTab) => {
+		setActiveTopTab(tab);
+		setTopTabsCollapsed(false);
 	};
 	// Get label for current top tab
 	const getTopTabLabel = () => {
@@ -232,7 +251,7 @@ export function Main() {
 
 	return (
 		<MapStateProvider>
-			<div className="flex h-full">
+			<div className="flex h-full relative">
 				{/* Left 70%: Map */}
 				<div className="flex-1 overflow-hidden relative">
 					<SceneDisplay />
@@ -353,18 +372,43 @@ export function Main() {
 						</div>
 					)}
 					<DiceRoller />
-					{/* Sticker Picker */}
-					<div className="absolute right-2 bottom-2 z-20">
+					{/* Sticker Picker — shifted left on mobile to clear the collapsed panel strip */}
+					<div className="absolute right-14 sm:right-2 bottom-2 z-20">
 						<StickerPicker />
 					</div>
 				</div>
 
-				{/* Right 30%: Side Panel */}
-				<div className="w-160 border-l-2 flex">
-					{/* Full-Height Vertical Navbar */}
-					<div className="w-12 border-r-2 flex flex-col bg-base-200">
-						{/* Top 20%: Vertical Tab Label */}
-						<div className="h-60 flex items-center justify-center">
+				{/* Right 30%: Side Panel.
+				    On mobile this is an overlay: collapsed to the icon strip
+				    (w-12) and sliding to full width when a tab is opened. On
+				    sm+ it returns to the static side-by-side layout. */}
+				<div
+					className={`flex bg-base-200 absolute inset-y-0 right-0 z-30 overflow-hidden transition-[width] duration-300 ease-in-out ${
+						panelOpen ? "w-full" : "w-12"
+					} sm:static sm:w-160 sm:border-l-2 sm:z-auto sm:overflow-visible sm:transition-none`}
+				>
+					{/* Full-Height Vertical Navbar. The right border only makes sense
+					    when there's content beside it — hidden while collapsed on mobile. */}
+					<div
+						className={`w-12 shrink-0 flex flex-col bg-base-200 ${
+							panelOpen ? "border-r-2" : ""
+						} sm:border-r-2`}
+					>
+						{/* Back-to-map control (mobile only, when the panel is open).
+						    The whole top strip is the button rather than a nested one. */}
+						{panelOpen && (
+							<button
+								className="w-full shrink-0 flex items-center justify-center bg-primary py-2 text-primary-content hover:brightness-110 sm:hidden"
+								onClick={() => setPanelOpen(false)}
+								title="Back to map"
+								aria-label="Back to map"
+							>
+								<span className="icon-[mdi--map-outline] w-6 h-6" />
+							</button>
+						)}
+
+						{/* Top 20%: Vertical Tab Label (hidden on mobile to save space) */}
+						<div className="h-60 hidden sm:flex items-center justify-center">
 							<div
 								className="text-md font-semibold"
 								style={{ writingMode: "sideways-lr" }}
@@ -374,14 +418,14 @@ export function Main() {
 						</div>
 
 						{/* Icon Buttons */}
-						<div className="flex-1 border-t-2 flex flex-col items-center py-1 gap-1">
+						<div className={`flex-1 min-h-0 overflow-y-auto flex flex-col items-center py-1 gap-1 ${panelOpen ? "border-t-2" : ""} sm:border-t-2`}>
 							{isDM ? (
 								// DM Tabs
 								<>
 									<button
 										className={`btn btn-square ${activeBottomTab === "inspector" ? "btn-neutral" : ""
 											}`}
-										onClick={() => setActiveBottomTab("inspector")}
+										onClick={() => handleBottomTabChange("inspector")}
 										title="Inspector"
 									>
 										<span className="icon-[mdi--magnify] w-6 h-6" />
@@ -389,7 +433,7 @@ export function Main() {
 									<button
 										className={`btn btn-square ${activeBottomTab === "scene" ? "btn-neutral" : ""
 											}`}
-										onClick={() => setActiveBottomTab("scene")}
+										onClick={() => handleBottomTabChange("scene")}
 										title="Scene"
 									>
 										<span className="icon-[mdi--image] w-6 h-6" />
@@ -397,7 +441,7 @@ export function Main() {
 									<button
 										className={`btn btn-square ${activeBottomTab === "log" ? "btn-neutral" : ""
 											}`}
-										onClick={() => setActiveBottomTab("log")}
+										onClick={() => handleBottomTabChange("log")}
 										title="Log"
 									>
 										<span className="icon-[mdi--message-text] w-6 h-6" />
@@ -405,7 +449,7 @@ export function Main() {
 									<button
 										className={`btn btn-square ${activeBottomTab === "overview" ? "btn-neutral" : ""
 											}`}
-										onClick={() => setActiveBottomTab("overview")}
+										onClick={() => handleBottomTabChange("overview")}
 										title="Overview"
 									>
 										<span className="icon-[mdi--account-multiple] w-6 h-6" />
@@ -414,7 +458,7 @@ export function Main() {
 										<button
 											className={`btn btn-square ${activeBottomTab === "shared-inventories" ? "btn-neutral" : ""
 												}`}
-											onClick={() => setActiveBottomTab("shared-inventories")}
+											onClick={() => handleBottomTabChange("shared-inventories")}
 											title="Shared Inventories"
 										>
 											<span className="icon-[mdi--treasure-chest] w-6 h-6" />
@@ -427,7 +471,7 @@ export function Main() {
 									<button
 										className={`btn btn-square ${activeBottomTab === "character" ? "btn-neutral" : ""
 											}`}
-										onClick={() => setActiveBottomTab("character")}
+										onClick={() => handleBottomTabChange("character")}
 										title={
 											selectedCharacter
 												? `${selectedCharacter.Name}'s info`
@@ -492,7 +536,7 @@ export function Main() {
 									<button
 										className={`btn btn-square ${activeBottomTab === "party" ? "btn-neutral" : ""
 											}`}
-										onClick={() => setActiveBottomTab("party")}
+										onClick={() => handleBottomTabChange("party")}
 										title="Party"
 									>
 										<span className="icon-[mdi--account-group] w-6 h-6" />
@@ -501,7 +545,7 @@ export function Main() {
 										<button
 											className={`btn btn-square ${activeBottomTab === "shared-inventories" ? "btn-neutral" : ""
 												}`}
-											onClick={() => setActiveBottomTab("shared-inventories")}
+											onClick={() => handleBottomTabChange("shared-inventories")}
 											title="Shared Inventories"
 										>
 											<span className="icon-[mdi--treasure-chest] w-6 h-6" />
@@ -510,7 +554,7 @@ export function Main() {
 									<button
 										className={`btn btn-square ${activeBottomTab === "inspector" ? "btn-neutral" : ""
 											}`}
-										onClick={() => setActiveBottomTab("inspector")}
+										onClick={() => handleBottomTabChange("inspector")}
 										title="Inspector"
 									>
 										<span className="icon-[mdi--magnify] w-6 h-6" />
@@ -518,7 +562,7 @@ export function Main() {
 									<button
 										className={`btn btn-square ${activeBottomTab === "log" ? "btn-neutral" : ""
 											}`}
-										onClick={() => setActiveBottomTab("log")}
+										onClick={() => handleBottomTabChange("log")}
 										title="Log"
 									>
 										<span className="icon-[mdi--message-text] w-6 h-6" />
@@ -526,7 +570,7 @@ export function Main() {
 									<button
 										className={`btn btn-square ${activeBottomTab === "notes" ? "btn-neutral" : ""
 											}`}
-										onClick={() => setActiveBottomTab("notes")}
+										onClick={() => handleBottomTabChange("notes")}
 										title="Notes"
 									>
 										<span className="icon-[mdi--notebook] w-6 h-6" />
@@ -537,15 +581,15 @@ export function Main() {
 					</div>
 
 					{/* Content Area */}
-					<div className="flex-1 flex flex-col overflow-x-hidden">
-						{/* Top 20%: Top Tab Section */}
-						<div className="h-60 flex flex-col">
+					<div className="flex-1 min-w-0 flex flex-col overflow-x-hidden">
+						{/* Top Tab Section (collapsible) */}
+						<div className={`${topTabsCollapsed ? "" : "h-60"} shrink-0 flex flex-col`}>
 							{/* Icon Tabs */}
 							<div className="tabs tabs-lift">
 								<button
 									className={`flex-auto tab border-l-0 border-t-0 ${activeTopTab === "music" ? "tab-active" : ""
 										}`}
-									onClick={() => setActiveTopTab("music")}
+									onClick={() => handleTopTabChange("music")}
 									title="Music"
 								>
 									<span className="icon-[mdi--music] w-5 h-5" />
@@ -553,7 +597,7 @@ export function Main() {
 								<button
 									className={`flex-auto tab border-t-0 ${activeTopTab === "calendar" ? "tab-active" : ""
 										}`}
-									onClick={() => setActiveTopTab("calendar")}
+									onClick={() => handleTopTabChange("calendar")}
 									title="Calendar"
 								>
 									<span className="icon-[mdi--calendar] w-5 h-5" />
@@ -561,32 +605,46 @@ export function Main() {
 								<button
 									className={`flex-auto tab border-t-0 ${activeTopTab === "terrain" ? "tab-active" : ""
 										}`}
-									onClick={() => setActiveTopTab("terrain")}
+									onClick={() => handleTopTabChange("terrain")}
 									title="Terrain"
 								>
 									<span className="icon-[mdi--terrain] w-5 h-5" />
 								</button>
 								<button
-									className={`flex-auto tab border-r-0 border-t-0 ${activeTopTab === "combat" ? "tab-active" : ""
+									className={`flex-auto tab border-t-0 ${activeTopTab === "combat" ? "tab-active" : ""
 										}`}
-									onClick={() => setActiveTopTab("combat")}
+									onClick={() => handleTopTabChange("combat")}
 									title="Combat"
 								>
 									<span className="icon-[mdi--sword-cross] w-5 h-5" />
 								</button>
+								{/* Collapse / expand toggle for the top section */}
+								<button
+									className="tab border-t-0 border-r-0 px-2"
+									onClick={() => setTopTabsCollapsed((v) => !v)}
+									title={topTabsCollapsed ? "Expand section" : "Collapse section"}
+									aria-label={topTabsCollapsed ? "Expand top tabs" : "Collapse top tabs"}
+									aria-expanded={!topTabsCollapsed}
+								>
+									<span
+										className={`${topTabsCollapsed ? "icon-[mdi--chevron-down]" : "icon-[mdi--chevron-up]"} w-5 h-5`}
+									/>
+								</button>
 							</div>
 
 							{/* Top Tab Content */}
-							<div className="flex-1 overflow-auto p-4 bg-base-100">
-								{activeTopTab === "music" && <AudioDisplay />}
-								{activeTopTab === "calendar" && <CalendarDisplay />}
-								{activeTopTab === "terrain" && <TerrainDisplay />}
-								{activeTopTab === "combat" && <CombatDisplay />}
-							</div>
+							{!topTabsCollapsed && (
+								<div className="flex-1 overflow-auto p-4 bg-base-100">
+									{activeTopTab === "music" && <AudioDisplay />}
+									{activeTopTab === "calendar" && <CalendarDisplay />}
+									{activeTopTab === "terrain" && <TerrainDisplay />}
+									{activeTopTab === "combat" && <CombatDisplay />}
+								</div>
+							)}
 						</div>
 
 						{/* Bottom 80%: Bottom Tab Content */}
-						<div className="flex-1 overflow-auto p-4 border-t-2 bg-base-100">
+						<div className={`flex-1 overflow-auto p-4 bg-base-100 ${topTabsCollapsed ? "" : "border-t-2"}`}>
 							{activeBottomTab === "character" && <CharacterSheet />}
 							{activeBottomTab === "equipment" && selectedCharacter && (
 								<ItemCollection actor={selectedCharacter} mode="equipment" />

@@ -22,6 +22,17 @@ export function Home() {
 	const theme = AppSettingActions.getTheme(context);
 	const asciiTextColor = theme == "dark" ? "#fdf9f3" : colors.primary.hex;
 
+	// On narrow screens the single-line "QUEST-NET" overflows; stack it and shrink slightly.
+	const [isNarrow, setIsNarrow] = useState(
+		typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches
+	);
+	useEffect(() => {
+		const mq = window.matchMedia("(max-width: 640px)");
+		const onChange = (e: MediaQueryListEvent) => setIsNarrow(e.matches);
+		mq.addEventListener("change", onChange);
+		return () => mq.removeEventListener("change", onChange);
+	}, []);
+
 	const commitName = (value: string) => {
 		const trimmed = value.trim();
 		if (!trimmed) return;
@@ -91,10 +102,10 @@ export function Home() {
 				{/* ASCII Text Layer */}
 				<div className="absolute inset-0">
 					<ASCIIText
-						text="QUEST-NET"
+						text={isNarrow ? "QUEST\nNET" : "QUEST-NET"}
 						enableWaves={false}
-						asciiFontSize={12}
-						planeBaseHeight={4}
+						asciiFontSize={isNarrow ? 10 : 12}
+						planeBaseHeight={isNarrow ? 6 : 4}
 						textColor={asciiTextColor}
 					/>
 				</div>
