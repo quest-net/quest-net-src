@@ -21,7 +21,7 @@ export function useAutoReconnect(
 	config: AutoReconnectConfig,
 	onReconnect: () => void
 ): ReconnectState {
-	const { actionService } = useActionService();
+	const { actionService, actionServiceSwapVersion } = useActionService();
 	const [state, setState] = useState<ReconnectState>({
 		isReconnecting: false,
 		attemptCount: 0,
@@ -223,9 +223,14 @@ export function useAutoReconnect(
 				reconnectTimeoutRef.current = null;
 			}
 		};
+		// actionService is identity-stable across reconnects, so depending on
+		// it alone wouldn't re-run this effect on swap and the `room` reference
+		// captured in the effect body would silently target the dead instance.
+		// actionServiceSwapVersion bumps on each swap and forces the re-run.
 	}, [
 		config.enabled,
 		actionService,
+		actionServiceSwapVersion,
 		checkIntervalMs,
 		reconnectDelayMs,
 		peerlessReconnectDelayMs,

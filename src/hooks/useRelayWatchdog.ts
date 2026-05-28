@@ -35,12 +35,15 @@ const DEBOUNCE_MS = 2_000;
  * so the caller can trigger that recovery at the exact moment it is needed,
  * rather than on a fixed timer.
  *
- * --- Dependency on actionService ---
+ * --- Dependency on actionServiceSwapVersion ---
  *
- * Each reconnect cycle creates a new ActionService. The effect depends on
- * actionService so it re-runs after every cycle, picks up the fresh
- * WebSocket objects that the new joinRoom() created, and attaches listeners
- * to those instead of the now-orphaned old sockets.
+ * Each reconnect cycle creates a new ActionService and bumps the swap
+ * version. The effect depends on actionServiceSwapVersion so it re-runs
+ * after every cycle, picks up the fresh WebSocket objects that the new
+ * joinRoom() created, and attaches listeners to those instead of the
+ * now-orphaned old sockets. (The actionService context value itself is
+ * identity-stable across swaps and is therefore unsafe as a re-run
+ * trigger -- see ActionServiceProvider.)
  *
  * Only enable for the DM. Players have their own useAutoReconnect path and
  * are not the critical signaling subscribers for new-peer discovery.
@@ -49,7 +52,7 @@ export function useRelayWatchdog(
 	enabled: boolean,
 	onSignalingBroken: () => void
 ): void {
-	const { actionService } = useActionService();
+	const { actionServiceSwapVersion } = useActionService();
 	const onSignalingBrokenRef = useRef(onSignalingBroken);
 	// Timestamp of the last recovery we fired. Used to suppress the close
 	// events that the deliberate leave() call produces during recovery.
@@ -96,7 +99,11 @@ export function useRelayWatchdog(
 			// of each other (same network event). Only schedule once.
 			if (debounceTimer) return;
 
-			console.warn(
+			// Logged at debug level (filtered by default in Chrome devtools)
+			// because some relays drop idle connections on a fixed cadence, so
+			// these messages fire routinely and used to drown the console.
+			// Switch the devtools filter to "Verbose" to see them again.
+			console.debug(
 				`[RelayWatchdog] Relay socket closed unexpectedly (${url}). ` +
 					"Trystero will not re-subscribe on reconnect — scheduling room recovery."
 			);
@@ -130,7 +137,7 @@ export function useRelayWatchdog(
 				ws.removeEventListener("close", handler);
 			}
 		};
-	}, [enabled, actionService]);
+	}, [enabled, actionServiceSwapVersion]);
 	// Intentionally omit onSignalingBroken from deps — it's captured via ref
 	// so that CampaignView's inline arrow doesn't cause unnecessary re-runs.
 }

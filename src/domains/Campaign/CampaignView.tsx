@@ -1,6 +1,6 @@
 // domains/Campaign/CampaignView.tsx
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
 	useQuestContext,
@@ -35,6 +35,14 @@ export function CampaignView() {
 	const { setActionService } = useActionService();
 	const [reconnectTrigger, setReconnectTrigger] = useState(0);
 	const isDMRoute = !!identifier && isGUID(identifier);
+	// True when the effect cleanup below should leave the ActionService in
+	// place rather than nullifying it. Set by onReconnect before bumping
+	// reconnectTrigger so the cleanup that follows sees it. The next effect
+	// body installs the new ActionService directly, which lets the stable
+	// proxy in ActionServiceProvider avoid the null<->proxy flicker that used
+	// to fire actionService-dep effects (ImageDisplay, slot displays, etc.)
+	// once per relay watchdog cycle.
+	const isReconnectingRef = useRef(false);
 
 	const [state, setState] = useState<CampaignViewState>({
 		status: "loading",
@@ -53,7 +61,11 @@ export function CampaignView() {
 		);
 	}, [identifier]);
 
-	const onReconnect = () => setReconnectTrigger((prev) => prev + 1);
+	const onReconnect = () => {
+		// Set BEFORE incrementing so the about-to-fire cleanup observes it.
+		isReconnectingRef.current = true;
+		setReconnectTrigger((prev) => prev + 1);
+	};
 
 	useAutoReconnect(
 		{
@@ -319,7 +331,16 @@ export function CampaignView() {
 				service.cleanup();
 			}
 
-			setActionService(null);
+			// On reconnects, leave the proxy's underlying ref intact — the
+			// next effect body will install the new ActionService directly,
+			// so no actionService-dep effect needs to wake up. On true
+			// teardown (campaign switch / unmount), nullify so downstream
+			// consumers see the disconnect.
+			if (isReconnectingRef.current) {
+				isReconnectingRef.current = false;
+			} else {
+				setActionService(null);
+			}
 		};
 		// eslint-disable-next-line
 	}, [identifier, setActionService, navigate, reconnectTrigger]);

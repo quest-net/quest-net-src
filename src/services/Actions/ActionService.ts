@@ -1,5 +1,6 @@
 // services/Actions/ActionService.ts
 
+import { createDraft, finishDraft, setAutoFreeze } from "immer";
 import { Context } from "../../domains/Context/Context";
 import { canPerformAction, ACTION_REGISTRY } from "./ActionRegistry";
 import type { Campaign } from "../../domains/Campaign/Campaign";
@@ -14,6 +15,13 @@ import { User } from "../../domains/User/User";
 import { CampaignLoadingService } from "../CampaignLoadingService";
 import { TerrainStorageService } from "../TerrainStorageService";
 import { ActorPoseService } from "../ActorPoseService";
+
+// Immer freezes producer output by default, which would break code paths
+// outside the action pipeline that still mutate the campaign in place
+// (e.g. migrations on load, structuredClone-then-edit in applyPlayerStateUpdate).
+// Disable freezing globally so Immer is purely a structural-sharing tool here:
+// new references only appear on paths that were actually mutated.
+setAutoFreeze(false);
 
 const PING_INTERVAL_MS = 3000;
 const PEER_RECONCILE_INTERVAL_MS = 2000;
@@ -357,25 +365,81 @@ export class ActionService {
 	}
 
 	/**
+	 * Runs a producer against an Immer draft of the active campaign and
+	 * commits the result back into context. Handlers that read
+	 * context.ActiveCampaign during the producer see the draft, so existing
+	 * in-place mutations (e.g. `actor.Position = {...}`) are captured by
+	 * Immer and translated into a structurally shared new campaign:
+	 * unmutated paths keep their references, mutated ones get new ones.
+	 *
+	 * This replaces the old bumpMapRefs hack, which created new Characters /
+	 * Entities / SharedInventories arrays on every action regardless of what
+	 * actually changed. The Immer path produces new arrays ONLY where the
+	 * handler touched them, so memo deps invalidate more precisely.
+	 *
+	 * On error the previous campaign is restored so a partial draft doesn't
+	 * leak into context.
+	 */
+	private async mutateCampaign(
+		producer: (draft: Campaign) => Promise<void> | void
+	): Promise<Campaign> {
+		const previous = CampaignActions.getActiveCampaign(this.context);
+		const draft = createDraft(previous) as Campaign;
+		this.context.ActiveCampaign = draft;
+		try {
+			await producer(draft);
+			const next = finishDraft(draft) as Campaign;
+			this.commitActiveCampaign(next);
+			return next;
+		} catch (error) {
+			this.commitActiveCampaign(previous);
+			throw error;
+		}
+	}
+
+	/**
+	 * Writes a new ActiveCampaign reference to BOTH this.context (the object
+	 * ActionService captured at construction) AND the live React state. They
+	 * are different objects after the first triggerContextUpdate -- the
+	 * ContextProvider's `{...current}` spread creates a fresh top-level
+	 * Context, so this.context becomes a captured-but-stale wrapper around
+	 * the same inner fields.
+	 *
+	 * When the campaign reference was preserved across actions (the
+	 * pre-Immer in-place-mutation regime), this divergence didn't matter:
+	 * both Context objects' ActiveCampaign field pointed at the same
+	 * physical campaign. With Immer, each action produces a NEW campaign
+	 * object, so the two Contexts must be reconciled explicitly or React
+	 * state stays one revision behind and the UI silently ignores the
+	 * latest action.
+	 *
+	 * This is the same pattern used by applyPlayerStateUpdate.
+	 */
+	private commitActiveCampaign(campaign: Campaign): void {
+		this.context.ActiveCampaign = campaign;
+		triggerContextUpdate((ctx) => {
+			ctx.ActiveCampaign = campaign;
+		});
+	}
+
+	/**
 	 * DM executes action directly and broadcasts result
 	 */
 	private async executeDM(actionKey: string, params: any): Promise<void> {
-
-		// Execute the domain action (modifies Context/Campaign)
-		await this.runDomainAction(actionKey, params);
-
-		// Broadcast updated campaign to all players
-		const campaign = CampaignActions.getActiveCampaign(this.context);
-		await TerrainStorageService.packInactiveTerrains(campaign);
-
-		this.bumpMapRefs(campaign);
+		const campaign = await this.mutateCampaign(async (draft) => {
+			// Execute the domain action against the draft (handlers reach
+			// the draft via context.ActiveCampaign, swapped in by mutateCampaign).
+			await this.runDomainAction(actionKey, params);
+			// Pack inactive terrains inside the producer so its mutations
+			// also flow through Immer's structural sharing.
+			await TerrainStorageService.packInactiveTerrains(draft);
+		});
 
 		const isSecret = this.context.SecretModes?.[campaign.Id];
 		if (!isSecret) {
 			this.stateSync.broadcast(campaign);
 		}
 
-		triggerContextUpdate();
 		this.actorPoseService.clearForAuthoritativeAction(actionKey, params);
 	}
 
@@ -393,11 +457,10 @@ export class ActionService {
 		// OPTIMISTIC UPDATE: Run locally first
 		try {
 			this.context.IsOptimistic = true;
-			await this.runDomainAction(actionKey, params);
-			const campaign = CampaignActions.getActiveCampaign(this.context);
-			await TerrainStorageService.packInactiveTerrains(campaign);
-			this.bumpMapRefs(campaign);
-			triggerContextUpdate();
+			await this.mutateCampaign(async (draft) => {
+				await this.runDomainAction(actionKey, params);
+				await TerrainStorageService.packInactiveTerrains(draft);
+			});
 		} catch (error) {
 			console.warn("[ActionService] Optimistic update failed (ignoring):", error);
 			// Ignore error, let the server handle it
@@ -442,23 +505,26 @@ export class ActionService {
 			// Execute the domain action as the requesting player so
 			// domain-level player validations run in the same context as
 			// optimistic local execution.
-			const originalUser = this.context.User;
-			try {
-				this.context.User = requestingUser;
-				await this.runDomainAction(data.actionKey, data.params);
-			} finally {
-				this.context.User = originalUser;
-			}
+			await this.mutateCampaign(async (draft) => {
+				const originalUser = this.context.User;
+				try {
+					this.context.User = requestingUser;
+					await this.runDomainAction(data.actionKey, data.params);
+				} finally {
+					this.context.User = originalUser;
+				}
+				await TerrainStorageService.packInactiveTerrains(draft);
+			});
 		} catch (error) {
 			console.error("[ActionService] Error executing player request:", error);
 			// We continue to broadcast below to force a reset if needed
 		}
 
-		// Broadcast updated campaign to all players
+		// Broadcast updated campaign to all players. Re-read because the
+		// mutateCampaign above may have thrown, in which case we want to
+		// broadcast the pre-mutation state to reset the player's optimistic
+		// update.
 		const campaign = CampaignActions.getActiveCampaign(this.context);
-		await TerrainStorageService.packInactiveTerrains(campaign);
-
-		this.bumpMapRefs(campaign);
 
 		if (LogActions.isCommand(data.params, "/REQUEST_FULL_SYNC")) {
 			this.stateSync.broadcastFull(campaign);
@@ -466,7 +532,6 @@ export class ActionService {
 			// FORCE SYNC: Always broadcast, even if no changes (reverts optimistic state)
 			this.stateSync.broadcast(campaign, true);
 		}
-		triggerContextUpdate();
 		this.actorPoseService.clearForAuthoritativeAction(
 			data?.actionKey,
 			data?.params
@@ -511,9 +576,9 @@ export class ActionService {
 
 	private async forceSyncAsync(): Promise<void> {
 		if (this.context.User.Role === "dm") {
-			const campaign = CampaignActions.getActiveCampaign(this.context);
-			await TerrainStorageService.packInactiveTerrains(campaign);
-			this.bumpMapRefs(campaign);
+			const campaign = await this.mutateCampaign(async (draft) => {
+				await TerrainStorageService.packInactiveTerrains(draft);
+			});
 			this.stateSync.broadcastFull(campaign);
 		}
 	}
@@ -534,19 +599,4 @@ export class ActionService {
 		}
 	}
 
-	/**
-   * Make new references for collections the Map memoizes against.
-   * This avoids stale useMemo caches when domain code mutates in place.
-   */
-	private bumpMapRefs(campaign: Campaign): void {
-		campaign.GameState = {
-			...campaign.GameState,
-			Characters: [...campaign.GameState.Characters],
-			Entities: [...campaign.GameState.Entities],
-		};
-		// Also bump SharedInventories to ensure UI and StateSync catch mutations
-		if (campaign.Settings.SharedInventories) {
-			campaign.Settings.SharedInventories = [...campaign.Settings.SharedInventories];
-		}
-	}
 }
