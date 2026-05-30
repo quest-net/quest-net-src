@@ -3,7 +3,7 @@
 // Owns the two cameras both contexts use -- an OrthographicCamera for the
 // default isometric view and a PerspectiveCamera for perspective/freecam --
 // plus their controls (OrbitControls + PointerLockControls), the freecam
-// movement runtime (WASD + QE vertical, scroll-wheel speed), mode switching,
+// movement runtime (WASD + Space/Shift vertical, scroll-wheel speed), mode switching,
 // framing helpers, resize, and the freecam DOM input wiring.
 //
 // The two consumers differ only in tuning (near/far, zoom range, FOV, framing
@@ -80,7 +80,7 @@ export interface CameraRigCallbacks {
 	beforePointerLock?: () => void;
 }
 
-type FreecamKey = "w" | "a" | "s" | "d" | "q" | "e";
+type FreecamKey = "w" | "a" | "s" | "d" | "shift" | "space";
 
 function freecamKeyFor(event: KeyboardEvent): FreecamKey | null {
 	switch (event.key.toLowerCase()) {
@@ -88,9 +88,9 @@ function freecamKeyFor(event: KeyboardEvent): FreecamKey | null {
 		case "a": return "a";
 		case "s": return "s";
 		case "d": return "d";
-		case "q": return "q";
-		case "e": return "e";
-		default:  return null;
+		case "shift": return "shift";
+		case " ":     return "space";
+		default:      return null;
 	}
 }
 
@@ -98,7 +98,7 @@ function freecamKeyFor(event: KeyboardEvent): FreecamKey | null {
  *  triggering tool shortcuts while flying. */
 export function isFreecamMovementKey(key: string): boolean {
 	switch (key.toLowerCase()) {
-		case "w": case "a": case "s": case "d": case "q": case "e":
+		case "w": case "a": case "s": case "d": case "shift": case " ":
 			return true;
 		default:
 			return false;
@@ -140,7 +140,7 @@ export class CameraRig {
 	private inputAttached = false;
 
 	private readonly keys: Record<FreecamKey, boolean> = {
-		w: false, a: false, s: false, d: false, q: false, e: false,
+		w: false, a: false, s: false, d: false, shift: false, space: false,
 	};
 	private readonly _lookDir = new THREE.Vector3();
 	private readonly _rightDir = new THREE.Vector3();
@@ -255,8 +255,8 @@ export class CameraRig {
 			if (this.keys.s) cam.position.addScaledVector(this._lookDir,  -speed);
 			if (this.keys.d) cam.position.addScaledVector(this._rightDir,  speed);
 			if (this.keys.a) cam.position.addScaledVector(this._rightDir, -speed);
-			if (this.keys.e) cam.position.y += speed;
-			if (this.keys.q) cam.position.y -= speed;
+			if (this.keys.space) cam.position.y += speed;
+			if (this.keys.shift) cam.position.y -= speed;
 		} else {
 			this.controls.update();
 		}
@@ -303,7 +303,7 @@ export class CameraRig {
 		this.controls.update();
 	}
 
-	/** Attach freecam DOM input: right-hold to lock+look, WASD/QE to fly,
+	/** Attach freecam DOM input: right-hold to lock+look, WASD/Space/Shift to fly,
 	 *  scroll to change speed. Idempotent. */
 	attachInput(): void {
 		if (this.inputAttached) return;
@@ -364,7 +364,7 @@ export class CameraRig {
 
 	private resetKeys(): void {
 		this.keys.w = this.keys.a = this.keys.s = this.keys.d = false;
-		this.keys.q = this.keys.e = false;
+		this.keys.shift = this.keys.space = false;
 	}
 
 	private bumpSpeed(deltaY: number): void {

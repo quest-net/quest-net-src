@@ -8,6 +8,7 @@ import { useThemeColors } from "../../utils/ThemeUtils";
 import TextType from "../../components/TextType/TextType";
 import { AppSettingActions } from "../AppSetting/AppSettingActions";
 import { APP_VERSION } from "../../version";
+import { useIsMobile } from "../../hooks/useIsMobile";
 export function Home() {
 	const context = useQuestContext();
 	const navigate = useNavigate();
@@ -21,17 +22,8 @@ export function Home() {
 	const colors = useThemeColors("neutral", "primary");
 	const theme = AppSettingActions.getTheme(context);
 	const asciiTextColor = theme == "dark" ? "#fdf9f3" : colors.primary.hex;
-
 	// On narrow screens the single-line "QUEST-NET" overflows; stack it and shrink slightly.
-	const [isNarrow, setIsNarrow] = useState(
-		typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches
-	);
-	useEffect(() => {
-		const mq = window.matchMedia("(max-width: 640px)");
-		const onChange = (e: MediaQueryListEvent) => setIsNarrow(e.matches);
-		mq.addEventListener("change", onChange);
-		return () => mq.removeEventListener("change", onChange);
-	}, []);
+	const isNarrow = useIsMobile();
 
 	const commitName = (value: string) => {
 		const trimmed = value.trim();

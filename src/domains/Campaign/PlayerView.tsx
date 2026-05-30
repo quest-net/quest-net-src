@@ -1,6 +1,7 @@
 // domains/Campaign/PlayerView.tsx - Updated
 
 import { useNavigate } from "react-router-dom";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import {
 	useQuestContext,
 	triggerContextUpdate,
@@ -18,6 +19,7 @@ import { AppSettingsDisplay } from "../AppSetting/AppSettingsDisplay";
 export function PlayerView() {
 	const context = useQuestContext();
 	const navigate = useNavigate();
+	const isMobile = useIsMobile();
 
 	// Single source of truth for peer data - call hook once at view level
 	const { peers, selfPeer, totalInRoom, connectionStatus } = usePeerTracking();
@@ -57,7 +59,7 @@ export function PlayerView() {
 			<div className="flex flex-col h-screen">
 				<AudioPlayer />
 				{/* Header - Always Visible */}
-				<header className="navbar border-b-2 px-6 justify-between">
+				<header className="navbar border-b-2 px-4 lg:px-6 justify-between">
 					<div className="flex items-center gap-4">
 						<PeerStatus connectionStatus={connectionStatus} peers={peers} selfPeer={selfPeer} totalInRoom={totalInRoom} />
 						<AppSettingsDisplay />
@@ -77,7 +79,7 @@ export function PlayerView() {
 							className="btn btn-neutral"
 							onClick={() => navigate("/campaigns")}
 						>
-							Leave Campaign
+							{isMobile ? "Exit" : "Leave Campaign"}
 						</button>
 					</div>
 				</header>

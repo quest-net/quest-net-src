@@ -28,6 +28,7 @@ import { SharedInventoryDisplay } from "../SharedInventory/SharedInventoryDispla
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { findFirstPersonActor } from "../../components/Map/FirstPerson/actor";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { CameraModeDropdown } from "../../components/Map/CameraModeDropdown";
 
 type TopTab = "music" | "calendar" | "terrain" | "combat";
 type MapViewMode = "world" | "first-person";
@@ -293,68 +294,12 @@ export function Main() {
 										<span className="icon-[mdi--camera-control] w-5 h-5" />
 									</button>
 								)}
-								<div className="dropdown dropdown-bottom">
-									<button
-										tabIndex={0}
-										role="button"
-										className="btn btn-sm btn-neutral join-item"
-										aria-label="Camera mode"
-									>
-										<span className="icon-[mdi--camera] w-5 h-5" />
-										<span className="icon-[mdi--chevron-down] w-3 h-3 opacity-60" />
-									</button>
-									<ul
-										tabIndex={0}
-										className="dropdown-content menu bg-base-200 border border-base-300 rounded-box z-50 w-44 p-1 shadow-lg mt-1"
-									>
-										<li>
-											<button
-												className={cameraPreference === "ortho" ? "active" : ""}
-												onClick={() => {
-													setCameraPreference("ortho");
-													// Defer blur past React's commit so :focus-within
-													// can't be re-established on the rerendered menu.
-													requestAnimationFrame(() =>
-														(document.activeElement as HTMLElement | null)?.blur()
-													);
-												}}
-											>
-												<span className="icon-[mdi--cube-outline] w-4 h-4" />
-												Isometric
-											</button>
-										</li>
-										<li>
-											<button
-												className={cameraPreference === "perspective" ? "active" : ""}
-												onClick={() => {
-													setCameraPreference("perspective");
-													requestAnimationFrame(() =>
-														(document.activeElement as HTMLElement | null)?.blur()
-													);
-												}}
-											>
-												<span className="icon-[mdi--axis-arrow] w-4 h-4" />
-												Perspective
-											</button>
-										</li>
-										{isDM && (
-											<li>
-												<button
-													className={cameraPreference === "freecam" ? "active" : ""}
-													onClick={() => {
-														setCameraPreference("freecam");
-														requestAnimationFrame(() =>
-															(document.activeElement as HTMLElement | null)?.blur()
-														);
-													}}
-												>
-													<span className="icon-[mdi--camera-iris] w-4 h-4" />
-													Free camera
-												</button>
-											</li>
-										)}
-									</ul>
-								</div>
+								<CameraModeDropdown
+									value={cameraPreference}
+									onChange={setCameraPreference}
+									showFreecam={isDM}
+									joinItem
+								/>
 								{isDM && (
 									<button
 										className={`btn btn-sm join-item tooltip tooltip-bottom ${xRayActors ? "btn-primary" : "btn-neutral"}`}
@@ -373,7 +318,7 @@ export function Main() {
 					)}
 					<DiceRoller />
 					{/* Sticker Picker — shifted left on mobile to clear the collapsed panel strip */}
-					<div className="absolute right-14 sm:right-2 bottom-2 z-20">
+					<div className="absolute right-14 lg:right-2 bottom-2 z-20">
 						<StickerPicker />
 					</div>
 				</div>
@@ -385,20 +330,20 @@ export function Main() {
 				<div
 					className={`flex bg-base-200 absolute inset-y-0 right-0 z-30 overflow-hidden transition-[width] duration-300 ease-in-out ${
 						panelOpen ? "w-full" : "w-12"
-					} sm:static sm:w-160 sm:border-l-2 sm:z-auto sm:overflow-visible sm:transition-none`}
+					} border-l-2 lg:static lg:w-160 lg:z-auto lg:overflow-visible lg:transition-none`}
 				>
 					{/* Full-Height Vertical Navbar. The right border only makes sense
 					    when there's content beside it — hidden while collapsed on mobile. */}
 					<div
 						className={`w-12 shrink-0 flex flex-col bg-base-200 ${
 							panelOpen ? "border-r-2" : ""
-						} sm:border-r-2`}
+						} lg:border-r-2`}
 					>
 						{/* Back-to-map control (mobile only, when the panel is open).
 						    The whole top strip is the button rather than a nested one. */}
 						{panelOpen && (
 							<button
-								className="w-full shrink-0 flex items-center justify-center bg-primary py-2 text-primary-content hover:brightness-110 sm:hidden"
+								className="w-full shrink-0 flex items-center justify-center bg-primary py-2 text-primary-content hover:brightness-110 lg:hidden"
 								onClick={() => setPanelOpen(false)}
 								title="Back to map"
 								aria-label="Back to map"
@@ -408,7 +353,7 @@ export function Main() {
 						)}
 
 						{/* Top 20%: Vertical Tab Label (hidden on mobile to save space) */}
-						<div className="h-60 hidden sm:flex items-center justify-center">
+						<div className="h-60 hidden lg:flex items-center justify-center">
 							<div
 								className="text-md font-semibold"
 								style={{ writingMode: "sideways-lr" }}
@@ -418,7 +363,7 @@ export function Main() {
 						</div>
 
 						{/* Icon Buttons */}
-						<div className={`flex-1 min-h-0 overflow-y-auto flex flex-col items-center py-1 gap-1 ${panelOpen ? "border-t-2" : ""} sm:border-t-2`}>
+						<div className={`flex-1 min-h-0 overflow-y-auto flex flex-col items-center py-1 gap-1 ${panelOpen ? "border-t-2" : ""} lg:border-t-2`}>
 							{isDM ? (
 								// DM Tabs
 								<>

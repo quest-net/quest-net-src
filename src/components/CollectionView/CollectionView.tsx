@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
+import { useIsMobile } from "../../hooks/useIsMobile";
 
 // ============================================================================
 // TYPES
@@ -55,6 +56,7 @@ export function CollectionView({
 	searchEnabled = false,
 	searchPlaceholder = "Search...",
 }: CollectionViewProps) {
+	const isMobile = useIsMobile();
 	const [searchQuery, setSearchQuery] = useState("");
 	const [viewMode, setViewMode] = useState<ViewMode>(() => {
 		try {
@@ -103,6 +105,9 @@ export function CollectionView({
 		? [...filteredItemsUnsorted].reverse()
 		: filteredItemsUnsorted;
 
+	// On mobile, always use list view regardless of stored preference.
+	const effectiveViewMode: ViewMode = isMobile ? "list" : viewMode;
+
 	// Format count text
 	const countText = searchQuery.trim() && filteredItems.length !== items.length
 		? `${filteredItems.length} of ${items.length} items`
@@ -134,24 +139,24 @@ export function CollectionView({
 						<span className={`${sortOrder === "newest" ? "icon-[mdi--sort-descending]" : "icon-[mdi--sort-ascending]"} w-5 h-5`} />
 					</button>
 
-					<button
-						onClick={() => setViewMode("grid")}
-						className={`btn btn-sm ${
-							viewMode === "grid" ? "btn-primary" : "btn-ghost"
-						}`}
-						title="Grid view"
-					>
-						<span className="icon-[mdi--grid] w-5 h-5" />
-					</button>
-					<button
-						onClick={() => setViewMode("list")}
-						className={`btn btn-sm ${
-							viewMode === "list" ? "btn-primary" : "btn-ghost"
-						}`}
-						title="List view"
-					>
-						<span className="icon-[mdi--view-list] w-5 h-5" />
-					</button>
+					{!isMobile && (
+						<>
+							<button
+								onClick={() => setViewMode("grid")}
+								className={`btn btn-sm ${viewMode === "grid" ? "btn-primary" : "btn-ghost"}`}
+								title="Grid view"
+							>
+								<span className="icon-[mdi--grid] w-5 h-5" />
+							</button>
+							<button
+								onClick={() => setViewMode("list")}
+								className={`btn btn-sm ${viewMode === "list" ? "btn-primary" : "btn-ghost"}`}
+								title="List view"
+							>
+								<span className="icon-[mdi--view-list] w-5 h-5" />
+							</button>
+						</>
+					)}
 				</div>
 			</div>
 			{/* Search */}
@@ -187,7 +192,7 @@ export function CollectionView({
 						<p className="text-base-content/60">Try a different search term</p>
 					)}
 				</div>
-			) : viewMode === "grid" ? (
+			) : effectiveViewMode === "grid" ? (
 				<div className="flex flex-wrap gap-4 justify-between">
 					{filteredItems.map((item) => (
 						<CollectionCard key={item.id} item={item} />

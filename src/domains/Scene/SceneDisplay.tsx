@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { ImageDisplay } from "../Image/ImageDisplay";
+import { useIsMobile } from "../../hooks/useIsMobile";
 
 type SceneMode = "fixed" | "window";
 
@@ -13,6 +14,7 @@ export function SceneDisplay() {
   const context = useQuestContext();
   const campaign = CampaignActions.getActiveCampaign(context);
   const scene = campaign.GameState.Scene;
+  const isMobile = useIsMobile();
 
   // Load preferences from localStorage
   const [mode, setMode] = useState<SceneMode>(() => {
@@ -40,6 +42,13 @@ export function SceneDisplay() {
   });
 
   const [isHovered, setIsHovered] = useState(false);
+
+  // Window mode is not usable on mobile — force fixed when resizing into mobile.
+  useEffect(() => {
+    if (isMobile && mode === "window") {
+      setMode("fixed");
+    }
+  }, [isMobile, mode]);
 
   const [windowState, setWindowState] = useState(() => {
     try {
@@ -238,7 +247,7 @@ export function SceneDisplay() {
   // Collapsed state
   if (isCollapsed) {
     return (
-      <div className="absolute top-2 right-2 z-20">
+      <div className="absolute top-2 right-14 lg:right-2 z-20">
         <button
           onClick={handleExpand}
           className="btn btn-square btn-primary w-12 h-12 shadow-lg"
@@ -261,7 +270,7 @@ export function SceneDisplay() {
     return (
       <div
         ref={fixedRef}
-        className={`absolute top-2 right-2 z-20 ${opacityClass} transition-opacity duration-300 ease-in-out`}
+        className={`absolute top-2 right-14 lg:right-2 z-20 ${opacityClass} transition-opacity duration-300 ease-in-out`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
@@ -296,13 +305,15 @@ export function SceneDisplay() {
 
           {/* Control buttons */}
           <div className="absolute top-2 right-2 flex gap-1 z-10">
-            <button
-              onClick={handleToggleMode}
-              className="btn btn-circle btn-ghost btn-xs bg-base-100/50 hover:bg-base-100"
-              title="Switch to window mode"
-            >
-              <span className="icon-[mdi--window-restore] w-4 h-4" />
-            </button>
+            {!isMobile && (
+              <button
+                onClick={handleToggleMode}
+                className="btn btn-circle btn-ghost btn-xs bg-base-100/50 hover:bg-base-100"
+                title="Switch to window mode"
+              >
+                <span className="icon-[mdi--window-restore] w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={handleCollapse}
               className="btn btn-circle btn-ghost btn-xs bg-base-100/50 hover:bg-base-100"

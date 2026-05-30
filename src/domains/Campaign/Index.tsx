@@ -302,7 +302,7 @@ export function CampaignIndex() {
 			</div>
 
 			{/* Main Content */}
-			<div className="relative z-1 h-full flex items-start sm:items-center justify-center p-4 pt-20 sm:p-8 sm:pt-8 overflow-y-auto sm:overflow-visible">
+			<div className="relative z-1 h-full flex items-start lg:items-center justify-center p-4 pt-20 lg:p-8 lg:pt-8 overflow-y-auto lg:overflow-visible">
 				<div className="w-full max-w-7xl grid grid-cols-1 lg:grid-cols-2 gap-8">
 					{/* Left Column - Create/Join Campaign */}
 					<div className="space-y-6">

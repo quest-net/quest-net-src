@@ -1,6 +1,7 @@
 // domains/Campaign/DMView.tsx
 
 import { useState } from "react";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import { useNavigate } from "react-router-dom";
 import { useQuestContext } from "../Context/ContextProvider";
 import { ImpersonationPicker } from "../../components/inputs/ImpersonationPicker";
@@ -53,6 +54,7 @@ const menuItems: { id: TabView; label: string; icon: string }[] = [
 export function DMView() {
 	const context = useQuestContext();
 	const navigate = useNavigate();
+	const isMobile = useIsMobile();
 	const [activeTab, setActiveTab] = useState<TabView>("main");
 
 	// Call usePeerTracking once at the view level
@@ -72,7 +74,7 @@ export function DMView() {
 			<div className="flex flex-col h-screen">
 				<AudioPlayer />
 				{/* Header */}
-				<header className="navbar border-b-2 px-6 justify-between">
+				<header className="navbar border-b-2 px-4 lg:px-6 justify-between">
 					<div className="flex items-center gap-4">
 						<button
 							className="btn btn-primary h-8 p-2 font-mono"
@@ -92,7 +94,7 @@ export function DMView() {
 							className="btn btn-neutral"
 							onClick={() => navigate("/campaigns")}
 						>
-							Leave Campaign
+							{isMobile ? "Exit" : "Leave Campaign"}
 						</button>
 					</div>
 				</header>

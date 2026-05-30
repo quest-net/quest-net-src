@@ -4,6 +4,7 @@ import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react"
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import {
 	addDieToFormula,
 	isValidDiceFormula,
@@ -417,6 +418,8 @@ export function DiceRoller() {
 	const { actionService } = useActionService();
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const userRole = context.User.Role;
+	const isMobile = useIsMobile();
+	const containerRef = useRef<HTMLDivElement>(null);
 
 	const [isOpen, setIsOpen] = useState<boolean>(() => {
 		try {
@@ -654,6 +657,18 @@ export function DiceRoller() {
 		};
 	}, [hasCrit, isOpen]);
 
+	// On mobile, clicking outside the roller closes it.
+	useEffect(() => {
+		if (!isMobile || !isOpen) return;
+		const handlePointerDown = (e: PointerEvent) => {
+			if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+				persistOpen(false);
+			}
+		};
+		document.addEventListener("pointerdown", handlePointerDown);
+		return () => document.removeEventListener("pointerdown", handlePointerDown);
+	}, [isMobile, isOpen]);
+
 	useEffect(() => {
 		return () => {
 			if (tickRef.current) window.clearInterval(tickRef.current);
@@ -693,7 +708,7 @@ export function DiceRoller() {
 	};
 
 	return (
-		<div className="absolute bottom-2 left-2 z-50">
+		<div ref={containerRef} className="absolute bottom-2 left-2 z-50">
 			{!isOpen && (
 				<button
 					onClick={() => persistOpen(true)}
@@ -706,7 +721,7 @@ export function DiceRoller() {
 			)}
 
 			{isOpen && (
-				<div className="card w-[420px] bg-linear-to-br from-base-100 to-base-200 shadow-2xl border-2 border-base-300">
+				<div className="card w-[420px] max-w-[calc(100vw-1rem)] bg-linear-to-br from-base-100 to-base-200 shadow-2xl border-2 border-base-300">
 					<div className="card-body p-5 gap-4">
 						{/* Header */}
 						<div className="flex items-center justify-between">

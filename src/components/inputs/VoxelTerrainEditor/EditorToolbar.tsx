@@ -12,6 +12,7 @@ import type {
 	EditorTool,
 	EditGranularityType,
 } from "./editorTypes";
+import { CameraModeDropdown } from "../../Map/CameraModeDropdown";
 import {
 	MAX_BRUSH_SIZE,
 	MIN_BRUSH_SIZE,
@@ -290,9 +291,10 @@ export function EditorToolbar(props: EditorToolbarProps) {
 				)}
 				{activeView === "edit" && (
 					<CameraModeDropdown
-						cameraMode={cameraMode}
-						onSelectCameraMode={onSelectCameraMode}
+						value={cameraMode}
+						onChange={onSelectCameraMode}
 						freecamSpeedMult={freecamSpeedMult}
+						dropdownEnd
 					/>
 				)}
 				<div className="join">
@@ -422,9 +424,9 @@ function ShortcutsHelpDropdown({ modKeyLabel }: { modKeyLabel: string }) {
 							<tr>
 								<td className="opacity-70 py-0.5">Up / Down</td>
 								<td className="text-right whitespace-nowrap">
-									<kbd className="kbd kbd-sm">E</kbd>
+									<kbd className="kbd kbd-sm">Space</kbd>
 									<span className="mx-1 opacity-50">/</span>
-									<kbd className="kbd kbd-sm">Q</kbd>
+									<kbd className="kbd kbd-sm">Shift</kbd>
 								</td>
 							</tr>
 							<tr>
@@ -451,73 +453,3 @@ function ShortcutsHelpDropdown({ modKeyLabel }: { modKeyLabel: string }) {
 	);
 }
 
-interface CameraModeDropdownProps {
-	cameraMode: CameraMode;
-	onSelectCameraMode: (mode: CameraMode) => void;
-	freecamSpeedMult: number;
-}
-
-const CAMERA_MODE_LABELS: Record<CameraMode, string> = {
-	ortho:       "Isometric",
-	perspective: "Perspective",
-	freecam:     "Free camera",
-};
-
-const CAMERA_MODE_ICONS: Record<CameraMode, string> = {
-	ortho:       "icon-[mdi--cube-outline]",
-	perspective: "icon-[mdi--axis-arrow]",
-	freecam:     "icon-[mdi--camera-iris]",
-};
-
-function CameraModeDropdown({
-	cameraMode,
-	onSelectCameraMode,
-	freecamSpeedMult,
-}: CameraModeDropdownProps) {
-	const select = (mode: CameraMode) => {
-		onSelectCameraMode(mode);
-		// DaisyUI dropdowns stay open while any descendant has focus
-		// (:focus-within). Blur the menu item AND the trigger button on the
-		// next frame so React's commit doesn't put focus back on the menu.
-		requestAnimationFrame(() => {
-			const active = document.activeElement as HTMLElement | null;
-			active?.blur();
-		});
-	};
-
-	return (
-		<div className="dropdown dropdown-bottom dropdown-end">
-			<button
-				tabIndex={0}
-				type="button"
-				className="btn btn-sm btn-neutral"
-				title={
-					cameraMode === "freecam"
-						? `Free camera — hold Right to look + WASD to fly, QE up/down, scroll to change speed (${freecamSpeedMult.toFixed(2)}×). F to toggle.`
-						: `Camera: ${CAMERA_MODE_LABELS[cameraMode]} (F toggles freecam)`
-				}
-				aria-label="Camera mode"
-			>
-				<span className="icon-[mdi--camera] w-5 h-5" />
-				<span className="icon-[mdi--chevron-down] w-3 h-3 opacity-60" />
-			</button>
-			<ul
-				tabIndex={0}
-				className="dropdown-content menu bg-base-200 border border-base-300 rounded-box z-50 w-44 p-1 shadow-lg mt-1"
-			>
-				{(["ortho", "perspective", "freecam"] as const).map((mode) => (
-					<li key={mode}>
-						<button
-							type="button"
-							className={cameraMode === mode ? "active" : ""}
-							onClick={() => select(mode)}
-						>
-							<span className={`${CAMERA_MODE_ICONS[mode]} w-4 h-4`} />
-							{CAMERA_MODE_LABELS[mode]}
-						</button>
-					</li>
-				))}
-			</ul>
-		</div>
-	);
-}
