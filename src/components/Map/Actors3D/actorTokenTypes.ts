@@ -1,5 +1,6 @@
 import type * as THREE from "three";
 import type { ActorSize, Position } from "../../../domains/Actor/Actor";
+import type { FogVolumeTexture } from "../mapVolumetricFog";
 
 export type ActorKind = "character" | "entity";
 
@@ -42,6 +43,12 @@ export interface ThreeDSceneResources {
 	animationCallbacks: Set<(now: number) => void>;
 	/** Marks static shadow maps dirty so they update on the next render. */
 	requestShadowUpdate: () => void;
+	/**
+	 * Binds the active fog-density volume to the volumetric fog pass (or null to
+	 * disable fog). Set by the scene that owns the post-processing pipeline;
+	 * called by the terrain builder whenever terrain geometry changes.
+	 */
+	setFogVolume?: (volume: FogVolumeTexture | null) => void;
 	/**
 	 * Mutable list of actor pick meshes shared with the actor layer.
 	 * Other layers (e.g. movement) may raycast against this to suppress

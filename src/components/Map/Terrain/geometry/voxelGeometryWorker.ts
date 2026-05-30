@@ -10,6 +10,8 @@
 //                highlightStrengths, indices }>,
 //              occupancy: { data, voxelWidth, voxelHeight, voxelLength,
 //                worldOrigin{X,Y,Z}, worldSize{X,Y,Z}, voxelSize },
+//              fogVolume: same shape as occupancy (volumetric voxel density),
+//                or null when the terrain has no fog voxels,
 //            }
 //            All TypedArray/ArrayBuffer values are transferred (zero-copy).
 
@@ -30,8 +32,9 @@ function getTransferableBuffer(view: ArrayBufferView): ArrayBuffer {
 self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }>) => {
 	const { buildId, terrain } = event.data;
 
-	// Build raw buffers + voxel-occupancy snapshot (face-culled, per-bucket).
-	const { buckets: bucketMap, occupancy } = buildVoxelTerrainBuffers(
+	// Build raw buffers + voxel-occupancy snapshot (face-culled, per-bucket)
+	// + fog-density volume (volumetric voxels, raymarched by the fog pass).
+	const { buckets: bucketMap, occupancy, fogVolume } = buildVoxelTerrainBuffers(
 		terrain,
 		(voxel) =>
 			new THREE.Color(
@@ -68,9 +71,10 @@ self.onmessage = (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }
 	}
 
 	transferList.push(getTransferableBuffer(occupancy.data));
+	if (fogVolume) transferList.push(getTransferableBuffer(fogVolume.data));
 
 	(self as unknown as Worker).postMessage(
-		{ buildId, buckets, occupancy },
+		{ buildId, buckets, occupancy, fogVolume },
 		transferList
 	);
 };

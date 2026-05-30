@@ -165,6 +165,25 @@ export function isPassableMaterial(colorIndex: number): boolean {
 	return PASSABLE_PALETTE_INDICES.has(colorIndex);
 }
 
+// Palette indices whose material is flagged `volumetric`. Excluded from the
+// greedy-meshed render buckets and the AO occupancy snapshot; routed instead
+// into the fog-density volume the volumetric pass raymarches.
+const VOLUMETRIC_PALETTE_INDICES: ReadonlySet<number> = new Set(
+	TERRAIN_MATERIALS
+		.filter((m): m is TerrainMaterial & { special: NonNullable<TerrainMaterial['special']> } => m.special !== undefined)
+		.filter((m) => m.volumetric === true)
+		.map((m) => m.special.paletteIndex)
+);
+
+/**
+ * True when voxels of this palette index are rendered volumetrically rather
+ * than as surface meshes. Consumed by the geometry builder to route them into
+ * the fog-density volume instead of the render buckets / AO occupancy.
+ */
+export function isVolumetricMaterial(colorIndex: number): boolean {
+	return VOLUMETRIC_PALETTE_INDICES.has(colorIndex);
+}
+
 export function getMaterialBucket(colorIndex: number): string {
 	return BUCKET_BY_PALETTE_INDEX.get(colorIndex) ?? 'default';
 }

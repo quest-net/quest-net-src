@@ -3,9 +3,8 @@
 // Addon imports use three/examples/jsm/ -- see CLAUDE.md for why.
 // MeshStandardMaterial not MeshLambertMaterial -- see CLAUDE.md for why.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import Stats from 'three/examples/jsm/libs/stats.module.js';
 import { CameraRig, type CameraRigConfig } from '../../utils/camera/CameraRig';
 import type { Character } from '../../domains/Character/Character';
 import type { Entity } from '../../domains/Entity/Entity';
@@ -27,40 +26,28 @@ import { ThreeDMovementLayer } from './Movement3D/ThreeDMovementLayer';
 import { ThreeDStickerLayer } from './Stickers3D/ThreeDStickerLayer';
 import { ThreeDPingLayer } from './Pings3D/ThreeDPingLayer';
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from './Actors3D/actorTokenConstants';
-import type { ThreeDSceneResources } from './Actors3D/actorTokenTypes';
 import { useActiveStickers } from './hooks/useActiveStickers';
 import { useActivePings } from './hooks/useActivePings';
 import { useLiveActorPoseOverrides } from './hooks/useLiveActorPoseOverrides';
 import { PING_DURATION_MS } from '../../domains/Ping/Ping';
 import { usePeerTracking } from '../../hooks/usePeerTracking';
-import { getShadowCameraBounds } from './shadowCameraBounds';
-import { createThreeDMapPostProcessing } from './mapPostProcessing';
-import {
-	applyVoxelTerrainBackground,
-	applyVoxelTerrainDirectionalLight,
-} from './terrainEnvironment';
 import {
 	THREE_D_MAP_CAMERA,
 	THREE_D_MAP_CONTROLS,
 	THREE_D_MAP_FREECAM,
-	THREE_D_MAP_LIGHTING,
 	THREE_D_MAP_RENDERER,
-	THREE_D_MAP_SHADOW,
 } from './threeDMapConstants';
-import type { ThreeDMapPostProcessing } from './mapPostProcessing';
 import {
 	createTerrainSignature,
 	useVoxelTerrainGeometryWorker,
 } from './Terrain/hooks/useVoxelTerrainGeometryWorker';
+import { useTerrainMeshes } from './Terrain/hooks/useTerrainMeshes';
+import { useTerrainEnvironment } from './Terrain/hooks/useTerrainEnvironment';
 import {
-	createMovementHighlightTexture,
-	createDummyTerrainGeometry,
-	createPlaceholderVoxelAoTexture,
-	createVoxelAoTexture,
-	TERRAIN_MATERIAL_REGISTRY,
-	type MovementHighlightTexture,
-	type VoxelAoTexture,
-} from './Terrain/materials';
+	useMapSceneCore,
+	type MapSceneController,
+	type MapSceneControllerContext,
+} from './Terrain/hooks/useMapSceneCore';
 
 export type CameraPreference = 'ortho' | 'perspective' | 'freecam';
 
@@ -114,22 +101,6 @@ interface ThreeDMapCameraState {
 	zoom: number;
 }
 
-interface TerrainRenderResources {
-	meshes: THREE.Mesh[];
-	geometries: THREE.BufferGeometry[];
-	materials: THREE.MeshStandardMaterial[];
-	movementHighlight: MovementHighlightTexture;
-	voxelAo: VoxelAoTexture;
-	animationFrameCallbacks: ((timeMs: number) => void)[];
-}
-
-function disposeTerrainResources(resources: TerrainRenderResources): void {
-	for (const geo of resources.geometries) geo.dispose();
-	for (const mat of resources.materials) mat.dispose();
-	resources.movementHighlight.texture.dispose();
-	resources.voxelAo.texture.dispose();
-}
-
 function getPanLimitRadius(width: number, length: number, maxElevation: number): number {
 	const footprintRadius = Math.sqrt(width * width + length * length) / 2;
 	return Math.max(
@@ -164,21 +135,11 @@ export default function ThreeDMap({
 }: ThreeDMapProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const cameraStateRef = useRef<ThreeDMapCameraState | null>(null);
-	const sceneResourcesRef = useRef<ThreeDSceneResources | null>(null);
 	// Keep a stable ref to onReady so the terrain/scene effects don't need it as a dep.
 	const onReadyRef = useRef(onReady);
 	useEffect(() => { onReadyRef.current = onReady; });
-	const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	const statsRef = useRef<any>(null);
-	const triangleStatsRef = useRef<HTMLDivElement | null>(null);
 	const rigRef = useRef<CameraRig | null>(null);
-	const postProcessingRef = useRef<ThreeDMapPostProcessing | null>(null);
-	const updateCameraProjectionRef = useRef<(() => void) | null>(null);
 	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
-	const terrainResourcesRef = useRef<TerrainRenderResources | null>(null);
-	const warmGeometryRef = useRef<THREE.BufferGeometry | null>(null);
-	const warmMeshesRef = useRef<THREE.Mesh[]>([]);
 	const hasFramedTerrainRef = useRef(false);
 	const context = useQuestContext();
 	const { actionService } = useActionService();
@@ -191,13 +152,71 @@ export default function ThreeDMap({
 		clearSelection,
 		updateHoveredTile,
 	} = useMapState();
-	const [sceneResources, setSceneResources] = useState<ThreeDSceneResources | null>(null);
 	const activeStickers = useActiveStickers();
 	const { pings: activePings } = useActivePings();
 	const liveActorPoses = useLiveActorPoseOverrides(terrain, characters, entities);
 	const lastPingTimeRef = useRef(0);
 	const performanceModeRef = useRef(AppSettingActions.getPerformanceMode(context));
 	const performanceMode = performanceModeRef.current;
+
+	// The tactical view's camera controller: a CameraRig (ortho isometric +
+	// perspective + freecam). The shared core (useMapSceneCore) owns the
+	// renderer/scene/lights/post-processing/pre-warm/RAF/resize/stats/teardown;
+	// this only builds the rig, drives it per-frame, and saves camera state on
+	// teardown so a remount reframes to the same view.
+	const createCameraRigController = (
+		ctx: MapSceneControllerContext
+	): MapSceneController => {
+		const { renderer, container, setActiveCamera } = ctx;
+		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
+		const rig = new CameraRig(renderer.domElement, aspect, MAP_CAMERA_RIG_CONFIG, {
+			onActiveCameraChange: (cam) => setActiveCamera(cam),
+		});
+		rigRef.current = rig;
+		const orthoCamera = rig.orthoCamera;
+		const controls = rig.controls;
+		controls.maxTargetRadius = THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS;
+		rig.resize(container.clientWidth || 1, container.clientHeight || 1);
+		// Freecam input (right-hold to look, WASD/QE to fly, scroll for speed) is
+		// owned by the rig; it gates on the rig's own mode internally.
+		rig.attachInput();
+
+		return {
+			camera: orthoCamera,
+			// Freecam movement while flying, otherwise damped orbit.
+			onFrame: (_now, dt) => rig.update(dt),
+			onResize: (width, height) => rig.resize(width, height),
+			dispose: () => {
+				cameraStateRef.current = {
+					position: orthoCamera.position.clone(),
+					target: controls.target.clone(),
+					cursor: controls.cursor.clone(),
+					zoom: orthoCamera.zoom,
+				};
+				// Detaches freecam input and disposes both controls.
+				rig.dispose();
+				rigRef.current = null;
+			},
+		};
+	};
+
+	const { sceneResources, requestResize } = useMapSceneCore(containerRef, {
+		performanceMode,
+		movementHighlightVariants: true,
+		directionalLightRef,
+		createController: createCameraRigController,
+		triangleStatsWidth: "110px",
+		formatTriangleStats: (info) => {
+			const tris = info.render.triangles.toLocaleString();
+			const draws = info.render.calls.toLocaleString();
+			const geoms = info.memory.geometries.toLocaleString();
+			const texs = info.memory.textures.toLocaleString();
+			const progs = (info.programs?.length ?? 0).toLocaleString();
+			return `TRIS ${tris}\nDRAW ${draws}\nGEOM ${geoms}\nTEX  ${texs}\nPROG ${progs}`;
+		},
+		maxDeltaSeconds: 0.1,
+	});
+
 	const isDM = context.User.Role === "dm";
 	const imageService = (actionService as any)?.imageService ?? null;
 	const campaign = CampaignActions.getActiveCampaign(context);
@@ -235,8 +254,6 @@ export default function ThreeDMap({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[terrainSignature]
 	);
-	const terrainLighting = terrain?.Lighting;
-	const terrainBackgroundColor = terrain?.Background.Color;
 	const terrainGeometry = useVoxelTerrainGeometryWorker(
 		terrain,
 		terrainSignature,
@@ -304,23 +321,6 @@ export default function ThreeDMap({
 		selectedActorMoveSpeed,
 		selectedActorCanFly,
 	]);
-
-	// Backtick (`) shortcut to toggle the Stats.js overlay
-	useEffect(() => {
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === '`' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-				const stats = statsRef.current;
-				if (!stats) return;
-				const nextDisplay = stats.dom.style.display === 'none' ? 'block' : 'none';
-				stats.dom.style.display = nextDisplay;
-				if (triangleStatsRef.current) {
-					triangleStatsRef.current.style.display = nextDisplay;
-				}
-			}
-		};
-		window.addEventListener('keydown', onKey);
-		return () => window.removeEventListener('keydown', onKey);
-	}, []);
 
 	const handleActorClick = useCallback(
 		(actor: { id: string; kind: "character" | "entity"; moveSpeed: number }) => {
@@ -406,263 +406,13 @@ export default function ThreeDMap({
 		[actionService, selectActor, updateHoveredTile]
 	);
 
-	useEffect(() => {
-		const container = containerRef.current;
-		if (!container) return;
-
-		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-		renderer.setPixelRatio(
-			Math.min(
-				window.devicePixelRatio,
-				performanceMode
-					? THREE_D_MAP_RENDERER.PERFORMANCE_MAX_PIXEL_RATIO
-					: THREE_D_MAP_RENDERER.MAX_PIXEL_RATIO
-			)
-		);
-		renderer.setSize(container.clientWidth || 1, container.clientHeight || 1);
-		renderer.outputColorSpace = THREE.SRGBColorSpace;
-		renderer.info.autoReset = false;
-		renderer.shadowMap.enabled = true;
-		renderer.shadowMap.autoUpdate = false;
-		renderer.shadowMap.needsUpdate = true;
-		renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-		container.appendChild(renderer.domElement);
-		rendererRef.current = renderer;
-
-		const stats = new Stats();
-		stats.showPanel(0); // 0: FPS, 1: ms/frame, 2: MB -- click to cycle
-		stats.dom.style.position = 'absolute';
-		stats.dom.style.top = '0px';
-		stats.dom.style.left = '0px';
-		stats.dom.style.display = 'none';
-		container.appendChild(stats.dom);
-		statsRef.current = stats;
-
-		const triangleStats = document.createElement('div');
-		triangleStats.style.position = 'absolute';
-		triangleStats.style.top = '48px';
-		triangleStats.style.left = '0px';
-		triangleStats.style.width = '110px';
-		triangleStats.style.boxSizing = 'border-box';
-		triangleStats.style.padding = '2px 3px';
-		triangleStats.style.background = 'rgba(0, 0, 0, 0.8)';
-		triangleStats.style.color = '#0ff';
-		triangleStats.style.font = 'bold 9px Helvetica, Arial, sans-serif';
-		triangleStats.style.lineHeight = '11px';
-		triangleStats.style.whiteSpace = 'pre';
-		triangleStats.style.pointerEvents = 'none';
-		triangleStats.style.display = 'none';
-		triangleStats.textContent = 'TRIS 0\nDRAW 0\nGEOM 0\nTEX  0\nPROG 0';
-		container.appendChild(triangleStats);
-		triangleStatsRef.current = triangleStats;
-
-		const scene = new THREE.Scene();
-		scene.background = null;
-
-		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
-		const rig = new CameraRig(renderer.domElement, aspect, MAP_CAMERA_RIG_CONFIG, {
-			onActiveCameraChange: (cam) => {
-				if (sceneResourcesRef.current) sceneResourcesRef.current.camera = cam;
-				postProcessingRef.current?.setCamera(cam);
-			},
-		});
-		rigRef.current = rig;
-		const orthoCamera = rig.orthoCamera;
-		const camera = orthoCamera;
-
-		const hemi = new THREE.HemisphereLight(
-			THREE_D_MAP_LIGHTING.HEMISPHERE_SKY_COLOR,
-			THREE_D_MAP_LIGHTING.HEMISPHERE_GROUND_COLOR,
-			Math.PI * THREE_D_MAP_LIGHTING.HEMISPHERE_INTENSITY_MULTIPLIER
-		);
-		scene.add(hemi);
-
-		const dirLight = new THREE.DirectionalLight(
-			THREE_D_MAP_LIGHTING.DIRECTIONAL_COLOR,
-			Math.PI * THREE_D_MAP_LIGHTING.DIRECTIONAL_INTENSITY_MULTIPLIER
-		);
-		dirLight.castShadow = true;
-		const shadowMapSize = performanceMode
-			? THREE_D_MAP_SHADOW.PERFORMANCE_MAP_SIZE
-			: THREE_D_MAP_SHADOW.MAP_SIZE;
-		dirLight.shadow.mapSize.set(shadowMapSize, shadowMapSize);
-		dirLight.shadow.bias = THREE_D_MAP_SHADOW.BIAS;
-		dirLight.shadow.normalBias = THREE_D_MAP_SHADOW.NORMAL_BIAS;
-		scene.add(dirLight);
-		scene.add(dirLight.target);
-		directionalLightRef.current = dirLight;
-
-		const controls = rig.controls;
-		controls.maxTargetRadius = THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS;
-		rig.resize(container.clientWidth || 1, container.clientHeight || 1);
-		// Freecam input (right-hold to look, WASD/QE to fly, scroll for speed) is
-		// owned by the rig; it gates on the rig's own mode internally.
-		rig.attachInput();
-
-		const postProcessing = createThreeDMapPostProcessing(renderer, scene, camera, {
-			performanceMode,
-		});
-		postProcessingRef.current = postProcessing;
-
-		const movementHighlight = createMovementHighlightTexture(1, 1, 1);
-		const resources: ThreeDSceneResources = {
-			scene,
-			camera,
-			domElement: renderer.domElement,
-			occlusionTargets: [],
-			movementHighlight,
-			animationCallbacks: new Set(),
-			requestShadowUpdate: () => {
-				renderer.shadowMap.needsUpdate = true;
-			},
-			actorPickTargets: [],
-			dragState: { active: false },
-		};
-
-		// Pre-warm: compile every registered shader variant before exposing the
-		// scene to the rest of the app, so no stutter when terrain first appears.
-		let cancelled = false;
-		void (async () => {
-			const dummyGeo = createDummyTerrainGeometry();
-			warmGeometryRef.current = dummyGeo;
-			const dummyHighlight = createMovementHighlightTexture(1, 1, 1);
-			const dummyVoxelAo = createPlaceholderVoxelAoTexture();
-			const warmMeshes: THREE.Mesh[] = [];
-			for (const [, factory] of TERRAIN_MATERIAL_REGISTRY) {
-				for (const acceptsMovementHighlight of [false, true]) {
-					const result = factory({
-						acceptsMovementHighlight,
-						performanceMode,
-						movementHighlight: acceptsMovementHighlight ? dummyHighlight : undefined,
-						voxelAo: dummyVoxelAo,
-					});
-					const warmMesh = new THREE.Mesh(dummyGeo, result.material);
-					scene.add(warmMesh);
-					warmMeshes.push(warmMesh);
-				}
-			}
-			warmMeshesRef.current = warmMeshes;
-			await renderer.compileAsync(scene, camera);
-			if (cancelled) {
-				dummyHighlight.texture.dispose();
-				dummyVoxelAo.texture.dispose();
-				return;
-			}
-			for (const warmMesh of warmMeshes) scene.remove(warmMesh);
-			warmMeshesRef.current = [];
-			dummyHighlight.texture.dispose();
-			dummyVoxelAo.texture.dispose();
-			// Warm geometry and materials are intentionally kept alive (not disposed)
-			// so the compiled WebGL programs remain resident in the driver cache.
-			sceneResourcesRef.current = resources;
-			setSceneResources(resources);
-		})();
-
-		let rafId = 0;
-		let lastFrameTime = performance.now();
-		const animate = () => {
-			rafId = requestAnimationFrame(animate);
-			const now = performance.now();
-			const delta = Math.min((now - lastFrameTime) / 1000, 0.1);
-			lastFrameTime = now;
-			for (const callback of resources.animationCallbacks) {
-				callback(now);
-			}
-			// Freecam movement while flying, otherwise damped orbit.
-			rig.update(delta);
-			stats.begin();
-			renderer.info.reset();
-			postProcessing.render();
-			if (triangleStats.style.display !== 'none') {
-				const info = renderer.info;
-				const tris = info.render.triangles.toLocaleString();
-				const draws = info.render.calls.toLocaleString();
-				const geoms = info.memory.geometries.toLocaleString();
-				const texs = info.memory.textures.toLocaleString();
-				const progs = (info.programs?.length ?? 0).toLocaleString();
-				triangleStats.textContent =
-					`TRIS ${tris}\nDRAW ${draws}\nGEOM ${geoms}\nTEX  ${texs}\nPROG ${progs}`;
-			}
-			stats.end();
-		};
-		animate();
-
-		const updateCameraProjection = () => {
-			const w = container.clientWidth;
-			const h = container.clientHeight;
-			if (w === 0 || h === 0) return;
-			rig.resize(w, h);
-			postProcessing.setSize(w, h);
-		};
-		updateCameraProjectionRef.current = updateCameraProjection;
-
-		const ro = new ResizeObserver(updateCameraProjection);
-		ro.observe(container);
-
-		return () => {
-			cancelled = true;
-			cameraStateRef.current = {
-				position: orthoCamera.position.clone(),
-				target: controls.target.clone(),
-				cursor: controls.cursor.clone(),
-				zoom: orthoCamera.zoom,
-			};
-			setSceneResources(null);
-			cancelAnimationFrame(rafId);
-			ro.disconnect();
-			// Detaches freecam input and disposes both controls.
-			rig.dispose();
-			rigRef.current = null;
-			postProcessingRef.current = null;
-			updateCameraProjectionRef.current = null;
-			// Clean up any warm meshes still in the scene (compileAsync may not have
-			// finished yet). The warm geometry and materials are left undisposed so
-			// the compiled WebGL programs stay resident until renderer.dispose().
-			const pendingWarmMeshes = warmMeshesRef.current;
-			for (const m of pendingWarmMeshes) scene.remove(m);
-			warmMeshesRef.current = [];
-			const terrainResources = terrainResourcesRef.current;
-			if (terrainResources) {
-				for (const m of terrainResources.meshes) scene.remove(m);
-				for (const cb of terrainResources.animationFrameCallbacks) {
-					resources.animationCallbacks.delete(cb);
-				}
-				disposeTerrainResources(terrainResources);
-				terrainResourcesRef.current = null;
-			} else {
-				resources.movementHighlight.texture.dispose();
-			}
-			sceneResourcesRef.current = null;
-			postProcessing.dispose();
-			renderer.dispose();
-			rendererRef.current = null;
-			directionalLightRef.current = null;
-			if (renderer.domElement.parentElement === container) {
-				container.removeChild(renderer.domElement);
-			}
-			if (statsRef.current?.dom?.parentElement === container) {
-				container.removeChild(statsRef.current.dom);
-			}
-			if (triangleStatsRef.current?.parentElement === container) {
-				container.removeChild(triangleStatsRef.current);
-			}
-			statsRef.current = null;
-			triangleStatsRef.current = null;
-		};
-	}, []);
-
-	useEffect(() => {
-		if (!sceneResources) return;
-
-		applyVoxelTerrainBackground(sceneResources.scene, terrain);
-	}, [sceneResources, terrain, terrainBackgroundColor]);
-
+	// Per-terrain camera framing + pan limits (the rig/scene bootstrap itself lives
+	// in useMapSceneCore above). Light/shadow bounds moved to useTerrainEnvironment.
 	useEffect(() => {
 		if (!sceneResources) return;
 		const container = containerRef.current;
 		const rig = rigRef.current;
-		const dirLight = directionalLightRef.current;
-		if (!container || !rig || !dirLight) return;
+		if (!container || !rig) return;
 		if (!terrain || getVoxelCount(terrain.Voxels) === 0) return;
 
 		const controls = rig.controls;
@@ -674,6 +424,7 @@ export default function ThreeDMap({
 		const maxSurfaceHeight = getMaxVoxelSurfaceHeight(terrain);
 		const terrainCenterY = (maxSurfaceHeight - 1) / 2;
 		const halfSize = (W + L) / Math.SQRT2 / 2 * THREE_D_MAP_CAMERA.FRAMING_MULTIPLIER;
+		// Directional light + shadow camera bounds live in useTerrainEnvironment.
 
 		// Let the rig know the terrain extents so freecam entry framing is sized correctly.
 		rig.setTerrain({ width: W, length: L, height: maxSurfaceHeight });
@@ -688,22 +439,6 @@ export default function ThreeDMap({
 		// Keep the perspective camera's aspect in sync.
 		perspCamera.aspect = aspect;
 		perspCamera.updateProjectionMatrix();
-
-		const shadowCamera = getShadowCameraBounds(W, L, maxSurfaceHeight);
-		applyVoxelTerrainDirectionalLight(
-			dirLight,
-			terrain,
-			maxSurfaceHeight,
-			terrainCenterY
-		);
-		dirLight.shadow.camera.left = shadowCamera.left;
-		dirLight.shadow.camera.right = shadowCamera.right;
-		dirLight.shadow.camera.top = shadowCamera.top;
-		dirLight.shadow.camera.bottom = shadowCamera.bottom;
-		dirLight.shadow.camera.near = shadowCamera.near;
-		dirLight.shadow.camera.far = shadowCamera.far;
-		dirLight.shadow.camera.updateProjectionMatrix();
-		sceneResources.requestShadowUpdate();
 
 		controls.cursor.set(0, terrainCenterY, 0);
 		controls.maxTargetRadius = getPanLimitRadius(W, L, maxSurfaceHeight);
@@ -728,14 +463,7 @@ export default function ThreeDMap({
 			hasFramedTerrainRef.current = true;
 		}
 
-	}, [
-		sceneResources,
-		terrainSignature,
-		terrainLighting?.Color,
-		terrainLighting?.Intensity,
-		terrainLighting?.Rotation,
-		terrainLighting?.Elevation,
-	]);
+	}, [sceneResources, terrainSignature]);
 
 	useEffect(() => {
 		if (!sceneResources) return;
@@ -746,82 +474,22 @@ export default function ThreeDMap({
 		// perspective entry framing, and fires onActiveCameraChange (which updates
 		// sceneResources.camera and the post-processing camera).
 		rig.setMode(cameraPreference);
-		updateCameraProjectionRef.current?.();
-	}, [cameraPreference, sceneResources]);
+		requestResize();
+	}, [cameraPreference, sceneResources, requestResize]);
 
-	useEffect(() => {
-		if (!sceneResources) return;
-		const resources = sceneResources;
+	// Terrain meshes, AO, movement-highlight, and fog volume -- shared with the
+	// first-person view via useTerrainMeshes. World view paints movement range,
+	// so movementHighlight is enabled here.
+	useTerrainMeshes(sceneResources, terrainGeometry, {
+		movementHighlight: true,
+		onReady: () => onReadyRef.current?.(),
+		performanceMode,
+	});
 
-		if (!terrainGeometry) {
-			const old = terrainResourcesRef.current;
-			if (!old) return;
-
-			for (const m of old.meshes) resources.scene.remove(m);
-			for (const cb of old.animationFrameCallbacks) resources.animationCallbacks.delete(cb);
-			disposeTerrainResources(old);
-			terrainResourcesRef.current = null;
-			resources.occlusionTargets.length = 0;
-			resources.movementHighlight = createMovementHighlightTexture(1, 1, 1);
-			resources.requestShadowUpdate();
-			return;
-		}
-
-		const movementHighlight = createMovementHighlightTexture(
-			terrainGeometry.width,
-			terrainGeometry.height + 1,
-			terrainGeometry.length
-		);
-		const voxelAo = createVoxelAoTexture(terrainGeometry.occupancy, {
-			performanceMode,
-		});
-
-		const meshes: THREE.Mesh[] = [];
-		const geometries: THREE.BufferGeometry[] = [];
-		const materials: THREE.MeshStandardMaterial[] = [];
-		const animationFrameCallbacks: ((timeMs: number) => void)[] = [];
-
-		for (const [bucketKey, geometry] of terrainGeometry.buckets) {
-			const factory =
-				TERRAIN_MATERIAL_REGISTRY.get(bucketKey) ??
-				TERRAIN_MATERIAL_REGISTRY.get('default')!;
-			const result = factory({
-				acceptsMovementHighlight: true,
-				performanceMode,
-				movementHighlight,
-				voxelAo,
-			});
-			if (result.onAnimationFrame) {
-				resources.animationCallbacks.add(result.onAnimationFrame);
-				animationFrameCallbacks.push(result.onAnimationFrame);
-			}
-			const mesh = new THREE.Mesh(geometry, result.material);
-			mesh.castShadow = result.castShadow;
-			mesh.receiveShadow = result.receiveShadow;
-			mesh.renderOrder = result.renderOrder ?? 0;
-			meshes.push(mesh);
-			geometries.push(geometry);
-			materials.push(result.material);
-		}
-
-		const old = terrainResourcesRef.current;
-		if (old) {
-			for (const m of old.meshes) resources.scene.remove(m);
-			for (const cb of old.animationFrameCallbacks) resources.animationCallbacks.delete(cb);
-			disposeTerrainResources(old);
-		} else {
-			resources.movementHighlight.texture.dispose();
-		}
-
-		for (const mesh of meshes) resources.scene.add(mesh);
-		resources.occlusionTargets.length = 0;
-		for (const mesh of meshes) resources.occlusionTargets.push(mesh);
-		resources.movementHighlight = movementHighlight;
-		terrainResourcesRef.current = { meshes, geometries, materials, movementHighlight, voxelAo, animationFrameCallbacks };
-		resources.requestShadowUpdate();
-		// Terrain meshes are now in the scene -- signal the host that the map is ready.
-		onReadyRef.current?.();
-	}, [sceneResources, terrainGeometry]);
+	// Background + directional-light/shadow-bounds -- shared with the first-person
+	// view via useTerrainEnvironment. Runs as its own effect(s), independent of the
+	// camera-framing effect above (requestShadowUpdate only sets a dirty flag).
+	useTerrainEnvironment(sceneResources, terrain, terrainSignature, directionalLightRef);
 
 	// Signal ready immediately when the scene is up but there is no terrain to build
 	// (empty terrain or no terrain assigned), so the loading screen doesn't get stuck.

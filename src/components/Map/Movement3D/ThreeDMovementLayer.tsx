@@ -17,6 +17,7 @@ import {
 	raycastTerrainDDA,
 	terrainDDAHitToVoxelTile,
 } from "./movement3DHelpers";
+import { disposeObject3D, setRaycasterFromPointer } from "../mapSceneUtils";
 
 // Tolerance for "actor is in front of terrain" comparisons. Pick meshes are
 // transparent and disable depth testing, so we rely on raycaster distance.
@@ -71,11 +72,7 @@ function getTileFromPointerEvent(
 	pointer: THREE.Vector2,
 	allowVirtualGroundTile: boolean
 ): HoveredTile | null {
-	const rect = resources.domElement.getBoundingClientRect();
-	pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-	pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-	raycaster.setFromCamera(pointer, resources.camera);
+	setRaycasterFromPointer(raycaster, event, resources, pointer);
 
 	// Suppress the tile pick if the cursor is on top of an actor. The
 	// actor pick mesh is closer to the camera than the terrain it's
@@ -402,15 +399,7 @@ export function ThreeDMovementLayer({
 
 		return () => {
 			resources.scene.remove(group);
-			for (const child of group.children) {
-				if (!(child instanceof THREE.InstancedMesh)) continue;
-				child.geometry.dispose();
-				if (Array.isArray(child.material)) {
-					child.material.forEach((material) => material.dispose());
-				} else {
-					child.material.dispose();
-				}
-			}
+			disposeObject3D(group);
 			group.clear();
 		};
 	}, [

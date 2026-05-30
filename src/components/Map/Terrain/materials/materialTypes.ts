@@ -106,6 +106,16 @@ export interface TerrainMaterial {
 	 * Defaults to false.
 	 */
 	passable?: boolean;
+	/**
+	 * When true, this material is NOT rendered as a surface mesh. Its voxels are
+	 * excluded from the greedy-meshed render buckets and from the AO occupancy
+	 * snapshot, and instead feed a fog-density 3D volume consumed by the
+	 * screen-space volumetric fog pass (see mapVolumetricFog). The `factory`
+	 * below is therefore only exercised by the shader pre-warm; it is never used
+	 * to draw real terrain. Such materials should also be `passable`.
+	 * Defaults to false.
+	 */
+	volumetric?: boolean;
 	/** Factory that builds the THREE.MeshStandardMaterial for this bucket. */
 	factory: MaterialFactory;
 	/**

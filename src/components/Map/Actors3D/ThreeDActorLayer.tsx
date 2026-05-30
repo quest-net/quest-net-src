@@ -39,6 +39,7 @@ import {
 	isActorAirborne,
 } from "./actorTokenPlacement";
 import { raycastTerrainDDA } from "../Movement3D/movement3DHelpers";
+import { disposeObject3D, setRaycasterFromPointer } from "../mapSceneUtils";
 
 const ACTOR_LIVE_POSE_FOLLOW_MS = 90;
 
@@ -658,18 +659,6 @@ function createShadowMesh(
 	return mesh;
 }
 
-function disposeObjectMeshes(object: THREE.Object3D): void {
-	object.traverse((child) => {
-		if (!(child instanceof THREE.Mesh)) return;
-		child.geometry.dispose();
-		if (Array.isArray(child.material)) {
-			child.material.forEach((material) => material.dispose());
-		} else {
-			child.material.dispose();
-		}
-	});
-}
-
 function createSupportGroup(
 	actor: ActorTokenDescriptor,
 	airborne: boolean
@@ -727,14 +716,14 @@ function refreshSupportVisual(
 	const airborne = supportMode === "airborne";
 
 	visual.group.remove(visual.shadow);
-	disposeObjectMeshes(visual.shadow);
+	disposeObject3D(visual.shadow);
 	visual.shadow = createShadowMesh(actor, terrain, shadowTexture);
 	visual.group.add(visual.shadow);
 
 	let nextHandles: SelectionHandles | null = null;
 	if (visual.supportMode !== supportMode) {
 		visual.group.remove(visual.supportGroup);
-		disposeObjectMeshes(visual.supportGroup);
+		disposeObject3D(visual.supportGroup);
 		const support = createSupportGroup(actor, airborne);
 		visual.supportGroup = support.group;
 		visual.supportMode = supportMode;
@@ -803,15 +792,6 @@ function createFlightGuide(
 	const line = new THREE.Line(geometry, material);
 	line.renderOrder = ACTOR_TOKEN_HEIGHT_DRAG.GUIDE_RENDER_ORDER;
 	return line;
-}
-
-function disposeLine(line: THREE.Line): void {
-	line.geometry.dispose();
-	if (Array.isArray(line.material)) {
-		line.material.forEach((material) => material.dispose());
-	} else {
-		line.material.dispose();
-	}
 }
 
 export function ThreeDActorLayer({
@@ -985,7 +965,7 @@ export function ThreeDActorLayer({
 		const guide = flightGuideRef.current;
 		if (!guide) return;
 		resources.scene.remove(guide);
-		disposeLine(guide);
+		disposeObject3D(guide);
 		flightGuideRef.current = null;
 	};
 
@@ -1041,7 +1021,7 @@ export function ThreeDActorLayer({
 
 		layerGroupRef.current?.remove(visual.group);
 		removePickTarget(visual.pickMesh);
-		disposeObjectMeshes(visual.group);
+		disposeObject3D(visual.group);
 		visual.actorTexture.dispose();
 		visual.group.clear();
 		selectionHandlesRef.current.delete(actorKey);
@@ -1217,11 +1197,7 @@ export function ThreeDActorLayer({
 		const findActorUnderPointer = (
 			event: PointerEvent
 		): { actor: ActorTokenDescriptor; key: string } | null => {
-			const rect = resources.domElement.getBoundingClientRect();
-			dragRayPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-			dragRayPointer.y =
-				-((event.clientY - rect.top) / rect.height) * 2 + 1;
-			raycaster.setFromCamera(dragRayPointer, resources.camera);
+			setRaycasterFromPointer(raycaster, event, resources, dragRayPointer);
 
 			// Precise pick first: raycast against the (1.25x) pick meshes.
 			// Eat hits that are clearly behind terrain.
@@ -1523,7 +1499,7 @@ export function ThreeDActorLayer({
 			for (const [key, visual] of visualHandlesByKey) {
 				previousVisualPositions.set(key, visual.group.position.clone());
 				bumpTokenBuildVersion(key);
-				disposeObjectMeshes(visual.group);
+				disposeObject3D(visual.group);
 				visual.actorTexture.dispose();
 				visual.group.clear();
 			}

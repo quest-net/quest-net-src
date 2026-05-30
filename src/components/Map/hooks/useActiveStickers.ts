@@ -17,14 +17,6 @@ export function useActiveStickers() {
     // Track which sticker log entry IDs we've already played sounds for
     const playedStickerIdsRef = useRef<Set<string>>(new Set());
 
-    // Force re-render periodically to clear old stickers
-    useEffect(() => {
-        const interval = setInterval(() => {
-            setNow(Date.now());
-        }, 1000);
-        return () => clearInterval(interval);
-    }, []);
-
     const activeStickers = useMemo(() => {
         const map = new Map<string, string>(); // ActorId -> Emoji
 
@@ -75,6 +67,19 @@ export function useActiveStickers() {
 
         return map;
     }, [campaign.Log, campaign.LogHead, now]);
+
+    // Re-render periodically to expire old stickers, but only while some are
+    // active. When none are, a new sticker arrives via a campaign.Log change
+    // (which re-runs the memo on its own), so no idle timer is needed. Mirrors
+    // useActivePings' gating.
+    const hasStickers = activeStickers.size > 0;
+    useEffect(() => {
+        if (!hasStickers) return;
+        const interval = setInterval(() => {
+            setNow(Date.now());
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [hasStickers]);
 
     return activeStickers;
 }

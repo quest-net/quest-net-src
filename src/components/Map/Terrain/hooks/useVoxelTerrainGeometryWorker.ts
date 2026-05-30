@@ -3,7 +3,10 @@ import * as THREE from "three";
 import type { VoxelTerrain } from "../../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCount } from "../../../../utils/terrain/data/VoxelDataUtils";
 import { createVoxelTerrainBufferGeometry } from "../geometry/VoxelTerrainGeometryUtils";
-import type { VoxelTerrainOccupancy } from "../geometry/VoxelTerrainGeometryUtils";
+import type {
+	VoxelTerrainFogVolume,
+	VoxelTerrainOccupancy,
+} from "../geometry/VoxelTerrainGeometryUtils";
 import { createTerrainRevision } from "../../../../utils/terrain/data/VoxelTerrainIndex";
 
 // ---------------------------------------------------------------------------
@@ -25,6 +28,7 @@ interface VoxelGeometryWorkerResponse {
 	buildId: number;
 	buckets: BucketBufferEntry[];
 	occupancy: VoxelTerrainOccupancy;
+	fogVolume: VoxelTerrainFogVolume | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -45,6 +49,7 @@ interface BucketBufferPayload {
 interface VoxelGeometryBufferPayload {
 	buckets: Map<string, BucketBufferPayload>;
 	occupancy: VoxelTerrainOccupancy;
+	fogVolume: VoxelTerrainFogVolume | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,6 +61,8 @@ export interface VoxelTerrainGeometryResult {
 	buckets: Map<string, THREE.BufferGeometry>;
 	/** Voxel-occupancy snapshot used to build the per-fragment AO sampler. */
 	occupancy: VoxelTerrainOccupancy;
+	/** Fog-density volume for the volumetric pass, or null if no fog voxels. */
+	fogVolume: VoxelTerrainFogVolume | null;
 	width: number;
 	length: number;
 	height: number;
@@ -102,7 +109,7 @@ function payloadFromWorkerResponse(
 		const { key, ...buffers } = entry;
 		map.set(key, buffers);
 	}
-	return { buckets: map, occupancy: data.occupancy };
+	return { buckets: map, occupancy: data.occupancy, fogVolume: data.fogVolume };
 }
 
 function createGeometryFromPayload(
@@ -141,6 +148,7 @@ export function useVoxelTerrainGeometryWorker(
 			setResult({
 				buckets: createGeometryFromPayload(cachedPayload),
 				occupancy: cachedPayload.occupancy,
+				fogVolume: cachedPayload.fogVolume,
 				width,
 				length,
 				height,
@@ -164,6 +172,7 @@ export function useVoxelTerrainGeometryWorker(
 			setResult({
 				buckets: createGeometryFromPayload(payload),
 				occupancy: payload.occupancy,
+				fogVolume: payload.fogVolume,
 				width,
 				length,
 				height,

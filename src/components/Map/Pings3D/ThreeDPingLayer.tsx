@@ -7,6 +7,7 @@ import type { ActivePing } from "../hooks/useActivePings";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import { terrainHeightToWorldY } from "../Actors3D/actorTokenPlacement";
 import { raycastTerrainDDA } from "../Movement3D/movement3DHelpers";
+import { disposeObject3D, setRaycasterFromPointer } from "../mapSceneUtils";
 import {
 	THREE_D_PING_INPUT,
 	THREE_D_PING_MARKER,
@@ -179,15 +180,9 @@ function createPingVisual(
 }
 
 function disposePingVisual(visual: PingVisual): void {
-	visual.group.traverse((child) => {
-		if (!(child instanceof THREE.Mesh)) return;
-		child.geometry.dispose();
-		if (Array.isArray(child.material)) {
-			child.material.forEach((material) => material.dispose());
-		} else {
-			child.material.dispose();
-		}
-	});
+	// The arrow is a Sprite, which disposeObject3D skips (shared geometry); its
+	// SpriteMaterial is disposed explicitly.
+	disposeObject3D(visual.group);
 	visual.arrowMaterial.dispose();
 }
 
@@ -198,10 +193,7 @@ function getPingTileFromPointer(
 	raycaster: THREE.Raycaster,
 	pointer: THREE.Vector2
 ): { x: number; y: number; h: number } | null {
-	const rect = resources.domElement.getBoundingClientRect();
-	pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-	pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-	raycaster.setFromCamera(pointer, resources.camera);
+	setRaycasterFromPointer(raycaster, event, resources, pointer);
 
 	const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex);
 	if (!terrainHit) return null;

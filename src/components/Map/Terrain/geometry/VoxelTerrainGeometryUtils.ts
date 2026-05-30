@@ -11,6 +11,7 @@ import {
 	getMaterialOcclusionGroup,
 	getMaterialPreservesVoxelFaces,
 	getMaterialUsesVertexColors,
+	isVolumetricMaterial,
 } from '../materials';
 
 import * as THREE from 'three';
@@ -71,6 +72,15 @@ export interface VoxelTerrainOccupancy {
 	voxelSize: number;
 }
 
+/**
+ * Fog-density volume. Structurally identical to the occupancy snapshot (same
+ * grid + world bounds + Data3DTexture layout), but holds the density of
+ * volumetric materials (255 = full fog, 0 = none) rather than collision
+ * occupancy. The main thread wraps `data` in a Data3DTexture the volumetric fog
+ * pass raymarches; linear filtering smooths the cell boundaries into soft fog.
+ */
+export type VoxelTerrainFogVolume = VoxelTerrainOccupancy;
+
 interface VoxelTerrainBufferOptions {
 	transferSafe?: boolean;
 }
@@ -78,6 +88,8 @@ interface VoxelTerrainBufferOptions {
 export interface VoxelTerrainBuildResult {
 	buckets: Map<string, VoxelTerrainBuffers>;
 	occupancy: VoxelTerrainOccupancy;
+	/** Present only when the terrain contains volumetric (fog) voxels. */
+	fogVolume: VoxelTerrainFogVolume | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -320,13 +332,27 @@ export function buildVoxelTerrainBuffers(
 	// on hand.
 	// -----------------------------------------------------------------------
 	const occupancyData = new Uint8Array(voxelWidth * voxelHeight * voxelLength);
+	// Fog-density grid is allocated lazily: terrains without any volumetric
+	// voxels pay nothing (these grids can be large for big terrains).
+	let fogVolumeData: Uint8Array | null = null;
 	for (const voxel of voxels) {
 		if (
 			voxel.x < 0 || voxel.x >= voxelWidth ||
 			voxel.y < 0 || voxel.y >= voxelHeight ||
 			voxel.z < 0 || voxel.z >= voxelLength
 		) continue;
-		occupancyData[voxel.z * voxelWidth * voxelHeight + voxel.y * voxelWidth + voxel.x] = 255;
+		const cellIndex = voxel.z * voxelWidth * voxelHeight + voxel.y * voxelWidth + voxel.x;
+		// Volumetric voxels (fog) are NOT collision occluders and are not
+		// AO-relevant: keep them out of the occupancy snapshot and route them
+		// into the fog-density volume instead.
+		if (isVolumetricMaterial(voxel.color & 0xff)) {
+			if (!fogVolumeData) {
+				fogVolumeData = new Uint8Array(voxelWidth * voxelHeight * voxelLength);
+			}
+			fogVolumeData[cellIndex] = 255;
+			continue;
+		}
+		occupancyData[cellIndex] = 255;
 	}
 
 	const writeGreedyQuad = (
@@ -452,6 +478,10 @@ export function buildVoxelTerrainBuffers(
 		for (const voxel of voxels) {
 			const { x: vx, y: vy, z: vz } = voxel;
 
+			// Volumetric voxels (fog) are drawn by the raymarch pass, not as
+			// surface geometry: never emit faces for them.
+			if (isVolumetricMaterial(voxel.color & 0xff)) continue;
+
 			// Face culling: cull a face if and only if its neighbor is in the
 			// same occlusion group. Render bucket controls draw calls and shader
 			// selection; occlusion group controls whether neighboring materials
@@ -566,8 +596,7 @@ export function buildVoxelTerrainBuffers(
 		});
 	}
 
-	const occupancy: VoxelTerrainOccupancy = {
-		data: occupancyData,
+	const worldBounds = {
 		voxelWidth,
 		voxelHeight,
 		voxelLength,
@@ -578,9 +607,18 @@ export function buildVoxelTerrainBuffers(
 		worldSizeY: terrain.Height,
 		worldSizeZ: terrain.Length,
 		voxelSize: 1 / resolution,
+	} as const;
+
+	const occupancy: VoxelTerrainOccupancy = {
+		data: occupancyData,
+		...worldBounds,
 	};
 
-	return { buckets: bucketResult, occupancy };
+	const fogVolume: VoxelTerrainFogVolume | null = fogVolumeData
+		? { data: fogVolumeData, ...worldBounds }
+		: null;
+
+	return { buckets: bucketResult, occupancy, fogVolume };
 }
 
 // ---------------------------------------------------------------------------
