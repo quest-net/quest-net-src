@@ -463,6 +463,11 @@ const lava245Material: TerrainMaterial = {
 		preserveVoxelFaces: true,
 		deformSurface: true,
 	},
+	// Lava is a liquid: actors wade/fall through it and stand on the floor
+	// beneath, raycasts and the FP capsule pass through, and it is never a
+	// walkable surface. (It no longer blocks movement on its own -- add hazard
+	// logic separately if lava should damage or stop actors.)
+	passable: true,
 	factory: createLava245Material,
 	special: {
 		paletteIndex: 245,

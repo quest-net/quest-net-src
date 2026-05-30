@@ -43,6 +43,9 @@ const light243Material: TerrainMaterial = {
 	geometry: {
 		vertexColors: false,
 	},
+	// Light is a glow volume, not a solid object: actors walk through it, it is
+	// never a walkable surface, and raycasts pass through it. It still renders.
+	passable: true,
 	factory: createLight243Material,
 	special: {
 		paletteIndex: 243,

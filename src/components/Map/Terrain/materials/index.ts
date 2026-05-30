@@ -37,6 +37,7 @@ import type {
 
 import defaultMaterial from './defaultMaterial';
 import flesh250Material from './flesh250Material';
+import fog251Material from './fog251Material';
 import glass246Material from './glass246Material';
 import gold247Material from './gold247Material';
 import grass242Material from './grass242Material';
@@ -70,6 +71,7 @@ export const TERRAIN_MATERIALS: readonly TerrainMaterial[] = [
 	silver248Material,
 	ironBars249Material,
 	flesh250Material,
+	fog251Material,
 ];
 
 // ---------------------------------------------------------------------------
@@ -143,6 +145,25 @@ const GEOMETRY_BY_PALETTE_INDEX: ReadonlyMap<number, TerrainMaterial['geometry']
 );
 
 const DEFAULT_GEOMETRY = defaultMaterial.geometry;
+
+// Palette indices whose material is flagged `passable`. Treated as empty by
+// collision / movement / raycast (but still rendered). Built once at module
+// load; lookups are constant-time.
+const PASSABLE_PALETTE_INDICES: ReadonlySet<number> = new Set(
+	TERRAIN_MATERIALS
+		.filter((m): m is TerrainMaterial & { special: NonNullable<TerrainMaterial['special']> } => m.special !== undefined)
+		.filter((m) => m.passable === true)
+		.map((m) => m.special.paletteIndex)
+);
+
+/**
+ * True when voxels of this palette index should be treated as empty for
+ * collision, walkable-surface detection, and raycasting -- while still being
+ * rendered. Consumed by VoxelTerrainIndex.
+ */
+export function isPassableMaterial(colorIndex: number): boolean {
+	return PASSABLE_PALETTE_INDICES.has(colorIndex);
+}
 
 export function getMaterialBucket(colorIndex: number): string {
 	return BUCKET_BY_PALETTE_INDEX.get(colorIndex) ?? 'default';

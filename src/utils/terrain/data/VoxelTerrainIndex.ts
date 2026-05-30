@@ -18,6 +18,7 @@ import {
 	DEFAULT_TERRAIN_RESOLUTION,
 } from "../../../domains/VoxelTerrain/voxelTerrainConstants";
 import type { Voxel, VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import { isPassableMaterial } from "../../../components/Map/Terrain/materials";
 import { decodeVoxels } from "./VoxelDataUtils";
 
 // ---------------------------------------------------------------------------
@@ -194,16 +195,24 @@ export function buildVoxelTerrainIndex(
 		if (!inVoxelBounds(voxel.x, voxel.y, voxel.z)) {
 			continue;
 		}
-		if (
-			voxel.y + 1 < voxelHeight &&
-			voxelColors[voxelGridIndex(
-				voxel.x,
-				voxel.y + 1,
-				voxel.z,
-				voxelWidth,
-				voxelLayerSize
-			)] !== 0
-		) continue;
+		// Passable materials (e.g. water) are never a walkable surface.
+		if (isPassableMaterial(voxel.color & 0xff)) {
+			continue;
+		}
+		// A voxel is a surface only if no *solid* voxel sits directly above it.
+		// A passable voxel above (e.g. water resting on ground) does not bury
+		// the solid voxel beneath -- the ground stays walkable.
+		const aboveColor =
+			voxel.y + 1 < voxelHeight
+				? voxelColors[voxelGridIndex(
+					voxel.x,
+					voxel.y + 1,
+					voxel.z,
+					voxelWidth,
+					voxelLayerSize
+				)]
+				: 0;
+		if (aboveColor !== 0 && !isPassableMaterial(aboveColor - 1)) continue;
 
 		const key = tileKey(
 			Math.floor(voxel.x / resolution),
@@ -248,13 +257,15 @@ export function buildVoxelTerrainIndex(
 		allSurfaceHeights,
 		hasVoxel(vx, vy, vz) {
 			if (!inVoxelBounds(vx, vy, vz)) return false;
-			return voxelColors[voxelGridIndex(
+			const color = voxelColors[voxelGridIndex(
 				vx,
 				vy,
 				vz,
 				voxelWidth,
 				voxelLayerSize
-			)] !== 0;
+			)];
+			// Passable materials are invisible to collision / raycast / FP capsule.
+			return color !== 0 && !isPassableMaterial(color - 1);
 		},
 		getVoxelColor(vx, vy, vz) {
 			if (!inVoxelBounds(vx, vy, vz)) return null;
@@ -281,13 +292,14 @@ export function buildVoxelTerrainIndex(
 			}
 			for (let vz = startZ; vz < endZ; vz++) {
 				for (let vx = startX; vx < endX; vx++) {
-					if (voxelColors[voxelGridIndex(
+					const color = voxelColors[voxelGridIndex(
 						vx,
 						voxelY,
 						vz,
 						voxelWidth,
 						voxelLayerSize
-					)] !== 0) return true;
+					)];
+					if (color !== 0 && !isPassableMaterial(color - 1)) return true;
 				}
 			}
 			return false;

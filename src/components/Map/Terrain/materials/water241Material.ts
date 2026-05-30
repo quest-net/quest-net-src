@@ -462,6 +462,10 @@ const water241Material: TerrainMaterial = {
 		preserveVoxelFaces: true,
 		deformSurface: true,
 	},
+	// Experimental: water is non-colliding. Actors wade through it, raycasts and
+	// the FP capsule pass through, and it is never a walkable surface -- but it
+	// still renders. (Trial run for a future passable "smoke"/"fog" material.)
+	passable: true,
 	factory: createWater241Material,
 	special: {
 		paletteIndex: 241,

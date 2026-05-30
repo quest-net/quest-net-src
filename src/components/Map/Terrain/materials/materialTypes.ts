@@ -97,6 +97,15 @@ export interface TerrainMaterial {
 	shaderVersion: number;
 	/** Optional geometry-builder hints for materials that need extra vertices. */
 	geometry?: TerrainMaterialGeometry;
+	/**
+	 * When true, voxels of this material do not participate in collision: they
+	 * are invisible to hasVoxel (so raycasts and the first-person capsule pass
+	 * through them), never form a walkable surface, and never count as occupying
+	 * a tile for movement / flight / placement clearance. They still render
+	 * normally -- geometry reads the palette color directly, not hasVoxel.
+	 * Defaults to false.
+	 */
+	passable?: boolean;
 	/** Factory that builds the THREE.MeshStandardMaterial for this bucket. */
 	factory: MaterialFactory;
 	/**
