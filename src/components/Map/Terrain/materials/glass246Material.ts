@@ -88,6 +88,7 @@ const glass246Material: TerrainMaterial = {
 		paletteIndex: 246,
 		label: 'Glass',
 		swatchColor: GLASS_SWATCH,
+		category: 'buildings',
 	},
 };
 

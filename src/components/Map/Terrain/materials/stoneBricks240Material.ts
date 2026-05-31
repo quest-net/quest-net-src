@@ -268,6 +268,7 @@ const stoneBricks240Material: TerrainMaterial = {
 		paletteIndex: 240,
 		label: 'Stone Bricks',
 		swatchColor: STONE_BRICKS_SWATCH,
+		category: 'buildings',
 	},
 };
 

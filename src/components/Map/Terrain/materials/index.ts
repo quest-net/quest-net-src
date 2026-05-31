@@ -8,7 +8,8 @@
 //                                 3DMap and FirstPerson terrain renderers and
 //                                 by the scene-init pre-warm step).
 //   - SPECIAL_MATERIAL_SWATCHES:  palette swatches for the voxel editor's
-//                                 "Materials" row.
+//                                 "Materials" section (grouped into category
+//                                 rows by groupSpecialMaterialSwatches()).
 //   - getMaterialBucket(idx):     palette index -> bucket key, used by the
 //                                 geometry worker for render bucket assignment.
 //   - getMaterialOcclusionGroup:  palette index -> culling group, used by the
@@ -29,6 +30,7 @@
 import * as THREE from 'three';
 
 import type {
+	MaterialCategory,
 	MaterialFactory,
 	MaterialFactoryParams,
 	MaterialFactoryResult,
@@ -79,6 +81,7 @@ export const TERRAIN_MATERIALS: readonly TerrainMaterial[] = [
 // ---------------------------------------------------------------------------
 
 export type {
+	MaterialCategory,
 	MaterialFactory,
 	MaterialFactoryParams,
 	MaterialFactoryResult,
@@ -103,6 +106,8 @@ export interface SpecialMaterialSwatch {
 	label: string;
 	/** Hex color used for the editor swatch and the in-game material tint. */
 	color: string;
+	/** Editor grouping; materials without a category resolve to "miscellaneous". */
+	category: MaterialCategory;
 }
 
 export const SPECIAL_MATERIAL_SWATCHES: readonly SpecialMaterialSwatch[] =
@@ -112,7 +117,52 @@ export const SPECIAL_MATERIAL_SWATCHES: readonly SpecialMaterialSwatch[] =
 			index: m.special.paletteIndex,
 			label: m.special.label,
 			color: m.special.swatchColor,
+			category: m.special.category ?? 'miscellaneous',
 		}));
+
+// ---------------------------------------------------------------------------
+// Category grouping for the editor's "Materials" section
+//
+// Categories render in this fixed order; a category with no swatches is omitted
+// by groupSpecialMaterialSwatches() so the editor never draws an empty row.
+// ---------------------------------------------------------------------------
+
+export const MATERIAL_CATEGORY_ORDER: readonly MaterialCategory[] = [
+	'buildings',
+	'liquids',
+	'nature',
+	'metals',
+	'miscellaneous',
+];
+
+export const MATERIAL_CATEGORY_LABELS: Readonly<Record<MaterialCategory, string>> = {
+	buildings: 'Buildings',
+	liquids: 'Liquids',
+	nature: 'Nature',
+	metals: 'Metals',
+	miscellaneous: 'Miscellaneous',
+};
+
+export interface SpecialMaterialSwatchGroup {
+	category: MaterialCategory;
+	label: string;
+	swatches: SpecialMaterialSwatch[];
+}
+
+/**
+ * Special-material swatches bucketed by category, in MATERIAL_CATEGORY_ORDER.
+ * Empty categories are dropped so the editor only renders rows that have at
+ * least one swatch.
+ */
+export function groupSpecialMaterialSwatches(): SpecialMaterialSwatchGroup[] {
+	return MATERIAL_CATEGORY_ORDER
+		.map((category) => ({
+			category,
+			label: MATERIAL_CATEGORY_LABELS[category],
+			swatches: SPECIAL_MATERIAL_SWATCHES.filter((s) => s.category === category),
+		}))
+		.filter((group) => group.swatches.length > 0);
+}
 
 // ---------------------------------------------------------------------------
 // Palette index -> render bucket / occlusion group dispatch

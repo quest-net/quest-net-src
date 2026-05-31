@@ -51,6 +51,7 @@ const BOX_SELECTION_PREVIEW_COLOR = 0xfacc15;
 
 export type HoverTool =
 	| "place"
+	| "fill"
 	| "erase"
 	| "paint"
 	| "sample"
@@ -284,6 +285,10 @@ export function updateHoverIndicator(
 	clearObjectGroup(resources.hoverGroup);
 	const { pick, tool, granularity, brushSize, colorIndex, grid, dims, index } = inputs;
 	if (!pick) return;
+
+	// Fill acts only on an active selection; its hover is the selection outline,
+	// drawn elsewhere. It has no per-voxel brush ghost.
+	if (tool === "fill") return;
 
 	if (tool === "boxSelect") {
 		const bounds = getPickSelectionBounds(index, pick, granularity, dims);

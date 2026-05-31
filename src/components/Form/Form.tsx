@@ -6,6 +6,7 @@ import {
 	useEffect,
 	useRef,
 	useCallback,
+	useId,
 	ReactNode,
 	ReactElement,
 	RefObject,
@@ -14,6 +15,7 @@ import {
 import { createPortal } from "react-dom";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { canPerformAction } from "../../services/Actions/ActionRegistry";
+import { setFormDirty, clearFormDirty } from "../../utils/formDirtyRegistry";
 
 // ============================================================================
 // CONTEXT
@@ -175,6 +177,14 @@ export function FormWrapper<T extends Record<string, any>>({
 	const [isDirty, setDirty] = useState(mode === "create");
 	const dataRef = useRef<T>(initialData);
 	const saveResolverRef = useRef<(() => T) | null>(null);
+
+	// Report this form's dirty state into the app-wide registry so concerns
+	// outside the form (e.g. idle auto-refresh) can avoid discarding unsaved work.
+	const formId = useId();
+	useEffect(() => {
+		setFormDirty(formId, isDirty && !readOnly);
+		return () => clearFormDirty(formId);
+	}, [formId, isDirty, readOnly]);
 
 	// Delete confirmation state
 	const [isDeleteConfirm, setIsDeleteConfirm] = useState(false);

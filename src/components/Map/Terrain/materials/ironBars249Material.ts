@@ -329,6 +329,7 @@ const ironBars249Material: TerrainMaterial = {
 		paletteIndex: 249,
 		label: 'Iron Bars',
 		swatchColor: IRON_BARS_SWATCH,
+		category: 'buildings',
 	},
 };
 

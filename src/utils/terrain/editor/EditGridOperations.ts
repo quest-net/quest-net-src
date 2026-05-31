@@ -41,7 +41,7 @@ import {
 	type PickInfo,
 } from "./VoxelBrushUtils";
 
-export type SelectionEditTool = "place" | "erase" | "paint";
+export type SelectionEditTool = "place" | "fill" | "erase" | "paint";
 export type VoxelEditTool = BrushTool;
 
 export interface VoxelEditResult {
@@ -223,6 +223,20 @@ export function applySelectionEdit(
 		if (tool === "paint") {
 			if (!occupied || cur === next) continue;
 			beforeMutation?.(gIdx);
+			grid.colors[gIdx] = next;
+			changed = true;
+			markChanged(x, y, z);
+			continue;
+		}
+
+		if (tool === "fill") {
+			// Add into empty space only; never overwrite existing voxels. This is
+			// the non-destructive counterpart to `place` -- e.g. flooding a boxed
+			// room with fog while leaving its floor, walls, and props intact.
+			if (occupied) continue;
+			beforeMutation?.(gIdx);
+			countDelta++;
+			editGridSetOccupiedAtIndex(grid, gIdx, true);
 			grid.colors[gIdx] = next;
 			changed = true;
 			markChanged(x, y, z);

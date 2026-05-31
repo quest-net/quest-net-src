@@ -793,6 +793,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				return true;
 			}
 
+			// Fill only operates on an active selection (handled above). With no
+			// selection there is nothing to flood, so it has no brush behaviour.
+			if (tool === "fill") return false;
+
 			// At this point the box/color/stamp/selection paths have all returned,
 			// so the live tool must be one of the brush tools the dispatcher
 			// understands. The cast carries that invariant through to TypeScript.
@@ -1050,7 +1054,13 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					refreshSelection(pick);
 					return;
 				}
-				if (selectionRef.current && isSelectionEditTool(toolRef.current)) {
+				// Selection-edit tools show the selection outline, not a brush ghost.
+				// Fill always defers to the selection (it has no brush form), so it
+				// never draws a misleading per-voxel ghost when nothing is selected.
+				if (
+					toolRef.current === "fill" ||
+					(selectionRef.current && isSelectionEditTool(toolRef.current))
+				) {
 					clearObjectGroup(resources.hoverGroup);
 					refreshSelection(pick);
 					return;
@@ -1428,6 +1438,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 				switch (key) {
 					case "p": case "t": setTool("place");  break;
+					case "l":           setTool("fill");   break;
 					case "r":           setTool("erase");  break;
 					case "g":           setTool("paint");  break;
 					case "i":           setTool("sample"); break;

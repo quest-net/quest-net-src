@@ -7,10 +7,22 @@ import { ActionServiceProvider } from "./services/Actions/ActionServiceProvider"
 import { CampaignView } from "./domains/Campaign/CampaignView";
 import { AppSettingEdit } from "./domains/AppSetting/Edit";
 import { Wiki } from "./domains/Wiki/Wiki";
+import { useIdleRefresh } from "./hooks/useIdleRefresh";
+import { isAnyFormDirty } from "./utils/formDirtyRegistry";
+
+// Reloads the tab when the user returns after a long absence, resetting any
+// browser/GPU-level accumulation and applying pending updates/migrations.
+// Skips the reload while any form has unsaved changes so work isn't discarded.
+function IdleRefresh() {
+	useIdleRefresh({ canRefresh: () => !isAnyFormDirty() });
+	return null;
+}
+
 function App() {
 	return (
 		<ContextProvider>
 			<ActionServiceProvider>
+				<IdleRefresh />
 				<HashRouter>
 					<Routes>
 						<Route path="/" element={<Home />} />

@@ -7,7 +7,7 @@ import {
 } from 'postprocessing';
 import { THREE_D_MAP_BLOOM } from './threeDMapConstants';
 import {
-	VolumetricFogEffect,
+	VolumetricFogPass,
 	VOLUMETRIC_FOG_STEPS_FULL,
 	VOLUMETRIC_FOG_STEPS_PERFORMANCE,
 	type FogVolumeTexture,
@@ -61,16 +61,16 @@ export function createThreeDMapPostProcessing(
 	const renderPass = new RenderPass(scene, camera);
 
 	// Volumetric fog: its own depth-reading pass, composited onto the rendered
-	// scene BEFORE bloom so dense fog can bloom. Fewer raymarch steps in
-	// performance mode (same shader/look, just coarser). The composer wires a
-	// depth texture automatically because this effect declares EffectAttribute.DEPTH.
-	const fogEffect = new VolumetricFogEffect(
+	// scene BEFORE bloom so dense fog can bloom. Marches at half resolution and
+	// upscales (see mapVolumetricFog), with fewer raymarch steps in performance
+	// mode (same shader/look, just coarser). The composer wires a depth texture
+	// automatically because this pass declares needsDepthTexture.
+	const fogPass = new VolumetricFogPass(
 		camera,
 		options.performanceMode
 			? VOLUMETRIC_FOG_STEPS_PERFORMANCE
 			: VOLUMETRIC_FOG_STEPS_FULL
 	);
-	const fogPass = new EffectPass(camera, fogEffect);
 
 	const effectPass = new EffectPass(
 		camera,
@@ -93,10 +93,9 @@ export function createThreeDMapPostProcessing(
 		dispose: () => composer.dispose(),
 		setCamera: (newCamera: THREE.Camera) => {
 			renderPass.mainCamera = newCamera;
-			fogPass.mainCamera = newCamera;
 			effectPass.mainCamera = newCamera;
-			fogEffect.setCamera(newCamera);
+			fogPass.setCamera(newCamera);
 		},
-		setFogVolume: (volume) => fogEffect.setFogVolume(volume),
+		setFogVolume: (volume) => fogPass.setFogVolume(volume),
 	};
 }

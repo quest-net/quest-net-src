@@ -4,6 +4,7 @@ export type EditorView = "edit" | "preview";
 
 export type EditorTool =
 	| "place"
+	| "fill"
 	| "erase"
 	| "paint"
 	| "sample"
@@ -13,11 +14,11 @@ export type EditorTool =
 
 export type EditGranularityType = "tactical" | "voxel";
 
-export type SelectionEditTool = "place" | "erase" | "paint";
+export type SelectionEditTool = "place" | "fill" | "erase" | "paint";
 
 /** Which camera the editor canvas is driven by. */
 export type CameraMode = "ortho" | "perspective" | "freecam";
 
 export function isSelectionEditTool(tool: EditorTool): tool is SelectionEditTool {
-	return tool === "place" || tool === "erase" || tool === "paint";
+	return tool === "place" || tool === "fill" || tool === "erase" || tool === "paint";
 }

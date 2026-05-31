@@ -9,7 +9,7 @@ import {
 	TERRAIN_PALETTE,
 	TERRAIN_PALETTE_ROWS,
 } from "../../../utils/terrain/palette/TerrainPaletteUtils";
-import { SPECIAL_MATERIAL_SWATCHES } from "../../Map/Terrain/materials";
+import { groupSpecialMaterialSwatches } from "../../Map/Terrain/materials";
 import {
 	terrainPaletteIndexToVoxelColor,
 } from "../../../utils/terrain/editor/VoxelTerrainEditorUtils";
@@ -23,6 +23,9 @@ import type {
 	VoxelSelectionBounds,
 } from "../../../utils/terrain/editor/VoxelTerrainSelectionUtils";
 import type { ChunkDims } from "../../../utils/terrain/editor/EditGridChunkUtils";
+
+// Derived once from the static material registry; grouping never changes at runtime.
+const MATERIAL_SWATCH_GROUPS = groupSpecialMaterialSwatches();
 
 interface SelectionSummary {
 	bounds: VoxelSelectionBounds | null;
@@ -241,17 +244,24 @@ export function EditorSidebar(props: EditorSidebarProps) {
 
 			<div>
 				<div className="text-sm font-semibold mb-2">Materials</div>
-				<div className="flex flex-row gap-1">
-					{SPECIAL_MATERIAL_SWATCHES.map((swatch) => (
-						<button
-							key={swatch.index}
-							type="button"
-							className={`w-6 h-6${selectedColorIndex === swatch.index ? " ring-2 ring-base-content ring-inset" : ""}`}
-							style={{ backgroundColor: swatch.color }}
-							onClick={() => onChooseColorIndex(swatch.index)}
-							title={swatch.label}
-							aria-label={swatch.label}
-						/>
+				<div className="flex flex-col gap-2">
+					{MATERIAL_SWATCH_GROUPS.map((group) => (
+						<div key={group.category}>
+							<div className="text-xs text-base-content/60 mb-1">{group.label}</div>
+							<div className="flex flex-row flex-wrap gap-1">
+								{group.swatches.map((swatch) => (
+									<button
+										key={swatch.index}
+										type="button"
+										className={`w-6 h-6${selectedColorIndex === swatch.index ? " ring-2 ring-base-content ring-inset" : ""}`}
+										style={{ backgroundColor: swatch.color }}
+										onClick={() => onChooseColorIndex(swatch.index)}
+										title={swatch.label}
+										aria-label={swatch.label}
+									/>
+								))}
+							</div>
+						</div>
 					))}
 				</div>
 			</div>

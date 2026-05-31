@@ -56,7 +56,7 @@ export type CameraPreference = 'ortho' | 'perspective' | 'freecam';
 // covers what the rig owns (cameras, controls, freecam).
 const MAP_CAMERA_RIG_CONFIG: CameraRigConfig = {
 	ortho: {
-		near: THREE_D_MAP_RENDERER.CAMERA_NEAR,
+		near: THREE_D_MAP_RENDERER.ORTHO_CAMERA_NEAR,
 		far: THREE_D_MAP_RENDERER.CAMERA_FAR,
 		initialHalfSize: THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS,
 		distanceMultiplier: THREE_D_MAP_CAMERA.DISTANCE_MULTIPLIER,

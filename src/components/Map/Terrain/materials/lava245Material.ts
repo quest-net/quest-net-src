@@ -473,6 +473,7 @@ const lava245Material: TerrainMaterial = {
 		paletteIndex: 245,
 		label: 'Lava',
 		swatchColor: LAVA_SWATCH,
+		category: 'liquids',
 	},
 };
 

@@ -471,6 +471,7 @@ const water241Material: TerrainMaterial = {
 		paletteIndex: 241,
 		label: 'Water',
 		swatchColor: WATER_SWATCH,
+		category: 'liquids',
 	},
 };
 

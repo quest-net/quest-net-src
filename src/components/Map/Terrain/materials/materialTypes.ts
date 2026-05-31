@@ -84,6 +84,18 @@ export interface TerrainMaterialGeometry {
 // the program cache after editing a material's shader source.
 // ---------------------------------------------------------------------------
 
+/**
+ * Editor grouping for special-material swatches. Materials that omit a category
+ * (or any future value not listed here) fall into "miscellaneous". The order of
+ * this union is also the order categories are rendered in the editor.
+ */
+export type MaterialCategory =
+	| "buildings"
+	| "liquids"
+	| "nature"
+	| "metals"
+	| "miscellaneous";
+
 export interface TerrainMaterial {
 	/** Bucket key. Must be unique across all materials. */
 	bucketKey: string;
@@ -130,5 +142,9 @@ export interface TerrainMaterial {
 		label: string;
 		/** Hex color used for the editor swatch and the in-game material tint. */
 		swatchColor: string;
+		/**
+		 * Editor swatch grouping. Omit to fall into the "miscellaneous" row.
+		 */
+		category?: MaterialCategory;
 	};
 }

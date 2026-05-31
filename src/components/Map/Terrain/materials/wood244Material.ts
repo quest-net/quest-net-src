@@ -268,6 +268,7 @@ const wood244Material: TerrainMaterial = {
 		paletteIndex: 244,
 		label: 'Wood',
 		swatchColor: WOOD_SWATCH,
+		category: 'nature',
 	},
 };
 

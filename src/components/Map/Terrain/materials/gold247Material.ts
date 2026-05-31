@@ -383,6 +383,7 @@ const gold247Material: TerrainMaterial = {
 		paletteIndex: 247,
 		label: 'Gold',
 		swatchColor: GOLD_SWATCH,
+		category: 'metals',
 	},
 };
 

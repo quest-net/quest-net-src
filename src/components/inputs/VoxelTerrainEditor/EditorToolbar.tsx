@@ -1,6 +1,6 @@
 // The toolbar above the editor canvas.
 //
-// Houses tool buttons (place/erase/paint/sample/box-select/color-select),
+// Houses tool buttons (place/fill/erase/paint/sample/box-select/color-select),
 // brush size, granularity toggle, the stamp picker, undo/redo, the keyboard
 // shortcuts help dropdown, .vox import button, and the edit/preview tab.
 
@@ -25,6 +25,7 @@ const TOOL_BUTTONS: Array<{
 	shortcut: string;
 }> = [
 	{ id: "place",  label: "Place",  icon: "icon-[mdi--cube-outline]", shortcut: "P" },
+	{ id: "fill",   label: "Fill",   icon: "icon-[mdi--format-color-fill]", shortcut: "L" },
 	{ id: "erase",  label: "Erase",  icon: "icon-[mdi--eraser]",       shortcut: "R" },
 	{ id: "paint",  label: "Paint",  icon: "icon-[mdi--palette]",       shortcut: "G" },
 	{ id: "sample", label: "Sample", icon: "icon-[mdi--eyedropper]",    shortcut: "I" },
@@ -188,12 +189,11 @@ export function EditorToolbar(props: EditorToolbarProps) {
 							<div
 								tabIndex={0}
 								role="button"
-								className="btn btn-sm btn-outline"
+								className="btn btn-square btn-sm btn-outline"
 								title="Insert a stamp terrain (R rotate, M mirror, Esc stop)"
+								aria-label="Insert stamp"
 							>
 								<span className="icon-[mdi--stamper] w-5 h-5" />
-								Insert Stamp
-								<span className="icon-[mdi--chevron-down] w-4 h-4 opacity-60" />
 							</div>
 							<div
 								tabIndex={0}
@@ -332,121 +332,126 @@ function ShortcutsHelpDropdown({ modKeyLabel }: { modKeyLabel: string }) {
 			</div>
 			<div
 				tabIndex={0}
-				className="dropdown-content z-50 mt-2 w-80 rounded-box border border-base-300 bg-base-100 p-3 shadow-lg text-sm"
+				className="dropdown-content z-50 mt-2 w-[30rem] rounded-box border border-base-300 bg-base-100 p-3 shadow-lg text-sm"
 			>
-				<div className="font-semibold mb-2">Tools</div>
-				<table className="w-full">
-					<tbody>
-						<tr><td className="opacity-70 py-0.5">Place</td><td className="text-right"><kbd className="kbd kbd-sm">P</kbd></td></tr>
-						<tr><td className="opacity-70 py-0.5">Erase</td><td className="text-right"><kbd className="kbd kbd-sm">R</kbd></td></tr>
-						<tr><td className="opacity-70 py-0.5">Paint</td><td className="text-right"><kbd className="kbd kbd-sm">G</kbd></td></tr>
-						<tr><td className="opacity-70 py-0.5">Sample (eyedropper)</td><td className="text-right"><kbd className="kbd kbd-sm">I</kbd></td></tr>
-						<tr><td className="opacity-70 py-0.5">Box select</td><td className="text-right"><kbd className="kbd kbd-sm">B</kbd></td></tr>
-						<tr><td className="opacity-70 py-0.5">Color select</td><td className="text-right"><kbd className="kbd kbd-sm">C</kbd></td></tr>
-						<tr><td className="opacity-70 py-0.5">Tile brush</td><td className="text-right"><kbd className="kbd kbd-sm">1</kbd></td></tr>
-						<tr><td className="opacity-70 py-0.5">Voxel brush</td><td className="text-right"><kbd className="kbd kbd-sm">2</kbd></td></tr>
-						<tr>
-							<td className="opacity-70 py-0.5">Undo</td>
-							<td className="text-right whitespace-nowrap">
-								<kbd className="kbd kbd-sm">{modKeyLabel}</kbd>
-								<span className="mx-1 opacity-50">+</span>
-								<kbd className="kbd kbd-sm">Z</kbd>
-							</td>
-						</tr>
-						<tr>
-							<td className="opacity-70 py-0.5">Redo</td>
-							<td className="text-right whitespace-nowrap">
-								<kbd className="kbd kbd-sm">{modKeyLabel}</kbd>
-								<span className="mx-1 opacity-50">+</span>
-								<kbd className="kbd kbd-sm">Y</kbd>
-							</td>
-						</tr>
-					</tbody>
-				</table>
+				<div className="columns-2 gap-4">
+					<section className="break-inside-avoid mb-3">
+						<div className="font-semibold mb-2">Tools</div>
+						<table className="w-full">
+							<tbody>
+								<tr><td className="opacity-70 py-0.5">Place</td><td className="text-right"><kbd className="kbd kbd-sm">P</kbd></td></tr>
+								<tr><td className="opacity-70 py-0.5">Fill (selection, keeps voxels)</td><td className="text-right"><kbd className="kbd kbd-sm">L</kbd></td></tr>
+								<tr><td className="opacity-70 py-0.5">Erase</td><td className="text-right"><kbd className="kbd kbd-sm">R</kbd></td></tr>
+								<tr><td className="opacity-70 py-0.5">Paint</td><td className="text-right"><kbd className="kbd kbd-sm">G</kbd></td></tr>
+								<tr><td className="opacity-70 py-0.5">Sample (eyedropper)</td><td className="text-right"><kbd className="kbd kbd-sm">I</kbd></td></tr>
+								<tr><td className="opacity-70 py-0.5">Box select</td><td className="text-right"><kbd className="kbd kbd-sm">B</kbd></td></tr>
+								<tr><td className="opacity-70 py-0.5">Color select</td><td className="text-right"><kbd className="kbd kbd-sm">C</kbd></td></tr>
+								<tr><td className="opacity-70 py-0.5">Tile brush</td><td className="text-right"><kbd className="kbd kbd-sm">1</kbd></td></tr>
+								<tr><td className="opacity-70 py-0.5">Voxel brush</td><td className="text-right"><kbd className="kbd kbd-sm">2</kbd></td></tr>
+								<tr>
+									<td className="opacity-70 py-0.5">Undo</td>
+									<td className="text-right whitespace-nowrap">
+										<kbd className="kbd kbd-sm">{modKeyLabel}</kbd>
+										<span className="mx-1 opacity-50">+</span>
+										<kbd className="kbd kbd-sm">Z</kbd>
+									</td>
+								</tr>
+								<tr>
+									<td className="opacity-70 py-0.5">Redo</td>
+									<td className="text-right whitespace-nowrap">
+										<kbd className="kbd kbd-sm">{modKeyLabel}</kbd>
+										<span className="mx-1 opacity-50">+</span>
+										<kbd className="kbd kbd-sm">Y</kbd>
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					</section>
 
-				<div className="mt-3 pt-2 border-t border-base-300">
-					<div className="font-semibold mb-2">Camera</div>
-					<table className="w-full">
-						<tbody>
-							<tr><td className="opacity-70 py-0.5">Paint / pick</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Left&nbsp;click</kbd></td></tr>
-							<tr><td className="opacity-70 py-0.5">Orbit / rotate</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Middle&nbsp;drag</kbd></td></tr>
-							<tr><td className="opacity-70 py-0.5">Pan</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Right&nbsp;drag</kbd></td></tr>
-							<tr><td className="opacity-70 py-0.5">Zoom</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Scroll</kbd></td></tr>
-						</tbody>
-					</table>
-				</div>
+					<section className="break-inside-avoid mb-3">
+						<div className="font-semibold mb-2">Camera</div>
+						<table className="w-full">
+							<tbody>
+								<tr><td className="opacity-70 py-0.5">Paint / pick</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Left&nbsp;click</kbd></td></tr>
+								<tr><td className="opacity-70 py-0.5">Orbit / rotate</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Middle&nbsp;drag</kbd></td></tr>
+								<tr><td className="opacity-70 py-0.5">Pan</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Right&nbsp;drag</kbd></td></tr>
+								<tr><td className="opacity-70 py-0.5">Zoom</td><td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Scroll</kbd></td></tr>
+							</tbody>
+						</table>
+					</section>
 
-				<div className="mt-3 pt-2 border-t border-base-300">
-					<div className="font-semibold mb-2">Stamps</div>
-					<table className="w-full">
-						<tbody>
-							<tr>
-								<td className="opacity-70 py-0.5">Rotate stamp 90&deg;</td>
-								<td className="text-right"><kbd className="kbd kbd-sm">R</kbd></td>
-							</tr>
-							<tr>
-								<td className="opacity-70 py-0.5">Mirror stamp</td>
-								<td className="text-right"><kbd className="kbd kbd-sm">M</kbd></td>
-							</tr>
-							<tr>
-								<td className="opacity-70 py-0.5">Stop stamping</td>
-								<td className="text-right"><kbd className="kbd kbd-sm">Esc</kbd></td>
-							</tr>
-						</tbody>
-					</table>
-					<div className="mt-1 text-xs opacity-70 leading-relaxed">
-						Tag a terrain <code className="text-[0.7rem]">path:stamps</code>{" "}
-						to use it as a stamp.
-					</div>
-				</div>
+					<section className="break-inside-avoid mb-3">
+						<div className="font-semibold mb-2">Stamps</div>
+						<table className="w-full">
+							<tbody>
+								<tr>
+									<td className="opacity-70 py-0.5">Rotate stamp 90&deg;</td>
+									<td className="text-right"><kbd className="kbd kbd-sm">R</kbd></td>
+								</tr>
+								<tr>
+									<td className="opacity-70 py-0.5">Mirror stamp</td>
+									<td className="text-right"><kbd className="kbd kbd-sm">M</kbd></td>
+								</tr>
+								<tr>
+									<td className="opacity-70 py-0.5">Stop stamping</td>
+									<td className="text-right"><kbd className="kbd kbd-sm">Esc</kbd></td>
+								</tr>
+							</tbody>
+						</table>
+						<div className="mt-1 text-xs opacity-70 leading-relaxed">
+							Tag a terrain <code className="text-[0.7rem]">path:stamps</code>{" "}
+							to use it as a stamp.
+						</div>
+					</section>
 
-				<div className="mt-3 pt-2 border-t border-base-300">
-					<div className="font-semibold mb-2">Freecam</div>
-					<table className="w-full">
-						<tbody>
-							<tr>
-								<td className="opacity-70 py-0.5">Toggle freecam</td>
-								<td className="text-right"><kbd className="kbd kbd-sm">F</kbd></td>
-							</tr>
-							<tr>
-								<td className="opacity-70 py-0.5">Look around</td>
-								<td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Hold&nbsp;Right</kbd></td>
-							</tr>
-							<tr>
-								<td className="opacity-70 py-0.5">Fly</td>
-								<td className="text-right whitespace-nowrap">
-									<kbd className="kbd kbd-sm">W</kbd>
-									<kbd className="kbd kbd-sm">A</kbd>
-									<kbd className="kbd kbd-sm">S</kbd>
-									<kbd className="kbd kbd-sm">D</kbd>
-								</td>
-							</tr>
-							<tr>
-								<td className="opacity-70 py-0.5">Up / Down</td>
-								<td className="text-right whitespace-nowrap">
-									<kbd className="kbd kbd-sm">Space</kbd>
-									<span className="mx-1 opacity-50">/</span>
-									<kbd className="kbd kbd-sm">Shift</kbd>
-								</td>
-							</tr>
-							<tr>
-								<td className="opacity-70 py-0.5">Adjust fly speed</td>
-								<td className="text-right"><kbd className="kbd kbd-sm">Scroll</kbd></td>
-							</tr>
-						</tbody>
-					</table>
-					<div className="mt-1 text-xs opacity-70 leading-relaxed">
-						Release Right to bring the cursor back for painting.
-					</div>
-				</div>
+					<section className="break-inside-avoid mb-3">
+						<div className="font-semibold mb-2">Freecam</div>
+						<table className="w-full">
+							<tbody>
+								<tr>
+									<td className="opacity-70 py-0.5">Toggle freecam</td>
+									<td className="text-right"><kbd className="kbd kbd-sm">F</kbd></td>
+								</tr>
+								<tr>
+									<td className="opacity-70 py-0.5">Look around</td>
+									<td className="text-right whitespace-nowrap"><kbd className="kbd kbd-sm">Hold&nbsp;Right</kbd></td>
+								</tr>
+								<tr>
+									<td className="opacity-70 py-0.5">Fly</td>
+									<td className="text-right whitespace-nowrap">
+										<kbd className="kbd kbd-sm">W</kbd>
+										<kbd className="kbd kbd-sm">A</kbd>
+										<kbd className="kbd kbd-sm">S</kbd>
+										<kbd className="kbd kbd-sm">D</kbd>
+									</td>
+								</tr>
+								<tr>
+									<td className="opacity-70 py-0.5">Up / Down</td>
+									<td className="text-right whitespace-nowrap">
+										<kbd className="kbd kbd-sm">Space</kbd>
+										<span className="mx-1 opacity-50">/</span>
+										<kbd className="kbd kbd-sm">Shift</kbd>
+									</td>
+								</tr>
+								<tr>
+									<td className="opacity-70 py-0.5">Adjust fly speed</td>
+									<td className="text-right"><kbd className="kbd kbd-sm">Scroll</kbd></td>
+								</tr>
+							</tbody>
+						</table>
+						<div className="mt-1 text-xs opacity-70 leading-relaxed">
+							Release Right to bring the cursor back for painting.
+						</div>
+					</section>
 
-				<div className="mt-3 pt-2 border-t border-base-300 text-xs leading-relaxed">
-					<div className="font-semibold mb-1">Mid-stroke modifier</div>
-					<div className="opacity-80">
-						While dragging a stroke, hold{" "}
-						<kbd className="kbd kbd-xs">Shift</kbd> to break out of the
-						locked plane and paint across faces.
-					</div>
+					<section className="break-inside-avoid text-xs leading-relaxed">
+						<div className="font-semibold mb-1">Mid-stroke modifier</div>
+						<div className="opacity-80">
+							While dragging a stroke, hold{" "}
+							<kbd className="kbd kbd-xs">Shift</kbd> to break out of the
+							locked plane and paint across faces.
+						</div>
+					</section>
 				</div>
 			</div>
 		</div>

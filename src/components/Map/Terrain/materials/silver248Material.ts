@@ -357,6 +357,7 @@ const silver248Material: TerrainMaterial = {
 		paletteIndex: 248,
 		label: 'Silver',
 		swatchColor: SILVER_SWATCH,
+		category: 'metals',
 	},
 };
 

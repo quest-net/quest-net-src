@@ -7,8 +7,8 @@ const CAMERA_MODE_LABELS: Record<CameraPreference, string> = {
 };
 
 const CAMERA_MODE_ICONS: Record<CameraPreference, string> = {
-	ortho:       "icon-[mdi--cube-outline]",
-	perspective: "icon-[mdi--axis-arrow]",
+	ortho:       "icon-[iconoir--orthogonal-view]",
+	perspective: "icon-[iconoir--perspective-view]",
 	freecam:     "icon-[mdi--camera-iris]",
 };
 
@@ -63,7 +63,7 @@ export function CameraModeDropdown({
 				title={tooltip}
 				aria-label="Camera mode"
 			>
-				<span className="icon-[mdi--camera] w-5 h-5" />
+				<span className={`${CAMERA_MODE_ICONS[value]} w-5 h-5`} />
 				<span className="icon-[mdi--chevron-down] w-3 h-3 opacity-60" />
 			</button>
 			<ul

@@ -402,6 +402,7 @@ const grass242Material: TerrainMaterial = {
 		paletteIndex: 242,
 		label: 'Grass',
 		swatchColor: GRASS_SWATCH,
+		category: 'nature',
 	},
 };
 

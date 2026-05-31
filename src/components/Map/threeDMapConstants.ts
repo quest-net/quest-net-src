@@ -2,6 +2,12 @@ export const THREE_D_MAP_RENDERER = {
 	MAX_PIXEL_RATIO: 1.5,
 	PERFORMANCE_MAX_PIXEL_RATIO: 0.85,
 	CAMERA_NEAR: 0.1,
+	// Orthographic cameras have no foreshortening, so the near plane is a flat
+	// slice sitting this far in front of the camera. A positive value knife-cuts
+	// terrain when the camera orbits close; a negative near puts the clip plane
+	// behind the camera so nothing in front ever clips (same trick the terrain
+	// editor uses). Symmetric with FAR for a uniform linear-depth slab.
+	ORTHO_CAMERA_NEAR: -2000,
 	CAMERA_FAR: 2000,
 } as const;
 
