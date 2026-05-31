@@ -105,7 +105,15 @@ export const EntityActions = {
 	 * DM only - handled by ACTION_REGISTRY
 	 */
 	spawn(
-		params: { entityId: string; position?: Position; repairActors?: boolean },
+		params: {
+			entityId: string;
+			position?: Position;
+			repairActors?: boolean;
+			// Optional: force the new instance's Id instead of generating one.
+			// Used by scenario load to preserve identity so re-loading the same
+			// scenario does not duplicate the entity.
+			instanceId?: string;
+		},
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
@@ -161,7 +169,7 @@ export const EntityActions = {
 		// so unwrap it with current() to a plain snapshot before deep-cloning.
 		const instance: Entity = {
 			...structuredClone(current(template)),
-			Id: crypto.randomUUID(), // New ID for the instance
+			Id: params.instanceId ?? crypto.randomUUID(), // New ID for the instance
 			Color: template.Color ?? ACTOR_DEFAULT_COLORS.ENTITY,
 		};
 		const voxelSpawnPosition = getActiveVoxelSpawnPosition(

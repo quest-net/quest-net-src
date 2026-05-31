@@ -6,6 +6,7 @@ import { initiativeRenameV210Migration } from "./v2_1_0_initiativeRename";
 import { terrainEnvironmentV220Migration } from "./v2_2_0_terrainEnvironment";
 import { voxelSVOV230Migration } from "./v2_3_0_voxelSVO";
 import { terrainEnvironmentPresetsV240Migration } from "./v2_4_0_terrainEnvironmentPresets";
+import { scenarioPlacementsV250Migration } from "./v2_5_0_scenarioPlacements";
 
 /**
  * Ordered list of campaign-level migrations, sorted ascending by version.
@@ -19,4 +20,5 @@ export const campaignMigrations: Migration[] = [
 	terrainEnvironmentV220Migration,
 	voxelSVOV230Migration,
 	terrainEnvironmentPresetsV240Migration,
+	scenarioPlacementsV250Migration,
 ];

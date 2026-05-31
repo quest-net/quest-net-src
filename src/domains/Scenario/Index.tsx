@@ -5,6 +5,7 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { ScenarioEdit } from "./Edit";
+import { countPlacements } from "./Scenario";
 import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
 import { replacePathTag } from "../../utils/FolderUtils";
 
@@ -51,19 +52,22 @@ export function ScenarioIndex() {
         });
     };
 
-    const items: IndexViewItem[] = campaign.Scenarios.map((scenario) => ({
+    const items: IndexViewItem[] = campaign.Scenarios.map((scenario) => {
+        const counts = countPlacements(scenario.ActorPlacements ?? []);
+        return {
         id: scenario.Id,
         label: scenario.Name,
         icon: "icon-[mdi--map-marker-multiple]",
         iconColor: "#10b981",
-        details: `${scenario.EntityPlacements.length} entities, ${scenario.ItemPlacements?.length ?? 0} items, ${scenario.SpawnPositions.length} spawn points`,
+        details: `${counts.characters} characters, ${counts.entities} entities, ${counts.items} items`,
         tags: scenario.Tags || [],
         action: {
             label: "Load",
             icon: "icon-[mdi--play]",
             onClick: () => handleLoad(scenario.Id),
         },
-    }));
+        };
+    });
 
     return (
         <>

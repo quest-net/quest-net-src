@@ -1,7 +1,7 @@
 // domains/Scenario/Edit.tsx
 
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { Scenario } from "./Scenario";
+import { Scenario, countPlacements } from "./Scenario";
 import {
     FormWrapper,
     FormSection,
@@ -83,6 +83,8 @@ interface ScenarioFormProps {
 function ScenarioForm({ data, onChange }: ScenarioFormProps) {
     if (!data || !onChange) return null;
 
+    const counts = countPlacements(data.ActorPlacements ?? []);
+
     const handleFieldChange = (field: keyof Scenario, value: any) => {
         onChange({
             ...data,
@@ -117,16 +119,16 @@ function ScenarioForm({ data, onChange }: ScenarioFormProps) {
             >
                 <div className="space-y-2 text-sm">
                     <div className="flex justify-between py-2 border-b border-base-300">
+                        <span className="opacity-70">Characters:</span>
+                        <span className="font-mono">{counts.characters} placement(s)</span>
+                    </div>
+                    <div className="flex justify-between py-2 border-b border-base-300">
                         <span className="opacity-70">Entities:</span>
-                        <span className="font-mono">{data.EntityPlacements.length} placement(s)</span>
+                        <span className="font-mono">{counts.entities} placement(s)</span>
                     </div>
                     <div className="flex justify-between py-2 border-b border-base-300">
                         <span className="opacity-70">Items:</span>
-                        <span className="font-mono">{data.ItemPlacements?.length ?? 0} placement(s)</span>
-                    </div>
-                    <div className="flex justify-between py-2 border-b border-base-300">
-                        <span className="opacity-70">Spawn Positions:</span>
-                        <span className="font-mono">{data.SpawnPositions.length} position(s)</span>
+                        <span className="font-mono">{counts.items} placement(s)</span>
                     </div>
                     <div className="flex justify-between py-2 border-b border-base-300">
                         <span className="opacity-70">Audio Tracks:</span>

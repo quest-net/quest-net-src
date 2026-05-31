@@ -16,32 +16,50 @@ export interface Scenario {
     // Audio playlist (array of Audio IDs)
     AudioPlaylist: string[];
 
-    // Entities to spawn: references EntityTemplates by ID
-    EntityPlacements: EntityPlacement[];
-
-    // Item entities (dropped/spawned items) to restore: references ItemTemplates
-    // by ID, with UsesLeft preserved per placement. Optional for backward
-    // compatibility with scenarios saved before item-entity support was added.
-    ItemPlacements?: ItemPlacement[];
-
-    // Spawn positions for characters (first N chars use these, rest overflow)
-    SpawnPositions: Position[];
+    // Unified, identity-based placements for every actor on the field at
+    // capture time (characters, entities, and dropped items). On load each
+    // placement restores the actor to its exact saved position; actors not in
+    // this list are removed from the field. Replaces the old by-index
+    // SpawnPositions plus the separate EntityPlacements/ItemPlacements.
+    ActorPlacements: ActorPlacement[];
 
     // Optional
     Tags?: string[];
 }
 
-export interface EntityPlacement {
-    EntityTemplateId: string;
+export type ScenarioActorType = "character" | "entity" | "item";
+
+export interface ActorPlacement {
+    Type: ScenarioActorType;
+
+    // Stable identity. Character: the roster character Id. Entity/item: the
+    // spawned instance Id, preserved across re-spawns so loading the same
+    // scenario twice is idempotent (no duplicate spawns).
+    ActorId: string;
+
+    // Source template to re-create the actor from when it is absent from the
+    // field. Entity: EntityTemplate Id. Item: ItemTemplate Id. Unused for
+    // characters (they live in the roster, keyed by ActorId).
+    TemplateId?: string;
+
+    // Item entities only: remaining uses at capture time. Undefined means
+    // unlimited (matches InventorySlot.UsesLeft semantics).
+    UsesLeft?: number;
+
     Position: Position;
 }
 
-export interface ItemPlacement {
-    // Reference to the item template. On load a fresh entity is built from
-    // the template, mirroring how EntityPlacements work.
-    ItemTemplateId: string;
-    // Remaining uses at capture time. Undefined means unlimited (matches the
-    // semantics of InventorySlot.UsesLeft).
-    UsesLeft?: number;
-    Position: Position;
+/** Tally a scenario's placements by actor type (for logs and UI summaries). */
+export function countPlacements(placements: ActorPlacement[]): {
+    characters: number;
+    entities: number;
+    items: number;
+} {
+    const counts = { characters: 0, entities: 0, items: 0 };
+    for (const p of placements) {
+        if (p.Type === "character") counts.characters++;
+        else if (p.Type === "entity") counts.entities++;
+        else counts.items++;
+    }
+    return counts;
 }
