@@ -1,4 +1,5 @@
 import type { ActorSize, Position } from "../../../domains/Actor/Actor";
+import type { ActorKind } from "./actorTokenTypes";
 
 export const ACTOR_TOKEN_DESCRIPTOR_DEFAULTS = {
 	POSITION: { x: 0, y: 0, h: 0 } satisfies Position,
@@ -7,7 +8,17 @@ export const ACTOR_TOKEN_DESCRIPTOR_DEFAULTS = {
 } as const;
 
 export const ACTOR_TOKEN_TEXTURE = {
-	SIZE: 512,
+	// Reference resolution. Every pixel-valued constant in this and the
+	// ACTOR_TOKEN_PLACEHOLDER block (corner radius, outline widths, font sizes,
+	// shadow offsets) is calibrated to BASE_SIZE. Renderers draw at a runtime
+	// resolution and scale these by (renderSize / BASE_SIZE), so a token looks
+	// identical regardless of the canvas resolution it was rasterized at.
+	BASE_SIZE: 512,
+	// Higher resolution used for character tokens when performance mode is off.
+	// Characters carry the player-facing portraits that get inspected up close,
+	// so the extra detail is worth the GPU memory (~4x the texture footprint).
+	// Entities always render at BASE_SIZE -- see resolveActorTokenResolution.
+	CHARACTER_HIGH_RES_SIZE: 1024,
 	OUTER_CORNER_RADIUS: 56,
 	SELECTED_OUTLINE_COLOR: "#2563eb",
 	SELECTED_OUTLINE_LINE_WIDTH: 14,
@@ -15,6 +26,22 @@ export const ACTOR_TOKEN_TEXTURE = {
 	DEFAULT_OUTLINE_LINE_WIDTH: 8,
 	TEXT_FILL: "#ffffff",
 } as const;
+
+/**
+ * Resolves the canvas resolution to rasterize an actor token at. Entities are
+ * always BASE_SIZE; characters get CHARACTER_HIGH_RES_SIZE unless performance
+ * mode is on. The source portrait may be up to 2048px (see Image upload), so
+ * the higher resolution recovers real detail that BASE_SIZE would discard.
+ */
+export function resolveActorTokenResolution(
+	kind: ActorKind,
+	performanceMode: boolean
+): number {
+	if (kind === "entity" || performanceMode) {
+		return ACTOR_TOKEN_TEXTURE.BASE_SIZE;
+	}
+	return ACTOR_TOKEN_TEXTURE.CHARACTER_HIGH_RES_SIZE;
+}
 
 export const ACTOR_TOKEN_PLACEHOLDER = {
 	FILL: "#4b5563",

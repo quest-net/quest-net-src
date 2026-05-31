@@ -840,6 +840,7 @@ export default function FirstPersonMap({
 						terrain={terrain}
 						terrainIndex={voxelTerrainIndex}
 						isDM={isDM}
+						performanceMode={performanceMode}
 						imageService={imageService}
 						liveActorPoses={liveActorPoses}
 						onActorClick={handleActorClick}

@@ -52,6 +52,10 @@ interface ThreeDActorLayerProps {
 	terrain: VoxelTerrain;
 	terrainIndex: VoxelTerrainIndex;
 	isDM: boolean;
+	// Gates token texture resolution: when true all tokens use BASE_SIZE; when
+	// false character tokens rasterize at higher resolution for crisper
+	// close-up portraits. See resolveActorTokenResolution.
+	performanceMode: boolean;
 	xRayActors?: boolean;
 	imageService?: {
 		getImage(imageId: string): Promise<Blob | null>;
@@ -199,7 +203,11 @@ function createDescriptorMap(
 	return map;
 }
 
-function createActorVisualSignature(actor: ActorTokenDescriptor, isDM: boolean): string {
+function createActorVisualSignature(
+	actor: ActorTokenDescriptor,
+	isDM: boolean,
+	performanceMode: boolean
+): string {
 	return [
 		actor.kind,
 		actor.name,
@@ -208,6 +216,7 @@ function createActorVisualSignature(actor: ActorTokenDescriptor, isDM: boolean):
 		actor.cutout ? "cutout" : "framed",
 		actor.size,
 		isDM ? "dm" : "player",
+		performanceMode ? "perf" : "hi-res",
 	].join("|");
 }
 
@@ -803,6 +812,7 @@ export function ThreeDActorLayer({
 	terrain,
 	terrainIndex,
 	isDM,
+	performanceMode,
 	xRayActors = false,
 	imageService,
 	liveActorPoses,
@@ -1042,17 +1052,18 @@ export function ThreeDActorLayer({
 
 		const buildVersion = bumpTokenBuildVersion(actorKey);
 		pendingVisualBuildsRef.current.set(actorKey, buildVersion);
-		const visualSignature = createActorVisualSignature(actor, isDM);
+		const visualSignature = createActorVisualSignature(actor, isDM, performanceMode);
 		const texture = await createActorTokenTexture(actor, {
 			isDM,
 			imageService: imageServiceRef.current,
+			performanceMode,
 		});
 		if (pendingVisualBuildsRef.current.get(actorKey) === buildVersion) {
 			pendingVisualBuildsRef.current.delete(actorKey);
 		}
 		const latestActor = descriptorsByKeyRef.current.get(actorKey);
 		const latestSignature = latestActor
-			? createActorVisualSignature(latestActor, isDM)
+			? createActorVisualSignature(latestActor, isDM, performanceMode)
 			: null;
 		if (
 			tokenBuildVersionsRef.current.get(actorKey) !== buildVersion ||
@@ -1548,7 +1559,7 @@ export function ThreeDActorLayer({
 		}
 
 		for (const [key, actor] of descriptorsByKeyRef.current) {
-			const visualSignature = createActorVisualSignature(actor, isDM);
+			const visualSignature = createActorVisualSignature(actor, isDM, performanceMode);
 			const visual = visualHandlesRef.current.get(key);
 			if (visual && visual.visualSignature !== visualSignature) {
 				disposeActorVisual(key, { preservePosition: true });
@@ -1601,7 +1612,7 @@ export function ThreeDActorLayer({
 			});
 			scheduleMoveAnimationTick();
 		}
-	}, [characters, entities, cutoutImageIds, terrain, isDM, liveActorPoses]);
+	}, [characters, entities, cutoutImageIds, terrain, isDM, performanceMode, liveActorPoses]);
 
 	useEffect(() => {
 		return () => {

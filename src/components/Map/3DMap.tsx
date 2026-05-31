@@ -514,6 +514,7 @@ export default function ThreeDMap({
 						terrain={terrain}
 						terrainIndex={terrainIndex}
 						isDM={isDM}
+						performanceMode={performanceMode}
 						xRayActors={xRayActors}
 						imageService={imageService}
 						liveActorPoses={liveActorPoses}

@@ -7,6 +7,7 @@ import {
 	ACTOR_TOKEN_SIZE_SCALE,
 	ACTOR_TOKEN_TEXTURE,
 	ACTOR_TOKEN_WORLD_SIZE,
+	resolveActorTokenResolution,
 } from "./actorTokenConstants";
 import type { ActorTokenDescriptor } from "./actorTokenTypes";
 
@@ -38,6 +39,14 @@ interface TextureLoaderOptions {
 	imageService?: {
 		getImage(imageId: string): Promise<Blob | null>;
 	} | null;
+	// When true, all tokens rasterize at BASE_SIZE. When false, character
+	// tokens use the higher resolution (see resolveActorTokenResolution).
+	performanceMode?: boolean;
+}
+
+/** Scales a BASE_SIZE-calibrated pixel value to the actual render resolution. */
+function px(baseValue: number, size: number): number {
+	return baseValue * (size / ACTOR_TOKEN_TEXTURE.BASE_SIZE);
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -70,15 +79,15 @@ async function loadImageElement(blob: Blob): Promise<HTMLImageElement> {
 	}
 }
 
-function drawImageCover(ctx: CanvasRenderingContext2D, image: HTMLImageElement) {
+function drawImageCover(ctx: CanvasRenderingContext2D, image: HTMLImageElement, size: number) {
 	const scale = Math.max(
-		ACTOR_TOKEN_TEXTURE.SIZE / image.width,
-		ACTOR_TOKEN_TEXTURE.SIZE / image.height
+		size / image.width,
+		size / image.height
 	);
 	const width = image.width * scale;
 	const height = image.height * scale;
-	const x = (ACTOR_TOKEN_TEXTURE.SIZE - width) / 2;
-	const y = (ACTOR_TOKEN_TEXTURE.SIZE - height) / 2;
+	const x = (size - width) / 2;
+	const y = (size - height) / 2;
 	ctx.drawImage(image, x, y, width, height);
 }
 
@@ -88,21 +97,22 @@ function drawImageCover(ctx: CanvasRenderingContext2D, image: HTMLImageElement) 
  * tall character image is fully visible (no cropping) and any transparent
  * margins of the source image render through cleanly.
  */
-function drawImageContain(ctx: CanvasRenderingContext2D, image: HTMLImageElement) {
+function drawImageContain(ctx: CanvasRenderingContext2D, image: HTMLImageElement, size: number) {
 	const scale = Math.min(
-		ACTOR_TOKEN_TEXTURE.SIZE / image.width,
-		ACTOR_TOKEN_TEXTURE.SIZE / image.height
+		size / image.width,
+		size / image.height
 	);
 	const width = image.width * scale;
 	const height = image.height * scale;
-	const x = (ACTOR_TOKEN_TEXTURE.SIZE - width) / 2;
-	const y = (ACTOR_TOKEN_TEXTURE.SIZE - height) / 2;
+	const x = (size - width) / 2;
+	const y = (size - height) / 2;
 	ctx.drawImage(image, x, y, width, height);
 }
 
 function createPlaceholderGradient(
 	ctx: CanvasRenderingContext2D,
-	actor: ActorTokenDescriptor
+	actor: ActorTokenDescriptor,
+	size: number
 ): CanvasGradient {
 	const baseColor =
 		isHexColor(actor.color)
@@ -113,8 +123,8 @@ function createPlaceholderGradient(
 	const gradient = ctx.createLinearGradient(
 		0,
 		0,
-		ACTOR_TOKEN_TEXTURE.SIZE,
-		ACTOR_TOKEN_TEXTURE.SIZE
+		size,
+		size
 	);
 	gradient.addColorStop(0, baseColor);
 	gradient.addColorStop(1, ACTOR_TOKEN_PLACEHOLDER.FILL);
@@ -184,13 +194,16 @@ function clampLinesToFit(
 
 function getPlaceholderTextLayout(
 	ctx: CanvasRenderingContext2D,
-	name: string
+	name: string,
+	size: number
 ): { lines: string[]; fontSize: number; lineHeight: number } {
-	const maxWidth = ACTOR_TOKEN_TEXTURE.SIZE * ACTOR_TOKEN_PLACEHOLDER.TEXT_MAX_WIDTH_RATIO;
+	const maxWidth = size * ACTOR_TOKEN_PLACEHOLDER.TEXT_MAX_WIDTH_RATIO;
+	const minFontSize = px(ACTOR_TOKEN_PLACEHOLDER.TEXT_MIN_FONT_SIZE, size);
+	const step = px(2, size);
 	for (
-		let fontSize = ACTOR_TOKEN_PLACEHOLDER.TEXT_MAX_FONT_SIZE;
-		fontSize >= ACTOR_TOKEN_PLACEHOLDER.TEXT_MIN_FONT_SIZE;
-		fontSize -= 2
+		let fontSize = px(ACTOR_TOKEN_PLACEHOLDER.TEXT_MAX_FONT_SIZE, size);
+		fontSize >= minFontSize;
+		fontSize -= step
 	) {
 		ctx.font = getPlaceholderFont(fontSize);
 		const lines = wrapText(ctx, name, maxWidth);
@@ -198,13 +211,13 @@ function getPlaceholderTextLayout(
 		const totalHeight = lines.length * lineHeight;
 		if (
 			lines.length <= ACTOR_TOKEN_PLACEHOLDER.TEXT_MAX_LINES &&
-			totalHeight <= ACTOR_TOKEN_TEXTURE.SIZE * ACTOR_TOKEN_PLACEHOLDER.TEXT_MAX_HEIGHT_RATIO
+			totalHeight <= size * ACTOR_TOKEN_PLACEHOLDER.TEXT_MAX_HEIGHT_RATIO
 		) {
 			return { lines, fontSize, lineHeight };
 		}
 	}
 
-	const fontSize = ACTOR_TOKEN_PLACEHOLDER.TEXT_MIN_FONT_SIZE;
+	const fontSize = minFontSize;
 	ctx.font = getPlaceholderFont(fontSize);
 	return {
 		lines: clampLinesToFit(
@@ -219,25 +232,26 @@ function getPlaceholderTextLayout(
 
 function drawPlaceholderToken(
 	ctx: CanvasRenderingContext2D,
-	actor: ActorTokenDescriptor
+	actor: ActorTokenDescriptor,
+	size: number
 ) {
-	ctx.fillStyle = createPlaceholderGradient(ctx, actor);
-	ctx.fillRect(0, 0, ACTOR_TOKEN_TEXTURE.SIZE, ACTOR_TOKEN_TEXTURE.SIZE);
+	ctx.fillStyle = createPlaceholderGradient(ctx, actor, size);
+	ctx.fillRect(0, 0, size, size);
 
-	const { lines, fontSize, lineHeight } = getPlaceholderTextLayout(ctx, actor.name);
+	const { lines, fontSize, lineHeight } = getPlaceholderTextLayout(ctx, actor.name, size);
 	const blockHeight = (lines.length - 1) * lineHeight;
-	const startY = ACTOR_TOKEN_TEXTURE.SIZE / 2 - blockHeight / 2;
+	const startY = size / 2 - blockHeight / 2;
 
 	ctx.font = getPlaceholderFont(fontSize);
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
 	ctx.fillStyle = ACTOR_TOKEN_TEXTURE.TEXT_FILL;
 	ctx.shadowColor = ACTOR_TOKEN_PLACEHOLDER.TEXT_SHADOW_COLOR;
-	ctx.shadowBlur = ACTOR_TOKEN_PLACEHOLDER.TEXT_SHADOW_BLUR;
-	ctx.shadowOffsetY = ACTOR_TOKEN_PLACEHOLDER.TEXT_SHADOW_OFFSET_Y;
+	ctx.shadowBlur = px(ACTOR_TOKEN_PLACEHOLDER.TEXT_SHADOW_BLUR, size);
+	ctx.shadowOffsetY = px(ACTOR_TOKEN_PLACEHOLDER.TEXT_SHADOW_OFFSET_Y, size);
 
 	lines.forEach((line, index) => {
-		ctx.fillText(line, ACTOR_TOKEN_TEXTURE.SIZE / 2, startY + index * lineHeight);
+		ctx.fillText(line, size / 2, startY + index * lineHeight);
 	});
 
 	ctx.shadowColor = "transparent";
@@ -248,8 +262,11 @@ function drawPlaceholderToken(
 function strokeTokenFrame(
 	ctx: CanvasRenderingContext2D,
 	color: string,
-	lineWidth: number
+	baseLineWidth: number,
+	size: number
 ) {
+	const lineWidth = px(baseLineWidth, size);
+	const cornerRadius = px(ACTOR_TOKEN_TEXTURE.OUTER_CORNER_RADIUS, size);
 	ctx.lineWidth = lineWidth;
 	ctx.strokeStyle = color;
 	// Stroke is centered on its path: the path sits `lineWidth/2` inside the
@@ -261,18 +278,19 @@ function strokeTokenFrame(
 		ctx,
 		inset,
 		inset,
-		ACTOR_TOKEN_TEXTURE.SIZE - lineWidth,
-		ACTOR_TOKEN_TEXTURE.SIZE - lineWidth,
-		ACTOR_TOKEN_TEXTURE.OUTER_CORNER_RADIUS - inset
+		size - lineWidth,
+		size - lineWidth,
+		cornerRadius - inset
 	);
 	ctx.stroke();
 }
 
-function drawDefaultTokenFrame(ctx: CanvasRenderingContext2D) {
+function drawDefaultTokenFrame(ctx: CanvasRenderingContext2D, size: number) {
 	strokeTokenFrame(
 		ctx,
 		ACTOR_TOKEN_TEXTURE.DEFAULT_OUTLINE_COLOR,
-		ACTOR_TOKEN_TEXTURE.DEFAULT_OUTLINE_LINE_WIDTH
+		ACTOR_TOKEN_TEXTURE.DEFAULT_OUTLINE_LINE_WIDTH,
+		size
 	);
 }
 
@@ -283,20 +301,26 @@ function drawDefaultTokenFrame(ctx: CanvasRenderingContext2D) {
  * texture every time selection flips.
  */
 export function createSelectionOutlineTexture(): THREE.Texture {
+	// Shared by every actor's overlay plane, so it stays at BASE_SIZE: it is a
+	// single solid-color frame stroke (no portrait detail), and the overlay
+	// quad is the same world size as the standee regardless of token
+	// resolution, so its UVs map identically.
+	const size = ACTOR_TOKEN_TEXTURE.BASE_SIZE;
 	const canvas = document.createElement("canvas");
-	canvas.width = ACTOR_TOKEN_TEXTURE.SIZE;
-	canvas.height = ACTOR_TOKEN_TEXTURE.SIZE;
+	canvas.width = size;
+	canvas.height = size;
 
 	const ctx = canvas.getContext("2d");
 	if (!ctx) {
 		throw new Error("Unable to create actor selection outline canvas");
 	}
 
-	ctx.clearRect(0, 0, ACTOR_TOKEN_TEXTURE.SIZE, ACTOR_TOKEN_TEXTURE.SIZE);
+	ctx.clearRect(0, 0, size, size);
 	strokeTokenFrame(
 		ctx,
 		ACTOR_TOKEN_TEXTURE.SELECTED_OUTLINE_COLOR,
-		ACTOR_TOKEN_TEXTURE.SELECTED_OUTLINE_LINE_WIDTH
+		ACTOR_TOKEN_TEXTURE.SELECTED_OUTLINE_LINE_WIDTH,
+		size
 	);
 
 	return createTextureFromCanvas(canvas);
@@ -336,7 +360,7 @@ function getAlphaPickBounds(
 
 	if (maxX < minX || maxY < minY) return null;
 
-	const padding = ACTOR_TOKEN_PICK.BOUNDS_PADDING_PX;
+	const padding = px(ACTOR_TOKEN_PICK.BOUNDS_PADDING_PX, size);
 	return {
 		minU: clamp01((minX - padding) / size),
 		maxU: clamp01((maxX + 1 + padding) / size),
@@ -349,9 +373,10 @@ export async function createActorTokenTexture(
 	actor: ActorTokenDescriptor,
 	options: TextureLoaderOptions
 ): Promise<THREE.Texture> {
+	const size = resolveActorTokenResolution(actor.kind, options.performanceMode ?? false);
 	const canvas = document.createElement("canvas");
-	canvas.width = ACTOR_TOKEN_TEXTURE.SIZE;
-	canvas.height = ACTOR_TOKEN_TEXTURE.SIZE;
+	canvas.width = size;
+	canvas.height = size;
 
 	const ctx = canvas.getContext("2d");
 	if (!ctx) {
@@ -369,7 +394,7 @@ export async function createActorTokenTexture(
 		}
 	}
 
-	ctx.clearRect(0, 0, ACTOR_TOKEN_TEXTURE.SIZE, ACTOR_TOKEN_TEXTURE.SIZE);
+	ctx.clearRect(0, 0, size, size);
 
 	// Cutout tokens (transparent images) get a different treatment: no
 	// rounded clip, no frame stroke, and the image is fitted-to-contain so
@@ -377,12 +402,9 @@ export async function createActorTokenTexture(
 	// actual image loads -- the placeholder fallback always uses the framed
 	// path so unloaded actors still have a recognizable token.
 	if (actor.cutout && image) {
-		drawImageContain(ctx, image);
+		drawImageContain(ctx, image, size);
 		const texture = createTextureFromCanvas(canvas);
-		texture.userData.actorPickBounds = getAlphaPickBounds(
-			ctx,
-			ACTOR_TOKEN_TEXTURE.SIZE
-		);
+		texture.userData.actorPickBounds = getAlphaPickBounds(ctx, size);
 		return texture;
 	}
 
@@ -391,20 +413,20 @@ export async function createActorTokenTexture(
 		ctx,
 		0,
 		0,
-		ACTOR_TOKEN_TEXTURE.SIZE,
-		ACTOR_TOKEN_TEXTURE.SIZE,
-		ACTOR_TOKEN_TEXTURE.OUTER_CORNER_RADIUS
+		size,
+		size,
+		px(ACTOR_TOKEN_TEXTURE.OUTER_CORNER_RADIUS, size)
 	);
 	ctx.clip();
 
 	if (image) {
-		drawImageCover(ctx, image);
+		drawImageCover(ctx, image, size);
 	} else {
-		drawPlaceholderToken(ctx, actor);
+		drawPlaceholderToken(ctx, actor, size);
 	}
 
 	ctx.restore();
-	drawDefaultTokenFrame(ctx);
+	drawDefaultTokenFrame(ctx, size);
 
 	return createTextureFromCanvas(canvas);
 }
