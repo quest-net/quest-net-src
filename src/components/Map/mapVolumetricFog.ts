@@ -45,9 +45,9 @@ const FOG_AMBIENT = 0.25;
 /** Multiplies sampled density (0..1). Higher = denser fog for the same voxels. */
 const FOG_DENSITY_SCALE = 0.4;
 /** Beer-Lambert absorption. Higher = fog goes opaque over a shorter distance. */
-const FOG_ABSORPTION = 0.8;
+const FOG_ABSORPTION = 0.6;
 /** Amplitude (world units) of the bounded animated shimmer. */
-const FOG_SHIMMER = 0.15;
+const FOG_SHIMMER = 0.08;
 
 // ---------------------------------------------------------------------------
 // Fog-density 3D texture (mirrors createVoxelAoTexture)

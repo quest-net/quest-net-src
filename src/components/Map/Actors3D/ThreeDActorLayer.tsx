@@ -1197,7 +1197,12 @@ export function ThreeDActorLayer({
 		const findActorUnderPointer = (
 			event: PointerEvent
 		): { actor: ActorTokenDescriptor; key: string } | null => {
-			setRaycasterFromPointer(raycaster, event, resources, dragRayPointer);
+			const rect = setRaycasterFromPointer(
+				raycaster,
+				event,
+				resources,
+				dragRayPointer
+			);
 
 			// Precise pick first: raycast against the (1.25x) pick meshes.
 			// Eat hits that are clearly behind terrain.

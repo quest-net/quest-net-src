@@ -37,15 +37,19 @@ export function disposeObject3D(object: THREE.Object3D): void {
  * Convert a pointer/mouse event to normalized device coordinates against the
  * renderer canvas and point the raycaster from the scene's active camera through
  * it. Mutates `pointer` in place (callers reuse one Vector2 to avoid allocations).
+ *
+ * Returns the canvas bounding rect, which callers that also project world points
+ * back to screen space can reuse instead of measuring the canvas a second time.
  */
 export function setRaycasterFromPointer(
 	raycaster: THREE.Raycaster,
 	event: MouseEvent,
 	resources: ThreeDSceneResources,
 	pointer: THREE.Vector2
-): void {
+): DOMRect {
 	const rect = resources.domElement.getBoundingClientRect();
 	pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
 	pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 	raycaster.setFromCamera(pointer, resources.camera);
+	return rect;
 }
