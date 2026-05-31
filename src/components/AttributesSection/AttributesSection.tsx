@@ -25,6 +25,25 @@ interface AttributesSectionProps {
 	 * Defaults to true if no onChange is provided.
 	 */
 	readOnly?: boolean;
+	/**
+	 * When provided, numeric attribute labels become clickable and call this
+	 * with a "1d20+<value>" formula to roll the attribute. Works in both edit
+	 * and read-only mode (labels are only edited via campaign settings).
+	 */
+	onRoll?: (formula: string) => void;
+}
+
+/**
+ * Builds a "1d20+<value>" style roll formula for a numeric attribute value,
+ * or null if the value is not a finite number.
+ */
+function attributeRollFormula(rawValue: string): string | null {
+	const trimmed = rawValue.trim();
+	if (trimmed === "") return null;
+	const n = Number(trimmed);
+	if (!Number.isFinite(n)) return null;
+	if (n === 0) return "1d20";
+	return n > 0 ? `1d20+${n}` : `1d20-${Math.abs(n)}`;
 }
 
 /**
@@ -40,6 +59,7 @@ export function AttributesSection({
 	localValues,
 	onChange,
 	readOnly,
+	onRoll,
 }: AttributesSectionProps) {
 	const [showUnsetAttributes, setShowUnsetAttributes] = useState(false);
 
@@ -71,14 +91,31 @@ export function AttributesSection({
 				</div>
 			) : (
 				<div className="grid grid-cols-2 gap-x-3 gap-y-2">
-					{visibleAttributes.map((attr) => (
+					{visibleAttributes.map((attr) => {
+						const currentValue =
+							localValues?.get(attr.Id) ?? attr.Value;
+						const rollFormula = onRoll
+							? attributeRollFormula(currentValue)
+							: null;
+						return (
 						<div
 							key={attr.Id}
 							className="flex gap-2 items-center text-sm"
 						>
-							<div className="font-medium w-20 shrink-0 truncate">
-								{attr.Name}
-							</div>
+							{rollFormula ? (
+								<button
+									type="button"
+									onClick={() => onRoll!(rollFormula)}
+									title={`Roll ${attr.Name} (${rollFormula})`}
+									className="font-medium w-20 shrink-0 truncate text-left cursor-pointer underline decoration-dotted decoration-base-content/30 underline-offset-2 transition-colors hover:text-primary hover:decoration-primary"
+								>
+									{attr.Name}
+								</button>
+							) : (
+								<div className="font-medium w-20 shrink-0 truncate">
+									{attr.Name}
+								</div>
+							)}
 							{effectiveReadOnly ? (
 								<div className="opacity-70 flex-1 text-right truncate">
 									{attr.Value || (
@@ -97,7 +134,8 @@ export function AttributesSection({
 								/>
 							)}
 						</div>
-					))}
+						);
+					})}
 				</div>
 			)}
 		</div>

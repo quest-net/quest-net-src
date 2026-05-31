@@ -14,6 +14,7 @@ import { SceneDisplay } from "../Scene/SceneDisplay";
 import { isDmAccess } from "../../utils/UrlParser";
 import { SceneEdit } from "../Scene/Edit";
 import { DiceRoller } from "../../components/Dice/DiceRoller";
+import { DiceRollerProvider } from "../../components/Dice/DiceRollerContext";
 import { LogDisplay } from "../Log/LogDisplay";
 import { NoteDisplay } from "../Note/NoteDisplay";
 import { CharacterSheet } from "../Character/CharacterSheet";
@@ -251,6 +252,7 @@ export function Main() {
 	};
 
 	return (
+		<DiceRollerProvider>
 		<MapStateProvider>
 			<div className="flex h-full relative">
 				{/* Left 70%: Map */}
@@ -625,5 +627,6 @@ export function Main() {
 				</div>
 			</div>
 		</MapStateProvider>
+		</DiceRollerProvider>
 	);
 }

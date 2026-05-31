@@ -2,6 +2,7 @@
 
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
+import { useDiceRoller } from "./DiceRollerContext";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -416,6 +417,7 @@ function DieShape({
 export function DiceRoller() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
+	const { registerHandler } = useDiceRoller();
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const userRole = context.User.Role;
 	const isMobile = useIsMobile();
@@ -676,6 +678,19 @@ export function DiceRoller() {
 			if (rainbowTickRef.current) window.clearInterval(rainbowTickRef.current);
 		};
 	}, []);
+
+	// Let other components (e.g. clicking a numeric actor attribute) open the
+	// roller with a prefilled formula. Autoroll, when on, fires it shortly after.
+	useEffect(() => {
+		registerHandler((requestedFormula: string) => {
+			setIsOpen(true);
+			try {
+				localStorage.setItem("questnet.dice.open", "1");
+			} catch {}
+			setFormula(requestedFormula);
+		});
+		return () => registerHandler(null);
+	}, [registerHandler]);
 
 	const handleAddDie = (sides: number) => {
 		setFormula((f) => {

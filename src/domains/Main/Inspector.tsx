@@ -15,6 +15,7 @@ import { SkillCollection } from "../Skill/Collection";
 import { StatusCollection } from "../Status/Collection";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
 import { AttributesSection } from "../../components/AttributesSection/AttributesSection";
+import { useDiceRoller } from "../../components/Dice/DiceRollerContext";
 import { ACTOR_DEFAULT_COLORS } from "../Actor/Actor";
 import {
 	ResolvedAction,
@@ -442,6 +443,7 @@ function ActorInfoTab({
 	setShowObjectPicker,
 	actionService,
 }: ActorInfoTabProps) {
+	const { requestRoll } = useDiceRoller();
 	return (
 		<div className="space-y-3">
 			{/* Name with optional Despawn/Give buttons for DM */}
@@ -698,6 +700,7 @@ function ActorInfoTab({
 				localValues={localAttributes}
 				onChange={handleAttributeChange}
 				readOnly={!isDM}
+				onRoll={requestRoll}
 			/>
 		</div>
 	);

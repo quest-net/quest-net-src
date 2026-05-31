@@ -10,6 +10,7 @@ import { StatBar } from "../../components/StatBar/StatBar";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
 import { ActorPicker } from "../../components/inputs/ActorPicker";
 import { AttributesSection } from "../../components/AttributesSection/AttributesSection";
+import { useDiceRoller } from "../../components/Dice/DiceRollerContext";
 import { ACTOR_DEFAULT_COLORS } from "../Actor/Actor";
 import {
 	ResolvedAction,
@@ -21,6 +22,7 @@ import {
 export function CharacterSheet() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
+	const { requestRoll } = useDiceRoller();
 	const campaign = CampaignActions.getActiveCampaign(context);
 
 	const [editingMaxStats, setEditingMaxStats] = useState(false);
@@ -275,6 +277,7 @@ export function CharacterSheet() {
 				definitions={campaign.Settings.AttributeDefinitions ?? []}
 				localValues={localAttributes}
 				onChange={handleAttributeChange}
+				onRoll={requestRoll}
 			/>
 
 			{/* Critical Success Message - Last and smaller */}
