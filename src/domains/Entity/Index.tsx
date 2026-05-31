@@ -83,7 +83,7 @@ export function EntityIndex() {
 		{
 			label: "Items",
 			items: campaign.ItemTemplates,
-			icon: "icon-[mdi--bag-personal]",
+			icon: "icon-[mdi--sack]",
 			typeKey: "item",
 		},
 		{

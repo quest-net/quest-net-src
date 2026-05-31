@@ -247,7 +247,7 @@ function UnifiedInspector({
 		{
 			label: "Items",
 			items: campaign.ItemTemplates,
-			icon: "icon-[mdi--bag-personal]",
+			icon: "icon-[mdi--sack]",
 			typeKey: "item",
 		},
 		{
@@ -287,7 +287,7 @@ function UnifiedInspector({
 							onClick={() => setActiveTab("inventory")}
 							title="Inventory"
 						>
-							<span className="icon-[mdi--bag-personal] w-5 h-5" />
+							<span className="icon-[mdi--sack] w-5 h-5" />
 						</button>
 						<button
 							className={`flex-auto tab ${activeTab === "equipment" ? "tab-active" : ""

@@ -558,7 +558,7 @@ export function IndexView({
 					{/* Items or Empty State */}
 					{combinedEntries.length === 0 ? (
 						<div className="text-center py-12 border-2 border-dashed border-base-300 rounded-lg">
-							<span className="icon-[f7--question-circle] w-16 h-16 opacity-30 inline-block mb-4"></span>
+							<span className="icon-[mdi--help-circle-outline] w-16 h-16 opacity-30 inline-block mb-4"></span>
 							<p className="text-xl mb-2">
 								{searchQuery ? "No items match your search" : emptyMessage}
 							</p>
@@ -750,7 +750,7 @@ function ItemCard({
 								style={item.iconColor ? { color: item.iconColor } : undefined}
 							/>
 						) : (
-							<span className="icon-[f7--question-circle] w-12 h-12 opacity-30"></span>
+							<span className="icon-[mdi--help-circle-outline] w-12 h-12 opacity-30"></span>
 						)}
 					</div>
 				</figure>

@@ -49,7 +49,7 @@ export function ActorPicker({
             {
                 label: "Entities",
                 items: entities,
-                icon: "icon-[mdi--ghost]",
+                icon: "icon-[mdi--robot]",
                 typeKey: "entity",
             },
         ];

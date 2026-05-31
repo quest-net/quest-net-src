@@ -448,7 +448,7 @@ export function Main() {
 											onClick={() => handleBottomTabChange("inventory")}
 											title="Inventory"
 										>
-											<span className="icon-[mdi--bag-personal] w-6 h-6" />
+											<span className="icon-[mdi--sack] w-6 h-6" />
 										</button>
 									</div>
 
