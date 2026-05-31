@@ -10,6 +10,12 @@ import {
 	FormGrid,
 } from "../../components/Form/Form";
 import { TagEditor } from "../../components/inputs/TagEditor";
+import {
+	UserPicker,
+	useConnectedUsers,
+	UNASSIGNED_OWNER_ID,
+	PickableUser,
+} from "../../components/inputs/UserPicker";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 
 interface ImageEditProps {
@@ -29,6 +35,7 @@ export function ImageEdit({ image, onClose }: ImageEditProps) {
 				Name: data.Name,
 				Tags: data.Tags,
 				Cutout: data.Cutout || undefined,
+				UploadedBy: data.UploadedBy,
 			},
 		});
 	};
@@ -73,6 +80,10 @@ interface ImageFormProps {
 }
 
 function ImageForm({ data, onChange }: ImageFormProps) {
+	// Exclude self: this owner picker is DM-only, so the DM's own entry would
+	// just duplicate the "DM Library" (no owner) option.
+	const connectedUsers = useConnectedUsers({ excludeSelf: true });
+
 	if (!data || !onChange) return null;
 
 	const handleFieldChange = (field: keyof Image, value: any) => {
@@ -80,6 +91,38 @@ function ImageForm({ data, onChange }: ImageFormProps) {
 			...data,
 			[field]: value,
 		});
+	};
+
+	// Candidates: the shared DM library (no owner) plus everyone connected. The
+	// returning player is connected on their new machine, so they appear here
+	// and the DM can hand the image over directly. Include the current owner if
+	// it isn't otherwise listed (e.g. an offline player's stale id) so it shows
+	// up highlighted rather than silently missing.
+	const ownerCandidates: PickableUser[] = [
+		{ Id: UNASSIGNED_OWNER_ID, Name: "DM Library", Description: "No owner" },
+		...connectedUsers,
+	];
+	if (
+		data.UploadedBy &&
+		!ownerCandidates.some((u) => u.Id === data.UploadedBy)
+	) {
+		ownerCandidates.push({
+			Id: data.UploadedBy,
+			Name: `Unknown user (${data.UploadedBy.slice(0, 8)})`,
+			Description: "Current owner",
+		});
+	}
+
+	const ownerName = !data.UploadedBy
+		? "DM Library (no owner)"
+		: connectedUsers.find((u) => u.Id === data.UploadedBy)?.Name ??
+		  `Unknown user (${data.UploadedBy.slice(0, 8)})`;
+
+	const handleOwnerSelect = (userId: string) => {
+		handleFieldChange(
+			"UploadedBy",
+			userId === UNASSIGNED_OWNER_ID ? undefined : userId
+		);
 	};
 
 	const formatFileSize = (bytes: number): string => {
@@ -169,6 +212,28 @@ function ImageForm({ data, onChange }: ImageFormProps) {
 						</div>
 					</div>
 				</label>
+			</FormSection>
+
+			{/* Ownership */}
+			<FormSection
+				title="Ownership"
+				description="Who this image belongs to. Players only see their own uploads; the DM sees everything. Reassign here when a player rejoins from a different device under a new user id."
+			>
+				<div className="flex items-center justify-between gap-3">
+					<div className="flex items-center gap-2 text-sm min-w-0">
+						<span className="icon-[mdi--account] w-4 h-4 opacity-70 shrink-0" />
+						<span className="truncate" title={ownerName}>
+							{ownerName}
+						</span>
+					</div>
+					<UserPicker
+						users={ownerCandidates}
+						currentId={data.UploadedBy ?? UNASSIGNED_OWNER_ID}
+						onSelect={handleOwnerSelect}
+						buttonLabel="Change Owner"
+						title="Assign owner"
+					/>
+				</div>
 			</FormSection>
 
 			{/* Tags */}

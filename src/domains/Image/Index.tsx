@@ -5,8 +5,18 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { ImageUpload } from "../../components/inputs/ImageUpload";
-import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
+import {
+	IndexView,
+	IndexViewItem,
+	SelectionAction,
+} from "../../components/IndexView/IndexView";
 import { ImageEdit } from "./Edit";
+import {
+	UserMenu,
+	useConnectedUsers,
+	UNASSIGNED_OWNER_ID,
+	PickableUser,
+} from "../../components/inputs/UserPicker";
 
 export function ImageIndex() {
 	const context = useQuestContext();
@@ -17,9 +27,63 @@ export function ImageIndex() {
 		undefined
 	);
 
+	// Exclude self: reassignment is DM-only, so the DM's own entry would just
+	// duplicate the "DM Library" (no owner) option below.
+	const connectedUsers = useConnectedUsers({ excludeSelf: true });
+
 	const handleUploadComplete = () => {
 		setUploadingImageId(undefined);
 	};
+
+	// Reassign targets: everyone currently connected, plus any other user id
+	// already known from existing image ownership (e.g. a player's stale id from
+	// a previous machine), plus the shared DM library (no owner). Deduped by id.
+	const reassignTargets: PickableUser[] = (() => {
+		const list: PickableUser[] = [
+			{ Id: UNASSIGNED_OWNER_ID, Name: "DM Library", Description: "No owner" },
+			...connectedUsers,
+		];
+		const seen = new Set(list.map((u) => u.Id));
+
+		campaign.Images.forEach((img) => {
+			const id = img.UploadedBy;
+			if (!id || seen.has(id)) return;
+			seen.add(id);
+			list.push({
+				Id: id,
+				Name: `Unknown user (${id.slice(0, 8)})`,
+				Description: "Previous owner",
+			});
+		});
+
+		return list;
+	})();
+
+	const handleReassignSelected = (imageIds: string[], userId: string) => {
+		if (!actionService || imageIds.length === 0) return;
+		actionService.execute("image:reassignOwner", {
+			imageIds,
+			toUserId: userId === UNASSIGNED_OWNER_ID ? undefined : userId,
+		});
+	};
+
+	const selectionActions: SelectionAction[] = [
+		{
+			label: "Reassign Ownership",
+			icon: "icon-[mdi--account-switch]",
+			requiresSelection: true,
+			renderDropdown: (selectedIds, close) => (
+				<UserMenu
+					users={reassignTargets}
+					title="Assign selected to"
+					onSelect={(userId) => {
+						handleReassignSelected(selectedIds, userId);
+						close();
+					}}
+				/>
+			),
+		},
+	];
 
 	const handleBulkUpdateImageTags = (
 		updates: Array<{ itemId: string; newTags: string[] }>
@@ -54,12 +118,13 @@ export function ImageIndex() {
 	return (
 		<div className="space-y-6">
 			{/* Upload Section - Above IndexView */}
-			<div className="card border-2 bg-base-100 m-6">
-				<div className="card-body">
+			<div className="card border-2 bg-base-100 mx-6 mt-6">
+				<div className="card-body p-4">
 					<ImageUpload
 						value={uploadingImageId}
 						onChange={handleUploadComplete}
 						multiple={true}
+						compact={true}
 					/>
 				</div>
 			</div>
@@ -74,6 +139,7 @@ export function ImageIndex() {
 				searchPlaceholder="Search images by name..."
 				emptyMessage="No images yet. Upload one to get started!"
 				onBulkUpdateItemTags={handleBulkUpdateImageTags}
+				selectionActions={selectionActions}
 				renderEditForm={(item, { closeDrawer }) => {
 					const image = item
 						? campaign.Images.find((img) => img.Id === item.id)

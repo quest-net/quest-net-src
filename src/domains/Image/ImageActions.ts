@@ -188,6 +188,48 @@ export const ImageActions = {
 		);
 	},
 
+	/**
+	 * Reassigns ownership of the given images to `toUserId`. Pass
+	 * `toUserId: undefined` to release them back to the shared DM library
+	 * (no owner). Mirrors `bulkEditTags`: operates on an explicit set of
+	 * selected image ids in a single action.
+	 *
+	 * The primary use case is a player who rejoins from a different machine and
+	 * thus a different user id — their old uploads are orphaned under the stale
+	 * id and invisible to them. The DM selects the orphaned images and hands
+	 * them to the player's current (connected) id in one operation.
+	 */
+	reassignOwner(
+		params: { imageIds: string[]; toUserId?: string },
+		context: Context
+	): void {
+		const campaign = CampaignActions.getActiveCampaign(context);
+
+		let count = 0;
+		params.imageIds.forEach((imageId) => {
+			const image = campaign.Images.find((img) => img.Id === imageId);
+			if (image) {
+				image.UploadedBy = params.toUserId;
+				count++;
+			} else {
+				console.warn(`Image not found for reassign: ${imageId}`);
+			}
+		});
+
+		if (count === 0) return;
+
+		LogActions.create(
+			{
+				action: "Image ownership reassigned",
+				details: `${count} image(s) reassigned`,
+				category: "system",
+				level: "info",
+				visibility: ["dm"],
+			},
+			context
+		);
+	},
+
 	// ============================================================================
 	// UTILITY FUNCTIONS (Not actions - for use by service layer)
 	// ============================================================================

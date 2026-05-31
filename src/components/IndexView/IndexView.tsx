@@ -36,9 +36,15 @@ export interface IndexViewItem {
 export interface SelectionAction {
 	label: string;
 	icon?: string;
-	onClick: (selectedIds: string[]) => void;
+	onClick?: (selectedIds: string[]) => void;
 	variant?: "primary" | "secondary" | "error" | "ghost";
 	requiresSelection?: boolean; // If true, disabled when nothing selected
+	/**
+	 * When provided, the action button becomes a dropdown toggle and this
+	 * renders the floating menu content. `close` collapses the dropdown. Use
+	 * for actions that need a secondary choice (e.g. picking a target user).
+	 */
+	renderDropdown?: (selectedIds: string[], close: () => void) => ReactNode;
 }
 
 interface IndexViewProps {
@@ -304,7 +310,7 @@ export function IndexView({
 
 	const handleSelectionAction = (action: SelectionAction) => {
 		const selectedIds = Array.from(selectedItemIds);
-		action.onClick(selectedIds);
+		action.onClick?.(selectedIds);
 		// Note: Don't automatically exit selection mode - let the action handler decide
 	};
 
@@ -397,28 +403,60 @@ export function IndexView({
 									<>
 										<div className="divider divider-horizontal mx-2"></div>
 										{selectionActions.map((action, index) => {
-											const isDisabled = 
-												action.requiresSelection && selectedItemIds.size === 0;
-											
+											const isDisabled =
+												!!action.requiresSelection &&
+												selectedItemIds.size === 0;
+
+											const btnClassName = `btn btn-sm ${
+												action.variant === "primary"
+													? "btn-primary"
+													: action.variant === "secondary"
+													? "btn-secondary"
+													: action.variant === "error"
+													? "btn-error"
+													: "btn-ghost"
+											}`;
+
+											const btnInner = (
+												<>
+													{action.icon && (
+														<span className={`${action.icon} w-4 h-4`} />
+													)}
+													{action.label}
+												</>
+											);
+
+											// Dropdown variant: toggle reveals caller-rendered menu.
+											if (action.renderDropdown && !isDisabled) {
+												return (
+													<div key={index} className="dropdown dropdown-end">
+														<label tabIndex={0} className={btnClassName}>
+															{btnInner}
+														</label>
+														<div
+															tabIndex={0}
+															className="dropdown-content z-50 mt-1"
+														>
+															{action.renderDropdown(
+																Array.from(selectedItemIds),
+																() =>
+																	(
+																		document.activeElement as HTMLElement | null
+																	)?.blur()
+															)}
+														</div>
+													</div>
+												);
+											}
+
 											return (
 												<button
 													key={index}
 													onClick={() => handleSelectionAction(action)}
 													disabled={isDisabled}
-													className={`btn btn-sm ${
-														action.variant === "primary"
-															? "btn-primary"
-															: action.variant === "secondary"
-															? "btn-secondary"
-															: action.variant === "error"
-															? "btn-error"
-															: "btn-ghost"
-													}`}
+													className={btnClassName}
 												>
-													{action.icon && (
-														<span className={`${action.icon} w-4 h-4`} />
-													)}
-													{action.label}
+													{btnInner}
 												</button>
 											);
 										})}

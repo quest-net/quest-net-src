@@ -294,6 +294,10 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm"],
 		handler: ImageActions.bulkEditTags,
 	},
+	"image:reassignOwner": {
+		roles: ["dm"],
+		handler: ImageActions.reassignOwner,
+	},
 
 	// ============================================================================
 	// STATUS EFFECT ACTIONS (uncomment when StatusActions is implemented)
