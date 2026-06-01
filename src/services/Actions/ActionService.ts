@@ -87,7 +87,8 @@ export class ActionService {
 			: false;
 
 		if (didChangeUser || didChangeConnection) {
-			triggerContextUpdate();
+			// Presence-only: re-render, but don't re-serialize the campaign.
+			triggerContextUpdate(undefined, { persist: false });
 		}
 	}
 
@@ -100,7 +101,8 @@ export class ActionService {
 		this.stopPinging(peerId);
 		this.actorPoseService.clearForPeer(peerId);
 		if (hadConnection || hadUser) {
-			triggerContextUpdate();
+			// Presence-only: re-render, but don't re-serialize the campaign.
+			triggerContextUpdate(undefined, { persist: false });
 		}
 	}
 
@@ -144,7 +146,8 @@ export class ActionService {
 					: false;
 
 				if (didChangeUser || didChangeConnection) {
-					triggerContextUpdate();
+					// Presence-only: re-render, but don't re-serialize the campaign.
+					triggerContextUpdate(undefined, { persist: false });
 				}
 			}
 		});
@@ -237,7 +240,8 @@ export class ActionService {
 			}
 
 			if (didChangeConnection) {
-				triggerContextUpdate();
+				// Presence-only: re-render, but don't re-serialize the campaign.
+				triggerContextUpdate(undefined, { persist: false });
 			}
 		});
 
@@ -306,7 +310,8 @@ export class ActionService {
 		}
 
 		if (didChange) {
-			triggerContextUpdate();
+			// Presence-only: re-render, but don't re-serialize the campaign.
+			triggerContextUpdate(undefined, { persist: false });
 		}
 	}
 
@@ -316,7 +321,8 @@ export class ActionService {
 			try {
 				const ms = await this.room.ping(peerId);
 				this.peerPings.set(peerId, ms);
-				triggerContextUpdate();
+				// Presence-only: re-render, but don't re-serialize the campaign.
+				triggerContextUpdate(undefined, { persist: false });
 			} catch {
 				// Transient ping failures are expected on flaky links — ignore.
 			}

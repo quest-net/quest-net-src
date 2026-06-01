@@ -7,6 +7,7 @@ import { APP_VERSION } from "../../version";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 import type { Campaign } from "../Campaign/Campaign";
 import type { CampaignInfo } from "../Campaign/CampaignInfo";
+import type { VoxelTerrain } from "../VoxelTerrain/VoxelTerrain";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { runMigrations } from "../../migrations/runMigrations";
 import { contextMigrations } from "../../migrations/contextMigrations";
@@ -16,6 +17,93 @@ import { addMissingDefaultVoxelStamps } from "../../data/defaultVoxelStamps";
 
 const STORAGE_KEY = "quest-net-context";
 const BACKUP_PREFIX = `${STORAGE_KEY}-backup`;
+
+// Tracks the active terrain most recently written to IndexedDB, so flush()
+// only re-writes when its voxels actually changed. Keyed by BOTH storage key
+// and voxel value: keying on value alone would wrongly skip a distinct terrain
+// that happens to share identical content (e.g. two fresh flat terrains), and
+// keying on reference would break the player path, which structuredClones the
+// campaign on every state sync (fresh-but-equal voxel string each time).
+let lastPersistedActiveTerrain: { key: string; voxels: string } | null = null;
+
+function getActiveTerrain(campaign: Campaign): VoxelTerrain | undefined {
+	const activeId = campaign.GameState?.VoxelTerrainId;
+	if (!activeId) return undefined;
+	return campaign.VoxelTerrains?.find((t) => t.Id === activeId);
+}
+
+function activeTerrainStorageKey(
+	campaign: Campaign,
+	terrain: VoxelTerrain
+): string {
+	return terrain.VoxelStorageKey ?? `${campaign.Id}:${terrain.Id}`;
+}
+
+/**
+ * Returns a shallow copy of the Context whose ActiveCampaign terrains carry no
+ * inline voxel payload. The voxels live in IndexedDB (written via
+ * writeActiveTerrainThroughIfChanged), so localStorage only needs a hydratable
+ * stub. Does NOT mutate the live Context — only the terrain wrappers are cloned.
+ */
+function stripActiveCampaignVoxels(context: Context): Context {
+	const campaign = context.ActiveCampaign;
+	if (!campaign || !campaign.VoxelTerrains?.length) return context;
+	return {
+		...context,
+		ActiveCampaign: {
+			...campaign,
+			VoxelTerrains: campaign.VoxelTerrains.map((terrain) =>
+				terrain.Voxels
+					? {
+							...terrain,
+							Voxels: "",
+							VoxelsLoaded: false,
+							VoxelStorageKey: activeTerrainStorageKey(campaign, terrain),
+					  }
+					: terrain
+			),
+		},
+	};
+}
+
+function persistToLocalStorage(context: Context, stub: boolean): void {
+	const source = stub ? stripActiveCampaignVoxels(context) : context;
+	const persistedContext: Context = { ...source };
+	delete persistedContext.IsOptimistic;
+	LocalStorageUtilities.save(STORAGE_KEY, persistedContext);
+}
+
+/**
+ * Writes the active terrain's voxels to IndexedDB, but only when they have
+ * changed since the last write. This is what makes it safe for flush() to omit
+ * the voxels from the localStorage copy: IndexedDB is the source of truth for
+ * the active terrain payload, and hydrateTerrain reads it back on next load.
+ */
+async function writeActiveTerrainThroughIfChanged(
+	context: Context
+): Promise<void> {
+	const campaign = context.ActiveCampaign;
+	if (!campaign) return;
+	const active = getActiveTerrain(campaign);
+	if (!active || !active.Voxels) return;
+	const key = activeTerrainStorageKey(campaign, active);
+	if (
+		lastPersistedActiveTerrain &&
+		lastPersistedActiveTerrain.key === key &&
+		lastPersistedActiveTerrain.voxels === active.Voxels
+	) {
+		return;
+	}
+	try {
+		await TerrainStorageService.saveTerrain(campaign, active);
+		lastPersistedActiveTerrain = { key, voxels: active.Voxels };
+	} catch (error) {
+		console.error(
+			"[Context] Failed to persist active terrain to IndexedDB:",
+			error
+		);
+	}
+}
 
 // One-shot IndexedDB backup taken right before the 2.3.0 voxel SVO migration
 // reshapes terrain payloads. Keyed by version so future risky migrations can
@@ -171,7 +259,11 @@ export const ContextActions = {
 				hadPersistedOptimisticFlag ||
 				addedDefaultVoxelStamps > 0
 			) {
-				this.save(context);
+				// flush (not save) so the active terrain is written through to
+				// IndexedDB and the stored Context is voxel-stubbed. This also
+				// migrates any legacy inline-voxel payload still sitting in
+				// localStorage into IndexedDB on first load.
+				await this.flush(context);
 			}
 
 			return context;
@@ -209,15 +301,28 @@ export const ContextActions = {
 	 * campaign (see CampaignLoadingService and CampaignView).
 	 */
 	save(context: Context): void {
-		const persistedContext: Context = { ...context };
-		delete persistedContext.IsOptimistic;
-		LocalStorageUtilities.save(STORAGE_KEY, persistedContext);
+		// Synchronous full save (voxels inline). Used by the scattered callers
+		// and the page-unload safety net, where crash-safety beats shaving the
+		// voxel payload. The hot per-action path uses flush() instead.
+		persistToLocalStorage(context, false);
+	},
+
+	/**
+	 * Debounced persistence path used by triggerContextUpdate. Writes the active
+	 * terrain's voxels to IndexedDB (only when they changed) and persists a
+	 * voxel-stubbed Context to localStorage, keeping the large terrain blob off
+	 * the per-action serialization path.
+	 */
+	async flush(context: Context): Promise<void> {
+		await writeActiveTerrainThroughIfChanged(context);
+		persistToLocalStorage(context, true);
 	},
 
 	/**
 	 * Clears context from localStorage
 	 */
 	clear(): void {
+		lastPersistedActiveTerrain = null;
 		LocalStorageUtilities.remove(STORAGE_KEY);
 	},
 

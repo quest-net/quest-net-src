@@ -7,6 +7,7 @@ import {
 	compressStateUpdateForTransport,
 	decompressStateUpdateIfNeeded,
 	STATE_UPDATE_DELTA_COMPRESSION_PATCH_THRESHOLD,
+	STATE_UPDATE_DELTA_COMPRESSION_BYTE_THRESHOLD,
 } from "../utils/StateUpdateCompression";
 
 export interface StateUpdate {
@@ -137,8 +138,11 @@ export class StateSync {
 
 		this.queueStateSend(update);
 
-		// One clone for the baseline — not two.
-		this.lastBroadcastState = structuredClone(sanitized);
+		// `sanitized` is a fresh StateSync-owned clone (from sanitizeForPlayers)
+		// that nothing mutates after this point — the send path only reads it and
+		// the next compare() treats it as read-only. So adopt it as the baseline
+		// directly instead of cloning it again.
+		this.lastBroadcastState = sanitized;
 
 		// Reset counters on full state.
 		this.version = 0;
@@ -176,8 +180,10 @@ export class StateSync {
 
 		this.queueStateSend(update);
 
-		// Advance the baseline so the next diff is against this state.
-		this.lastBroadcastState = structuredClone(campaign);
+		// Advance the baseline so the next diff is against this state. `campaign`
+		// is the sanitized StateSync-owned clone; compare() above didn't mutate it
+		// and the send path only reads it, so adopt it directly (no extra clone).
+		this.lastBroadcastState = campaign;
 		this.version++;
 	}
 
@@ -191,6 +197,8 @@ export class StateSync {
 					compressFullUpdates: true,
 					deltaPatchThreshold:
 						STATE_UPDATE_DELTA_COMPRESSION_PATCH_THRESHOLD,
+					deltaByteThreshold:
+						STATE_UPDATE_DELTA_COMPRESSION_BYTE_THRESHOLD,
 				});
 				this.sendState(transportUpdate.data, null, transportUpdate.metadata);
 			});
