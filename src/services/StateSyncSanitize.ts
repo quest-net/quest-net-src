@@ -66,6 +66,16 @@ function sanitizePatch(
 	}
 
 	const value = sanitizeValue(patch.path, patch.value, secretId, roomCode);
+
+	// A non-remove op whose value resolved to `undefined` can't be represented
+	// as a JSON Patch add/replace: JSON transport drops the `value` key, and
+	// both fast-json-patch's validator and the player's applyPatch reject an
+	// add/replace with no value. The faithful translation of "this field is now
+	// absent" is a remove. (Immer emits this for `entry.Field = undefined`.)
+	if (value === undefined) {
+		return { op: "remove", path };
+	}
+
 	return { op: patch.op, path, value } as Operation;
 }
 
@@ -99,7 +109,12 @@ function sanitizeValue(
 
 /**
  * Recursively rewrites any `VoxelStorageKey` string field found inside an
- * arbitrary patch value. Returns the input unchanged for primitives.
+ * arbitrary patch value, and strips `undefined` to mirror what JSON transport
+ * does over the wire (object keys with `undefined` values are dropped; array
+ * holes become `null`). This keeps the emitted ops valid for fast-json-patch's
+ * `validate=true` apply path -- Immer freely carries `undefined`-valued keys
+ * (e.g. a LogEntry's optional ActorId/TargetId), which the validator rejects.
+ * Returns the input unchanged for primitives.
  */
 function sanitizeValueDeep(
 	value: unknown,
@@ -107,11 +122,15 @@ function sanitizeValueDeep(
 	roomCode: string
 ): unknown {
 	if (Array.isArray(value)) {
-		return value.map((entry) => sanitizeValueDeep(entry, secretId, roomCode));
+		return value.map((entry) =>
+			entry === undefined ? null : sanitizeValueDeep(entry, secretId, roomCode)
+		);
 	}
 	if (value && typeof value === "object") {
 		const out: Record<string, unknown> = {};
 		for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+			// Drop undefined-valued keys -- JSON would, and the validator forbids them.
+			if (entry === undefined) continue;
 			if (key === "VoxelStorageKey" && typeof entry === "string") {
 				out[key] = rewriteStorageKey(entry, secretId, roomCode);
 			} else {
