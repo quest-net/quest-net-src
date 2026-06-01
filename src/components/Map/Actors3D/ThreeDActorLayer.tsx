@@ -23,6 +23,7 @@ import {
 	ACTOR_TOKEN_PLACEMENT,
 	ACTOR_TOKEN_RENDER_ORDER,
 	ACTOR_TOKEN_SHADOW,
+	ACTOR_TOKEN_STANDEE_ALPHA_TEST,
 } from "./actorTokenConstants";
 import { buildActorTokenDescriptors } from "./actorTokenDescriptors";
 import {
@@ -300,20 +301,46 @@ function applyXRayToObject(object: THREE.Object3D | undefined, enabled: boolean)
 			: child.userData.actorXRayRenderOrder;
 
 		forEachObjectMaterial(child, (material) => {
-			if (material.userData.actorXRayDepthTest === undefined) {
-				material.userData.actorXRayDepthTest = material.depthTest;
+			const fogDepthOverride = material.userData[
+				FOG_DEPTH_OVERRIDE_KEY
+			] as { value: number } | undefined;
+			if (fogDepthOverride) {
+				if (material.userData.actorXRayDepthFunc === undefined) {
+					material.userData.actorXRayDepthFunc = material.depthFunc;
+				}
+				// Token materials (standee + base/ring) must draw on top of
+				// everything during x-ray AND keep writing depth, so the volumetric
+				// fog pass (which reads the depth buffer) skips the token. Crucial GL
+				// rule: when the depth test is DISABLED, no depth is written at all --
+				// depthWrite/gl_FragDepth are ignored. So we can't just turn the test
+				// off here. Instead keep it enabled but always-passing (AlwaysDepth):
+				// the token still renders over walls, and the override shader's
+				// near-plane gl_FragDepth now actually lands in the buffer, collapsing
+				// the fog march to ~0 over the token. depthTest/depthWrite are left at
+				// their creation defaults (both on) -- only the compare func and the
+				// override uniform need to flip.
+				material.depthFunc = enabled
+					? THREE.AlwaysDepth
+					: material.userData.actorXRayDepthFunc;
+				fogDepthOverride.value = enabled ? 1 : 0;
+			} else {
+				if (material.userData.actorXRayDepthTest === undefined) {
+					material.userData.actorXRayDepthTest = material.depthTest;
+				}
+				if (material.userData.actorXRayDepthWrite === undefined) {
+					material.userData.actorXRayDepthWrite = material.depthWrite;
+				}
+				material.depthTest = enabled
+					? false
+					: material.userData.actorXRayDepthTest;
+				material.depthWrite = enabled
+					? false
+					: material.userData.actorXRayDepthWrite;
 			}
-			if (material.userData.actorXRayDepthWrite === undefined) {
-				material.userData.actorXRayDepthWrite = material.depthWrite;
-			}
-
-			material.depthTest = enabled
-				? false
-				: material.userData.actorXRayDepthTest;
-			material.depthWrite = enabled
-				? false
-				: material.userData.actorXRayDepthWrite;
-			material.needsUpdate = true;
+			// No material.needsUpdate here: depthTest/depthWrite/depthFunc and the
+			// override uniform are all applied by the renderer per-draw, not compiled
+			// into the program. Forcing an update would needlessly re-run the
+			// onBeforeCompile shader surgery on every x-ray toggle.
 		});
 	});
 }
@@ -405,6 +432,54 @@ function faceCameraAroundY(
 	);
 }
 
+// Key under which an actor-token material's fog-depth-override uniform is
+// stashed on material.userData, so the x-ray apply pass can find and flip it.
+const FOG_DEPTH_OVERRIDE_KEY = "fogDepthOverride";
+
+// Shared, module-level override uniform driven by the (global) x-ray toggle.
+// Every actor-token material that opts in binds THIS object in onBeforeCompile.
+// A single shared uniform is correct because x-ray is one global mode, not
+// per-actor, and it neatly sidesteps a three.js gotcha: materials with identical
+// params share one cached program, so onBeforeCompile runs once and a
+// per-material uniform object would end up shared anyway. Making the sharing
+// explicit avoids the surprise.
+const sharedFogDepthOverride = { value: 0 };
+
+/**
+ * Compiles a depth-write override into an actor-token material (the billboard
+ * standee and the base/ring geometry under it).
+ *
+ * Normally (uniform = 0) the fragment writes its true depth, so the volumetric
+ * fog pass -- which clamps its screen-space march to the scene depth buffer --
+ * correctly occludes against the token.
+ *
+ * During x-ray (uniform = 1) the fragment instead writes gl_FragDepth = 0 (the
+ * camera near plane). The fog march length at those pixels collapses to ~0, so
+ * fog skips the token entirely and the DM can see every actor even inside a fog
+ * bank. The x-ray apply pass pairs this with depthFunc = AlwaysDepth (NOT
+ * depthTest:false, which would suppress the depth write outright) so the token
+ * still draws over walls AND this near-plane depth actually lands in the buffer.
+ *
+ * The shader source is static -- only the uniform value changes at runtime -- so
+ * this adds no per-toggle recompile cost. Any alpha-test discard runs earlier in
+ * the shader, so transparent margins never reach this write.
+ *
+ * Works for both MeshBasicMaterial and MeshStandardMaterial -- their fragment
+ * shaders both end with the <dithering_fragment> chunk used as the anchor.
+ */
+function attachFogDepthOverride(material: THREE.Material): void {
+	material.userData[FOG_DEPTH_OVERRIDE_KEY] = sharedFogDepthOverride;
+	material.onBeforeCompile = (shader) => {
+		shader.uniforms.uFogDepthOverride = sharedFogDepthOverride;
+		shader.fragmentShader =
+			"uniform float uFogDepthOverride;\n" +
+			shader.fragmentShader.replace(
+				"#include <dithering_fragment>",
+				"#include <dithering_fragment>\n\tgl_FragDepth = uFogDepthOverride > 0.5 ? 0.0 : gl_FragCoord.z;"
+			);
+	};
+}
+
 function createStandeeMesh(
 	texture: THREE.Texture,
 	actor: ActorTokenDescriptor,
@@ -418,9 +493,16 @@ function createStandeeMesh(
 		map: texture,
 		transparent: true,
 		depthTest: true,
-		depthWrite: false,
+		// Write depth (gated by the alpha test) so screen-space depth effects --
+		// chiefly the volumetric fog pass -- occlude against the figure's
+		// silhouette instead of marching past it to the terrain behind. The alpha
+		// test discards the transparent margins so the depth write doesn't punch a
+		// full square hole. See ACTOR_TOKEN_STANDEE_ALPHA_TEST.
+		depthWrite: true,
+		alphaTest: ACTOR_TOKEN_STANDEE_ALPHA_TEST,
 		side: THREE.DoubleSide,
 	});
+	attachFogDepthOverride(material);
 	const mesh = new THREE.Mesh(geometry, material);
 	mesh.position.y = bottomOffset + height / 2;
 	mesh.renderOrder = ACTOR_TOKEN_RENDER_ORDER.NORMAL;
@@ -564,6 +646,9 @@ function createBaseMesh(actor: ActorTokenDescriptor): BaseMeshResult {
 		roughness: ACTOR_TOKEN_BASE.ROUGHNESS,
 		metalness: ACTOR_TOKEN_BASE.METALNESS,
 	});
+	// Same fog-depth treatment as the standee: during x-ray the base/ring must
+	// punch through fog so the DM sees the whole token, not just the billboard.
+	attachFogDepthOverride(baseMaterial);
 	const base = new THREE.Mesh(geometry, baseMaterial);
 	base.position.y = ACTOR_TOKEN_BASE.HEIGHT / 2;
 	base.receiveShadow = true;
@@ -576,6 +661,7 @@ function createBaseMesh(actor: ActorTokenDescriptor): BaseMeshResult {
 		ACTOR_TOKEN_BASE.ACCENT_RADIAL_SEGMENTS
 	);
 	const accentMaterial = new THREE.MeshBasicMaterial({ color: accentColor });
+	attachFogDepthOverride(accentMaterial);
 	const accent = new THREE.Mesh(accentGeometry, accentMaterial);
 	accent.rotation.x = Math.PI / 2;
 	accent.position.y = ACTOR_TOKEN_BASE.HEIGHT + ACTOR_TOKEN_BASE.ACCENT_Y_OFFSET;
@@ -609,6 +695,7 @@ function createHaloMesh(actor: ActorTokenDescriptor): HaloMeshResult {
 		opacity: ACTOR_TOKEN_HALO.OUTER_DEFAULT_OPACITY,
 		depthWrite: true,
 	});
+	attachFogDepthOverride(outerMaterial);
 	const halo = new THREE.Mesh(haloGeometry, outerMaterial);
 	halo.rotation.x = Math.PI / 2;
 	halo.position.y = ACTOR_TOKEN_PLACEMENT.AIRBORNE_HALO_HEIGHT;
@@ -626,6 +713,7 @@ function createHaloMesh(actor: ActorTokenDescriptor): HaloMeshResult {
 		opacity: ACTOR_TOKEN_HALO.INNER_DEFAULT_OPACITY,
 		depthWrite: true,
 	});
+	attachFogDepthOverride(innerMaterial);
 	const innerHalo = new THREE.Mesh(innerGeometry, innerMaterial);
 	innerHalo.rotation.x = Math.PI / 2;
 	innerHalo.position.y =

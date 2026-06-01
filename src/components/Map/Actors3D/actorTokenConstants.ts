@@ -79,6 +79,17 @@ export const ACTOR_TOKEN_RENDER_ORDER = {
 	X_RAY: 110,
 } as const;
 
+// Alpha cutoff for the standee. The standee writes depth (depthWrite: true) so
+// that screen-space depth effects -- notably the volumetric fog pass, which
+// stops its march at the scene depth buffer -- correctly occlude against the
+// figure instead of marching past it to the terrain behind. depthWrite on a
+// transparent plane would otherwise punch a full square hole, so the alpha test
+// discards the transparent margins/corners: only fragments at/above this cutoff
+// (the figure body for cutouts, the framed interior otherwise) write depth and
+// colour. Kept mid-range so the silhouette stays close to the visible (still
+// alpha-blended) edge without writing depth for the faint anti-aliased fringe.
+export const ACTOR_TOKEN_STANDEE_ALPHA_TEST = 0.5;
+
 export const ACTOR_TOKEN_PLACEMENT = {
 	BASE_Y_OFFSET: 0.01,
 	STANDEE_BASE_GAP: 0.05,
