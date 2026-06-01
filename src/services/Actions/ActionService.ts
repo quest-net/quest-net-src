@@ -1,6 +1,6 @@
 // services/Actions/ActionService.ts
 
-import { createDraft, finishDraft, setAutoFreeze } from "immer";
+import { createDraft, finishDraft, enablePatches, setAutoFreeze, type Patch } from "immer";
 import { Context } from "../../domains/Context/Context";
 import { canPerformAction, ACTION_REGISTRY } from "./ActionRegistry";
 import type { Campaign } from "../../domains/Campaign/Campaign";
@@ -22,6 +22,12 @@ import { ActorPoseService } from "../ActorPoseService";
 // Disable freezing globally so Immer is purely a structural-sharing tool here:
 // new references only appear on paths that were actually mutated.
 setAutoFreeze(false);
+
+// Opt into Immer's patch recording so mutateCampaign can hand StateSync the
+// exact change set (captured via finishDraft's patch listener) -- this is what
+// lets the DM broadcast path skip the per-action structuredClone + full-tree
+// compare.
+enablePatches();
 
 const PING_INTERVAL_MS = 3000;
 const PEER_RECONCILE_INTERVAL_MS = 2000;
@@ -385,18 +391,31 @@ export class ActionService {
 	 *
 	 * On error the previous campaign is restored so a partial draft doesn't
 	 * leak into context.
+	 *
+	 * Returns the next campaign together with the Immer patches describing
+	 * exactly what changed, so the DM broadcast path can ship those patches as
+	 * the delta instead of re-deriving them with a full-tree compare. Callers
+	 * that don't broadcast (player optimistic, force full-sync) ignore patches.
 	 */
 	private async mutateCampaign(
 		producer: (draft: Campaign) => Promise<void> | void
-	): Promise<Campaign> {
+	): Promise<{ campaign: Campaign; patches: Patch[] }> {
 		const previous = CampaignActions.getActiveCampaign(this.context);
 		const draft = createDraft(previous) as Campaign;
 		this.context.ActiveCampaign = draft;
 		try {
 			await producer(draft);
-			const next = finishDraft(draft) as Campaign;
+			// Capture the patch set as Immer finalizes the draft. We keep
+			// createDraft/finishDraft (not produceWithPatches) because the
+			// producer is async, and this Immer version's recipe type rejects a
+			// Promise return -- the createDraft/finishDraft pair runs the async
+			// work outside the recipe and still records patches via this listener.
+			let patches: Patch[] = [];
+			const next = finishDraft(draft, (p) => {
+				patches = p;
+			}) as Campaign;
 			this.commitActiveCampaign(next);
-			return next;
+			return { campaign: next, patches };
 		} catch (error) {
 			this.commitActiveCampaign(previous);
 			throw error;
@@ -432,7 +451,7 @@ export class ActionService {
 	 * DM executes action directly and broadcasts result
 	 */
 	private async executeDM(actionKey: string, params: any): Promise<void> {
-		const campaign = await this.mutateCampaign(async (draft) => {
+		const { campaign, patches } = await this.mutateCampaign(async (draft) => {
 			// Execute the domain action against the draft (handlers reach
 			// the draft via context.ActiveCampaign, swapped in by mutateCampaign).
 			await this.runDomainAction(actionKey, params);
@@ -443,7 +462,7 @@ export class ActionService {
 
 		const isSecret = this.context.SecretModes?.[campaign.Id];
 		if (!isSecret) {
-			this.stateSync.broadcast(campaign);
+			this.stateSync.broadcast(campaign, patches);
 		}
 
 		this.actorPoseService.clearForAuthoritativeAction(actionKey, params);
@@ -507,11 +526,15 @@ export class ActionService {
 			return;
 		}
 
+		// Patches default to empty: if the mutation throws we want to broadcast
+		// the pre-mutation state (no delta) and let the forced full-sync reset
+		// the player's optimistic update.
+		let patches: Patch[] = [];
 		try {
 			// Execute the domain action as the requesting player so
 			// domain-level player validations run in the same context as
 			// optimistic local execution.
-			await this.mutateCampaign(async (draft) => {
+			({ patches } = await this.mutateCampaign(async (draft) => {
 				const originalUser = this.context.User;
 				try {
 					this.context.User = requestingUser;
@@ -520,7 +543,7 @@ export class ActionService {
 					this.context.User = originalUser;
 				}
 				await TerrainStorageService.packInactiveTerrains(draft);
-			});
+			}));
 		} catch (error) {
 			console.error("[ActionService] Error executing player request:", error);
 			// We continue to broadcast below to force a reset if needed
@@ -535,8 +558,10 @@ export class ActionService {
 		if (LogActions.isCommand(data.params, "/REQUEST_FULL_SYNC")) {
 			this.stateSync.broadcastFull(campaign);
 		} else {
-			// FORCE SYNC: Always broadcast, even if no changes (reverts optimistic state)
-			this.stateSync.broadcast(campaign, true);
+			// FORCE SYNC: Always broadcast, even if no changes (reverts optimistic
+			// state). With zero patches + force, broadcast() falls back to a full
+			// sync so the optimistic player is reset.
+			this.stateSync.broadcast(campaign, patches, true);
 		}
 		this.actorPoseService.clearForAuthoritativeAction(
 			data?.actionKey,
@@ -582,7 +607,7 @@ export class ActionService {
 
 	private async forceSyncAsync(): Promise<void> {
 		if (this.context.User.Role === "dm") {
-			const campaign = await this.mutateCampaign(async (draft) => {
+			const { campaign } = await this.mutateCampaign(async (draft) => {
 				await TerrainStorageService.packInactiveTerrains(draft);
 			});
 			this.stateSync.broadcastFull(campaign);
