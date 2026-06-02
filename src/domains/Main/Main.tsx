@@ -2,8 +2,7 @@
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
-import ThreeDMap, { type CameraPreference } from "../../components/Map/3DMap";
-import FirstPersonMap from "../../components/Map/FirstPersonMap";
+import MapScene, { type CameraPreference } from "../../components/Map/MapScene";
 import { useEffect, useRef, useState } from "react";
 import { MapStateProvider } from "../../components/Map/MapStateProvider";
 import { Inspector } from "./Inspector";
@@ -258,24 +257,17 @@ export function Main() {
 				{/* Left 70%: Map */}
 				<div className="flex-1 overflow-hidden relative">
 					<SceneDisplay />
-					{mapViewMode === "first-person" ? (
-						<FirstPersonMap
-							characters={campaign.GameState.Characters}
-							entities={campaign.GameState.Entities}
-							terrain={hydratedActiveTerrain}
-							onExitFirstPerson={() => setMapViewMode("world")}
-						/>
-					) : (
-						<ThreeDMap
-							characters={campaign.GameState.Characters}
-							entities={campaign.GameState.Entities}
-							terrain={hydratedActiveTerrain}
-							xRayActors={isDM && xRayActors}
-							cameraPreference={cameraPreference}
-							onReady={() => setMapReady(true)}
-						/>
-					)}
-					{activeTerrain && (!hydratedActiveTerrain || (mapViewMode === "world" && !mapReady)) && (
+					<MapScene
+						characters={campaign.GameState.Characters}
+						entities={campaign.GameState.Entities}
+						terrain={hydratedActiveTerrain}
+						xRayActors={isDM && xRayActors}
+						cameraPreference={cameraPreference}
+						viewMode={mapViewMode}
+						onReady={() => setMapReady(true)}
+						onExitFirstPerson={() => setMapViewMode("world")}
+					/>
+					{activeTerrain && (!hydratedActiveTerrain || !mapReady) && (
 						<div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-base-200/95 text-base-content">
 							<span className="icon-[mdi--compass] w-12 h-12 animate-spin text-primary" />
 							<span className="text-base font-medium tracking-wide">

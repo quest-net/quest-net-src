@@ -11,7 +11,7 @@ The sandboxed Linux shell sees a stale/truncated view of files in this repo (bas
 - **React 19** with **TypeScript** (strict mode) and **React Router v7** (HashRouter)
 - **Vite v7** for build/dev
 - **Tailwind CSS v4** + **DaisyUI v5** for styling; configured via the `@tailwindcss/vite` Vite plugin (no PostCSS). Icons via `@iconify/tailwind4` + `@iconify/json`.
-- **Three.js** (`three@0.180`) for the voxel-based 3D map (`3DMap.tsx`). Core imports: `import * as THREE from 'three'`. Addon imports (OrbitControls etc.) use `three/examples/jsm/`, **not** `three/addons/` — the `addons/` directory does not physically exist in the installed version even though it appears in the package exports map. Example: `import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'`. Use `MeshStandardMaterial` (not `MeshLambertMaterial`) for voxels — Lambert is legacy and unreliable with InstancedMesh vertex colors in r180. **Do not use Unicode box-drawing characters (e.g. `--`) in comments inside `3DMap.tsx`** — they cause the Write tool to truncate the file silently; use plain ASCII `--` instead.
+- **Three.js** (`three@0.180`) for the voxel-based 3D map (`MapScene.tsx`). Core imports: `import * as THREE from 'three'`. Addon imports (OrbitControls etc.) use `three/examples/jsm/`, **not** `three/addons/` — the `addons/` directory does not physically exist in the installed version even though it appears in the package exports map. Example: `import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'`. Use `MeshStandardMaterial` (not `MeshLambertMaterial`) for voxels — Lambert is legacy and unreliable with InstancedMesh vertex colors in r180. **Do not use Unicode box-drawing characters (e.g. `--`) in comments inside the large Three.js map files (`MapScene.tsx`, etc.)** — they can cause the Write tool to truncate the file silently; use plain ASCII `--` instead.
 - **postprocessing** for post-processing effects on the 3D map
 - **gsap** and **motion** for animations
 - **react-rnd** for resizable/draggable UI panels
@@ -51,7 +51,7 @@ src/
 │   ├── Form/           # FormWrapper, FormContext (CRUD forms)
 │   ├── IndexView/      # Paginated table/list with search, folders, tags
 │   ├── CollectionView/ # Grid/list display for items, skills, etc.
-│   ├── Map/            # Three.js 3D voxel map (3DMap, layer subdirs, terrain, first-person)
+│   ├── Map/            # Three.js 3D voxel map (MapScene, MapModeController, layer subdirs, terrain, first-person)
 │   ├── Dice/           # Dice roller UI
 │   ├── StatBar/        # Stat bar display
 │   ├── ActionBubbles/  # Combat action bubble overlay
@@ -97,7 +97,7 @@ Each domain typically has a model file (`Domain.ts`), an actions file (`DomainAc
 
 ### Map (`src/components/Map/`)
 
-3D voxel renderer built on Three.js. `3DMap.tsx` is the root component; it sets up an orthographic camera with isometric framing, OrbitControls (pan/zoom/rotate), PCFSoft shadows, post-processing effects, and custom DDA raycasting (Amanatides & Woo algorithm — no external BVH library). Map state is provided by `MapStateProvider.tsx`. Key sub-directories:
+3D voxel renderer built on Three.js. `MapScene.tsx` is the root component; it owns ONE persistent scene (via `useMapSceneCore`) shared by both the world view and the first-person view, so toggling between them swaps only the camera/input/mode-specific layers instead of rebuilding the WebGL stack. `MapModeController.ts` hosts both camera systems (the isometric/perspective/freecam `CameraRig` and a first-person `PerspectiveCamera`) and tweens between them; `FirstPerson/FirstPersonView.tsx` holds the capsule-walking sim + HUD. The world view sets up an orthographic camera with isometric framing, OrbitControls (pan/zoom/rotate), PCFSoft shadows, post-processing effects, and custom DDA raycasting (Amanatides & Woo algorithm — no external BVH library). Map state is provided by `MapStateProvider.tsx`. The voxel terrain editor preview also renders `MapScene` (world mode, no actors). Key sub-directories:
 
 - **Actors3D/** (`ThreeDActorLayer.tsx`) — Renders actor standees (cutout images) with selection highlights and height-dragging for Z placement.
 - **Movement3D/** (`ThreeDMovementLayer.tsx`) — Movement range highlighting via shader-patched MeshStandardMaterial, Dijkstra pathfinding for movement costs, raycasting for tile selection.
@@ -109,7 +109,7 @@ Each domain typically has a model file (`Domain.ts`), an actions file (`DomainAc
 Supporting files: `terrainEnvironment.ts` (apply lighting/background to scene), `shadowCameraBounds.ts`, `mapPostProcessing.ts`, `threeDMapConstants.ts` (camera, lighting, shadow, controls, and material tuning constants).
 
 Supporting utilities in `src/utils/terrain/`:
-- `data/` — `VoxelDataUtils` (SVO encode/decode), `VoxelSVOCodec` (SVO implementation), `VoxelTerrainUtils` (surface height, resolution), `VoxelTerrainIndex` (spatial index), `VoxelBitsetUtils`
+- `data/` — `VoxelDataUtils` (SVO encode/decode entry points), `voxelCodecWasm` (accessor for the WASM SVO codec; the single source of truth lives in `wasm/voxel-mesher/src/svo.rs` — there is no JS fallback, and `initVoxelCodec()` is awaited at app startup in `index.tsx`), `VoxelTerrainUtils` (surface height, resolution), `VoxelTerrainIndex` (spatial index), `VoxelBitsetUtils`
 - `editor/` — `VoxelTerrainEditorUtils`, `VoxelStampUtils`, `VoxelTerrainSelectionUtils`
 - `import/` — `VoxImportUtils`
 - `movement/` — `VoxelMovementUtilities` (Dijkstra with climbing costs), `VoxelMovementAdjacency`

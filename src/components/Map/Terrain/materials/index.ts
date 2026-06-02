@@ -258,6 +258,98 @@ export function getMaterialPreservesVoxelFaces(colorIndex: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Flattened per-palette-index lookup tables (hot path)
+//
+// The greedy mesher used to call the getMaterial*() functions above once per
+// voxel, per face direction (6x) -- each a Map lookup, with string bucket keys
+// compared in the inner merge loop. Voxel palette indices are always 0-255, and
+// every material property is a pure function of that index, so we precompute the
+// whole answer space once at module load into flat typed arrays. The mesher then
+// indexes these directly (no calls, no Maps, no strings) in its inner loops.
+//
+// Bucket and occlusion *group* strings are interned to small integer ids so the
+// inner merge predicate compares numbers. `bucketKeyById` maps an id back to its
+// string for the few places that still need it (output bucket map, materials).
+//
+// These are derived purely from the getMaterial*() functions, so they are
+// guaranteed to agree with them.
+// ---------------------------------------------------------------------------
+
+export interface MaterialLookupTables {
+	/** palette index -> interned bucket id (see bucketKeyById). */
+	readonly bucketId: Int32Array;
+	/** palette index -> interned occlusion-group id (face culling). */
+	readonly occlusionId: Int32Array;
+	/** palette index -> 1 if the material emits vertex colors, else 0. */
+	readonly usesVertexColors: Uint8Array;
+	/** palette index -> 1 if the material deforms its top surface, else 0. */
+	readonly deformsSurface: Uint8Array;
+	/** palette index -> 1 if faces must not greedy-merge, else 0. */
+	readonly preservesVoxelFaces: Uint8Array;
+	/** palette index -> 1 if rendered volumetrically (fog), else 0. */
+	readonly isVolumetric: Uint8Array;
+	/** palette index -> 1 if passable (non-colliding), else 0. */
+	readonly isPassable: Uint8Array;
+	/** interned bucket id -> bucket key string. */
+	readonly bucketKeyById: readonly string[];
+}
+
+function buildMaterialLookupTables(): MaterialLookupTables {
+	const bucketKeyToId = new Map<string, number>();
+	const bucketKeyById: string[] = [];
+	const internBucket = (key: string): number => {
+		let id = bucketKeyToId.get(key);
+		if (id === undefined) {
+			id = bucketKeyById.length;
+			bucketKeyToId.set(key, id);
+			bucketKeyById.push(key);
+		}
+		return id;
+	};
+
+	const occlusionKeyToId = new Map<string, number>();
+	const internOcclusion = (key: string): number => {
+		let id = occlusionKeyToId.get(key);
+		if (id === undefined) {
+			id = occlusionKeyToId.size;
+			occlusionKeyToId.set(key, id);
+		}
+		return id;
+	};
+
+	const bucketId = new Int32Array(256);
+	const occlusionId = new Int32Array(256);
+	const usesVertexColors = new Uint8Array(256);
+	const deformsSurface = new Uint8Array(256);
+	const preservesVoxelFaces = new Uint8Array(256);
+	const isVolumetric = new Uint8Array(256);
+	const isPassable = new Uint8Array(256);
+
+	for (let i = 0; i < 256; i++) {
+		bucketId[i] = internBucket(getMaterialBucket(i));
+		occlusionId[i] = internOcclusion(getMaterialOcclusionGroup(i));
+		usesVertexColors[i] = getMaterialUsesVertexColors(i) ? 1 : 0;
+		deformsSurface[i] = getMaterialDeformsSurface(i) ? 1 : 0;
+		preservesVoxelFaces[i] = getMaterialPreservesVoxelFaces(i) ? 1 : 0;
+		isVolumetric[i] = isVolumetricMaterial(i) ? 1 : 0;
+		isPassable[i] = isPassableMaterial(i) ? 1 : 0;
+	}
+
+	return {
+		bucketId,
+		occlusionId,
+		usesVertexColors,
+		deformsSurface,
+		preservesVoxelFaces,
+		isVolumetric,
+		isPassable,
+		bucketKeyById,
+	};
+}
+
+export const MATERIAL_LOOKUP: MaterialLookupTables = buildMaterialLookupTables();
+
+// ---------------------------------------------------------------------------
 // Editor-side helpers
 //
 // The terrain editor uses a separate, lighter renderer than the game view

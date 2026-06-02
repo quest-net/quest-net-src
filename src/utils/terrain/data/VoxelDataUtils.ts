@@ -5,12 +5,13 @@
 // separate traversal-order byte stream.
 
 import type { Voxel } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import {
-	decode as decodeVoxelSVO,
-	encode as encodeVoxelSVO,
-	getVoxelCount as getSvoVoxelCount,
-} from "./VoxelSVOCodec";
+import { getVoxelCodec, type VoxelDecodeResult } from "./voxelCodecWasm";
 import { bytesToBase64, base64ToBytes } from "../../base64";
+
+// One 28-char base64 block decodes to 21 bytes, enough to cover the 20-byte SVO
+// header. The voxel count is a u32 LE at byte offset 8, after the "QSVO" magic.
+// The header layout's source of truth is wasm/voxel-mesher/src/svo.rs.
+const SVO_HEADER_BASE64_LENGTH = 28;
 
 function packPosition(x: number, y: number, z: number): number {
 	return x + y * 256 + z * 65536;
@@ -51,18 +52,48 @@ export function encodeVoxels(voxels: Iterable<Voxel>): string {
 		index++;
 	}
 
-	return bytesToBase64(encodeVoxelSVO(positions, colors));
+	return bytesToBase64(getVoxelCodec().encode(positions, colors));
 }
 
 /** Decodes a voxel set, yielding one Voxel per stored entry. */
 export function* decodeVoxels(encoded: string): Generator<Voxel> {
-	const decoded = decodeVoxelSVO(base64ToBytes(encoded));
-	for (let i = 0; i < decoded.positions.length; i++) {
-		yield unpackVoxel(decoded.positions[i], decoded.colors[i]);
+	const { positions, colors } = decodeVoxelBuffers(encoded);
+	for (let i = 0; i < positions.length; i++) {
+		yield unpackVoxel(positions[i], colors[i]);
 	}
 }
 
-/** Returns the number of voxels in the encoded set. O(1). */
+/**
+ * Returns the number of voxels in the encoded set. O(1) -- reads the count
+ * straight from the SVO header rather than decoding the terrain, so it has no
+ * dependency on the (async-initialized) WASM codec.
+ */
 export function getVoxelCount(encoded: string): number {
-	return getSvoVoxelCount(base64ToBytes(encoded));
+	if (!encoded) return 0;
+	const header = base64ToBytes(encoded.slice(0, SVO_HEADER_BASE64_LENGTH));
+	if (
+		header.length < 12 ||
+		header[0] !== 0x51 || // Q
+		header[1] !== 0x53 || // S
+		header[2] !== 0x56 || // V
+		header[3] !== 0x4f // O
+	) {
+		throw new Error("Invalid voxel SVO payload.");
+	}
+	return (
+		(header[8] | (header[9] << 8) | (header[10] << 16) | (header[11] << 24)) >>> 0
+	);
+}
+
+/**
+ * Decodes a voxel set into flat parallel typed arrays without allocating a Voxel
+ * object per entry. `positions[i]` is packed as x + y*256 + z*65536 (unpack with
+ * `& 0xff`, `>>> 8 & 0xff`, `>>> 16 & 0xff`); `colors[i]` is the palette index.
+ *
+ * Prefer this over `decodeVoxels` in hot paths (e.g. geometry building) that
+ * consume coordinates numerically -- it avoids hundreds of thousands of
+ * short-lived object allocations and the attendant GC pressure.
+ */
+export function decodeVoxelBuffers(encoded: string): VoxelDecodeResult {
+	return getVoxelCodec().decode(base64ToBytes(encoded));
 }

@@ -303,6 +303,15 @@ export class CameraRig {
 		this.controls.update();
 	}
 
+	/** Position the perspective camera at the standard entry framing for `target`
+	 *  (or the current controls target) and return it, WITHOUT changing the active
+	 *  mode. Used by MapModeController to read a perspective viewpoint that
+	 *  visually matches the isometric framing as the endpoint of a view tween. */
+	perspectiveEntryCamera(target?: THREE.Vector3): THREE.PerspectiveCamera {
+		this.positionPerspectiveEntry(target ?? this.controls.target);
+		return this.perspectiveCamera;
+	}
+
 	/** Attach freecam DOM input: right-hold to lock+look, WASD/Space/Shift to fly,
 	 *  scroll to change speed. Idempotent. */
 	attachInput(): void {

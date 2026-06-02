@@ -1,0 +1,24 @@
+[package]
+name = "voxel-mesher"
+version = "0.1.0"
+edition = "2021"
+description = "WASM voxel terrain mesher for Quest-Net (scaffold phase)."
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+# Routes Rust panics to console.error with the real message + location instead
+# of an opaque "unreachable" trap. Cheap; keep during development.
+console_error_panic_hook = "0.1"
+
+# Optimize for speed; this is a compute kernel, not a size-constrained payload.
+# LTO + a single codegen unit let LLVM inline across the hot loops once the real
+# mesher lands. opt-level 3 over 's' because runtime speed is the whole point.
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

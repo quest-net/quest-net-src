@@ -1,4 +1,4 @@
-import type { CameraPreference } from "./3DMap";
+import type { CameraPreference } from "./MapScene";
 
 const CAMERA_MODE_LABELS: Record<CameraPreference, string> = {
 	ortho:       "Isometric",

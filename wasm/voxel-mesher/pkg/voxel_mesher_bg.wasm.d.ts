@@ -1,0 +1,30 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_meshbuild_free: (a: number, b: number) => void;
+export const __wbg_svodecode_free: (a: number, b: number) => void;
+export const __wbg_voxelmesher_free: (a: number, b: number) => void;
+export const decode_svo_wasm: (a: number, b: number) => number;
+export const encode_svo_wasm: (a: number, b: number, c: number, d: number) => [number, number];
+export const meshbuild_bucket_count: (a: number) => number;
+export const meshbuild_bucket_id: (a: number, b: number) => number;
+export const meshbuild_take_colors: (a: number, b: number) => [number, number];
+export const meshbuild_take_fog: (a: number) => [number, number];
+export const meshbuild_take_highlights: (a: number, b: number) => [number, number];
+export const meshbuild_take_indices: (a: number, b: number) => [number, number];
+export const meshbuild_take_normals: (a: number, b: number) => [number, number];
+export const meshbuild_take_occupancy: (a: number) => [number, number];
+export const meshbuild_take_positions: (a: number, b: number) => [number, number];
+export const meshbuild_take_surface_deform: (a: number, b: number) => [number, number];
+export const meshbuild_take_tile_heights: (a: number, b: number) => [number, number];
+export const meshbuild_voxel_count: (a: number) => number;
+export const svodecode_take_positions: (a: number) => [number, number];
+export const voxelmesher_build: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => number;
+export const voxelmesher_build_from_svo: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => number;
+export const voxelmesher_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number) => number;
+export const svodecode_take_colors: (a: number) => [number, number];
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_externrefs: WebAssembly.Table;
+export const __wbindgen_start: () => void;

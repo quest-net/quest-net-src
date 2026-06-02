@@ -26,6 +26,8 @@
 		"deploy:beta": "npx gh-pages -d build -b beta -r https://github.com/quest-net/quest-net.github.io.git",
 		"deploy:2.0": "npx gh-pages -d build -b 2.0 -r https://github.com/quest-net/quest-net.github.io.git",
 		"dev": "vite",
+		"build:wasm": "node scripts/build-wasm.mjs",
+		"check:wasm": "node scripts/check-wasm-package.mjs",
 		"build": "tsc && vite build",
 		"preview": "vite preview"
 	},
@@ -54,6 +56,8 @@
 		"gh-pages": "^6.2.0",
 		"tailwindcss": "^4.1.14",
 		"typescript": "^5.9.3",
-		"vite": "^7.1.9"
+		"vite": "^7.1.9",
+		"vite-plugin-top-level-await": "^1.6.0",
+		"vite-plugin-wasm": "^3.6.0"
 	}
 }

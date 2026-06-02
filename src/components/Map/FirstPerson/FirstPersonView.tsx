@@ -1,32 +1,31 @@
+// components/Map/FirstPerson/FirstPersonView.tsx
+//
+// First-person logic for the shared map scene. Unlike the old FirstPersonMap,
+// this does NOT create its own renderer/scene/terrain -- MapScene owns the
+// persistent scene and the actor/sticker/ping layers. This component plugs the
+// capsule simulation, pointer-look, and position commits into the shared
+// MapModeController (which owns the first-person camera + input), and renders
+// only the first-person HUD / missing-actor message.
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Position } from "../../../domains/Actor/Actor";
-import { AppSettingActions } from "../../../domains/AppSetting/AppSettingActions";
+import type { Character } from "../../../domains/Character/Character";
+import type { Entity } from "../../../domains/Entity/Entity";
+import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { CampaignActions } from "../../../domains/Campaign/CampaignActions";
 import { useQuestContext } from "../../../domains/Context/ContextProvider";
-import { PING_DURATION_MS } from "../../../domains/Ping/Ping";
 import { usePeerTracking } from "../../../hooks/usePeerTracking";
 import { useActionService } from "../../../services/Actions/ActionServiceProvider";
-import { getVoxelCount } from "../../../utils/terrain/data/VoxelDataUtils";
 import {
 	canOccupyVoxelTile,
 	getVoxelTileHeightKey,
 	normalizeVoxelPosition,
 } from "../../../utils/terrain/movement/VoxelMovementUtilities";
-import {
-	ACTOR_TOKEN_DESCRIPTOR_DEFAULTS,
-} from "../Actors3D/actorTokenConstants";
-import { ThreeDActorLayer } from "../Actors3D/ThreeDActorLayer";
-import { useActivePings } from "../hooks/useActivePings";
-import { useActiveStickers } from "../hooks/useActiveStickers";
+import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants";
 import { useLiveActorPoseOverrides } from "../hooks/useLiveActorPoseOverrides";
 import { useMapState } from "../MapStateProvider";
-import { ThreeDPingLayer } from "../Pings3D/ThreeDPingLayer";
-import { ThreeDStickerLayer } from "../Stickers3D/ThreeDStickerLayer";
-import {
-	findFirstPersonActor,
-	getEyeHeight,
-} from "./actor";
+import { findFirstPersonActor, getEyeHeight } from "./actor";
 import {
 	createFirstPersonCapsuleState,
 	firstPersonCapsuleToRulesPosition,
@@ -36,33 +35,36 @@ import {
 	type FirstPersonCapsuleState,
 } from "./capsuleController";
 import type { LiveActorPose } from "../../../services/ActorPoseService";
-import { getVoxelTerrainIndex, type VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import { createTerrainSignature } from "../Terrain/hooks/useVoxelTerrainGeometryWorker";
+import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	FIRST_PERSON_CAMERA,
 	FIRST_PERSON_CONTROLS,
 	MOVEMENT_STATE_UPDATE_MS,
 } from "./constants";
 import { FirstPersonHud, MissingActorMessage } from "./FirstPersonHud";
-import {
-	createMovementCostLookup,
-} from "./movement";
-import {
-	createTerrainSignature,
-	useFirstPersonTerrain,
-} from "./terrain";
+import { createMovementCostLookup } from "./movement";
 import type {
 	FirstPersonActor,
 	FirstPersonFrameInput,
-	FirstPersonMapProps,
 	MovementOverlayState,
 } from "./types";
-import { useFirstPersonScene } from "./useFirstPersonScene";
+import type { MapModeController } from "../MapModeController";
 
 const PENDING_MOVE_TIMEOUT_MS = 2000;
 const ACTOR_POSE_SEND_INTERVAL_MS = 80;
 const ACTOR_POSE_MIN_DISTANCE_SQ = 0.0004;
 const EMPTY_FIRST_PERSON_KEYS: ReadonlySet<string> = new Set();
 const MOVEMENT_OVERAGE_EPSILON = 0.0001;
+
+interface FirstPersonViewProps {
+	controller: MapModeController;
+	terrain: VoxelTerrain | null;
+	terrainIndex: VoxelTerrainIndex | null;
+	characters?: Character[];
+	entities?: Entity[];
+	onExitFirstPerson?: () => void;
+}
 
 function getActorMoveSpeed(actor: FirstPersonActor): number {
 	return actor.actor.MoveSpeed ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.MOVE_SPEED;
@@ -99,15 +101,21 @@ function getMovementCostFromLookup(
 	return bestCost;
 }
 
-export default function FirstPersonMap({
+export default function FirstPersonView({
+	controller,
 	terrain,
+	terrainIndex,
 	characters = [],
 	entities = [],
 	onExitFirstPerson,
-}: FirstPersonMapProps) {
-	const containerRef = useRef<HTMLDivElement>(null);
-	const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
+}: FirstPersonViewProps) {
+	// The first-person camera is owned by the shared controller; mirror it into a
+	// ref so the existing camera-from-body code reads it unchanged.
+	const cameraRef = useRef<THREE.PerspectiveCamera>(controller.firstPersonCamera);
+	useEffect(() => {
+		cameraRef.current = controller.firstPersonCamera;
+	}, [controller]);
+
 	const capsuleStateRef = useRef<FirstPersonCapsuleState | null>(null);
 	const capsuleInitializedRef = useRef(false);
 	const cameraPositionInitializedRef = useRef(false);
@@ -119,9 +127,7 @@ export default function FirstPersonMap({
 	const spaceWasPressedRef = useRef(false);
 	const pendingSyncPositionRef = useRef<Position | null>(null);
 	// Tracks the last position committed to the DM and when it was sent.
-	// Used to suppress rubber-banding: a state sync arriving before the DM
-	// has processed our actor move will carry our old position, which
-	// would normally teleport us back. We ignore snaps while this is set.
+	// Used to suppress rubber-banding (see the original FirstPersonMap notes).
 	const lastSentPositionRef = useRef<Position | null>(null);
 	const lastSentAtRef = useRef(0);
 	const lastPoseSentAtRef = useRef(0);
@@ -135,7 +141,6 @@ export default function FirstPersonMap({
 	const movementCostLookupRef = useRef<Map<string, number> | null>(null);
 	const canControlFirstPersonActorRef = useRef(false);
 	const isCombatActiveRef = useRef(false);
-	const lastPingTimeRef = useRef(0);
 	const charactersRef = useRef(characters);
 	const entitiesRef = useRef(entities);
 	const liveActorPosesRef = useRef<ReadonlyMap<string, LiveActorPose> | null>(
@@ -149,22 +154,15 @@ export default function FirstPersonMap({
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const { canAccessActor } = usePeerTracking();
-	const {
-		selectedActor,
-		selectActor,
-		toggleActorSelection,
-	} = useMapState();
+	const { selectActor } = useMapState();
 	const [movementOverlay, setMovementOverlay] =
 		useState<MovementOverlayState>(null);
-	const activeStickers = useActiveStickers();
-	const { pings: activePings } = useActivePings();
+	const [isPointerLocked, setIsPointerLocked] = useState(
+		controller.isPointerLocked
+	);
 	const liveActorPoses = useLiveActorPoseOverrides(terrain, characters, entities);
-	const performanceModeRef = useRef(AppSettingActions.getPerformanceMode(context));
-	const performanceMode = performanceModeRef.current;
 	const campaign = CampaignActions.getActiveCampaign(context);
-	const imageService = (actionService as any)?.imageService ?? null;
 	const userRole = context.User.Role === "dm" ? "dm" : "player";
-	const isDM = userRole === "dm";
 	const actor = useMemo(
 		() =>
 			findFirstPersonActor(
@@ -192,13 +190,7 @@ export default function FirstPersonMap({
 	const actorTurnStartH = actor?.actor.TurnStartPosition?.h;
 	const isCombatActive = campaign.GameState.CombatState?.isActive ?? false;
 	const canControlFirstPersonActor = actor ? canAccessActor(actor.id) : false;
-	const voxelTerrainIndex = useMemo(
-		() => (terrain ? getVoxelTerrainIndex(terrain) : null),
-		// terrainSignature is the value-equal identity for the terrain's voxel
-		// content; terrain reference can change without content changing.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[terrainSignature]
-	);
+	const voxelTerrainIndex = terrainIndex;
 
 	const movementCostLookup = useMemo(() => {
 		if (!terrain || !actor || !canControlFirstPersonActor) return null;
@@ -223,31 +215,6 @@ export default function FirstPersonMap({
 		actor?.actor.MoveSpeed,
 		actor?.actor.CanFly,
 	]);
-	const cutoutImageIds = useMemo(() => {
-		const ids = new Set<string>();
-		for (const image of campaign.Images ?? []) {
-			if (image.Cutout) ids.add(image.Id);
-		}
-		return ids;
-	}, [campaign]);
-	const visibleCharacters = useMemo(
-		() =>
-			actor?.kind === "character"
-				? characters.filter((character) => character.Id !== actor.id)
-				: characters,
-		[actor?.id, actor?.kind, characters]
-	);
-	const visibleEntities = useMemo(
-		() =>
-			actor?.kind === "entity"
-				? entities.filter((entity) => entity.Id !== actor.id)
-				: entities,
-		[actor?.id, actor?.kind, entities]
-	);
-	const pingActiveActorId =
-		context.User.Role === "player"
-			? context.User.SelectedCharacters?.[campaign.RoomCode]
-			: (context.User.ImpersonatedActors ?? {})[campaign.RoomCode];
 
 	useEffect(() => {
 		activeActorRef.current = actor;
@@ -332,12 +299,8 @@ export default function FirstPersonMap({
 			return;
 		}
 
-		// Also reject the move if any other actor's live (high-frequency) peer
-		// pose discretizes to the same tile. The check above uses the local
-		// snapshot of each actor's authoritative rules position, which can lag
-		// the live pose stream by 100+ms; without this guard a fast-moving
-		// neighbour can slip through and end up colliding on the DM, which
-		// then resolves the conflict by stacking us onto the next surface up.
+		// Reject the move if any other actor's live peer pose discretizes to the
+		// same tile (see the original FirstPersonMap notes on collision lag).
 		if (currentTerrain) {
 			const livePoses = liveActorPosesRef.current;
 			if (livePoses) {
@@ -665,24 +628,35 @@ export default function FirstPersonMap({
 		]
 	);
 
-	const { sceneResources, isPointerLocked } = useFirstPersonScene(
-		containerRef,
-		{
+	// Plug the capsule sim / look / commit handlers into the shared controller.
+	useEffect(() => {
+		controller.setFirstPersonHandlers({
 			onFrame: handleFrame,
 			onLookDelta: handleLookDelta,
 			onControlReleased: commitCurrentPosition,
-		},
-		cameraRef,
-		directionalLightRef,
-		performanceMode
-	);
+		});
+		return () => controller.setFirstPersonHandlers(null);
+	}, [controller, handleFrame, handleLookDelta, commitCurrentPosition]);
 
-	useFirstPersonTerrain(
-		sceneResources,
-		terrain,
-		terrainSignature,
-		directionalLightRef,
-		performanceMode
+	// Mirror the controller's pointer-lock state for the HUD.
+	useEffect(() => {
+		setIsPointerLocked(controller.isPointerLocked);
+		controller.setPointerLockListener(setIsPointerLocked);
+		return () => controller.setPointerLockListener(null);
+	}, [controller]);
+
+	// Commit any settled pending position when leaving first-person (unmount). The
+	// controller exits pointer lock itself, but our handlers are unregistered
+	// before its setViewMode('world') runs, so flush here directly.
+	const commitCurrentPositionRef = useRef(commitCurrentPosition);
+	useEffect(() => {
+		commitCurrentPositionRef.current = commitCurrentPosition;
+	}, [commitCurrentPosition]);
+	useEffect(
+		() => () => {
+			commitCurrentPositionRef.current();
+		},
+		[]
 	);
 
 	useEffect(() => {
@@ -733,9 +707,6 @@ export default function FirstPersonMap({
 			currentRules.y === authoritativeRules.y &&
 			currentRules.h === authoritativeRules.h;
 
-		// If the DM's authoritative position matches the last one we sent (confirmed),
-		// or the send is old enough that we shouldn't wait any longer, clear the
-		// in-flight record so normal DM corrections can snap us again.
 		const lastSent = lastSentPositionRef.current;
 		if (lastSent) {
 			const confirmed =
@@ -749,11 +720,6 @@ export default function FirstPersonMap({
 		}
 
 		if (!sameTile) {
-			// Suppress the snap while we have unsent local movement OR an
-			// in-flight actor move that the DM hasn't confirmed yet.
-			// Without this, any unrelated DM action that broadcasts state
-			// before our move is processed will carry our old position and
-			// rubber-band us back.
 			const hasPendingMove =
 				pendingSyncPositionRef.current !== null ||
 				lastSentPositionRef.current !== null;
@@ -764,9 +730,10 @@ export default function FirstPersonMap({
 			}
 		}
 
-		if (cameraRef.current) {
+		const camera = cameraRef.current;
+		if (camera) {
 			const direction = new THREE.Vector3();
-			cameraRef.current.getWorldDirection(direction);
+			camera.getWorldDirection(direction);
 			if (direction.lengthSq() > 0) {
 				yawRef.current = Math.atan2(-direction.x, -direction.z);
 			}
@@ -782,40 +749,8 @@ export default function FirstPersonMap({
 		updateCameraFromBody,
 	]);
 
-	const handleActorClick = useCallback(
-		(clicked: { id: string; kind: "character" | "entity"; moveSpeed: number }) => {
-			toggleActorSelection(clicked);
-		},
-		[toggleActorSelection]
-	);
-
-	const handleActorSelect = useCallback(
-		(clicked: { id: string; kind: "character" | "entity"; moveSpeed: number }) => {
-			selectActor(clicked);
-		},
-		[selectActor]
-	);
-
-	const handlePingTile = useCallback(
-		(tile: { x: number; y: number; h: number }) => {
-			if (!actionService) return;
-			const now = Date.now();
-			if (now - lastPingTimeRef.current < PING_DURATION_MS) return;
-
-			actionService.execute("ping:create", {
-				x: tile.x,
-				y: tile.y,
-				h: tile.h,
-				actorId: pingActiveActorId,
-			});
-			lastPingTimeRef.current = now;
-		},
-		[actionService, pingActiveActorId]
-	);
-
 	return (
-		<div className="relative w-full h-full">
-			<div ref={containerRef} className="w-full h-full" />
+		<>
 			{!actor && (
 				<div className="absolute inset-0 z-30">
 					<MissingActorMessage onExitFirstPerson={onExitFirstPerson} />
@@ -829,40 +764,6 @@ export default function FirstPersonMap({
 					onExitFirstPerson={onExitFirstPerson}
 				/>
 			)}
-			{actor && sceneResources && terrain && voxelTerrainIndex && getVoxelCount(terrain.Voxels) > 0 && (
-				<>
-					<ThreeDActorLayer
-						resources={sceneResources}
-						characters={visibleCharacters}
-						entities={visibleEntities}
-						cutoutImageIds={cutoutImageIds}
-						selectedActor={selectedActor}
-						terrain={terrain}
-						terrainIndex={voxelTerrainIndex}
-						isDM={isDM}
-						performanceMode={performanceMode}
-						imageService={imageService}
-						liveActorPoses={liveActorPoses}
-						onActorClick={handleActorClick}
-						onActorSelect={handleActorSelect}
-					/>
-					<ThreeDStickerLayer
-						resources={sceneResources}
-						terrain={terrain}
-						characters={visibleCharacters}
-						entities={visibleEntities}
-						cutoutImageIds={cutoutImageIds}
-						activeStickers={activeStickers}
-					/>
-					<ThreeDPingLayer
-						resources={sceneResources}
-						terrain={terrain}
-						terrainIndex={voxelTerrainIndex}
-						activePings={activePings}
-						onPingTile={handlePingTile}
-					/>
-				</>
-			)}
-		</div>
+		</>
 	);
 }

@@ -101,9 +101,9 @@ export const terrainsAndVoxelsPage: WikiPage = {
 				<div className="space-y-4">
 					<p>
 						Voxel payloads are encoded by <WikiCode>VoxelDataUtils</WikiCode> as
-						base64 strings backed by <WikiCode>VoxelSVOCodec</WikiCode>. The
-						encoded format stores occupancy geometry and palette colors as
-						separate streams.
+						base64 strings, backed by the WASM SVO codec
+						(<WikiCode>wasm/voxel-mesher</WikiCode>). The encoded format stores
+						occupancy geometry and palette colors as separate streams.
 					</p>
 					<WikiFlow>
 						<WikiFlowStep number="1" title="Pack positions" tone="primary">
@@ -501,7 +501,7 @@ export const terrainsAndVoxelsPage: WikiPage = {
 		},
 	],
 	searchText:
-		"terrain voxel VoxelTerrain VoxelDataUtils VoxelSVOCodec Sparse Voxel Octree SVO TerrainStorageService IndexedDB hydration editor EditGrid stamps VOX import VoxelTerrainIndex movement actor validation rendering material buckets networking",
+		"terrain voxel VoxelTerrain VoxelDataUtils voxelCodecWasm WASM Sparse Voxel Octree SVO TerrainStorageService IndexedDB hydration editor EditGrid stamps VOX import VoxelTerrainIndex movement actor validation rendering material buckets networking",
 };
 
 export default terrainsAndVoxelsPage;

@@ -12,21 +12,19 @@ import {
 } from "../materials";
 
 // ---------------------------------------------------------------------------
-// Shared terrain-mesh builder for both map views.
+// Terrain-mesh builder for the map scene (MapScene's shared terrain).
 //
-// The world view (3DMap) and the first-person view used to keep byte-for-byte
-// copies of this build/teardown logic. They differ in exactly three ways, all
-// captured by TerrainMeshesOptions:
-//   - movementHighlight: world view paints movement range onto the terrain
-//     shader (and owns the highlight 3D texture lifecycle); FP does not.
-//   - onReady: world view drives a loading screen and fires once after the
-//     first build; FP has no such signal.
+// Builds one mesh per material bucket from the worker geometry and owns their
+// lifecycle: the per-bucket material lookup, AO texture, fog-density volume +
+// setFogVolume wiring, the movement-highlight 3D texture, animation-callback
+// registration, occlusion targets, and disposal. Behaviour is tuned via
+// TerrainMeshesOptions:
+//   - movementHighlight: paint movement range onto the terrain shader (and own
+//     the highlight 3D texture lifecycle).
+//   - onReady: fires once after the first build (drives the loading screen).
 //   - performanceMode: coarser AO texture.
 //
-// Everything else -- the per-bucket material lookup, AO texture, fog-density
-// volume + setFogVolume wiring, animation-callback registration, occlusion
-// targets, and disposal -- is identical and lives here once. Adding the next
-// volume/post-processed material now means wiring it here a single time.
+// Adding the next volume/post-processed material means wiring it here once.
 // ---------------------------------------------------------------------------
 
 interface TerrainRenderResources {

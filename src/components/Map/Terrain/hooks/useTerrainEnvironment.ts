@@ -11,18 +11,16 @@ import {
 } from "../../terrainEnvironment";
 
 // ---------------------------------------------------------------------------
-// Shared terrain-environment hook for both map views.
+// Terrain-environment hook for the map scene (MapScene's shared terrain).
 //
-// The world view (3DMap) and the first-person view used to keep identical
-// copies of two effects:
+// Runs two effects:
 //   - background: applies the terrain's background color/skybox to the scene.
 //   - directional light + shadow camera bounds: sizes the sun light and its
 //     shadow frustum to the terrain extents.
 //
-// (The world view's copy of the light/shadow code was tangled together with
-// camera framing; that framing stays in 3DMap.tsx -- only the shared
-// light/shadow work moved here.) Both effects are null-guarded so an as-yet
-// unbuilt scene (resources === null) is a no-op.
+// Camera framing lives in MapScene; only the light/shadow/background work lives
+// here. Both effects are null-guarded so an as-yet unbuilt scene
+// (resources === null) is a no-op.
 // ---------------------------------------------------------------------------
 
 export function useTerrainEnvironment(

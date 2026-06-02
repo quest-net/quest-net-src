@@ -19,21 +19,32 @@ import {
 } from "../materials";
 
 // ---------------------------------------------------------------------------
-// Shared scene bootstrap for both map views.
+// Shared scene bootstrap for the map.
 //
-// The world view (3DMap) and the first-person view used to keep near-identical
-// copies of the renderer/scene/lights/post-processing/pre-warm/RAF/resize/stats/
-// teardown scaffolding. Everything that is genuinely view-specific is delegated
-// to a "controller" the caller builds via createController:
-//   - camera + controls (ortho CameraRig vs perspective + capsule)
-//   - the per-frame callback (rig.update vs the FP capsule/look handlers)
+// Owns the renderer/scene/lights/post-processing/pre-warm/RAF/resize/stats/
+// teardown scaffolding. Everything camera-specific is delegated to a "controller"
+// the caller builds via createController -- in practice the single MapModeController
+// (MapScene's only consumer), which hosts both the world and first-person cameras
+// and swaps between them in place:
+//   - camera + controls (the world CameraRig and the first-person camera)
+//   - the per-frame callback (rig.update / the FP capsule+look handlers, by mode)
 //   - resize behaviour
-//   - view-specific teardown (camera-state save / rig dispose vs pointer-lock +
-//     listeners + disposing the FP movement-highlight placeholder)
-//
-// A handful of smaller differences are plain options: the pre-warm highlight
-// variants, the triangle-stats overlay width/format, and the dt clamp.
+//   - teardown (rig dispose + FP input detach)
 // ---------------------------------------------------------------------------
+
+// dt clamp ceiling so a backgrounded tab resuming doesn't apply one huge step.
+const MAX_DELTA_SECONDS = 0.1;
+// Triangle-stats debug overlay width (multi-line: TRIS/DRAW/GEOM/TEX/PROG).
+const TRIANGLE_STATS_WIDTH = "110px";
+
+function formatTriangleStats(info: THREE.WebGLRenderer["info"]): string {
+	const tris = info.render.triangles.toLocaleString();
+	const draws = info.render.calls.toLocaleString();
+	const geoms = info.memory.geometries.toLocaleString();
+	const texs = info.memory.textures.toLocaleString();
+	const progs = (info.programs?.length ?? 0).toLocaleString();
+	return `TRIS ${tris}\nDRAW ${draws}\nGEOM ${geoms}\nTEX  ${texs}\nPROG ${progs}`;
+}
 
 export interface MapSceneControllerContext {
 	renderer: THREE.WebGLRenderer;
@@ -42,8 +53,8 @@ export interface MapSceneControllerContext {
 	performanceMode: boolean;
 	/**
 	 * Update the active camera on the shared resources + post-processing pass.
-	 * Safe to call before they exist (no-op until then). The world view's
-	 * CameraRig calls this from onActiveCameraChange; FP never swaps cameras.
+	 * Safe to call before they exist (no-op until then). MapModeController calls
+	 * this whenever it swaps the active camera (world camera, transition, or FP).
 	 */
 	setActiveCamera: (camera: THREE.Camera) => void;
 }
@@ -55,27 +66,16 @@ export interface MapSceneController {
 	onFrame: (now: number, dt: number) => void;
 	/** Container resized; the core already calls postProcessing.setSize itself. */
 	onResize: (width: number, height: number) => void;
-	/**
-	 * View-specific teardown. Receives the live resources so the FP view can
-	 * dispose its movement-highlight placeholder (the world view leaves that to
-	 * useTerrainMeshes -- see the Phase 1 ownership invariant).
-	 */
+	/** Camera/input teardown. (Terrain meshes + the movement-highlight texture are
+	 *  owned and disposed by useTerrainMeshes, not here.) */
 	dispose: (resources: ThreeDSceneResources) => void;
 }
 
 export interface MapSceneCoreOptions {
 	performanceMode: boolean;
-	/** World view warms [false, true] highlight variants; FP warms only [false]. */
-	movementHighlightVariants: boolean;
 	/** The core sets this to the scene's directional light on mount, null on unmount. */
 	directionalLightRef: RefObject<THREE.DirectionalLight | null>;
 	createController: (ctx: MapSceneControllerContext) => MapSceneController;
-	/** Width of the triangle-stats debug overlay div (world is wider/multi-line). */
-	triangleStatsWidth: string;
-	/** Builds the triangle-stats overlay text from renderer.info each frame. */
-	formatTriangleStats: (info: THREE.WebGLRenderer["info"]) => string;
-	/** dt clamp ceiling in seconds (world 0.1, FP 0.05). */
-	maxDeltaSeconds: number;
 }
 
 export interface MapSceneCore {
@@ -108,15 +108,8 @@ export function useMapSceneCore(
 		const container = containerRef.current;
 		if (!container) return;
 
-		const {
-			performanceMode,
-			movementHighlightVariants,
-			directionalLightRef,
-			createController,
-			triangleStatsWidth,
-			formatTriangleStats,
-			maxDeltaSeconds,
-		} = optionsRef.current;
+		const { performanceMode, directionalLightRef, createController } =
+			optionsRef.current;
 
 		const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 		renderer.setPixelRatio(
@@ -149,7 +142,7 @@ export function useMapSceneCore(
 		triangleStats.style.position = "absolute";
 		triangleStats.style.top = "48px";
 		triangleStats.style.left = "0px";
-		triangleStats.style.width = triangleStatsWidth;
+		triangleStats.style.width = TRIANGLE_STATS_WIDTH;
 		triangleStats.style.boxSizing = "border-box";
 		triangleStats.style.padding = "2px 3px";
 		triangleStats.style.background = "rgba(0, 0, 0, 0.8)";
@@ -230,24 +223,20 @@ export function useMapSceneCore(
 
 		// Pre-warm: compile every registered shader variant before exposing the
 		// scene to the rest of the app, so there is no stutter when terrain first
-		// appears. The world view needs both highlight variants; FP only [false].
-		const highlightVariants = movementHighlightVariants ? [false, true] : [false];
+		// appears. Both movement-highlight variants are warmed (the world view
+		// paints range onto the highlight-capable terrain shader).
 		let cancelled = false;
 		void (async () => {
 			const dummyGeo = createDummyTerrainGeometry();
-			const dummyHighlight = movementHighlightVariants
-				? createMovementHighlightTexture(1, 1, 1)
-				: null;
+			const dummyHighlight = createMovementHighlightTexture(1, 1, 1);
 			const dummyVoxelAo = createPlaceholderVoxelAoTexture();
 			const warmMeshes: THREE.Mesh[] = [];
 			for (const [, factory] of TERRAIN_MATERIAL_REGISTRY) {
-				for (const acceptsMovementHighlight of highlightVariants) {
+				for (const acceptsMovementHighlight of [false, true]) {
 					const result = factory({
 						acceptsMovementHighlight,
 						performanceMode,
-						movementHighlight: acceptsMovementHighlight
-							? dummyHighlight ?? undefined
-							: undefined,
+						movementHighlight: acceptsMovementHighlight ? dummyHighlight : undefined,
 						voxelAo: dummyVoxelAo,
 					});
 					const warmMesh = new THREE.Mesh(dummyGeo, result.material);
@@ -258,13 +247,13 @@ export function useMapSceneCore(
 			warmMeshesRef.current = warmMeshes;
 			await renderer.compileAsync(scene, camera);
 			if (cancelled) {
-				dummyHighlight?.texture.dispose();
+				dummyHighlight.texture.dispose();
 				dummyVoxelAo.texture.dispose();
 				return;
 			}
 			for (const warmMesh of warmMeshes) scene.remove(warmMesh);
 			warmMeshesRef.current = [];
-			dummyHighlight?.texture.dispose();
+			dummyHighlight.texture.dispose();
 			dummyVoxelAo.texture.dispose();
 			// Warm geometry and materials are intentionally left undisposed so the
 			// compiled WebGL programs stay resident in the driver cache.
@@ -278,7 +267,7 @@ export function useMapSceneCore(
 			rafId = requestAnimationFrame(animate);
 			const now = performance.now();
 			const dt = Math.min(
-				maxDeltaSeconds,
+				MAX_DELTA_SECONDS,
 				Math.max(0, (now - lastFrameTime) / 1000)
 			);
 			lastFrameTime = now;
@@ -314,17 +303,16 @@ export function useMapSceneCore(
 			cancelAnimationFrame(rafId);
 			ro.disconnect();
 			requestResizeRef.current = null;
-			// View-specific teardown (saves camera state / disposes the rig, or
-			// removes pointer-lock listeners + disposes the FP highlight placeholder).
+			// Camera/input teardown (disposes the rig + detaches first-person input).
 			controller.dispose(resources);
 			// Clean up any warm meshes still in the scene (compileAsync may not have
 			// finished). Warm geometry/materials are left undisposed so the compiled
 			// WebGL programs stay resident until renderer.dispose().
 			for (const m of warmMeshesRef.current) scene.remove(m);
 			warmMeshesRef.current = [];
-			// Terrain meshes, fog volume, and the (world-view) movement-highlight
-			// texture are owned and torn down by useTerrainMeshes, whose cleanup runs
-			// before this one (it is called after useMapSceneCore in both views).
+			// Terrain meshes, fog volume, and the movement-highlight texture are owned
+			// and torn down by useTerrainMeshes, whose cleanup runs before this one (it
+			// is called after useMapSceneCore in MapScene).
 			resourcesRef.current = null;
 			postProcessing.dispose();
 			postProcessingRef.current = null;

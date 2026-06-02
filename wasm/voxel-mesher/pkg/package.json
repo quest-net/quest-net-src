@@ -1,0 +1,19 @@
+{
+  "name": "voxel-mesher",
+  "type": "module",
+  "description": "WASM voxel terrain mesher for Quest-Net (scaffold phase).",
+  "version": "0.1.0",
+  "license": "MIT",
+  "files": [
+    "voxel_mesher_bg.wasm",
+    "voxel_mesher.js",
+    "voxel_mesher_bg.js",
+    "voxel_mesher.d.ts"
+  ],
+  "main": "voxel_mesher.js",
+  "types": "voxel_mesher.d.ts",
+  "sideEffects": [
+    "./voxel_mesher.js",
+    "./snippets/*"
+  ]
+}

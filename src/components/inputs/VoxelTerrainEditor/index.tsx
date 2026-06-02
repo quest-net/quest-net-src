@@ -27,7 +27,7 @@ import {
 	type VoxelTerrainLighting,
 } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { useFormContext } from "../../Form/Form";
-import ThreeDMap from "../../Map/3DMap";
+import MapScene from "../../Map/MapScene";
 import { MapStateProvider } from "../../Map/MapStateProvider";
 
 import {
@@ -1581,7 +1581,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 							{activeView === "preview" && (
 								<div className="absolute inset-0">
 									<MapStateProvider>
-										<ThreeDMap terrain={previewTerrain ?? terrain} />
+										<MapScene terrain={previewTerrain ?? terrain} />
 									</MapStateProvider>
 								</div>
 							)}

@@ -1,11 +1,22 @@
-// components/Map/3DMap.tsx
-// Three.js voxel terrain renderer with orthographic isometric camera.
+// components/Map/MapScene.tsx
+//
+// The single persistent map component. It owns ONE shared scene (renderer,
+// lights, post-processing, terrain meshes) via useMapSceneCore + a MapModeController
+// that hosts both camera systems. Toggling between the world view and the
+// first-person view swaps the active camera + input + mode-specific layers in
+// place -- the WebGL stack, terrain geometry, materials and compiled shaders all
+// stay resident, so there is no teardown/rebuild stutter on a view switch.
+//
+// World-view logic (movement range, click-to-move, actor drag, framing) lives
+// here directly. First-person logic lives in <FirstPersonView>, which plugs its
+// capsule simulation into the shared MapModeController. The actor/sticker/ping
+// layers are rendered once here and shared by both modes.
+//
 // Addon imports use three/examples/jsm/ -- see CLAUDE.md for why.
-// MeshStandardMaterial not MeshLambertMaterial -- see CLAUDE.md for why.
 
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { CameraRig, type CameraRigConfig } from '../../utils/camera/CameraRig';
+import type { CameraRigConfig } from '../../utils/camera/CameraRig';
 import type { Character } from '../../domains/Character/Character';
 import type { Entity } from '../../domains/Entity/Entity';
 import { useQuestContext } from '../../domains/Context/ContextProvider';
@@ -31,6 +42,8 @@ import { useActivePings } from './hooks/useActivePings';
 import { useLiveActorPoseOverrides } from './hooks/useLiveActorPoseOverrides';
 import { PING_DURATION_MS } from '../../domains/Ping/Ping';
 import { usePeerTracking } from '../../hooks/usePeerTracking';
+import { findFirstPersonActor } from './FirstPerson/actor';
+import FirstPersonView from './FirstPerson/FirstPersonView';
 import {
 	THREE_D_MAP_CAMERA,
 	THREE_D_MAP_CONTROLS,
@@ -48,12 +61,13 @@ import {
 	type MapSceneController,
 	type MapSceneControllerContext,
 } from './Terrain/hooks/useMapSceneCore';
+import { MapModeController, type MapViewMode } from './MapModeController';
 
 export type CameraPreference = 'ortho' | 'perspective' | 'freecam';
 
-// Map tuning for the shared CameraRig. The per-terrain ortho framing, pan
-// limits and shadow camera are still driven by the effects below; this only
-// covers what the rig owns (cameras, controls, freecam).
+// Map tuning for the shared CameraRig (owned by MapModeController). Per-terrain
+// ortho framing, pan limits and shadow camera are still driven by the effects
+// below; this only covers what the rig owns (cameras, controls, freecam).
 const MAP_CAMERA_RIG_CONFIG: CameraRigConfig = {
 	ortho: {
 		near: THREE_D_MAP_RENDERER.ORTHO_CAMERA_NEAR,
@@ -85,20 +99,15 @@ const MAP_CAMERA_RIG_CONFIG: CameraRigConfig = {
 	},
 };
 
-interface ThreeDMapProps {
+interface MapSceneProps {
 	terrain?: VoxelTerrain | null;
 	characters?: Character[];
 	entities?: Entity[];
 	xRayActors?: boolean;
 	cameraPreference?: CameraPreference;
+	viewMode?: MapViewMode;
 	onReady?: () => void;
-}
-
-interface ThreeDMapCameraState {
-	position: THREE.Vector3;
-	target: THREE.Vector3;
-	cursor: THREE.Vector3;
-	zoom: number;
+	onExitFirstPerson?: () => void;
 }
 
 function getPanLimitRadius(width: number, length: number, maxElevation: number): number {
@@ -125,22 +134,25 @@ function findSelectedActor(
 	return entities.find((entity) => entity.Id === selectedActor.id) ?? null;
 }
 
-export default function ThreeDMap({
+export default function MapScene({
 	terrain,
 	characters = [],
 	entities = [],
 	xRayActors = false,
 	cameraPreference = 'ortho',
+	viewMode = 'world',
 	onReady,
-}: ThreeDMapProps) {
+	onExitFirstPerson,
+}: MapSceneProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
-	const cameraStateRef = useRef<ThreeDMapCameraState | null>(null);
+	const controllerRef = useRef<MapModeController | null>(null);
+	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
+	const hasFramedTerrainRef = useRef(false);
+	const viewModeInitializedRef = useRef(false);
 	// Keep a stable ref to onReady so the terrain/scene effects don't need it as a dep.
 	const onReadyRef = useRef(onReady);
 	useEffect(() => { onReadyRef.current = onReady; });
-	const rigRef = useRef<CameraRig | null>(null);
-	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
-	const hasFramedTerrainRef = useRef(false);
+
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const { canAccessActor } = usePeerTracking();
@@ -159,62 +171,32 @@ export default function ThreeDMap({
 	const performanceModeRef = useRef(AppSettingActions.getPerformanceMode(context));
 	const performanceMode = performanceModeRef.current;
 
-	// The tactical view's camera controller: a CameraRig (ortho isometric +
-	// perspective + freecam). The shared core (useMapSceneCore) owns the
-	// renderer/scene/lights/post-processing/pre-warm/RAF/resize/stats/teardown;
-	// this only builds the rig, drives it per-frame, and saves camera state on
-	// teardown so a remount reframes to the same view.
-	const createCameraRigController = (
+	const isWorld = viewMode === 'world';
+
+	// One MapModeController for the scene's lifetime. The shared core
+	// (useMapSceneCore) owns renderer/scene/lights/post/pre-warm/RAF/resize/stats/
+	// teardown; the controller hosts both camera systems and switches in place.
+	const createController = (
 		ctx: MapSceneControllerContext
 	): MapSceneController => {
 		const { renderer, container, setActiveCamera } = ctx;
 		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
-		const rig = new CameraRig(renderer.domElement, aspect, MAP_CAMERA_RIG_CONFIG, {
-			onActiveCameraChange: (cam) => setActiveCamera(cam),
-		});
-		rigRef.current = rig;
-		const orthoCamera = rig.orthoCamera;
-		const controls = rig.controls;
-		controls.maxTargetRadius = THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS;
-		rig.resize(container.clientWidth || 1, container.clientHeight || 1);
-		// Freecam input (right-hold to look, WASD/QE to fly, scroll for speed) is
-		// owned by the rig; it gates on the rig's own mode internally.
-		rig.attachInput();
-
-		return {
-			camera: orthoCamera,
-			// Freecam movement while flying, otherwise damped orbit.
-			onFrame: (_now, dt) => rig.update(dt),
-			onResize: (width, height) => rig.resize(width, height),
-			dispose: () => {
-				cameraStateRef.current = {
-					position: orthoCamera.position.clone(),
-					target: controls.target.clone(),
-					cursor: controls.cursor.clone(),
-					zoom: orthoCamera.zoom,
-				};
-				// Detaches freecam input and disposes both controls.
-				rig.dispose();
-				rigRef.current = null;
-			},
-		};
+		const controller = new MapModeController(
+			renderer.domElement,
+			aspect,
+			MAP_CAMERA_RIG_CONFIG,
+			setActiveCamera
+		);
+		controllerRef.current = controller;
+		controller.rig.controls.maxTargetRadius = THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS;
+		controller.onResize(container.clientWidth || 1, container.clientHeight || 1);
+		return controller;
 	};
 
 	const { sceneResources, requestResize } = useMapSceneCore(containerRef, {
 		performanceMode,
-		movementHighlightVariants: true,
 		directionalLightRef,
-		createController: createCameraRigController,
-		triangleStatsWidth: "110px",
-		formatTriangleStats: (info) => {
-			const tris = info.render.triangles.toLocaleString();
-			const draws = info.render.calls.toLocaleString();
-			const geoms = info.memory.geometries.toLocaleString();
-			const texs = info.memory.textures.toLocaleString();
-			const progs = (info.programs?.length ?? 0).toLocaleString();
-			return `TRIS ${tris}\nDRAW ${draws}\nGEOM ${geoms}\nTEX  ${texs}\nPROG ${progs}`;
-		},
-		maxDeltaSeconds: 0.1,
+		createController,
 	});
 
 	const isDM = context.User.Role === "dm";
@@ -238,8 +220,46 @@ export default function ThreeDMap({
 		(campaign.Settings.MovementSettings?.restrictPlayerMovementToRange ?? false);
 	const preserveFlyingHeightOnTileMove =
 		AppSettingActions.getPreserveFlyingHeightOnTileMove(context);
-	// Resolve cutout image IDs from the active campaign once per render so
-	// descriptors and signatures can both consult the same source of truth.
+
+	// The first-person actor (used to hide the controlled actor's own standee in
+	// the shared layer while in first-person mode).
+	const firstPersonActor = useMemo(
+		() =>
+			isWorld
+				? null
+				: findFirstPersonActor(
+						isDM ? "dm" : "player",
+						campaign.RoomCode,
+						context.User.SelectedCharacters,
+						context.User.ImpersonatedActors,
+						characters,
+						entities
+				  ),
+		[
+			isWorld,
+			isDM,
+			campaign.RoomCode,
+			context.User.SelectedCharacters,
+			context.User.ImpersonatedActors,
+			characters,
+			entities,
+		]
+	);
+	const visibleCharacters = useMemo(
+		() =>
+			firstPersonActor?.kind === "character"
+				? characters.filter((character) => character.Id !== firstPersonActor.id)
+				: characters,
+		[firstPersonActor?.id, firstPersonActor?.kind, characters]
+	);
+	const visibleEntities = useMemo(
+		() =>
+			firstPersonActor?.kind === "entity"
+				? entities.filter((entity) => entity.Id !== firstPersonActor.id)
+				: entities,
+		[firstPersonActor?.id, firstPersonActor?.kind, entities]
+	);
+
 	const cutoutImageIds = useMemo(() => {
 		const ids = new Set<string>();
 		for (const image of campaign.Images ?? []) {
@@ -254,17 +274,19 @@ export default function ThreeDMap({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[terrainSignature]
 	);
-	const terrainGeometry = useVoxelTerrainGeometryWorker(
+	const {
+		geometry: terrainGeometry,
+		error: terrainGeometryError,
+		retry: retryTerrainGeometry,
+	} = useVoxelTerrainGeometryWorker(
 		terrain,
 		terrainSignature,
 		sceneResources !== null
 	);
+
 	// Memo deps read primitives from Position/TurnStartPosition rather than the
-	// actor reference. Move actions replace Position with a new object but
-	// keep the actor reference stable, which previously left this BFS stale --
-	// e.g. dragging a flier's height up and then click-to-moving them
-	// would commit at the OLD h because the cached movement range still had
-	// tile.h values from before the height change.
+	// actor reference (move actions replace Position with a new object but keep
+	// the actor reference stable). Movement range is world-view-only.
 	const selectedActorPositionX = selectedActorObject?.Position.x;
 	const selectedActorPositionY = selectedActorObject?.Position.y;
 	const selectedActorPositionH = selectedActorObject?.Position.h;
@@ -274,7 +296,7 @@ export default function ThreeDMap({
 	const selectedActorMoveSpeed = selectedActorObject?.MoveSpeed;
 	const selectedActorCanFly = selectedActorObject?.CanFly;
 	const movementRange = useMemo(() => {
-		if (!terrain || !selectedActorObject || !canControlSelected) return [];
+		if (!isWorld || !terrain || !selectedActorObject || !canControlSelected) return [];
 
 		return calculateVoxelMovementRange(
 			terrain,
@@ -285,6 +307,7 @@ export default function ThreeDMap({
 		).tiles;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [
+		isWorld,
 		terrain,
 		canControlSelected,
 		campaign.Settings.MovementSettings,
@@ -295,7 +318,7 @@ export default function ThreeDMap({
 		selectedActorCanFly,
 	]);
 	const remainingMovementRange = useMemo(() => {
-		if (!terrain || !selectedActorObject || !canControlSelected) return null;
+		if (!isWorld || !terrain || !selectedActorObject || !canControlSelected) return null;
 		if (!isCombatActive) return null;
 
 		return calculateVoxelRemainingMovementRange(
@@ -308,6 +331,7 @@ export default function ThreeDMap({
 		)?.tiles ?? null;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [
+		isWorld,
 		terrain,
 		canControlSelected,
 		isCombatActive,
@@ -406,15 +430,22 @@ export default function ThreeDMap({
 		[actionService, selectActor, updateHoveredTile]
 	);
 
-	// Per-terrain camera framing + pan limits (the rig/scene bootstrap itself lives
-	// in useMapSceneCore above). Light/shadow bounds moved to useTerrainEnvironment.
+	// Reframe once per terrain. A view toggle never reframes (no remount), so the
+	// user's pan/zoom is preserved across world <-> first-person switches.
 	useEffect(() => {
-		if (!sceneResources) return;
+		hasFramedTerrainRef.current = false;
+	}, [terrainSignature]);
+
+	// Per-terrain camera framing + pan limits. Light/shadow bounds live in
+	// useTerrainEnvironment.
+	useEffect(() => {
+		const controller = controllerRef.current;
+		if (!sceneResources || !controller) return;
 		const container = containerRef.current;
-		const rig = rigRef.current;
-		if (!container || !rig) return;
+		if (!container) return;
 		if (!terrain || getVoxelCount(terrain.Voxels) === 0) return;
 
+		const rig = controller.rig;
 		const controls = rig.controls;
 		const orthoCamera = rig.orthoCamera;
 		const perspCamera = rig.perspectiveCamera;
@@ -424,75 +455,67 @@ export default function ThreeDMap({
 		const maxSurfaceHeight = getMaxVoxelSurfaceHeight(terrain);
 		const terrainCenterY = (maxSurfaceHeight - 1) / 2;
 		const halfSize = (W + L) / Math.SQRT2 / 2 * THREE_D_MAP_CAMERA.FRAMING_MULTIPLIER;
-		// Directional light + shadow camera bounds live in useTerrainEnvironment.
 
-		// Let the rig know the terrain extents so freecam entry framing is sized correctly.
-		rig.setTerrain({ width: W, length: L, height: maxSurfaceHeight });
+		// Let the rig know the terrain extents so freecam / perspective entry
+		// framing (and the view tween's world endpoint) is sized correctly.
+		controller.setTerrain({ width: W, length: L, height: maxSurfaceHeight });
 
 		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
-		// Always reframe the ortho camera (it's the canonical reference for halfSize).
 		orthoCamera.left = -halfSize * aspect;
 		orthoCamera.right = halfSize * aspect;
 		orthoCamera.top = halfSize;
 		orthoCamera.bottom = -halfSize;
 		orthoCamera.updateProjectionMatrix();
-		// Keep the perspective camera's aspect in sync.
 		perspCamera.aspect = aspect;
 		perspCamera.updateProjectionMatrix();
 
 		controls.cursor.set(0, terrainCenterY, 0);
 		controls.maxTargetRadius = getPanLimitRadius(W, L, maxSurfaceHeight);
 		if (!hasFramedTerrainRef.current) {
-			const previousCameraState = cameraStateRef.current;
 			const camDist = halfSize * THREE_D_MAP_CAMERA.DISTANCE_MULTIPLIER;
-			if (previousCameraState) {
-				orthoCamera.position.copy(previousCameraState.position);
-				orthoCamera.zoom = THREE.MathUtils.clamp(
-					previousCameraState.zoom,
-					controls.minZoom,
-					controls.maxZoom
-				);
-				controls.target.copy(previousCameraState.target);
-				controls.cursor.copy(previousCameraState.cursor);
-			} else {
-				orthoCamera.position.set(camDist, camDist, camDist);
-				controls.target.set(0, terrainCenterY, 0);
-			}
+			orthoCamera.position.set(camDist, camDist, camDist);
+			controls.target.set(0, terrainCenterY, 0);
 			orthoCamera.updateProjectionMatrix();
 			controls.update();
 			hasFramedTerrainRef.current = true;
 		}
-
 	}, [sceneResources, terrainSignature]);
 
+	// Apply the world camera preference (ortho/perspective/freecam). Stored on the
+	// controller and re-applied when returning from first-person.
 	useEffect(() => {
-		if (!sceneResources) return;
-		const rig = rigRef.current;
-		if (!rig) return;
-
-		// The rig swaps the active camera, rebinds controls, positions the
-		// perspective entry framing, and fires onActiveCameraChange (which updates
-		// sceneResources.camera and the post-processing camera).
-		rig.setMode(cameraPreference);
+		const controller = controllerRef.current;
+		if (!sceneResources || !controller) return;
+		controller.setWorldCameraPreference(cameraPreference);
 		requestResize();
-	}, [cameraPreference, sceneResources, requestResize]);
+	}, [sceneResources, cameraPreference, requestResize]);
 
-	// Terrain meshes, AO, movement-highlight, and fog volume -- shared with the
-	// first-person view via useTerrainMeshes. World view paints movement range,
-	// so movementHighlight is enabled here.
+	// Drive the view-mode switch. The very first application (once the scene is
+	// up) is immediate; subsequent toggles tween.
+	useEffect(() => {
+		const controller = controllerRef.current;
+		if (!sceneResources || !controller) return;
+		if (!viewModeInitializedRef.current) {
+			viewModeInitializedRef.current = true;
+			controller.setViewMode(viewMode, true);
+		} else {
+			controller.setViewMode(viewMode);
+		}
+	}, [sceneResources, viewMode]);
+
+	// Terrain meshes, AO, movement-highlight, and fog volume. World view paints
+	// movement range so movementHighlight is enabled.
 	useTerrainMeshes(sceneResources, terrainGeometry, {
 		movementHighlight: true,
 		onReady: () => onReadyRef.current?.(),
 		performanceMode,
 	});
 
-	// Background + directional-light/shadow-bounds -- shared with the first-person
-	// view via useTerrainEnvironment. Runs as its own effect(s), independent of the
-	// camera-framing effect above (requestShadowUpdate only sets a dirty flag).
+	// Background + directional-light/shadow-bounds.
 	useTerrainEnvironment(sceneResources, terrain, terrainSignature, directionalLightRef);
 
-	// Signal ready immediately when the scene is up but there is no terrain to build
-	// (empty terrain or no terrain assigned), so the loading screen doesn't get stuck.
+	// Signal ready immediately when the scene is up but there is no terrain to
+	// build, so the loading screen doesn't get stuck.
 	useEffect(() => {
 		if (!sceneResources) return;
 		if (terrain && getVoxelCount(terrain.Voxels) > 0) return;
@@ -500,52 +523,65 @@ export default function ThreeDMap({
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [sceneResources, terrain?.Id]);
 
+	// A blocked WASM asset, CSP rule, or worker crash should not leave the outer
+	// loading overlay spinning forever.
+	useEffect(() => {
+		if (!terrainGeometryError) return;
+		onReadyRef.current?.();
+	}, [terrainGeometryError]);
+
+	const hasTerrain =
+		sceneResources && terrain && terrainIndex && getVoxelCount(terrain.Voxels) > 0;
+	const controller = controllerRef.current;
+
 	return (
 		<div className="relative w-full h-full">
 			<div ref={containerRef} className="w-full h-full" />
-			{sceneResources && terrain && terrainIndex && getVoxelCount(terrain.Voxels) > 0 && (
+			{hasTerrain && (
 				<>
 					<ThreeDActorLayer
 						resources={sceneResources}
-						characters={characters}
-						entities={entities}
+						characters={visibleCharacters}
+						entities={visibleEntities}
 						cutoutImageIds={cutoutImageIds}
 						selectedActor={selectedActor}
 						terrain={terrain}
 						terrainIndex={terrainIndex}
 						isDM={isDM}
 						performanceMode={performanceMode}
-						xRayActors={xRayActors}
+						xRayActors={isWorld && xRayActors}
 						imageService={imageService}
 						liveActorPoses={liveActorPoses}
 						onActorClick={handleActorClick}
 						onActorSelect={handleActorSelect}
-						canControlActor={canControlActor}
-						onActorDragEnd={handleActorDragEnd}
+						canControlActor={isWorld ? canControlActor : undefined}
+						onActorDragEnd={isWorld ? handleActorDragEnd : undefined}
 					/>
-					<ThreeDMovementLayer
-						resources={sceneResources}
-						terrain={terrain}
-						terrainIndex={terrainIndex}
-						characters={characters}
-						entities={entities}
-						selectedActor={selectedActor}
-						selectedActorObject={selectedActorObject}
-						canControlSelected={canControlSelected}
-						movementRange={movementRange}
-						remainingMovementRange={remainingMovementRange}
-						hoveredTile={hoveredTile}
-						restrictMovementToRange={restrictMovementToRange}
-						preserveFlyingHeightOnTileMove={preserveFlyingHeightOnTileMove}
-						isCombatActive={isCombatActive}
-						onHoveredTileChange={updateHoveredTile}
-						onMoveSelectedActor={handleMoveSelectedActor}
-					/>
+					{isWorld && (
+						<ThreeDMovementLayer
+							resources={sceneResources}
+							terrain={terrain}
+							terrainIndex={terrainIndex}
+							characters={characters}
+							entities={entities}
+							selectedActor={selectedActor}
+							selectedActorObject={selectedActorObject}
+							canControlSelected={canControlSelected}
+							movementRange={movementRange}
+							remainingMovementRange={remainingMovementRange}
+							hoveredTile={hoveredTile}
+							restrictMovementToRange={restrictMovementToRange}
+							preserveFlyingHeightOnTileMove={preserveFlyingHeightOnTileMove}
+							isCombatActive={isCombatActive}
+							onHoveredTileChange={updateHoveredTile}
+							onMoveSelectedActor={handleMoveSelectedActor}
+						/>
+					)}
 					<ThreeDStickerLayer
 						resources={sceneResources}
 						terrain={terrain}
-						characters={characters}
-						entities={entities}
+						characters={visibleCharacters}
+						entities={visibleEntities}
 						cutoutImageIds={cutoutImageIds}
 						activeStickers={activeStickers}
 					/>
@@ -557,6 +593,38 @@ export default function ThreeDMap({
 						onPingTile={handlePingTile}
 					/>
 				</>
+			)}
+			{sceneResources && !isWorld && controller && (
+				<FirstPersonView
+					controller={controller}
+					terrain={terrain ?? null}
+					terrainIndex={terrainIndex}
+					characters={characters}
+					entities={entities}
+					onExitFirstPerson={onExitFirstPerson}
+				/>
+			)}
+			{terrainGeometryError && (
+				<div
+					className="absolute inset-0 z-40 flex items-center justify-center bg-base-200/95 px-6 text-base-content"
+					role="alert"
+				>
+					<div className="flex max-w-lg flex-col items-center gap-3 text-center">
+						<span className="icon-[mdi--alert-circle] h-12 w-12 text-error" />
+						<span className="text-lg font-semibold">Terrain rendering failed</span>
+						<span className="text-sm opacity-80">{terrainGeometryError}</span>
+						<div className="flex gap-2">
+							<button className="btn btn-primary btn-sm" onClick={retryTerrainGeometry}>
+								Retry
+							</button>
+							{!isWorld && onExitFirstPerson && (
+								<button className="btn btn-neutral btn-sm" onClick={onExitFirstPerson}>
+									Exit first-person
+								</button>
+							)}
+						</div>
+					</div>
+				</div>
 			)}
 		</div>
 	);

@@ -22,9 +22,9 @@ import {
 	type EditGrid,
 } from "./EditGridUtils";
 
-// 8^3 = 512 voxels max per chunk, giving ~80 chunks for a 40x40x16 voxel grid.
-// A single-voxel edit touches 1-2 chunks.
-export const CHUNK_SIZE = 8;
+// Each chunk is one mesh + one grid-line group. A 32-voxel edge keeps draw calls
+// manageable for large terrains while preserving bounded per-edit rebuilds.
+export const CHUNK_SIZE = 32;
 
 export interface ChunkDims {
 	chunksX: number;
