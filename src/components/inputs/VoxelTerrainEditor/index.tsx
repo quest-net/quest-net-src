@@ -62,8 +62,6 @@ import {
 	applySelectionEdit,
 	applyStampToGrid,
 	applyVoxelEdit,
-	DEFAULT_SMOOTH_PASSES,
-	MAX_SMOOTH_PASSES,
 	MIN_SMOOTH_PASSES,
 } from "../../../utils/terrain/editor/EditGridOperations";
 import {
@@ -71,7 +69,6 @@ import {
 	createColorVoxelSelection,
 	getVoxelSelectionBounds,
 	getVoxelSelectionSpaceCount,
-	normalizeVoxelSelectionBounds,
 	type TerrainSelection,
 	type VoxelCoord,
 	type VoxelSelectionBounds,
@@ -121,6 +118,12 @@ import {
 	updateSelectionIndicator,
 } from "./editorHoverIndicator";
 import { createPicker, type LockedStrokePlane } from "./editorPicking";
+import {
+	beginGizmoDrag,
+	createSelectionGizmo,
+	gizmoDragToBounds,
+	type GizmoDragState,
+} from "./selectionGizmo";
 import {
 	buildActorMarkers,
 	projectActorMarkers,
@@ -180,6 +183,13 @@ const MOD_KEY_LABEL = IS_MAC ? "⌘" : "Ctrl";
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
+}
+
+function boundsEqual(a: VoxelSelectionBounds, b: VoxelSelectionBounds): boolean {
+	return (
+		a.min.x === b.min.x && a.min.y === b.min.y && a.min.z === b.min.z &&
+		a.max.x === b.max.x && a.max.y === b.max.y && a.max.z === b.max.z
+	);
 }
 
 function isTextInputTarget(target: EventTarget | null): boolean {
@@ -254,6 +264,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const selectionRef           = useRef<TerrainSelection | null>(null);
 		const boxSelectionAnchorRef  = useRef<VoxelSelectionBounds | null>(null);
 		const selectionIdRef         = useRef(1);
+		// Active selection-gizmo handle drag (box-bounds resize/translate), or null.
+		const gizmoDragRef           = useRef<
+			(GizmoDragState & { pointerId: number; selectionId: number }) | null
+		>(null);
 		// Hover ghost refresh helpers wired up by the scene effect.
 		const refreshHoverRef        = useRef<(() => void) | null>(null);
 		const refreshSelectionRef    = useRef<(() => void) | null>(null);
@@ -273,7 +287,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const [tool,               setTool]               = useState<EditorTool>("place");
 		const [granularity,        setGranularity]        = useState<EditGranularityType>("tactical");
 		const [brushSize,          setBrushSize]          = useState(1);
-		const [smoothPasses,       setSmoothPasses]       = useState(DEFAULT_SMOOTH_PASSES);
 		const [selectedColorIndex, setSelectedColorIndex] = useState(DEFAULT_TERRAIN_COLOR_INDEX);
 		// Grid visibility is derived from `granularity`.
 		const showTacticalGrid = granularity === "tactical";
@@ -381,27 +394,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				),
 			);
 		}, [nextSelectionId, setBoxSelectionAnchor, setTerrainSelection]);
-
-		const updateBoxSelectionBound = useCallback((
-			edge: "min" | "max",
-			axis: keyof VoxelCoord,
-			value: number,
-		) => {
-			if (!selectionRef.current || selectionRef.current.kind !== "box") return;
-			const dims = chunkDimsRef.current;
-			if (!dims) return;
-
-			const min = { ...selectionRef.current.bounds.min };
-			const max = { ...selectionRef.current.bounds.max };
-			if (edge === "min") min[axis] = value;
-			else max[axis] = value;
-
-			setTerrainSelection({
-				kind: "box",
-				id: nextSelectionId(),
-				bounds: normalizeVoxelSelectionBounds(min, max, dims),
-			});
-		}, [nextSelectionId, setTerrainSelection]);
 
 		const clearSelection = useCallback(() => {
 			setBoxSelectionAnchor(null);
@@ -834,6 +826,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			setTerrainSelection,
 		]);
 
+		// One smooth pass per click -- the user repeats the click to smooth more
+		// (there's no passes slider).
 		const smoothBoxSelection = useCallback(() => {
 			if (readOnlyRef.current) return;
 			const activeSelection = selectionRef.current;
@@ -847,7 +841,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				dirtyChunksRef.current,
 				dims,
 				activeSelection.bounds,
-				smoothPasses,
+				MIN_SMOOTH_PASSES,
 				recordVoxelBefore,
 			);
 			if (!result.changed) {
@@ -859,7 +853,37 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			recordUndo();
 			refreshSelectionRef.current?.();
 			commitDraftChange();
-		}, [commitDraftChange, recordUndo, recordVoxelBefore, smoothPasses]);
+		}, [commitDraftChange, recordUndo, recordVoxelBefore]);
+
+		// Fill the current selection (box or color mask) with the active color.
+		// A one-shot action button rather than a paint mode.
+		const fillSelection = useCallback(() => {
+			if (readOnlyRef.current) return;
+			const activeSelection = selectionRef.current;
+			if (!activeSelection) return;
+			const dims = chunkDimsRef.current;
+			if (!dims) return;
+
+			strokeDeltaRef.current = null;
+			const result = applySelectionEdit(
+				editGridRef.current,
+				dirtyChunksRef.current,
+				dims,
+				activeSelection,
+				"fill",
+				selectedColorRef.current,
+				recordVoxelBefore,
+			);
+			if (!result.changed) {
+				strokeDeltaRef.current = null;
+				return;
+			}
+
+			occupiedVoxelCountRef.current += result.countDelta;
+			recordUndo();
+			refreshSelectionRef.current?.();
+			commitDraftChange();
+		}, [commitDraftChange, recordUndo, recordVoxelBefore]);
 
 		// -------------------------------------------------------------------------
 		// Stamp mode entry/exit
@@ -936,6 +960,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			const gridGroup = createEditorGridGroup(resources.gridGroup);
 			gridGroupRef.current = gridGroup;
 
+			// Box-selection resize gizmo. Lives directly on the scene (not in
+			// selectionGroup, which is cleared/rebuilt on every hover refresh).
+			const selectionGizmo = createSelectionGizmo();
+			resources.scene.add(selectionGizmo.group);
+
 			// Initialize edit grid + chunks from the current terrain.
 			const initTerrain = terrainRef.current;
 			const initIndex   = getVoxelTerrainIndex(initTerrain);
@@ -996,6 +1025,15 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				// Freecam movement while flying, otherwise damped orbit.
 				resources.rig.update(dt);
 
+				// Keep the selection-gizmo handles a constant on-screen size as the
+				// camera zooms / moves.
+				if (selectionGizmo.group.visible) {
+					selectionGizmo.updateScreenScale(
+						resources.camera,
+						resources.renderer.domElement.clientHeight,
+					);
+				}
+
 				resources.renderer.render(resources.scene, resources.camera);
 
 				const overlay = actorOverlayRef.current;
@@ -1026,6 +1064,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				if (!dims) return;
 				if (activeViewRef.current !== "edit") {
 					clearObjectGroup(resources.selectionGroup);
+					selectionGizmo.setVisible(false);
 					return;
 				}
 
@@ -1044,6 +1083,28 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 						: null;
 
 				updateSelectionIndicator(resources, dims, selectionRef.current, previewBounds);
+
+				// Show drag handles only on a committed box selection -- not during
+				// a box-select preview drag, and never when read-only.
+				const sel = selectionRef.current;
+				if (
+					sel?.kind === "box" &&
+					!previewBounds &&
+					!boxSelectionAnchorRef.current &&
+					!readOnlyRef.current
+				) {
+					selectionGizmo.update(sel.bounds, dims);
+					selectionGizmo.setVisible(true);
+					// Apply screen-scale now so handles don't flash at the wrong size
+					// for one frame before the rAF loop's pass.
+					selectionGizmo.updateScreenScale(
+						resources.camera,
+						resources.renderer.domElement.clientHeight,
+					);
+				} else {
+					selectionGizmo.setVisible(false);
+					selectionGizmo.setHighlight(null);
+				}
 			};
 			const refreshHover = (pick: PickInfo | null) => {
 				lastHoverPick = pick;
@@ -1112,6 +1173,49 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			const handlePointerMove = (event: PointerEvent) => {
 				if (activeViewRef.current !== "edit") return;
 				if (pointerLockedRef.current) return;
+
+				// A gizmo handle drag owns the pointer: resize/translate the box and
+				// skip all brush/hover handling.
+				const gizmoDrag = gizmoDragRef.current;
+				if (gizmoDrag) {
+					if (gizmoDrag.pointerId !== event.pointerId) return;
+					const dims = chunkDimsRef.current;
+					const ray = picker.getEventRaycaster(event);
+					if (dims && ray && selectionRef.current?.kind === "box") {
+						const next = gizmoDragToBounds(gizmoDrag, ray.ray, dims, event.shiftKey);
+						if (next && !boundsEqual(selectionRef.current.bounds, next)) {
+							// Reuses the selection id so the box isn't treated as new;
+							// setTerrainSelection refreshes the frame + gizmo for us.
+							setTerrainSelection({
+								kind: "box",
+								id: gizmoDrag.selectionId,
+								bounds: next,
+							});
+						}
+					}
+					return;
+				}
+
+				// Highlight a hovered handle and suppress the brush ghost over it, so
+				// it's clear the click will grab the handle rather than paint.
+				if (
+					!activeStrokeRef.current &&
+					!boxSelectionAnchorRef.current &&
+					!readOnlyRef.current &&
+					selectionRef.current?.kind === "box"
+				) {
+					const ray = picker.getEventRaycaster(event);
+					const face = ray ? selectionGizmo.pickFace(ray) : null;
+					selectionGizmo.setHighlight(face);
+					resources.renderer.domElement.style.cursor = face ? "move" : "crosshair";
+					if (face) {
+						clearObjectGroup(resources.hoverGroup);
+						return;
+					}
+				} else {
+					selectionGizmo.setHighlight(null);
+				}
+
 				const activeStroke =
 					activeStrokeRef.current?.pointerId === event.pointerId
 						? activeStrokeRef.current : null;
@@ -1150,6 +1254,27 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				if (event.button !== 0 || readOnlyRef.current) return;
 				event.preventDefault();
 
+				// Grab a selection-gizmo handle if the pointer is over one. This
+				// pre-empts the brush/box-select stroke entirely.
+				if (selectionRef.current?.kind === "box" && !boxSelectionAnchorRef.current) {
+					const dims = chunkDimsRef.current;
+					const ray = picker.getEventRaycaster(event);
+					const face = ray ? selectionGizmo.pickFace(ray) : null;
+					if (face && ray && dims) {
+						const drag = beginGizmoDrag(face, selectionRef.current.bounds, dims, ray.ray);
+						if (drag) {
+							gizmoDragRef.current = {
+								...drag,
+								pointerId: event.pointerId,
+								selectionId: selectionRef.current.id,
+							};
+							resources.renderer.domElement.setPointerCapture(event.pointerId);
+							selectionGizmo.setHighlight(face);
+							return;
+						}
+					}
+				}
+
 				const pick = picker.getPickInfo(event);
 				if (!pick) return;
 
@@ -1183,6 +1308,18 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			};
 
 			const finishStroke = (event: PointerEvent) => {
+				// End a gizmo handle drag (no undo entry -- selection edits, like
+				// box-select creation, aren't on the grid undo stack).
+				const gizmoDrag = gizmoDragRef.current;
+				if (gizmoDrag) {
+					if (gizmoDrag.pointerId !== event.pointerId) return;
+					gizmoDragRef.current = null;
+					if (resources.renderer.domElement.hasPointerCapture(event.pointerId)) {
+						resources.renderer.domElement.releasePointerCapture(event.pointerId);
+					}
+					return;
+				}
+
 				if (
 					activeStrokeRef.current &&
 					activeStrokeRef.current.pointerId !== event.pointerId
@@ -1257,6 +1394,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				disposeObjectTree(resources.gridGroup);
 				disposeObjectTree(resources.hoverGroup);
 				disposeObjectTree(resources.selectionGroup);
+				resources.scene.remove(selectionGizmo.group);
+				selectionGizmo.dispose();
 				resources.renderer.dispose();
 				if (dom.parentElement === container) container.removeChild(dom);
 				activeStrokeRef.current     = null;
@@ -1265,7 +1404,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				refreshHoverRef.current     = null;
 				refreshSelectionRef.current = null;
 			};
-		}, [applyEdit, commitDraftChange, getEditKey, recordUndo]);
+		}, [applyEdit, commitDraftChange, getEditKey, recordUndo, setTerrainSelection]);
 
 		// -------------------------------------------------------------------------
 		// editGen effects (camera framing on shape change)
@@ -1438,7 +1577,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 				switch (key) {
 					case "p": case "t": setTool("place");  break;
-					case "l":           setTool("fill");   break;
+					case "l":           fillSelection();   break;
 					case "r":           setTool("erase");  break;
 					case "g":           setTool("paint");  break;
 					case "i":           setTool("sample"); break;
@@ -1458,7 +1597,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			};
 			window.addEventListener("keydown", handleKeyDown);
 			return () => window.removeEventListener("keydown", handleKeyDown);
-		}, [clearSelection, exitStampMode, redo, toggleCameraMode, undo]);
+		}, [clearSelection, exitStampMode, fillSelection, redo, toggleCameraMode, undo]);
 
 		// -------------------------------------------------------------------------
 		// VOX import
@@ -1533,10 +1672,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			setBrushSize(clamp(Math.floor(value) || MIN_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE));
 		}, []);
 
-		const handleSmoothPassesChange = useCallback((value: number) => {
-			setSmoothPasses(clamp(Math.floor(value) || DEFAULT_SMOOTH_PASSES, MIN_SMOOTH_PASSES, MAX_SMOOTH_PASSES));
-		}, []);
-
 		// -------------------------------------------------------------------------
 		// Render
 		// -------------------------------------------------------------------------
@@ -1548,6 +1683,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 							tool={tool}
 							activeSelectionTool={activeSelectionTool}
 							onToolClick={handleToolButtonClick}
+							onFillSelection={fillSelection}
+							onSmoothSelection={smoothBoxSelection}
+							canFillSelection={!!selection}
+							canSmoothSelection={selection?.kind === "box"}
 							brushSize={brushSize}
 							onBrushSizeChange={handleBrushSizeChange}
 							granularity={granularity}
@@ -1605,14 +1744,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 									selection={selection}
 									boxSelectionAnchor={boxSelectionAnchor}
 									selectionSummary={selectionSummary}
-									dims={chunkDimsRef.current}
-									readOnly={readOnly}
 									selectedColorIndex={selectedColorIndex}
 									onChooseColorIndex={chooseColorIndex}
-									onUpdateBoxSelectionBound={updateBoxSelectionBound}
-									smoothPasses={smoothPasses}
-									onSmoothPassesChange={handleSmoothPassesChange}
-									onSmoothBoxSelection={smoothBoxSelection}
 									actors={actors}
 									showActors={showActors}
 									onShowActorsChange={setShowActors}

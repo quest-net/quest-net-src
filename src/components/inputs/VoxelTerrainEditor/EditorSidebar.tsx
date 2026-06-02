@@ -1,8 +1,8 @@
 // The right-hand sidebar shown in Edit mode.
 //
-// Includes: voxel-count summary, selection panel (with box-select bounds
-// editor + smooth controls), color palette, special-material swatches, and
-// the actor visibility toggle.
+// Includes: voxel-count summary, selection summary panel, color palette,
+// special-material swatches, and the actor visibility toggle. Box-bounds
+// tweaking and smoothing now live on the map (drag gizmo) and in the toolbar.
 
 import type { EditorTool } from "./editorTypes";
 import {
@@ -13,16 +13,10 @@ import { groupSpecialMaterialSwatches } from "../../Map/Terrain/materials";
 import {
 	terrainPaletteIndexToVoxelColor,
 } from "../../../utils/terrain/editor/VoxelTerrainEditorUtils";
-import {
-	MAX_SMOOTH_PASSES,
-	MIN_SMOOTH_PASSES,
-} from "../../../utils/terrain/editor/EditGridOperations";
 import type {
 	TerrainSelection,
-	VoxelCoord,
 	VoxelSelectionBounds,
 } from "../../../utils/terrain/editor/VoxelTerrainSelectionUtils";
-import type { ChunkDims } from "../../../utils/terrain/editor/EditGridChunkUtils";
 
 // Derived once from the static material registry; grouping never changes at runtime.
 const MATERIAL_SWATCH_GROUPS = groupSpecialMaterialSwatches();
@@ -38,14 +32,8 @@ interface EditorSidebarProps {
 	selection: TerrainSelection | null;
 	boxSelectionAnchor: VoxelSelectionBounds | null;
 	selectionSummary: SelectionSummary | null;
-	dims: ChunkDims | null;
-	readOnly: boolean;
 	selectedColorIndex: number;
 	onChooseColorIndex: (idx: number) => void;
-	onUpdateBoxSelectionBound: (edge: "min" | "max", axis: keyof VoxelCoord, value: number) => void;
-	smoothPasses: number;
-	onSmoothPassesChange: (value: number) => void;
-	onSmoothBoxSelection: () => void;
 	actors: { id: string; name: string }[] | undefined;
 	showActors: boolean;
 	onShowActorsChange: (next: boolean) => void;
@@ -58,14 +46,8 @@ export function EditorSidebar(props: EditorSidebarProps) {
 		selection,
 		boxSelectionAnchor,
 		selectionSummary,
-		dims,
-		readOnly,
 		selectedColorIndex,
 		onChooseColorIndex,
-		onUpdateBoxSelectionBound,
-		smoothPasses,
-		onSmoothPassesChange,
-		onSmoothBoxSelection,
 		actors,
 		showActors,
 		onShowActorsChange,
@@ -73,8 +55,6 @@ export function EditorSidebar(props: EditorSidebarProps) {
 
 	const showSelectionPanel =
 		!!selection || !!boxSelectionAnchor || tool === "boxSelect" || tool === "colorSelect";
-	const boxSelectionBounds =
-		selection?.kind === "box" ? selectionSummary?.bounds ?? null : null;
 	const selectionColorIndex =
 		selection?.kind === "mask"
 			? selection.colorIndex ?? selectedColorIndex
@@ -137,87 +117,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
 								Anchor {boxSelectionAnchor.min.x}, {boxSelectionAnchor.min.y}, {boxSelectionAnchor.min.z}
 							</div>
 						)}
-						{boxSelectionBounds && (
-							<div className="grid grid-cols-[auto_1fr_1fr_1fr] items-center gap-1">
-								<span className="text-base-content/60" />
-								<span className="text-center text-base-content/60">X</span>
-								<span className="text-center text-base-content/60">Y</span>
-								<span className="text-center text-base-content/60">Z</span>
-								<span className="text-base-content/60">Min</span>
-								{(["x", "y", "z"] as Array<keyof VoxelCoord>).map((axis) => (
-									<input
-										key={`min-${axis}`}
-										type="number"
-										className="input input-bordered input-xs min-w-0 px-1 text-center"
-										value={boxSelectionBounds.min[axis]}
-										min={0}
-										max={axisMax(axis, dims)}
-										disabled={readOnly || selection?.kind !== "box"}
-										readOnly={readOnly || selection?.kind !== "box"}
-										onChange={(e) =>
-											onUpdateBoxSelectionBound("min", axis, Number(e.target.value))
-										}
-									/>
-								))}
-								<span className="text-base-content/60">Max</span>
-								{(["x", "y", "z"] as Array<keyof VoxelCoord>).map((axis) => (
-									<input
-										key={`max-${axis}`}
-										type="number"
-										className="input input-bordered input-xs min-w-0 px-1 text-center"
-										value={boxSelectionBounds.max[axis]}
-										min={0}
-										max={axisMax(axis, dims)}
-										disabled={readOnly || selection?.kind !== "box"}
-										readOnly={readOnly || selection?.kind !== "box"}
-										onChange={(e) =>
-											onUpdateBoxSelectionBound("max", axis, Number(e.target.value))
-										}
-									/>
-								))}
-							</div>
-						)}
-						{selection?.kind === "box" && (
-							<div className="border-t border-base-300 pt-2 space-y-2">
-								<div className="flex items-center justify-between gap-2">
-									<span className="font-medium text-base-content">Smooth</span>
-									<button
-										type="button"
-										className="btn btn-primary btn-xs"
-										onClick={onSmoothBoxSelection}
-										disabled={readOnly}
-										title="Smooth selected surface"
-									>
-										<span className="icon-[mdi--blur] w-4 h-4" />
-										Smooth
-									</button>
-								</div>
-								<div className="flex items-center gap-2">
-									<span className="text-base-content/70">Passes</span>
-									<input
-										type="range"
-										min={MIN_SMOOTH_PASSES}
-										max={MAX_SMOOTH_PASSES}
-										value={smoothPasses}
-										onChange={(e) => onSmoothPassesChange(Number(e.target.value))}
-										className="range range-xs range-primary flex-1"
-										disabled={readOnly}
-										title="Smooth passes"
-									/>
-									<input
-										type="number"
-										min={MIN_SMOOTH_PASSES}
-										max={MAX_SMOOTH_PASSES}
-										value={smoothPasses}
-										onChange={(e) => onSmoothPassesChange(Number(e.target.value))}
-										className="input input-bordered input-xs w-12 px-1 text-center"
-										disabled={readOnly}
-										readOnly={readOnly}
-										aria-label="Smooth passes"
-									/>
-								</div>
-							</div>
-						)}
+						
 					</div>
 				</div>
 			)}
@@ -284,11 +184,4 @@ export function EditorSidebar(props: EditorSidebarProps) {
 			)}
 		</>
 	);
-}
-
-function axisMax(axis: keyof VoxelCoord, dims: ChunkDims | null): number {
-	if (!dims) return 0;
-	if (axis === "x") return dims.vW - 1;
-	if (axis === "y") return dims.vH - 1;
-	return dims.vL - 1;
 }

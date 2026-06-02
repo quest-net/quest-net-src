@@ -61,6 +61,10 @@ export interface PickerInputs {
 export interface Picker {
 	getPickInfo: (event: PointerEvent) => PickInfo | null;
 	getLockedPlanePickInfo: (event: PointerEvent, plane: LockedStrokePlane) => PickInfo | null;
+	/** Raycaster aimed from the camera through the event's pointer position.
+	 *  Returns the shared scratch instance -- use it immediately and do not
+	 *  hold the reference across another pick call. */
+	getEventRaycaster: (event: PointerEvent) => THREE.Raycaster | null;
 	groundPlane: THREE.Plane;
 }
 
@@ -171,5 +175,10 @@ export function createPicker(inputs: PickerInputs): Picker {
 		};
 	};
 
-	return { getPickInfo, getLockedPlanePickInfo, groundPlane: _groundPlane };
+	const getEventRaycaster = (event: PointerEvent): THREE.Raycaster | null => {
+		if (!setRayFromEvent(event)) return null;
+		return _pickRay;
+	};
+
+	return { getPickInfo, getLockedPlanePickInfo, getEventRaycaster, groundPlane: _groundPlane };
 }

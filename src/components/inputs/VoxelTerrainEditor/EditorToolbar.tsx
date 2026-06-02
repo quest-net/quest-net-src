@@ -1,8 +1,10 @@
 // The toolbar above the editor canvas.
 //
-// Houses tool buttons (place/fill/erase/paint/sample/box-select/color-select),
-// brush size, granularity toggle, the stamp picker, undo/redo, the keyboard
-// shortcuts help dropdown, .vox import button, and the edit/preview tab.
+// Grouped left-to-right: tools (place/erase/paint/sample), selection modes
+// (color/box select), selection tools (smooth/fill -- act on the current
+// selection), then -- separated by dividers -- brush controls (tile/voxel
+// granularity + size), the stamp picker, and undo/redo + shortcuts help. The
+// edit/preview tab, .vox import and camera dropdown sit on the right.
 
 import type { RefObject } from "react";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
@@ -18,25 +20,39 @@ import {
 	MIN_BRUSH_SIZE,
 } from "../../../utils/terrain/editor/VoxelBrushUtils";
 
-const TOOL_BUTTONS: Array<{
+interface ToolButtonDef {
 	id: EditorTool;
 	label: string;
 	icon: string;
 	shortcut: string;
-}> = [
+}
+
+const TOOL_BUTTONS: ToolButtonDef[] = [
 	{ id: "place",  label: "Place",  icon: "icon-[mdi--cube-outline]", shortcut: "P" },
-	{ id: "fill",   label: "Fill",   icon: "icon-[mdi--format-color-fill]", shortcut: "L" },
 	{ id: "erase",  label: "Erase",  icon: "icon-[mdi--eraser]",       shortcut: "R" },
-	{ id: "paint",  label: "Paint",  icon: "icon-[mdi--palette]",       shortcut: "G" },
-	{ id: "sample", label: "Sample", icon: "icon-[mdi--eyedropper]",    shortcut: "I" },
-	{ id: "boxSelect",   label: "Box Select",   icon: "icon-[mdi--selection-drag]", shortcut: "B" },
-	{ id: "colorSelect", label: "Color Select", icon: "icon-[mdi--palette-swatch]", shortcut: "C" },
+	{ id: "paint",  label: "Paint",  icon: "icon-[mdi--palette]",      shortcut: "G" },
+	{ id: "sample", label: "Sample", icon: "icon-[mdi--eyedropper]",   shortcut: "I" },
 ];
+
+const SELECTION_MODE_BUTTONS: ToolButtonDef[] = [
+	{ id: "colorSelect", label: "Color Select", icon: "icon-[mdi--palette-swatch]", shortcut: "C" },
+	{ id: "boxSelect",   label: "Box Select",   icon: "icon-[mdi--selection-drag]", shortcut: "B" },
+];
+
+function ToolbarDivider() {
+	return <div className="h-8 w-px bg-base-300 mx-0.5 self-center" aria-hidden="true" />;
+}
 
 interface EditorToolbarProps {
 	tool: EditorTool;
 	activeSelectionTool: "boxSelect" | "colorSelect" | null;
 	onToolClick: (tool: EditorTool) => void;
+	/** Fill the current selection (one shot). */
+	onFillSelection: () => void;
+	/** Apply one smoothing pass to the current box selection (one shot). */
+	onSmoothSelection: () => void;
+	canFillSelection: boolean;
+	canSmoothSelection: boolean;
 	brushSize: number;
 	onBrushSizeChange: (size: number) => void;
 	granularity: EditGranularityType;
@@ -69,6 +85,10 @@ export function EditorToolbar(props: EditorToolbarProps) {
 		tool,
 		activeSelectionTool,
 		onToolClick,
+		onFillSelection,
+		onSmoothSelection,
+		canFillSelection,
+		canSmoothSelection,
 		brushSize,
 		onBrushSizeChange,
 		granularity,
@@ -109,9 +129,26 @@ export function EditorToolbar(props: EditorToolbarProps) {
 
 	return (
 		<div className="min-h-16 shrink-0 border-b-2 bg-base-100 px-3 py-2 flex flex-wrap items-center justify-between gap-3">
-			<div className="flex flex-wrap items-center gap-3">
+			<div className="flex flex-wrap items-center gap-2">
+				{/* Tools */}
 				<div className="join">
 					{TOOL_BUTTONS.map((button) => (
+						<button
+							key={button.id}
+							type="button"
+							className={getToolButtonClass(button.id)}
+							onClick={() => onToolClick(button.id)}
+							title={`${button.label} (${button.shortcut})`}
+							aria-label={`${button.label} (shortcut ${button.shortcut})`}
+						>
+							<span className={`${button.icon} w-5 h-5`} />
+						</button>
+					))}
+				</div>
+
+				{/* Selection modes */}
+				<div className="join">
+					{SELECTION_MODE_BUTTONS.map((button) => (
 						<button
 							key={button.id}
 							type="button"
@@ -129,17 +166,65 @@ export function EditorToolbar(props: EditorToolbarProps) {
 					))}
 				</div>
 
+				{/* Selection tools (operate on the current selection) */}
+				<div className="join">
+					<button
+						type="button"
+						className="btn btn-square btn-sm join-item btn-outline"
+						onClick={onSmoothSelection}
+						disabled={readOnly || !canSmoothSelection}
+						title="Smooth selection surface (click again to smooth more)"
+						aria-label="Smooth selection"
+					>
+						<span className="icon-[mdi--blur] w-5 h-5" />
+					</button>
+					<button
+						type="button"
+						className="btn btn-square btn-sm join-item btn-outline"
+						onClick={onFillSelection}
+						disabled={readOnly || !canFillSelection}
+						title="Fill selection (L)"
+						aria-label="Fill selection"
+					>
+						<span className="icon-[mdi--format-color-fill] w-5 h-5" />
+					</button>
+				</div>
+
+				<ToolbarDivider />
+
+				{/* Brush controls: granularity + size */}
+				<div className="join">
+					<button
+						type="button"
+						className={`btn btn-square btn-sm join-item ${granularity === "tactical" ? "btn-primary" : "btn-outline"}`}
+						onClick={() => onGranularityChange("tactical")}
+						title="Tile Brush (1)"
+						aria-label="Tile brush"
+					>
+						<span className="icon-[mdi--grid-large] w-5 h-5" />
+					</button>
+					<button
+						type="button"
+						className={`btn btn-square btn-sm join-item ${granularity === "voxel" ? "btn-primary" : "btn-outline"}`}
+						onClick={() => onGranularityChange("voxel")}
+						title="Voxel Brush (2)"
+						aria-label="Voxel brush"
+					>
+						<span className="icon-[mdi--grid] w-5 h-5" />
+					</button>
+				</div>
+
 				<div className="flex items-center gap-2">
-					<span className="text-xs font-medium text-base-content/70">Brush</span>
 					<input
 						type="range"
 						min={MIN_BRUSH_SIZE}
 						max={MAX_BRUSH_SIZE}
 						value={brushSize}
 						onChange={(e) => onBrushSizeChange(Number(e.target.value))}
-						className="range range-sm range-primary w-28"
+						className="range range-sm range-primary w-24"
 						disabled={readOnly}
 						title="Brush size"
+						aria-label="Brush size"
 					/>
 					<input
 						type="number"
@@ -154,90 +239,78 @@ export function EditorToolbar(props: EditorToolbarProps) {
 					/>
 				</div>
 
-				<div className="join">
-					<button
-						type="button"
-						className={`btn btn-sm join-item ${granularity === "tactical" ? "btn-primary" : "btn-outline"}`}
-						onClick={() => onGranularityChange("tactical")}
-						title="Tile Brush (1)"
-					>
-						Tile Brush
-					</button>
-					<button
-						type="button"
-						className={`btn btn-sm join-item ${granularity === "voxel" ? "btn-primary" : "btn-outline"}`}
-						onClick={() => onGranularityChange("voxel")}
-						title="Voxel Brush (2)"
-					>
-						Voxel Brush
-					</button>
-				</div>
-
+				{/* Stamp picker */}
 				{!readOnly && loadStampVoxels && (
-					tool === "stamp" ? (
-						<button
-							type="button"
-							className="btn btn-sm btn-warning"
-							onClick={onExitStampMode}
-							title="Stop stamping (Esc)"
-						>
-							<span className="icon-[mdi--stamper] w-5 h-5" />
-							ESC to stop
-						</button>
-					) : (
-						<div className="dropdown dropdown-bottom">
-							<div
-								tabIndex={0}
-								role="button"
-								className="btn btn-square btn-sm btn-outline"
-								title="Insert a stamp terrain (R rotate, M mirror, Esc stop)"
-								aria-label="Insert stamp"
+					<>
+						<ToolbarDivider />
+						{tool === "stamp" ? (
+							<button
+								type="button"
+								className="btn btn-sm btn-warning"
+								onClick={onExitStampMode}
+								title="Stop stamping (Esc)"
 							>
 								<span className="icon-[mdi--stamper] w-5 h-5" />
+								ESC to stop
+							</button>
+						) : (
+							<div className="dropdown dropdown-bottom">
+								<div
+									tabIndex={0}
+									role="button"
+									className="btn btn-square btn-sm btn-outline"
+									title="Insert a stamp terrain (R rotate, M mirror, Esc stop)"
+									aria-label="Insert stamp"
+								>
+									<span className="icon-[mdi--stamper] w-5 h-5" />
+								</div>
+								<div
+									tabIndex={0}
+									className="dropdown-content z-50 mt-2 w-64 max-h-80 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-2 shadow-lg"
+								>
+									{stampSources && stampSources.length > 0 ? (
+										<ul className="menu menu-sm p-0">
+											{stampSources.map((source) => {
+												const isLoading = stampLoadingId === source.Id;
+												return (
+													<li key={source.Id}>
+														<button
+															type="button"
+															onClick={() => {
+																void onSelectStamp(source.Id);
+																(document.activeElement as HTMLElement | null)?.blur();
+															}}
+															disabled={isLoading}
+															className="flex items-center gap-2"
+														>
+															{isLoading && (
+																<span className="loading loading-spinner loading-xs" />
+															)}
+															<span className="truncate">{source.Name}</span>
+															<span className="ml-auto text-xs opacity-60 whitespace-nowrap">
+																{source.Width}×{source.Height}×{source.Length}
+															</span>
+														</button>
+													</li>
+												);
+											})}
+										</ul>
+									) : (
+										<div className="px-2 py-1 text-xs opacity-70 leading-relaxed">
+											No stamps available. Tag a terrain{" "}
+											<code className="text-[0.7rem]">path:stamps</code>{" "}
+											to see it here.
+										</div>
+									)}
+								</div>
 							</div>
-							<div
-								tabIndex={0}
-								className="dropdown-content z-50 mt-2 w-64 max-h-80 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-2 shadow-lg"
-							>
-								{stampSources && stampSources.length > 0 ? (
-									<ul className="menu menu-sm p-0">
-										{stampSources.map((source) => {
-											const isLoading = stampLoadingId === source.Id;
-											return (
-												<li key={source.Id}>
-													<button
-														type="button"
-														onClick={() => {
-															void onSelectStamp(source.Id);
-															(document.activeElement as HTMLElement | null)?.blur();
-														}}
-														disabled={isLoading}
-														className="flex items-center gap-2"
-													>
-														{isLoading && (
-															<span className="loading loading-spinner loading-xs" />
-														)}
-														<span className="truncate">{source.Name}</span>
-														<span className="ml-auto text-xs opacity-60 whitespace-nowrap">
-															{source.Width}×{source.Height}×{source.Length}
-														</span>
-													</button>
-												</li>
-											);
-										})}
-									</ul>
-								) : (
-									<div className="px-2 py-1 text-xs opacity-70 leading-relaxed">
-										No stamps available. Tag a terrain{" "}
-										<code className="text-[0.7rem]">path:stamps</code>{" "}
-										to see it here.
-									</div>
-								)}
-							</div>
-						</div>
-					)
+						)}
+					</>
 				)}
 
+				<ToolbarDivider />
+
+				{/* Undo / redo + shortcuts help */}
 				<div className="join">
 					<button
 						type="button"
