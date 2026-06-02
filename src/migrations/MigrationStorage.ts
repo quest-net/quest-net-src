@@ -1,5 +1,6 @@
 // src/migrations/MigrationStorage.ts
 import { IndexedDBUtilities } from "../utils/IndexedDBUtilities";
+import { LocalStorageUtilities } from "../utils/LocalStorageUtilities";
 
 /**
  * Provides cross-boundary I/O access for migrations that need to read or
@@ -81,17 +82,11 @@ export class DefaultMigrationStorage implements MigrationStorage {
 	}
 
 	lsGet(key: string): unknown {
-		const raw = localStorage.getItem(key);
-		if (raw === null) return null;
-		try {
-			return JSON.parse(raw);
-		} catch {
-			return null;
-		}
+		return LocalStorageUtilities.load(key);
 	}
 
 	lsSet(key: string, value: unknown): void {
-		localStorage.setItem(key, JSON.stringify(value));
+		LocalStorageUtilities.save(key, value);
 	}
 
 	lsDelete(key: string): void {

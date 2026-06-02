@@ -2,6 +2,7 @@
 
 import { useState, ReactNode, useEffect } from "react";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
+import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import {
 	getFoldersAtPath,
 	getItemsAtPath,
@@ -140,14 +141,10 @@ export function IndexView({
 		return "newest";
 	});
 
-	// Persist sort order changes
+	// Persist sort order changes (best-effort; saveString handles its own errors)
 	useEffect(() => {
 		if (sortKey) {
-			try {
-				localStorage.setItem(sortKey, sortOrder);
-			} catch {
-				// Ignore localStorage errors
-			}
+			LocalStorageUtilities.saveString(sortKey, sortOrder);
 		}
 	}, [sortOrder, sortKey]);
 

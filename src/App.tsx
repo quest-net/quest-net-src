@@ -9,6 +9,7 @@ import { AppSettingEdit } from "./domains/AppSetting/Edit";
 import { Wiki } from "./domains/Wiki/Wiki";
 import { useIdleRefresh } from "./hooks/useIdleRefresh";
 import { isAnyFormDirty } from "./utils/formDirtyRegistry";
+import { StorageQuotaErrorOverlay } from "./components/StorageQuotaErrorOverlay";
 
 // Reloads the tab when the user returns after a long absence, resetting any
 // browser/GPU-level accumulation and applying pending updates/migrations.
@@ -22,6 +23,7 @@ function App() {
 	return (
 		<ContextProvider>
 			<ActionServiceProvider>
+				<StorageQuotaErrorOverlay />
 				<IdleRefresh />
 				<HashRouter>
 					<Routes>

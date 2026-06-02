@@ -7,6 +7,7 @@ import {
 	useLayoutEffect,
 	useMemo,
 } from "react";
+import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
@@ -132,14 +133,10 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	);
 
 	useEffect(() => {
-		try {
-			localStorage.setItem(
-				FILTER_STORAGE_KEY,
-				JSON.stringify(Array.from(hiddenCategories))
-			);
-		} catch (e) {
-			console.error("Failed to save log filters:", e);
-		}
+		LocalStorageUtilities.trySave(
+			FILTER_STORAGE_KEY,
+			Array.from(hiddenCategories)
+		);
 	}, [hiddenCategories]);
 
 	// --- Derived log views ---------------------------------------------------

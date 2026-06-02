@@ -6,6 +6,7 @@ import {
 	groupWikiPages,
 	searchWikiPages,
 } from "./WikiConfig";
+import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import { WikiArticle } from "./components/WikiArticle";
 import { WikiArticleRail } from "./components/WikiArticleRail";
 import { WikiHeader } from "./components/WikiHeader";
@@ -65,7 +66,7 @@ export function Wiki() {
 				visiblePage.slug,
 				...currentSlugs.filter((recentSlug) => recentSlug !== visiblePage.slug),
 			].slice(0, 3);
-			localStorage.setItem(RECENT_WIKI_PAGES_KEY, JSON.stringify(nextSlugs));
+			LocalStorageUtilities.trySave(RECENT_WIKI_PAGES_KEY, nextSlugs);
 			return nextSlugs;
 		});
 	}, [visiblePage.slug]);

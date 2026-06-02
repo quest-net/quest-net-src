@@ -14,6 +14,7 @@
 // the sticker emoji-to-name map and the getStickerSoundId helper.
 
 import { EMOJI_NAMES } from "../domains/Sticker/Sticker";
+import { LocalStorageUtilities } from "../utils/LocalStorageUtilities";
 
 // ---------------------------------------------------------------------------
 // Sound registry
@@ -43,23 +44,15 @@ const SFX_VOLUME_KEY = "quest-net-sfx-volume";
 const DEFAULT_SFX_VOLUME = 0.5;
 
 function getVolume(): number {
-	try {
-		const raw = localStorage.getItem(SFX_VOLUME_KEY);
-		if (raw === null) return DEFAULT_SFX_VOLUME;
-		const v = parseFloat(raw);
-		return isNaN(v) ? DEFAULT_SFX_VOLUME : Math.max(0, Math.min(1, v));
-	} catch {
-		return DEFAULT_SFX_VOLUME;
-	}
+	const raw = LocalStorageUtilities.loadString(SFX_VOLUME_KEY);
+	if (raw === null) return DEFAULT_SFX_VOLUME;
+	const v = parseFloat(raw);
+	return isNaN(v) ? DEFAULT_SFX_VOLUME : Math.max(0, Math.min(1, v));
 }
 
 function setVolume(v: number): void {
 	const clamped = Math.max(0, Math.min(1, v));
-	try {
-		localStorage.setItem(SFX_VOLUME_KEY, clamped.toString());
-	} catch {
-		// Storage full or unavailable — not critical
-	}
+	LocalStorageUtilities.saveString(SFX_VOLUME_KEY, clamped.toString());
 }
 
 // ---------------------------------------------------------------------------

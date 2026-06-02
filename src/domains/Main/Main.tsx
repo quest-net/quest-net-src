@@ -2,6 +2,7 @@
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
+import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import MapScene, { type CameraPreference } from "../../components/Map/MapScene";
 import { useEffect, useRef, useState } from "react";
 import { MapStateProvider } from "../../components/Map/MapStateProvider";
@@ -196,7 +197,10 @@ export function Main() {
 	}, [firstPersonActorId, isDM, mapViewMode]);
 
 	useEffect(() => {
-		localStorage.setItem("quest-net:cameraPreference", cameraPreference);
+		LocalStorageUtilities.saveString(
+			"quest-net:cameraPreference",
+			cameraPreference
+		);
 	}, [cameraPreference]);
 
 	// Reset map-ready flag whenever the active terrain changes so the loading

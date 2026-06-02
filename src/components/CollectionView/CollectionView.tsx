@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 
 // ============================================================================
 // TYPES
@@ -75,22 +76,14 @@ export function CollectionView({
 		}
 	});
 
-	// Persist view mode changes
+	// Persist view mode changes (best-effort; saveString handles its own errors)
 	useEffect(() => {
-		try {
-			localStorage.setItem(viewModeKey, viewMode);
-		} catch {
-			// Ignore localStorage errors
-		}
+		LocalStorageUtilities.saveString(viewModeKey, viewMode);
 	}, [viewMode, viewModeKey]);
 
 	// Persist sort order changes
 	useEffect(() => {
-		try {
-			localStorage.setItem(sortKey, sortOrder);
-		} catch {
-			// Ignore localStorage errors
-		}
+		LocalStorageUtilities.saveString(sortKey, sortOrder);
 	}, [sortOrder, sortKey]);
 
 	// Filter items by search query

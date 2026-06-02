@@ -7,6 +7,7 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 
 type SceneMode = "fixed" | "window";
 
@@ -71,32 +72,27 @@ export function SceneDisplay() {
 
   const fixedRef = useRef<HTMLDivElement>(null);
 
-  // Save mode preference
+  // Save mode preference (best-effort; saveString handles its own errors)
   useEffect(() => {
-    try {
-      localStorage.setItem("questnet.sceneMode", mode);
-    } catch {}
+    LocalStorageUtilities.saveString("questnet.sceneMode", mode);
   }, [mode]);
 
   // Save collapsed state
   useEffect(() => {
-    try {
-      localStorage.setItem("questnet.sceneCollapsed", String(isCollapsed));
-    } catch {}
+    LocalStorageUtilities.saveString(
+      "questnet.sceneCollapsed",
+      String(isCollapsed)
+    );
   }, [isCollapsed]);
 
   // Save collapsed mode
   useEffect(() => {
-    try {
-      localStorage.setItem("questnet.sceneCollapsedMode", collapsedMode);
-    } catch {}
+    LocalStorageUtilities.saveString("questnet.sceneCollapsedMode", collapsedMode);
   }, [collapsedMode]);
 
   // Save window state
   useEffect(() => {
-    try {
-      localStorage.setItem("questnet.sceneWindow", JSON.stringify(windowState));
-    } catch {}
+    LocalStorageUtilities.trySave("questnet.sceneWindow", windowState);
   }, [windowState]);
 
   // Handle browser window resize - keep scene window in bounds

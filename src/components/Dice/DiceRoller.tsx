@@ -6,6 +6,7 @@ import { useDiceRoller } from "./DiceRollerContext";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import {
 	addDieToFormula,
 	isValidDiceFormula,
@@ -479,16 +480,12 @@ export function DiceRoller() {
 
 	const persistAutoRoll = (value: boolean) => {
 		setAutoRoll(value);
-		try {
-			localStorage.setItem("questnet.dice.autoroll", value ? "1" : "0");
-		} catch { }
+		LocalStorageUtilities.saveString("questnet.dice.autoroll", value ? "1" : "0");
 	};
 
 	const persistOpen = (value: boolean) => {
 		setIsOpen(value);
-		try {
-			localStorage.setItem("questnet.dice.open", value ? "1" : "0");
-		} catch { }
+		LocalStorageUtilities.saveString("questnet.dice.open", value ? "1" : "0");
 	};
 
 	// Rainbow animation for d20/d100 crits
@@ -684,9 +681,7 @@ export function DiceRoller() {
 	useEffect(() => {
 		registerHandler((requestedFormula: string) => {
 			setIsOpen(true);
-			try {
-				localStorage.setItem("questnet.dice.open", "1");
-			} catch {}
+			LocalStorageUtilities.saveString("questnet.dice.open", "1");
 			setFormula(requestedFormula);
 		});
 		return () => registerHandler(null);
