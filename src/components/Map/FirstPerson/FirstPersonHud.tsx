@@ -13,17 +13,19 @@ function MovementOverlayText({
 }: {
 	movementOverlay: Exclude<MovementOverlayState, null>;
 }) {
+	const unbounded = movementOverlay.overageUnbounded === true;
 	const overage =
 		movementOverlay.overage && movementOverlay.overage > 0
 			? movementOverlay.overage
 			: 0;
-	const overageText =
-		overage > 0 ? (
-			<span className="text-error">
-				{" "}
-				(+{formatMovementValue(overage)})
-			</span>
-		) : null;
+	const overageText = unbounded ? (
+		<span className="text-error"> (+ a lot)</span>
+	) : overage > 0 ? (
+		<span className="text-error">
+			{" "}
+			(+{formatMovementValue(overage)})
+		</span>
+	) : null;
 
 	if (movementOverlay.kind === "combat") {
 		return (
@@ -32,6 +34,12 @@ function MovementOverlayText({
 				{overageText}
 			</>
 		);
+	}
+
+	// Exploration past the tracked range: distance is unknown, so show the
+	// symbolic readout on its own instead of a misleading "Walked 0".
+	if (unbounded) {
+		return <>Walked a lot</>;
 	}
 
 	return (

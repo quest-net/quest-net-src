@@ -2,13 +2,16 @@
 //
 // Per-terrain-revision adjacency graph for surface-to-surface movement.
 //
-// calculateVoxelMovementRange runs Dijkstra per actor selection, and previously
+// calculateVoxelMovementRange runs Dijkstra per actor selection, and originally
 // rebuilt the reachability cache (exact surface heights + air clearances) on
 // every call. The edge-reachability work is purely a function of terrain
 // geometry though -- it does not depend on the actor, the start tile, the
-// movement budget, or the movement settings -- so we precompute the full
-// surface-to-surface adjacency once per VoxelTerrain revision and cache it in
-// the same LRU style as VoxelTerrainIndex.
+// movement budget, or the movement settings -- so we cache surface-to-surface
+// adjacency per VoxelTerrain revision in the same LRU style as
+// VoxelTerrainIndex. Within a revision the per-tile edges are computed lazily
+// (on first access) and memoized, so the cost tracks the tiles a Dijkstra
+// frontier actually visits rather than the whole terrain -- see
+// buildVoxelMovementAdjacency for why that matters.
 //
 // What's in the graph:
 //   For each surface tile (x, y, h), the list of neighboring surface tiles
@@ -218,6 +221,16 @@ function isSurfaceTransitionReachable(
 /**
  * Builds the surface adjacency graph for `terrain`. Skips the LRU cache; use
  * `getVoxelMovementAdjacency` for the normal entry point.
+ *
+ * Neighbor buckets are computed lazily on first `getNeighborsByDirection`
+ * access and memoized for the lifetime of this revision's object. Computing a
+ * tile's edges runs the expensive air-clearance scans, so deferring them means
+ * we only pay for the surface tiles a Dijkstra frontier actually visits --
+ * bounded by the actor's move budget -- instead of flooding the entire terrain
+ * up front. (That eager whole-terrain build was what made the first FP entry on
+ * a fresh terrain stutter for ~1s.) The memoization still amortizes across
+ * repeated Dijkstra runs on the same revision: each visited tile is computed at
+ * most once, so later actor selections reuse earlier tiles for free.
  */
 export function buildVoxelMovementAdjacency(
 	terrain: VoxelTerrain
@@ -228,73 +241,76 @@ export function buildVoxelMovementAdjacency(
 		airClearances: new Map(),
 	};
 
-	// Map<tileHeightKey, perDirectionBuckets>. The outer entry is only
-	// allocated when at least one walkable neighbor exists for that surface
-	// tile, so isolated surfaces stay out of memory entirely.
-	const neighborsByTile = new Map<string, VoxelMovementNeighbor[][]>();
+	// Per-(x,y,h) neighbor buckets, populated on demand. `null` records a tile
+	// that was checked and has no walkable neighbors (or is not a surface),
+	// distinguishing it from a not-yet-computed tile so we never recompute it.
+	const memo = new Map<
+		string,
+		readonly (readonly VoxelMovementNeighbor[])[] | null
+	>();
 
-	for (const [columnKey, surfaceHeights] of index.allSurfaces) {
-		const commaIndex = columnKey.indexOf(",");
-		const x = Number(columnKey.slice(0, commaIndex));
-		const y = Number(columnKey.slice(commaIndex + 1));
+	const computeNeighbors = (
+		x: number,
+		y: number,
+		h: number
+	): readonly (readonly VoxelMovementNeighbor[])[] | null => {
+		// Only actual surface tiles have outgoing edges. Dijkstra also probes
+		// the (possibly non-surface) start node, which lands here as a miss.
+		const surfaces = index.allSurfaces.get(`${x},${y}`);
+		if (!surfaces || !surfaces.includes(h)) return null;
 
-		for (const h of surfaceHeights) {
-			const fromKey = tileHeightKey(x, y, h);
-			let buckets: VoxelMovementNeighbor[][] | undefined;
+		let buckets: VoxelMovementNeighbor[][] | null = null;
 
-			for (let d = 0; d < VOXEL_MOVEMENT_DIRECTIONS.length; d++) {
-				const { dx, dy } = VOXEL_MOVEMENT_DIRECTIONS[d];
-				const nx = x + dx;
-				const ny = y + dy;
+		for (let d = 0; d < VOXEL_MOVEMENT_DIRECTIONS.length; d++) {
+			const { dx, dy } = VOXEL_MOVEMENT_DIRECTIONS[d];
+			const nx = x + dx;
+			const ny = y + dy;
 
+			if (nx < 0 || nx >= index.width || ny < 0 || ny >= index.length) {
+				continue;
+			}
+
+			const neighborSurfaces = index.allSurfaces.get(`${nx},${ny}`) ?? [];
+			if (neighborSurfaces.length === 0) continue;
+
+			for (const nh of neighborSurfaces) {
 				if (
-					nx < 0 ||
-					nx >= index.width ||
-					ny < 0 ||
-					ny >= index.length
+					!isSurfaceTransitionReachable(
+						index,
+						x,
+						y,
+						h,
+						nx,
+						ny,
+						nh,
+						buildCache
+					)
 				) {
 					continue;
 				}
 
-				const neighborSurfaces =
-					index.allSurfaces.get(`${nx},${ny}`) ?? [];
-				if (neighborSurfaces.length === 0) continue;
-
-				for (const nh of neighborSurfaces) {
-					if (
-						!isSurfaceTransitionReachable(
-							index,
-							x,
-							y,
-							h,
-							nx,
-							ny,
-							nh,
-							buildCache
-						)
-					) {
-						continue;
-					}
-
-					if (!buckets) {
-						buckets = VOXEL_MOVEMENT_DIRECTIONS.map(
-							() => [] as VoxelMovementNeighbor[]
-						);
-						neighborsByTile.set(fromKey, buckets);
-					}
-					buckets[d].push({ x: nx, y: ny, h: nh });
+				if (!buckets) {
+					buckets = VOXEL_MOVEMENT_DIRECTIONS.map(
+						() => [] as VoxelMovementNeighbor[]
+					);
 				}
+				buckets[d].push({ x: nx, y: ny, h: nh });
 			}
 		}
-	}
+
+		return buckets;
+	};
 
 	return {
 		revision: index.revision,
 		getNeighborsByDirection(x, y, h) {
-			return (
-				neighborsByTile.get(tileHeightKey(x, y, h)) ??
-				EMPTY_NEIGHBORS_BY_DIRECTION
-			);
+			const key = tileHeightKey(x, y, h);
+			let cached = memo.get(key);
+			if (cached === undefined) {
+				cached = computeNeighbors(x, y, h);
+				memo.set(key, cached);
+			}
+			return cached ?? EMPTY_NEIGHBORS_BY_DIRECTION;
 		},
 	};
 }

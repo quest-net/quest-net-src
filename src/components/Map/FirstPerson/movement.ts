@@ -5,7 +5,6 @@ import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants
 import type { FirstPersonActor } from "./types";
 
 function getMovementLookupBudget(
-	terrain: VoxelTerrain,
 	moveSpeed: number,
 	canFly: boolean,
 	movementSettings: MovementSettings
@@ -18,13 +17,21 @@ function getMovementLookupBudget(
 		return moveSpeed;
 	}
 
-	const maxHorizontal =
-		Math.max(0, terrain.Width - 1) + Math.max(0, terrain.Length - 1);
+	// The FP HUD only reads the movement cost at the actor's *current* tile:
+	// remaining movement (moveSpeed - cost) plus a small overage readout in
+	// combat, and the ~1-tile distance from the committed anchor in
+	// exploration. It never reads costs far from the actor, so the lookup only
+	// needs to cover the reachable region nearby -- not the whole map. Cap at
+	// moveSpeed plus a two-step climb margin so the overage readout keeps a bit
+	// of headroom; tiles beyond that are never displayed. This keeps the
+	// Dijkstra frontier -- and the lazily-built adjacency it touches -- bounded
+	// by move speed instead of map size, which is what made the first FP entry
+	// on a fresh terrain stutter for ~1s while it flooded the entire map.
 	const maxHeightCost = movementSettings.heightCostLookup.reduce(
 		(max, cost) => Math.max(max, cost),
 		0
 	);
-	return Math.max(moveSpeed, maxHorizontal * (1 + maxHeightCost));
+	return moveSpeed + 2 * maxHeightCost;
 }
 
 export function createMovementCostLookup(
@@ -41,7 +48,6 @@ export function createMovementCostLookup(
 			? actor.actor.TurnStartPosition
 			: actor.actor.Position;
 	const lookupBudget = getMovementLookupBudget(
-		terrain,
 		moveSpeed,
 		canFly,
 		movementSettings

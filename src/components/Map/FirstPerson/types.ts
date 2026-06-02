@@ -8,8 +8,8 @@ export interface FirstPersonActor {
 }
 
 export type MovementOverlayState =
-	| { kind: "combat"; value: number; overage?: number }
-	| { kind: "exploration"; value: number; overage?: number }
+	| { kind: "combat"; value: number; overage?: number; overageUnbounded?: boolean }
+	| { kind: "exploration"; value: number; overage?: number; overageUnbounded?: boolean }
 	| null;
 
 export interface FirstPersonFrameInput {

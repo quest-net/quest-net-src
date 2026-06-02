@@ -452,7 +452,18 @@ export default function FirstPersonView({
 		const moveSpeed = getActorMoveSpeed(activeActor);
 		const cost = getMovementCostFromLookup(lookup, index, rulesPosition);
 		if (cost === undefined) {
-			setMovementOverlay((current) => (current === null ? current : null));
+			// The actor has walked past the capped movement lookup (see
+			// getMovementLookupBudget) or onto a tile with no traced path from the
+			// anchor, so we can't compute an exact overage. Keep the HUD up with an
+			// "a lot" indicator rather than hiding it.
+			const next: MovementOverlayState = isCombatActiveRef.current
+				? { kind: "combat", value: 0, overageUnbounded: true }
+				: { kind: "exploration", value: 0, overageUnbounded: true };
+			setMovementOverlay((current) =>
+				current?.kind === next.kind && current?.overageUnbounded === true
+					? current
+					: next
+			);
 			return;
 		}
 
@@ -474,7 +485,8 @@ export default function FirstPersonView({
 		setMovementOverlay((current) =>
 			current?.kind === next.kind &&
 			current?.value === next.value &&
-			(current?.overage ?? 0) === (next.overage ?? 0)
+			(current?.overage ?? 0) === (next.overage ?? 0) &&
+			(current?.overageUnbounded ?? false) === (next.overageUnbounded ?? false)
 				? current
 				: next
 		);
