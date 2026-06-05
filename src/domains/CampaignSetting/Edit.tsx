@@ -431,7 +431,7 @@ function CampaignSettingForm({
 					}
 				/>
 
-				<FormField label="Flying units ignore vertical costs">
+				<FormField label="Flying units reduce vertical costs">
 					<input
 						type="checkbox"
 						checked={data.MovementSettings.flyingIgnoresHeight}

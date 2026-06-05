@@ -177,16 +177,17 @@ export interface MovementSettings {
 	heightCostLookup: number[];
 
 	/**
-	 * Whether flying actors ignore vertical movement costs
-	 * If true, CanFly actors only pay horizontal movement costs
+	 * Whether flying actors use reduced vertical movement costs. If true, a
+	 * CanFly actor's climb cost is capped at 1 per height level while still using
+	 * cheaper height-cost formulas when configured.
 	 */
 	flyingIgnoresHeight: boolean;
 
 	/**
-	 * Whether players are restricted to their calculated movement range.
-	 * Outside combat, players may move within their full movement range.
-	 * During combat, players may only move within their remaining movement range.
-	 * DMs are never restricted by this setting.
+	 * Whether players are restricted to their calculated movement range during
+	 * combat. This is enforced by the client UI: world view only offers in-range
+	 * moves, first-person applies a soft pullback toward the turn-start position,
+	 * and DMs are never restricted by this setting.
 	 */
 	restrictPlayerMovementToRange: boolean;
 }

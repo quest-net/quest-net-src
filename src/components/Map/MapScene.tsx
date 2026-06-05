@@ -351,13 +351,13 @@ export default function MapScene({
 	]);
 
 	// Reachable rules-height span at the selected actor's own column, used to
-	// clamp the flying height-drag ("ladder") when the player is restricted to
-	// their movement range. Mirrors the lateral restriction: remaining range in
-	// combat, full range otherwise. null = unrestricted (DM or setting off) ->
-	// the drag stays bounded only by the terrain.
+	// clamp the flying height-drag ("ladder") when a player is restricted to
+	// their remaining combat movement range. null = unrestricted (DM, setting
+	// off, outside combat, or couldn't compute) -> the drag stays bounded only by
+	// the terrain.
 	const draggableHeightRange = useMemo(() => {
 		if (!isWorld || !restrictMovementToRange || !selectedActorObject) return null;
-		const range = isCombatActive ? remainingMovementRange : movementRange;
+		const range = remainingMovementRange;
 		if (!range || range.length === 0) return null;
 		const x = Math.round(selectedActorObject.Position.x);
 		const y = Math.round(selectedActorObject.Position.y);

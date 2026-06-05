@@ -333,19 +333,23 @@ export function calculateVoxelMovementRange(
 	};
 
 	// Vertical cost for a flier to occupy rules-height `h`, measured as the NET
-	// ascent above the start height the flood originates from. The setting
-	// `flyingIgnoresHeight` picks the rate: when on, climbing is a flat 1 per
-	// height level (so a Δh climb costs Δh); when off, a flier pays the same
-	// height-cost lookup a non-flyer does, charged on the TOTAL ascent
-	// (lookup(Δh)) rather than per level. Dropping back toward (or below) the
-	// start costs nothing. The ladder edges below add the per-level increment of
-	// this total so a contiguous climb telescopes exactly to it.
+	// ascent above the start height the flood originates from. When
+	// `flyingIgnoresHeight` is on, climbing is capped at 1 per height level while
+	// still respecting cheaper lookup formulas: total climb cost is
+	// min(lookup(Δh), Δh). When off, a flier pays the normal height-cost lookup.
+	// Dropping back toward (or below) the start costs nothing. The ladder edges
+	// below add the per-level increment of this total so a contiguous climb
+	// telescopes exactly to it.
 	const verticalCostAtHeight = (h: number): number => {
 		const netAscent = Math.max(0, h - start.h);
 		if (netAscent === 0) return 0;
+		const lookupCost = getHeightCost(
+			netAscent,
+			movementSettings.heightCostLookup
+		);
 		return movementSettings.flyingIgnoresHeight
-			? netAscent
-			: getHeightCost(netAscent, movementSettings.heightCostLookup);
+			? Math.min(lookupCost, netAscent)
+			: lookupCost;
 	};
 
 	while (!queue.isEmpty()) {
