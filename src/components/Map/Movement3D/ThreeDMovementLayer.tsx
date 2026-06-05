@@ -7,6 +7,7 @@ import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	canOccupyVoxelTile,
+	canStandVoxel,
 	getVoxelTileHeightKey,
 	type VoxelMovementTile,
 } from "../../../utils/terrain/movement/VoxelMovementUtilities";
@@ -459,6 +460,24 @@ export function ThreeDMovementLayer({
 			const allowedTile = getAllowedTile(targetTile);
 			if (restrictMovementToRangeRef.current && !allowedTile) return null;
 
+			// Standability is the single standing authority (canStandVoxel) and
+			// applies to EVERY actor, item entities included -- a side-face pick
+			// resolves to a height inside solid terrain, which no actor (flyer or
+			// not) may occupy. This is distinct from occupancy below, which items
+			// alone bypass.
+			if (
+				!canStandVoxel(
+					terrain,
+					terrainIndex,
+					targetTile.x,
+					targetTile.y,
+					targetHeight,
+					actorObject.CanFly ?? false
+				)
+			) {
+				return null;
+			}
+
 			const canOccupy =
 				isItemEntity(actorObject) ||
 				canOccupyVoxelTile(
@@ -589,6 +608,22 @@ export function ThreeDMovementLayer({
 			const targetTile = { ...tile, h: targetHeight };
 			const allowedTile = getAllowedTile(targetTile);
 			if (restrictMovementToRangeRef.current && !allowedTile) return;
+
+			// Authoritative standing-rule gate: reject moves into non-standable
+			// cells (e.g. a wall side-face pick that resolves inside solid terrain).
+			// Applies to all actors, items included.
+			if (
+				!canStandVoxel(
+					terrain,
+					terrainIndex,
+					targetTile.x,
+					targetTile.y,
+					targetHeight,
+					actorObject.CanFly ?? false
+				)
+			) {
+				return;
+			}
 
 			if (
 				!isItemEntity(actorObject) &&

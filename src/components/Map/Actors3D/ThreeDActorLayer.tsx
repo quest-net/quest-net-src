@@ -9,6 +9,7 @@ import {
 	getMaxVoxelSurfaceHeight,
 } from "../../../utils/terrain/data/VoxelTerrainUtils";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import { canStandVoxel } from "../../../utils/terrain/movement/VoxelMovementUtilities";
 import type { SelectedActor } from "../MapStateProvider";
 import type { ActorTokenDescriptor, ThreeDSceneResources } from "./actorTokenTypes";
 import {
@@ -1459,11 +1460,29 @@ export function ThreeDActorLayer({
 			const maxH = budgetRange
 				? Math.min(terrainHeightRange.max, budgetRange.max)
 				: terrainHeightRange.max;
-			const nextH = clampHeight(
+			const targetH = clampHeight(
 				Math.round(drag.startPosition.h + projectedDelta),
 				minH,
 				Math.max(minH, maxH)
 			);
+
+			// Don't let the ladder phase the token into solid terrain. Only accept a
+			// height the actor can actually stand at (canStandVoxel -- for a flyer
+			// that's open air OR a surface). A non-standable target holds the token
+			// at its last valid height, so dragging "skips" solid sections rather
+			// than entering them. x/y never change during a height drag, so the
+			// candidate column is the actor's own column.
+			const canFly = drag.descriptor.canFly ?? false;
+			const nextH = canStandVoxel(
+				terrainRef.current,
+				terrainIndexRef.current,
+				drag.candidatePosition.x,
+				drag.candidatePosition.y,
+				targetH,
+				canFly
+			)
+				? targetH
+				: drag.candidatePosition.h;
 
 			if (nextH === drag.candidatePosition.h) return;
 
@@ -1540,6 +1559,23 @@ export function ThreeDActorLayer({
 
 			if (startSamePosition) {
 				// Drag dragged-then-returned to origin -- treat as no-op.
+				restoreVisualOnCancel(drag);
+				return;
+			}
+
+			// Authoritative standing-rule gate (mirrors the tile-move commit):
+			// never commit the actor into a non-standable cell. The live drag
+			// already holds at standable heights, but guard the commit too.
+			if (
+				!canStandVoxel(
+					terrainRef.current,
+					terrainIndexRef.current,
+					drag.candidatePosition.x,
+					drag.candidatePosition.y,
+					drag.candidatePosition.h,
+					drag.descriptor.canFly ?? false
+				)
+			) {
 				restoreVisualOnCancel(drag);
 				return;
 			}
