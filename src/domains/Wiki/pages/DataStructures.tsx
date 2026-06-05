@@ -391,6 +391,52 @@ export const dataStructuresPage: WikiPage = {
 			),
 		},
 		{
+			id: "resetting-local-state",
+			title: "Resetting Local State",
+			body: (
+				<div className="space-y-4">
+					<p>
+						Clearing localStorage from the dev tools panel and then refreshing{" "}
+						<WikiHighlight tone="warning">does not</WikiHighlight> wipe the
+						context. <Code>ContextProvider</Code> registers a{" "}
+						<Code>beforeunload</Code> (and unmount) handler that flushes the live
+						in-memory context back to localStorage via{" "}
+						<Code>ContextActions.save</Code> right as the page unloads. So the
+						refresh re-persists everything you just deleted before the fresh page
+						loads. This is great for crash safety, but it means a manual clear
+						loses the race.
+					</p>
+					<Callout tone="success" title="Why this protects users">
+						<p>
+							The same handler is why it is hard for a real user to lose their
+							table by accident: any reload, tab close, or navigation re-saves
+							the current context first.
+						</p>
+					</Callout>
+					<p>
+						To fully reset a dev environment, run this in the app tab's console.
+						Neutralizing <Code>setItem</Code> makes the unload-time flush a no-op
+						so the reload starts from an empty store:
+					</p>
+					<pre className="my-4 overflow-x-auto rounded-lg border border-base-300 bg-base-200/70 p-4 font-mono text-sm leading-6">
+						{`localStorage.clear();
+indexedDB.deleteDatabase('quest-net-db');
+Storage.prototype.setItem = () => {}; // block the beforeunload re-save
+location.reload();`}
+					</pre>
+					<Callout tone="info" title="Server-down alternative">
+						<p>
+							Without console hacks: close every app tab, stop the dev server,
+							open a fresh tab to the app URL (it fails to connect, so no app JS
+							runs), clear localStorage and the <Code>quest-net-db</Code>{" "}
+							IndexedDB for that origin, then restart the server. With no running
+							app there is nothing to re-save.
+						</p>
+					</Callout>
+				</div>
+			),
+		},
+		{
 			id: "actions",
 			title: "Actions",
 			body: (
@@ -433,7 +479,7 @@ export const dataStructuresPage: WikiPage = {
 		},
 	],
 	searchText:
-		"context campaign state actions schema action registry dm authority player request localStorage indexeddb CampaignInfo ActiveCampaign GameState Actor StatSlot ActionSlot AttributeSlot VoxelTerrain TerrainStorageService CampaignLoadingService optimistic secret mode",
+		"context campaign state actions schema action registry dm authority player request localStorage indexeddb CampaignInfo ActiveCampaign GameState Actor StatSlot ActionSlot AttributeSlot VoxelTerrain TerrainStorageService CampaignLoadingService optimistic secret mode reset clear localStorage wipe fresh start beforeunload flush quest-net-db deleteDatabase console",
 };
 
 export default dataStructuresPage;

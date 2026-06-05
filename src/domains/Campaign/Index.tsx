@@ -501,16 +501,18 @@ export function CampaignIndex() {
 															</button>
 														</div>
 													)}
-													<button
-														onClick={(e) => {
-															e.stopPropagation();
-															handleEditRoomCodeClick(info.Id, info.RoomCode);
-														}}
-														className="btn btn-neutral btn-sm gap-1"
-													>
-														<span className="icon-[mdi--pencil] w-4 h-4" />
-														Edit Code
-													</button>
+													{isGUID(info.Id) && (
+														<button
+															onClick={(e) => {
+																e.stopPropagation();
+																handleEditRoomCodeClick(info.Id, info.RoomCode);
+															}}
+															className="btn btn-neutral btn-sm gap-1"
+														>
+															<span className="icon-[mdi--pencil] w-4 h-4" />
+															Edit Code
+														</button>
+													)}
 													<button
 														onClick={(e) => {
 															e.stopPropagation();
