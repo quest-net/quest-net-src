@@ -8,7 +8,7 @@ import type { Context } from "../Context/Context";
 import { isItemEntity } from "../Item/ItemDropUtils";
 import { LogActions } from "../Log/LogActions";
 import {
-	getActiveVoxelTerrain,
+	getVoxelTerrainById,
 	getMaxVoxelSurfaceHeight,
 } from "../../utils/terrain/data/VoxelTerrainUtils";
 import {
@@ -16,9 +16,17 @@ import {
 	type VoxelTerrainIndex,
 } from "../../utils/terrain/data/VoxelTerrainIndex";
 import { createFlatVoxelTerrain } from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
-import { canStandVoxel } from "../../utils/terrain/movement/VoxelMovementUtilities";
-import type { VoxelTerrain } from "./VoxelTerrain";
+import { isStampTerrain } from "../../utils/terrain/editor/VoxelStampUtils";
+import type { EditableVoxelTerrain, VoxelTerrain } from "./VoxelTerrain";
+import { getScenarioTerrainIds } from "../Scenario/Scenario";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
+
+const FLYING_ACTOR_CLEARANCE_BY_SIZE = {
+	"extra-small": 1,
+	small: 1.25,
+	medium: 1.5,
+	large: 1.75,
+} as const;
 
 const POSITION_HEIGHT_EPSILON = 1e-6;
 
@@ -34,28 +42,28 @@ type ActorPositionValidationResult =
 			reason: string;
 	  };
 
+function getCenterTile(terrain: VoxelTerrain): { x: number; y: number } {
+	return {
+		x: Math.max(0, Math.min(terrain.Width - 1, Math.floor(terrain.Width / 2))),
+		y: Math.max(0, Math.min(terrain.Length - 1, Math.floor(terrain.Length / 2))),
+	};
+}
+
 function isInBounds(x: number, y: number, terrain: VoxelTerrain): boolean {
 	return x >= 0 && x < terrain.Width && y >= 0 && y < terrain.Length;
 }
 
-function clampTileCoordinate(value: number, maxExclusive: number): number {
-	if (!Number.isFinite(value)) return Math.max(0, Math.floor(maxExclusive / 2));
-	return Math.max(0, Math.min(maxExclusive - 1, Math.round(value)));
-}
-
-function findTileFromOrigin<T>(
+function findTileFromCenter<T>(
 	terrain: VoxelTerrain,
-	origin: { x: number; y: number },
 	findAtTile: (x: number, y: number) => T | null
 ): T | null {
-	const startX = clampTileCoordinate(origin.x, terrain.Width);
-	const startY = clampTileCoordinate(origin.y, terrain.Length);
+	const center = getCenterTile(terrain);
 	const maxRadius = Math.max(terrain.Width, terrain.Length);
 
 	for (let radius = 0; radius <= maxRadius; radius++) {
-		for (let y = startY - radius; y <= startY + radius; y++) {
-			for (let x = startX - radius; x <= startX + radius; x++) {
-				if (Math.max(Math.abs(x - startX), Math.abs(y - startY)) !== radius) {
+		for (let y = center.y - radius; y <= center.y + radius; y++) {
+			for (let x = center.x - radius; x <= center.x + radius; x++) {
+				if (Math.max(Math.abs(x - center.x), Math.abs(y - center.y)) !== radius) {
 					continue;
 				}
 				if (!isInBounds(x, y, terrain)) {
@@ -73,25 +81,16 @@ function findTileFromOrigin<T>(
 	return null;
 }
 
-function getPreferredSurfaceHeights(
-	surfaces: readonly number[],
-	preferredH: number
-): number[] {
-	const belowOrEqual = surfaces
-		.filter((surface) => surface <= preferredH)
-		.sort((a, b) => b - a);
-	const above = surfaces
-		.filter((surface) => surface > preferredH)
-		.sort((a, b) => a - b);
-	return [...belowOrEqual, ...above];
-}
-
 function getSurfaceHeights(
 	index: VoxelTerrainIndex,
 	x: number,
 	y: number
 ): readonly number[] {
 	return index.allSurfaces.get(`${x},${y}`) ?? [];
+}
+
+function getFlyingActorClearance(actor: Actor): number {
+	return FLYING_ACTOR_CLEARANCE_BY_SIZE[actor.Size ?? "small"];
 }
 
 function normalizeHeight(height: number): number {
@@ -101,7 +100,10 @@ function normalizeHeight(height: number): number {
 		: height;
 }
 
-function normalizePositionForValidation(position: Position): Position | null {
+function normalizePositionForValidation(
+	position: Position,
+	terrain: VoxelTerrain
+): Position | null {
 	if (
 		!Number.isFinite(position.x) ||
 		!Number.isFinite(position.y) ||
@@ -111,6 +113,7 @@ function normalizePositionForValidation(position: Position): Position | null {
 	}
 
 	return {
+		terrainId: terrain.Id,
 		x: Math.round(position.x),
 		y: Math.round(position.y),
 		h: normalizeHeight(position.h),
@@ -147,6 +150,32 @@ function getStandingSurfaceHeight(
 	return rulesHeightSurface;
 }
 
+function isFlyingHeightClear(
+	actor: Actor,
+	terrain: VoxelTerrain,
+	index: VoxelTerrainIndex,
+	x: number,
+	y: number,
+	h: number
+): boolean {
+	if (!isInBounds(x, y, terrain)) return false;
+	if (h < 0) return false;
+	if (h > getMaxActorHeight(terrain)) return false;
+
+	const { resolution } = index;
+	const startVoxelY = Math.max(0, Math.floor(h * resolution));
+	const endVoxelY = Math.max(
+		startVoxelY,
+		Math.ceil((h + getFlyingActorClearance(actor)) * resolution) - 1
+	);
+
+	for (let voxelY = startVoxelY; voxelY <= endVoxelY; voxelY++) {
+		if (index.isVoxelOccupiedAtTile(x, y, voxelY)) return false;
+	}
+
+	return true;
+}
+
 function validateActorPositionForTerrain(
 	actor: Actor,
 	position: Position,
@@ -154,7 +183,7 @@ function validateActorPositionForTerrain(
 	index: VoxelTerrainIndex,
 	occupiedTiles?: ReadonlySet<string>
 ): ActorPositionValidationResult {
-	const normalized = normalizePositionForValidation(position);
+	const normalized = normalizePositionForValidation(position, terrain);
 	if (!normalized) {
 		return { ok: false, reason: "position is not finite" };
 	}
@@ -225,7 +254,7 @@ function validateActorPositionForTerrain(
 			};
 		}
 
-		if (canStandVoxel(terrain, index, normalized.x, normalized.y, normalized.h, true)) {
+		if (isFlyingHeightClear(actor, terrain, index, normalized.x, normalized.y, normalized.h)) {
 			return { ok: true, position: normalized, mode: "flying" };
 		}
 
@@ -257,6 +286,8 @@ function getOccupiedActorPositionKeys(
 
 	for (const actor of actors) {
 		if (actor.Id === excludeActorId || isItemEntity(actor)) continue;
+		// Only actors that actually live on this terrain occupy its tiles.
+		if (actor.Position.terrainId !== terrain.Id) continue;
 
 		const validation = validateActorPositionForTerrain(
 			actor,
@@ -267,7 +298,7 @@ function getOccupiedActorPositionKeys(
 		const position =
 			validation.ok
 				? validation.position
-				: normalizePositionForValidation(actor.Position);
+				: normalizePositionForValidation(actor.Position, terrain);
 		if (position) {
 			occupied.add(positionKey(position));
 		}
@@ -306,64 +337,11 @@ function returnCharacterToRoster(
 	);
 }
 
-type RepairActorEntry = {
-	actor: Actor;
-	type: "character" | "entity";
-};
-
-function getRepairActorEntries(campaign: Campaign): RepairActorEntry[] {
-	return [
-		...campaign.GameState.Characters.map((actor) => ({
-			actor,
-			type: "character" as const,
-		})),
-		...campaign.GameState.Entities.map((actor) => ({
-			actor,
-			type: "entity" as const,
-		})),
-	];
-}
-
-function removeInvalidActor(
-	entry: RepairActorEntry,
-	campaign: Campaign,
-	context: Context
-): void {
-	if (entry.type === "character") {
-		const arrayIndex = campaign.GameState.Characters.findIndex(
-			(actor) => actor.Id === entry.actor.Id
-		);
-		if (arrayIndex === -1) return;
-
-		const [character] = campaign.GameState.Characters.splice(arrayIndex, 1);
-		returnCharacterToRoster(campaign, character, context);
-		return;
-	}
-
-	const arrayIndex = campaign.GameState.Entities.findIndex(
-		(actor) => actor.Id === entry.actor.Id
-	);
-	if (arrayIndex === -1) return;
-
-	const [actor] = campaign.GameState.Entities.splice(arrayIndex, 1);
-	LogActions.create(
-		{
-			action: `${entry.type} despawned`,
-			details: `${actor.Name} was removed due to invalid voxel position`,
-			category: "system",
-			level: "verbose",
-			visibility: ["dm"],
-			actorId: actor.Id,
-		},
-		context
-	);
-}
-
 export const VoxelTerrainActions = {
 	/**
 	 * Creates the default voxel terrain that every campaign starts with.
 	 */
-	createDefault(): VoxelTerrain {
+	createDefault(): EditableVoxelTerrain {
 		return createFlatVoxelTerrain({
 			id: crypto.randomUUID(),
 			name: "Default Terrain",
@@ -374,7 +352,7 @@ export const VoxelTerrainActions = {
 		});
 	},
 
-	createNew(): VoxelTerrain {
+	createNew(): EditableVoxelTerrain {
 		return createFlatVoxelTerrain({
 			id: crypto.randomUUID(),
 			name: "New Terrain",
@@ -383,15 +361,24 @@ export const VoxelTerrainActions = {
 		});
 	},
 
-	create(params: { terrain: VoxelTerrain }, context: Context): void {
+	async create(
+		params: { terrain: EditableVoxelTerrain },
+		context: Context
+	): Promise<void> {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
-		campaign.VoxelTerrains.push(params.terrain);
+		// Split the authored payload off the canonical object: voxels go to the
+		// per-client store + IndexedDB; only metadata (incl. ContentHash) lands on
+		// the campaign and travels through state sync.
+		const { Voxels, ...meta } = params.terrain;
+		TerrainStorageService.materialize(meta, Voxels);
+		campaign.VoxelTerrains.push(meta);
+		await TerrainStorageService.saveTerrain(campaign, meta);
 
 		LogActions.create(
 			{
 				action: "Terrain created",
-				details: `${params.terrain.Name} (${params.terrain.Width}x${params.terrain.Length})`,
+				details: `${meta.Name} (${meta.Width}x${meta.Length})`,
 				category: "system",
 				level: "info",
 				visibility: ["dm"],
@@ -400,14 +387,14 @@ export const VoxelTerrainActions = {
 		);
 	},
 
-	edit(
+	async edit(
 		params: {
 			terrainId: string;
-			updates: Partial<VoxelTerrain>;
+			updates: Partial<EditableVoxelTerrain>;
 			repairActors?: boolean;
 		},
 		context: Context
-	): void {
+	): Promise<void> {
 		const campaign = CampaignActions.getActiveCampaign(context);
 		const terrain = campaign.VoxelTerrains.find((t) => t.Id === params.terrainId);
 		if (!terrain) {
@@ -415,7 +402,15 @@ export const VoxelTerrainActions = {
 			return;
 		}
 
-		Object.assign(terrain, params.updates);
+		const { Voxels, ...metaUpdates } = params.updates;
+		Object.assign(terrain, metaUpdates);
+
+		// A voxel edit re-materializes the payload and stamps a fresh ContentHash
+		// (which is what tells every client their cached payload is now stale).
+		if (Voxels !== undefined) {
+			TerrainStorageService.materialize(terrain, Voxels);
+			await TerrainStorageService.saveTerrain(campaign, terrain);
+		}
 
 		LogActions.create(
 			{
@@ -433,6 +428,29 @@ export const VoxelTerrainActions = {
 		}
 	},
 
+	/**
+	 * Whether a terrain is shielded from deletion. Two reasons:
+	 *  - it is the campaign's last non-stamp terrain (something must remain for
+	 *    new characters to spawn on; stamp terrains are brushes, not places), or
+	 *  - a scenario references it (deleting it would leave that scenario
+	 *    unloadable).
+	 * Used both to gate the delete action and to hide the delete control.
+	 */
+	isDeleteProtected(campaign: Campaign, terrainId: string): boolean {
+		const terrain = campaign.VoxelTerrains.find((t) => t.Id === terrainId);
+		if (!terrain) return false;
+
+		const isLastSpawnable =
+			!isStampTerrain(terrain) &&
+			campaign.VoxelTerrains.filter((t) => !isStampTerrain(t)).length <= 1;
+
+		const referencedByScenario = campaign.Scenarios.some((s) =>
+			getScenarioTerrainIds(s).has(terrainId)
+		);
+
+		return isLastSpawnable || referencedByScenario;
+	},
+
 	async delete(params: { terrainId: string }, context: Context): Promise<void> {
 		const campaign = CampaignActions.getActiveCampaign(context);
 		const arrayIndex = campaign.VoxelTerrains.findIndex((t) => t.Id === params.terrainId);
@@ -441,12 +459,16 @@ export const VoxelTerrainActions = {
 			return;
 		}
 
-		if (campaign.GameState.VoxelTerrainId === params.terrainId) {
-			console.warn("Cannot delete active terrain. Switch to another terrain first.");
+		const terrain = campaign.VoxelTerrains[arrayIndex];
+
+		// Protected terrains (last spawnable, or referenced by a scenario) can't
+		// be deleted. The UI already hides the control in these cases; this is the
+		// authoritative backstop.
+		if (VoxelTerrainActions.isDeleteProtected(campaign, terrain.Id)) {
+			console.warn(`Terrain delete blocked (protected): ${terrain.Name}`);
 			return;
 		}
 
-		const terrain = campaign.VoxelTerrains[arrayIndex];
 		campaign.VoxelTerrains.splice(arrayIndex, 1);
 		await TerrainStorageService.deleteTerrain(campaign, terrain);
 
@@ -462,47 +484,64 @@ export const VoxelTerrainActions = {
 		);
 	},
 
-	async setActive(
-		params: { terrainId: string | undefined; repairActors?: boolean },
+	/**
+	 * Relocates a specific set of actors (by id, characters and/or entities) to
+	 * `toTerrainId`, then validates/snaps them against the destination geometry.
+	 * This is the DM's actor-management "move" gesture, driven by selection in the
+	 * Overview/Inspector rather than by which terrain is being viewed. Actors not
+	 * named in `actorIds`, and any already on the destination, are untouched.
+	 * See docs/multi-terrain-world.md §5.3.
+	 */
+	async moveActors(
+		params: { actorIds: string[]; toTerrainId: string },
 		context: Context
 	): Promise<void> {
 		const campaign = CampaignActions.getActiveCampaign(context);
+		if (!params.actorIds?.length) return;
 
-		if (!params.terrainId) {
-			const fallback = campaign.VoxelTerrains[0];
-			if (!fallback) {
-				console.warn("No voxel terrain available to activate");
-				return;
-			}
-			params.terrainId = fallback.Id;
-		}
-
-		const terrain = await TerrainStorageService.hydrateTerrain(
+		// Hydrate the destination so positions can be validated against it.
+		const destination = await TerrainStorageService.hydrateTerrain(
 			campaign,
-			params.terrainId
+			params.toTerrainId
 		);
-		if (!terrain) {
-			console.warn(`Voxel terrain not found: ${params.terrainId}`);
+		if (!destination) {
+			console.warn(`Destination terrain not found: ${params.toTerrainId}`);
 			return;
 		}
 
-		campaign.GameState.VoxelTerrainId = terrain.Id;
-		await TerrainStorageService.packInactiveTerrains(campaign);
+		const combatActive = campaign.GameState.CombatState?.isActive ?? false;
+		const idSet = new Set(params.actorIds);
+		const actors = [
+			...campaign.GameState.Characters,
+			...campaign.GameState.Entities,
+		];
+
+		let movedCount = 0;
+		for (const actor of actors) {
+			if (!idSet.has(actor.Id)) continue;
+			if (actor.Position.terrainId === params.toTerrainId) continue;
+			actor.Position = { ...actor.Position, terrainId: params.toTerrainId };
+			// Re-anchor the combat movement budget to the new terrain (§5.7).
+			if (combatActive && actor.TurnStartPosition) {
+				actor.TurnStartPosition = { ...actor.Position };
+			}
+			movedCount++;
+		}
+
+		if (movedCount === 0) return;
+
+		VoxelTerrainActions.repairActors(context);
 
 		LogActions.create(
 			{
-				action: "Terrain activated",
-				details: terrain.Name,
+				action: "Actors moved",
+				details: `${movedCount} actor(s) moved to ${destination.Name}`,
 				category: "system",
 				level: "important",
 				visibility: ["all"],
 			},
 			context
 		);
-
-		if (params.repairActors !== false) {
-			VoxelTerrainActions.repairActors(context);
-		}
 	},
 
 	bulkEditTags(
@@ -534,67 +573,128 @@ export const VoxelTerrainActions = {
 		);
 	},
 
+	/**
+	 * Validates and snaps every on-field actor against the geometry of the
+	 * terrain it actually lives in. Runs one pass per distinct, hydrated terrain
+	 * that has occupants; terrains that are not hydrated on this client are
+	 * skipped (their actors are validated by whoever is rendering them). See
+	 * docs/multi-terrain-world.md §6.2.
+	 */
 	repairActors(context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
-		const terrain = getActiveVoxelTerrain(campaign);
-		if (!terrain) {
-			console.warn("No active voxel terrain found for actor repair");
-			return;
+
+		const terrainIds = new Set<string>();
+		for (const actor of campaign.GameState.Characters) {
+			terrainIds.add(actor.Position.terrainId);
+		}
+		for (const actor of campaign.GameState.Entities) {
+			terrainIds.add(actor.Position.terrainId);
 		}
 
-		const occupiedTiles = new Set<string>();
-		const index = getVoxelTerrainIndex(terrain);
-		const entries = getRepairActorEntries(campaign);
-		const needsRepair: RepairActorEntry[] = [];
+		for (const terrainId of terrainIds) {
+			const terrain = getVoxelTerrainById(campaign, terrainId);
+			if (!terrain || !TerrainStorageService.isHydrated(terrain)) continue;
 
-		// First keep every already-valid actor in priority order (characters, then
-		// entities). This preserves stable occupants before repairing invalid or
-		// overlapping actors into the remaining space.
-		for (const entry of entries) {
-			const validation = validateActorPositionForTerrain(
-				entry.actor,
-				entry.actor.Position,
+			const occupiedTiles = new Set<string>();
+			const index = getVoxelTerrainIndex(terrain);
+
+			VoxelTerrainActions.repairActorArray(
+				campaign.GameState.Entities,
 				terrain,
-				index
+				index,
+				occupiedTiles,
+				"entity",
+				campaign,
+				context
 			);
-
-			if (!validation.ok) {
-				needsRepair.push(entry);
-				continue;
-			}
-
-			entry.actor.Position = validation.position;
-			if (isItemEntity(entry.actor)) continue;
-
-			const key = positionKey(validation.position);
-			if (occupiedTiles.has(key)) {
-				needsRepair.push(entry);
-				continue;
-			}
-
-			occupiedTiles.add(key);
+			VoxelTerrainActions.repairActorArray(
+				campaign.GameState.Characters,
+				terrain,
+				index,
+				occupiedTiles,
+				"character",
+				campaign,
+				context
+			);
 		}
+	},
 
-		const toRemove: RepairActorEntry[] = [];
-		for (const entry of needsRepair) {
+	/**
+	 * Repairs the subset of `actors` that live on `terrain` (matched by
+	 * `Position.terrainId`). Operates on the live GameState array so removals of
+	 * unplaceable actors take effect, but only touches actors on this terrain.
+	 */
+	repairActorArray(
+		actors: Actor[],
+		terrain: VoxelTerrain,
+		index: VoxelTerrainIndex,
+		occupiedTiles: Set<string>,
+		type: "entity" | "character",
+		campaign: Campaign,
+		context: Context
+	): void {
+		const toRemove: string[] = [];
+
+		const reposition = (actor: Actor): void => {
 			const validPosition = VoxelTerrainActions.findValidPosition(
-				entry.actor,
+				actor,
 				terrain,
 				occupiedTiles,
 				index
 			);
 			if (validPosition) {
-				entry.actor.Position = validPosition;
-				if (!isItemEntity(entry.actor)) {
-					occupiedTiles.add(positionKey(validPosition));
-				}
+				actor.Position = validPosition;
+				occupiedTiles.add(positionKey(validPosition));
 			} else {
-				toRemove.push(entry);
+				toRemove.push(actor.Id);
+			}
+		};
+
+		for (const actor of actors) {
+			if (actor.Position.terrainId !== terrain.Id) continue;
+			const isItem = isItemEntity(actor);
+			const validation = validateActorPositionForTerrain(
+				actor,
+				actor.Position,
+				terrain,
+				index,
+				occupiedTiles
+			);
+
+			if (!validation.ok) {
+				reposition(actor);
+				continue;
+			}
+
+			actor.Position = validation.position;
+
+			if (!isItem) {
+				occupiedTiles.add(positionKey(validation.position));
 			}
 		}
 
-		for (const entry of toRemove) {
-			removeInvalidActor(entry, campaign, context);
+		for (const actorId of toRemove) {
+			const arrayIndex = actors.findIndex((actor) => actor.Id === actorId);
+			if (arrayIndex === -1) continue;
+
+			const actor = actors[arrayIndex];
+			actors.splice(arrayIndex, 1);
+			if (type === "character") {
+				returnCharacterToRoster(campaign, actor as Character, context);
+				continue;
+			}
+
+			LogActions.create(
+				{
+					action: `${type} despawned`,
+					details: `${actor.Name} was removed due to invalid voxel position`,
+					category: "system",
+					level: "verbose",
+					visibility: ["dm"],
+					actorId: actor.Id,
+				},
+				context
+			);
 		}
 	},
 
@@ -607,12 +707,34 @@ export const VoxelTerrainActions = {
 		position: Position,
 		campaign: Campaign
 	): ActorPositionValidationResult {
-		const terrain = getActiveVoxelTerrain(campaign);
-		if (!terrain) {
-			const normalized = normalizePositionForValidation(position);
-			return normalized
-				? { ok: true, position: normalized, mode: isItemEntity(actor) ? "item" : "standing" }
-				: { ok: false, reason: "position is not finite" };
+		// Moves are intra-terrain: validate against the actor's OWN terrain, never
+		// a global "active" one. The target keeps the actor's terrainId.
+		const terrainId = actor.Position.terrainId;
+		const terrain = getVoxelTerrainById(campaign, terrainId);
+
+		// If this client does not have the terrain hydrated (e.g. the DM
+		// validating a player on a terrain it is not viewing and that is not
+		// tactically loaded), trust the submitted position — the originating
+		// client validated it locally against its own fully-hydrated terrain.
+		// See docs/multi-terrain-world.md §6.2.
+		if (!terrain || !TerrainStorageService.isHydrated(terrain)) {
+			if (
+				!Number.isFinite(position.x) ||
+				!Number.isFinite(position.y) ||
+				!Number.isFinite(position.h)
+			) {
+				return { ok: false, reason: "position is not finite" };
+			}
+			return {
+				ok: true,
+				position: {
+					terrainId,
+					x: position.x,
+					y: position.y,
+					h: position.h,
+				},
+				mode: isItemEntity(actor) ? "item" : "standing",
+			};
 		}
 
 		const index = getVoxelTerrainIndex(terrain);
@@ -637,22 +759,14 @@ export const VoxelTerrainActions = {
 		terrain: VoxelTerrain,
 		occupiedTiles: Set<string>,
 		index: VoxelTerrainIndex = getVoxelTerrainIndex(terrain)
-	): { x: number; y: number; h: number } | null {
+	): Position | null {
 		const maxHeight = getMaxActorHeight(terrain);
 		const normalizedCurrent =
-			normalizePositionForValidation(actor.Position) ?? {
-				x: clampTileCoordinate(actor.Position.x, terrain.Width),
-				y: clampTileCoordinate(actor.Position.y, terrain.Length),
-				h: 0,
-			};
-		const searchOrigin = {
-			x: clampTileCoordinate(normalizedCurrent.x, terrain.Width),
-			y: clampTileCoordinate(normalizedCurrent.y, terrain.Length),
-		};
+			normalizePositionForValidation(actor.Position, terrain) ?? actor.Position;
 		const isPositionAvailable = (x: number, y: number, h: number): Position | null => {
 			const validation = validateActorPositionForTerrain(
 				actor,
-				{ x, y, h },
+				{ terrainId: terrain.Id, x, y, h },
 				terrain,
 				index,
 				occupiedTiles
@@ -670,10 +784,7 @@ export const VoxelTerrainActions = {
 
 			if (!actor.CanFly) {
 				const surfaces = getSurfaceHeights(index, x, y);
-				for (const h of getPreferredSurfaceHeights(
-					surfaces,
-					normalizedCurrent.h
-				)) {
+				for (const h of surfaces) {
 					const position = isPositionAvailable(x, y, h);
 					if (position) return position;
 				}
@@ -712,30 +823,17 @@ export const VoxelTerrainActions = {
 		);
 		if (currentPosition) return currentPosition;
 
-		// Step 2: try the same column before horizontal displacement. This is what
-		// makes a flyer who loses CanFly drop onto the floor below when possible.
-		const sameColumn = findAvailablePosition(
-			normalizedCurrent.x,
-			normalizedCurrent.y
-		);
-		if (sameColumn) return sameColumn;
-
-		// Step 3: search outward from the actor's current/nearest tile, not the
-		// terrain center, so repair moves are as local as possible.
-		const skipOriginalColumn = isInBounds(
-			normalizedCurrent.x,
-			normalizedCurrent.y,
-			terrain
-		);
-		return findTileFromOrigin(terrain, searchOrigin, (x, y) => {
-			if (
-				skipOriginalColumn &&
-				x === normalizedCurrent.x &&
-				y === normalizedCurrent.y
-			) {
-				return null;
-			}
+		// Step 2: prefer horizontal displacement to a nearby tile. We deliberately
+		// skip the actor's own column here so a collision doesn't "teleport" them
+		// up to the next surface in the same column.
+		const displaced = findTileFromCenter(terrain, (x, y) => {
+			if (x === normalizedCurrent.x && y === normalizedCurrent.y) return null;
 			return findAvailablePosition(x, y);
 		});
+		if (displaced) return displaced;
+
+		// Step 3: last resort -- fall back to another valid height in the original
+		// column.
+		return findAvailablePosition(normalizedCurrent.x, normalizedCurrent.y);
 	},
 };

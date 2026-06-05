@@ -26,6 +26,7 @@ import { AppSettingActions } from '../../domains/AppSetting/AppSettingActions';
 import { getMaxVoxelSurfaceHeight } from '../../utils/terrain/data/VoxelTerrainUtils';
 import { getVoxelCount } from '../../utils/terrain/data/VoxelDataUtils';
 import { getVoxelTerrainIndex } from '../../utils/terrain/data/VoxelTerrainIndex';
+import { resolveTerrainVoxels } from '../../utils/terrain/data/terrainPayloadStore';
 import {
 	calculateVoxelMovementRange,
 	calculateVoxelRemainingMovementRange,
@@ -107,6 +108,9 @@ interface MapSceneProps {
 	xRayActors?: boolean;
 	cameraPreference?: CameraPreference;
 	viewMode?: MapViewMode;
+	/** Pause the render loop while the map is mounted but not visible (e.g. the
+	 *  DM has switched to another tab). Keeps the WebGL scene resident. */
+	paused?: boolean;
 	onReady?: () => void;
 	onExitFirstPerson?: () => void;
 }
@@ -142,6 +146,7 @@ export default function MapScene({
 	xRayActors = false,
 	cameraPreference = 'ortho',
 	viewMode = 'world',
+	paused = false,
 	onReady,
 	onExitFirstPerson,
 }: MapSceneProps) {
@@ -166,7 +171,12 @@ export default function MapScene({
 		updateHoveredTile,
 	} = useMapState();
 	const activeStickers = useActiveStickers();
-	const { pings: activePings } = useActivePings();
+	const { pings: allActivePings } = useActivePings();
+	// Only show pings placed on the terrain currently being rendered.
+	const activePings = useMemo(
+		() => (terrain ? allActivePings.filter((p) => p.terrainId === terrain.Id) : []),
+		[allActivePings, terrain]
+	);
 	const liveActorPoses = useLiveActorPoseOverrides(terrain, characters, entities);
 	const lastPingTimeRef = useRef(0);
 	const performanceModeRef = useRef(AppSettingActions.getPerformanceMode(context));
@@ -198,6 +208,7 @@ export default function MapScene({
 		performanceMode,
 		directionalLightRef,
 		createController,
+		paused,
 	});
 
 	const isDM = context.User.Role === "dm";
@@ -272,6 +283,12 @@ export default function MapScene({
 		return ids;
 	}, [campaign]);
 	const terrainSignature = useMemo(() => createTerrainSignature(terrain), [terrain]);
+	const terrainVoxels = useMemo(
+		() => (terrain ? resolveTerrainVoxels(terrain) : ""),
+		// terrainSignature is the value-equal identity for the voxel terrain.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[terrainSignature]
+	);
 	const terrainIndex = useMemo(
 		() => (terrain ? getVoxelTerrainIndex(terrain) : null),
 		// terrainSignature is the value-equal identity for the voxel terrain.
@@ -423,6 +440,7 @@ export default function MapScene({
 			if (now - lastPingTimeRef.current < PING_DURATION_MS) return;
 
 			actionService.execute("ping:create", {
+				terrainId: terrain?.Id ?? "",
 				x: tile.x,
 				y: tile.y,
 				h: tile.h,
@@ -430,7 +448,7 @@ export default function MapScene({
 			});
 			lastPingTimeRef.current = now;
 		},
-		[actionService, pingActiveActorId]
+		[actionService, pingActiveActorId, terrain]
 	);
 
 	const canControlActor = useCallback(
@@ -477,7 +495,7 @@ export default function MapScene({
 		if (!sceneResources || !controller) return;
 		const container = containerRef.current;
 		if (!container) return;
-		if (!terrain || getVoxelCount(terrain.Voxels) === 0) return;
+		if (!terrain || getVoxelCount(terrainVoxels) === 0) return;
 
 		const rig = controller.rig;
 		const controls = rig.controls;
@@ -552,7 +570,7 @@ export default function MapScene({
 	// build, so the loading screen doesn't get stuck.
 	useEffect(() => {
 		if (!sceneResources) return;
-		if (terrain && getVoxelCount(terrain.Voxels) > 0) return;
+		if (terrain && getVoxelCount(terrainVoxels) > 0) return;
 		onReadyRef.current?.();
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [sceneResources, terrain?.Id]);
@@ -565,7 +583,7 @@ export default function MapScene({
 	}, [terrainGeometryError]);
 
 	const hasTerrain =
-		sceneResources && terrain && terrainIndex && getVoxelCount(terrain.Voxels) > 0;
+		sceneResources && terrain && terrainIndex && getVoxelCount(terrainVoxels) > 0;
 	const controller = controllerRef.current;
 
 	return (

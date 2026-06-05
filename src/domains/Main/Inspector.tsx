@@ -10,6 +10,7 @@ import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { StatBar } from "../../components/StatBar/StatBar";
 import { Actor } from "../Actor/Actor";
 import { ObjectPicker, ObjectTypeConfig } from "../../components/inputs/ObjectPicker";
+import { TerrainPicker } from "../../components/inputs/TerrainPicker";
 import { ItemCollection } from "../Item/Collection";
 import { SkillCollection } from "../Skill/Collection";
 import { StatusCollection } from "../Status/Collection";
@@ -109,6 +110,7 @@ function UnifiedInspector({
 
 	// Object picker state
 	const [showObjectPicker, setShowObjectPicker] = useState(false);
+	const [showTerrainPicker, setShowTerrainPicker] = useState(false);
 
 	// Debounce timers
 	const nameTimer = useRef<NodeJS.Timeout | null>(null);
@@ -223,6 +225,17 @@ function UnifiedInspector({
 		} else {
 			actionService.execute("entity:remove", { entityId: actor.Id });
 		}
+	};
+
+	const handleMove = (toTerrainId: string) => {
+		if (!actionService || !isDM) return;
+
+		actionService.execute("terrain:moveActors", {
+			actorIds: [actor.Id],
+			toTerrainId,
+		});
+
+		setShowTerrainPicker(false);
 	};
 
 	const handleGiveObjects = (
@@ -341,6 +354,7 @@ function UnifiedInspector({
 							handleActionsChange={handleActionsChange}
 							handleDespawn={handleDespawn}
 							setShowObjectPicker={setShowObjectPicker}
+							setShowTerrainPicker={setShowTerrainPicker}
 							actionService={actionService}
 							isMyCharacter={isMyCharacter}
 						/>
@@ -386,6 +400,17 @@ function UnifiedInspector({
 					title={`Give Objects to ${actor.Name}`}
 				/>
 			)}
+
+			{/* Terrain Picker Modal */}
+			{isDM && (
+				<TerrainPicker
+					isOpen={showTerrainPicker}
+					currentTerrainId={actor.Position.terrainId}
+					onConfirm={handleMove}
+					onCancel={() => setShowTerrainPicker(false)}
+					title={`Move ${actor.Name} to…`}
+				/>
+			)}
 		</>
 	);
 }
@@ -415,6 +440,7 @@ interface ActorInfoTabProps {
 	handleActionsChange: (updatedActions: ResolvedAction[]) => void;
 	handleDespawn: () => void;
 	setShowObjectPicker: (show: boolean) => void;
+	setShowTerrainPicker: (show: boolean) => void;
 	actionService: any;
 	isMyCharacter: boolean;
 }
@@ -441,6 +467,7 @@ function ActorInfoTab({
 	handleActionsChange,
 	handleDespawn,
 	setShowObjectPicker,
+	setShowTerrainPicker,
 	actionService,
 }: ActorInfoTabProps) {
 	const { requestRoll } = useDiceRoller();
@@ -478,6 +505,15 @@ function ActorInfoTab({
 						>
 							<span className="icon-[mdi--close-circle] w-4 h-4" />
 							Despawn
+						</button>
+						<button
+							onClick={() => setShowTerrainPicker(true)}
+							className="btn btn-sm btn-secondary gap-1"
+							disabled={!actionService}
+							title="Move actor to another terrain"
+						>
+							<span className="icon-[mdi--account-arrow-right] w-4 h-4" />
+							Move
 						</button>
 					</div>
 				)}

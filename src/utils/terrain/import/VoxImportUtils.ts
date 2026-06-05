@@ -24,7 +24,10 @@
 //   (offset += contentSize + childrenSize), so nested scene-graph chunks
 //   in v200 files (nTRN, nGRP, nSHP, MATL, ...) are safely bypassed.
 
-import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import type {
+	EncodedVoxelSVO,
+	VoxelTerrain,
+} from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { DEFAULT_TERRAIN_COLOR_INDEX } from "../palette/TerrainPaletteUtils";
 import { encodeVoxels } from "../data/VoxelDataUtils";
 import {
@@ -289,7 +292,9 @@ export function getVoxResolutionOptions(parsed: VoxParseResult): VoxResolutionOp
 export function buildTerrainFromVox(
 	parsed: VoxParseResult,
 	resolution: number,
-): Pick<VoxelTerrain, "Width" | "Length" | "Height" | "Resolution" | "Voxels"> {
+): Pick<VoxelTerrain, "Width" | "Length" | "Height" | "Resolution"> & {
+	Voxels: EncodedVoxelSVO;
+} {
 	// Build a 256-entry lookup: VOX palette index -> Quest-Net palette index.
 	// This avoids an O(65) nearest-neighbor search per voxel.
 	const colorLookup = buildColorLookup(parsed.palette);

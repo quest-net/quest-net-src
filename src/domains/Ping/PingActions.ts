@@ -25,7 +25,7 @@ export const PingActions = {
 	 * against stale/replayed/peer-injected requests.
 	 */
 	create(
-		params: { x: number; y: number; h: number; actorId?: string },
+		params: { terrainId: string; x: number; y: number; h: number; actorId?: string },
 		context: Context
 	): void {
 		if (context.IsOptimistic) return;
@@ -37,11 +37,12 @@ export const PingActions = {
 
 		const campaign = CampaignActions.getActiveCampaign(context);
 
-		// Defense-in-depth bounds check against the active terrain. The UI's
+		// Defense-in-depth bounds check against the ping's terrain. The UI's
 		// screenToTile() should already discard clicks outside the grid, so
 		// this is just a safety net.
-		const terrain =
-			campaign.VoxelTerrains?.find((t) => t.Id === campaign.GameState.VoxelTerrainId)
+		const terrain = campaign.VoxelTerrains?.find(
+			(t) => t.Id === params.terrainId
+		);
 		if (terrain) {
 			if (x < 0 || y < 0 || x >= terrain.Width || y >= terrain.Length) {
 				return;
@@ -71,7 +72,7 @@ export const PingActions = {
 		LogActions.create(
 			{
 				action: `pinged location (${x}, ${y}, ${h})`,
-				details: serializePingDetails({ x, y, h }),
+				details: serializePingDetails({ terrainId: params.terrainId, x, y, h }),
 				category: "ping",
 				level: "info",
 				visibility: ["all"],

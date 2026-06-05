@@ -2,13 +2,90 @@
 
 import { Context } from "../Context/Context";
 import { Scenario, ActorPlacement, countPlacements } from "./Scenario";
+import { Campaign } from "../Campaign/Campaign";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { EntityActions } from "../Entity/EntityActions";
 import { CharacterActions } from "../Character/CharacterActions";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
-import { getActiveVoxelTerrain } from "../../utils/terrain/data/VoxelTerrainUtils";
+import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { isItemEntity, getItemDataFromEntity, createItemEntity } from "../Item/ItemDropUtils";
+
+/**
+ * Builds the placement snapshot for a scenario capture from the live GameState.
+ *
+ * Multi-terrain capture rule: the entire party is always saved (every active
+ * character, wherever it stands), but entities and dropped items are saved ONLY
+ * when they share a terrain with at least one party member. This keeps a
+ * scenario focused on what is around the party — a room the DM prepped on some
+ * far-off terrain the party hasn't reached is left out of the snapshot (and so
+ * is left untouched on load).
+ *
+ * Pure and side-effect free so the capture modal can preview exactly what
+ * `ScenarioActions.capture` will store.
+ */
+export function buildCapturePlacements(campaign: Campaign): ActorPlacement[] {
+    const gs = campaign.GameState;
+
+    // Terrains any party member currently occupies. Only entities/items on
+    // these terrains are captured.
+    const partyTerrainIds = new Set(
+        gs.Characters.map((c) => c.Position.terrainId)
+    );
+
+    const placements: ActorPlacement[] = [];
+
+    // Characters keep their stable roster Id; they are relocated (not
+    // re-created) on load. The whole party is captured regardless of terrain.
+    for (const character of gs.Characters) {
+        placements.push({
+            Type: "character",
+            ActorId: character.Id,
+            Position: { ...character.Position },
+        });
+    }
+
+    for (const entity of gs.Entities) {
+        // Skip entities the party isn't sharing a terrain with.
+        if (!partyTerrainIds.has(entity.Position.terrainId)) continue;
+
+        if (isItemEntity(entity)) {
+            // Templateless item entity — capture instance Id + template ref +
+            // uses + position. The item snapshot lives in a tag; pull the
+            // template ID and remaining uses out of it. Skip if unreadable.
+            const snapshot = getItemDataFromEntity(entity);
+            if (snapshot) {
+                placements.push({
+                    Type: "item",
+                    ActorId: entity.Id,
+                    TemplateId: snapshot.Id,
+                    UsesLeft: snapshot.UsesLeft,
+                    Position: { ...entity.Position },
+                });
+            }
+            continue;
+        }
+
+        // Regular entity — capture instance Id plus the template it was
+        // spawned from (matched by base name), so it can be re-created if
+        // it is no longer on the field at load time.
+        const baseName = EntityActions.getBaseName(entity.Name);
+        const template = campaign.EntityTemplates.find(
+            (t) => EntityActions.getBaseName(t.Name) === baseName
+        );
+
+        if (template) {
+            placements.push({
+                Type: "entity",
+                ActorId: entity.Id,
+                TemplateId: template.Id,
+                Position: { ...entity.Position },
+            });
+        }
+    }
+
+    return placements;
+}
 
 /**
  * Scenario action handlers
@@ -23,59 +100,11 @@ export const ScenarioActions = {
         const campaign = CampaignActions.getActiveCampaign(context);
         const gs = campaign.GameState;
 
-        // Snapshot every actor on the field by identity into one unified list.
-        const placements: ActorPlacement[] = [];
-
-        // Characters keep their stable roster Id; they are relocated (not
-        // re-created) on load.
-        for (const character of gs.Characters) {
-            placements.push({
-                Type: "character",
-                ActorId: character.Id,
-                Position: { ...character.Position },
-            });
-        }
-
-        for (const entity of gs.Entities) {
-            if (isItemEntity(entity)) {
-                // Templateless item entity — capture instance Id + template ref +
-                // uses + position. The item snapshot lives in a tag; pull the
-                // template ID and remaining uses out of it. Skip if unreadable.
-                const snapshot = getItemDataFromEntity(entity);
-                if (snapshot) {
-                    placements.push({
-                        Type: "item",
-                        ActorId: entity.Id,
-                        TemplateId: snapshot.Id,
-                        UsesLeft: snapshot.UsesLeft,
-                        Position: { ...entity.Position },
-                    });
-                }
-                continue;
-            }
-
-            // Regular entity — capture instance Id plus the template it was
-            // spawned from (matched by base name), so it can be re-created if
-            // it is no longer on the field at load time.
-            const baseName = EntityActions.getBaseName(entity.Name);
-            const template = campaign.EntityTemplates.find(
-                (t) => EntityActions.getBaseName(t.Name) === baseName
-            );
-
-            if (template) {
-                placements.push({
-                    Type: "entity",
-                    ActorId: entity.Id,
-                    TemplateId: template.Id,
-                    Position: { ...entity.Position },
-                });
-            }
-        }
+        const placements = buildCapturePlacements(campaign);
 
         const scenario: Scenario = {
             Id: crypto.randomUUID(),
             Name: params.name,
-            TerrainId: gs.VoxelTerrainId,
             Scene: { ...gs.Scene },
             AudioPlaylist: [...gs.Audio],
             ActorPlacements: placements,
@@ -119,14 +148,19 @@ export const ScenarioActions = {
     },
 
     /**
-     * Loads a scenario, reproducing its saved layout exactly.
+     * Loads a scenario, reproducing its saved layout on the terrains it touches.
      *
      * Every saved actor ends up at its saved position: characters are relocated
      * (or spawned from the roster) by identity, entities/items already on the
      * field are kept as-is and just repositioned, and absent ones are re-created
      * from their templates (preserving the saved instance Id so re-loading is
-     * idempotent). Actors on the field that are NOT in the scenario are removed:
-     * characters return to the roster, entities/items are despawned.
+     * idempotent).
+     *
+     * Multi-terrain scoping: only the terrains the scenario references are reset.
+     * Entities/items on those terrains that aren't part of the scenario are
+     * despawned; everything on other terrains is left untouched. Characters are
+     * never despawned — a character active now but absent from the scenario
+     * simply stays where it is.
      */
     async load(params: { scenarioId: string }, context: Context): Promise<void> {
         const campaign = CampaignActions.getActiveCampaign(context);
@@ -137,43 +171,34 @@ export const ScenarioActions = {
             return;
         }
 
-        // 1. Set terrain (skip if deleted). Defer actor repair until after this
-        // scenario has fully replaced the layout, otherwise the previous
-        // encounter can be judged against the new terrain.
-        const terrainExists = campaign.VoxelTerrains.some(
-            (t) => t.Id === scenario.TerrainId
-        );
-        if (terrainExists) {
-            await VoxelTerrainActions.setActive(
-                { terrainId: scenario.TerrainId, repairActors: false },
-                context
-            );
-        }
-
+        // Each placement carries its own terrainId (multi-terrain worlds), so a
+        // scenario may span several terrains. Actor repair is deferred until the
+        // layout is fully restored, then runs per occupied terrain below.
         const placements = scenario.ActorPlacements ?? [];
-        const placedCharacterIds = new Set(
-            placements.filter((p) => p.Type === "character").map((p) => p.ActorId)
-        );
         const placedInstanceIds = new Set(
             placements.filter((p) => p.Type !== "character").map((p) => p.ActorId)
         );
 
-        // 2. Remove field actors not in the scenario. Characters return to the
-        // roster (state preserved); iterate a copy since remove() mutates the
-        // Characters array. Entities/items are simply despawned.
-        for (const character of [...campaign.GameState.Characters]) {
-            if (!placedCharacterIds.has(character.Id)) {
-                CharacterActions.remove(
-                    { characterId: character.Id },
-                    context
-                );
-            }
-        }
-        campaign.GameState.Entities = campaign.GameState.Entities.filter((e) =>
-            placedInstanceIds.has(e.Id)
+        // Terrains this scenario touches. On load only these terrains are reset;
+        // everywhere else is left exactly as the DM left it — a room prepped on a
+        // distant terrain the party never reached stays intact.
+        const referencedTerrainIds = new Set(
+            placements.map((p) => p.Position.terrainId)
         );
 
-        // 3. Apply placements — relocate what is present, re-create what is not.
+        // Clear the referenced terrains of entities/items that aren't part of
+        // this scenario. Scenario entities are kept (matched by instance Id) and
+        // merely repositioned by the placement loop below — even one already on
+        // its target terrain is preserved, not despawned-and-respawned. Entities
+        // on unreferenced terrains are left untouched, and characters are never
+        // despawned: a character active now but not in the scenario stays put.
+        campaign.GameState.Entities = campaign.GameState.Entities.filter(
+            (e) =>
+                placedInstanceIds.has(e.Id) ||
+                !referencedTerrainIds.has(e.Position.terrainId)
+        );
+
+        // Apply placements — relocate what is present, re-create what is not.
         for (const placement of placements) {
             if (placement.Type === "character") {
                 const onField = campaign.GameState.Characters.find(
@@ -247,17 +272,22 @@ export const ScenarioActions = {
             campaign.GameState.Entities.push(entity);
         }
 
-        // 4. Set scene images
+        // Set scene images
         campaign.GameState.Scene = { ...scenario.Scene };
 
-        // 5. Set audio (filter to only existing tracks)
+        // Set audio (filter to only existing tracks)
         campaign.GameState.Audio = scenario.AudioPlaylist.filter((id) =>
             campaign.Audios.some((a) => a.Id === id)
         );
 
-        if (getActiveVoxelTerrain(campaign)) {
-            VoxelTerrainActions.repairActors(context);
+        // Hydrate every terrain the scenario placed actors on, then validate all
+        // placements against their terrain geometry (per-terrain repair pass).
+        for (const terrainId of referencedTerrainIds) {
+            if (campaign.VoxelTerrains.some((t) => t.Id === terrainId)) {
+                await TerrainStorageService.hydrateTerrain(campaign, terrainId);
+            }
         }
+        VoxelTerrainActions.repairActors(context);
 
         LogActions.create(
             {

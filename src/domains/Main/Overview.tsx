@@ -7,8 +7,10 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { StatBar } from "../../components/StatBar/StatBar";
 import { ObjectPicker, ObjectTypeConfig } from "../../components/inputs/ObjectPicker";
+import { TerrainPicker } from "../../components/inputs/TerrainPicker";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
 import { useMapState } from "../../components/Map/MapStateProvider";
+import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
 import { Actor } from "../Actor/Actor";
 import {
 	ResolvedAction,
@@ -25,7 +27,8 @@ import {
 } from "./ActorPanelHelpers";
 import { isItemEntity } from "../Item/ItemDropUtils";
 
-type OverviewFilter = "all" | "party" | "npcs";
+type OverviewFilter = "all" | "party" | "npcs" | "items";
+type TerrainScope = "viewed" | "global";
 
 interface OverviewActorEntry {
 	actor: Actor;
@@ -40,10 +43,14 @@ export function Overview({ onInspectActor }: OverviewProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const { selectActor } = useMapState();
+	const { viewedTerrainId } = useViewedTerrain();
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const [filter, setFilter] = useState<OverviewFilter>("all");
+	const [terrainScope, setTerrainScope] = useState<TerrainScope>("viewed");
+	const [search, setSearch] = useState("");
 	const [selectedActorIds, setSelectedActorIds] = useState<string[]>([]);
 	const [showObjectPicker, setShowObjectPicker] = useState(false);
+	const [showTerrainPicker, setShowTerrainPicker] = useState(false);
 
 	const combatState = campaign.GameState.CombatState;
 	const initiativeSettings = campaign.Settings.InitiativeSettings;
@@ -107,8 +114,23 @@ export function Overview({ onInspectActor }: OverviewProps) {
 		});
 	};
 
+	const query = search.trim().toLowerCase();
 	const visibleEntries = sortEntriesByInitiative(
-		getVisibleEntries(filter, allEntries)
+		getVisibleEntries(filter, allEntries).filter((entry) => {
+			// Terrain scope: limit to the viewed terrain unless viewing globally.
+			if (
+				terrainScope === "viewed" &&
+				viewedTerrainId &&
+				entry.actor.Position.terrainId !== viewedTerrainId
+			) {
+				return false;
+			}
+			// Name search.
+			if (query && !entry.actor.Name.toLowerCase().includes(query)) {
+				return false;
+			}
+			return true;
+		})
 	);
 	const visibleActorIds = new Set(visibleEntries.map((entry) => entry.actor.Id));
 	const visibleSelectedCount = selectedActorIds.filter((id) =>
@@ -140,6 +162,11 @@ export function Overview({ onInspectActor }: OverviewProps) {
 
 	const setActiveFilter = (next: OverviewFilter) => {
 		setFilter(next);
+		setSelectedActorIds([]);
+	};
+
+	const setActiveTerrainScope = (next: TerrainScope) => {
+		setTerrainScope(next);
 		setSelectedActorIds([]);
 	};
 
@@ -221,6 +248,18 @@ export function Overview({ onInspectActor }: OverviewProps) {
 		setSelectedActorIds([]);
 	};
 
+	const handleMoveSelected = (toTerrainId: string) => {
+		if (!actionService || selectedActorIds.length === 0) return;
+
+		actionService.execute("terrain:moveActors", {
+			actorIds: selectedActorIds,
+			toTerrainId,
+		});
+
+		setShowTerrainPicker(false);
+		setSelectedActorIds([]);
+	};
+
 	const handleStatChange = (
 		entry: OverviewActorEntry,
 		statId: string,
@@ -292,9 +331,9 @@ export function Overview({ onInspectActor }: OverviewProps) {
 
 	return (
 		<div className="space-y-4">
-			<div className="flex items-center justify-between gap-2">
+			<div className="flex flex-wrap items-center gap-2">
 				<div className="join">
-					{(["all", "party", "npcs"] as OverviewFilter[]).map((value) => (
+					{(["all", "party", "npcs", "items"] as OverviewFilter[]).map((value) => (
 						<button
 							key={value}
 							type="button"
@@ -305,6 +344,44 @@ export function Overview({ onInspectActor }: OverviewProps) {
 						</button>
 					))}
 				</div>
+				<div className="join">
+					{(["viewed", "global"] as TerrainScope[]).map((value) => (
+						<button
+							key={value}
+							type="button"
+							onClick={() => setActiveTerrainScope(value)}
+							className={`btn btn-sm join-item ${terrainScope === value ? "btn-primary" : "btn-outline"}`}
+							title={
+								value === "viewed"
+									? "Show actors on the terrain you are viewing"
+									: "Show actors across all terrains"
+							}
+						>
+							{value === "viewed" ? "Here" : "Global"}
+						</button>
+					))}
+				</div>
+			</div>
+
+			<div className="flex items-center gap-2">
+				<label className="input input-sm input-bordered flex flex-1 items-center gap-2">
+					<span className="icon-[mdi--magnify] h-4 w-4 opacity-60" />
+					<input
+						type="text"
+						className="grow"
+						placeholder="Search actors by name..."
+						value={search}
+						onChange={(e) => setSearch(e.target.value)}
+					/>
+					{search && (
+						<button
+							type="button"
+							className="icon-[mdi--close] h-4 w-4 opacity-60 hover:opacity-100"
+							onClick={() => setSearch("")}
+							aria-label="Clear search"
+						/>
+					)}
+				</label>
 				<div className="text-sm opacity-70 shrink-0">
 					{visibleEntries.length} shown
 				</div>
@@ -352,6 +429,16 @@ export function Overview({ onInspectActor }: OverviewProps) {
 							>
 								<span className="icon-[mdi--close-circle] w-4 h-4" />
 								Despawn
+							</button>
+							<button
+								type="button"
+								onClick={() => setShowTerrainPicker(true)}
+								disabled={selectedActorIds.length === 0}
+								className="btn btn-secondary btn-sm gap-2"
+								title="Move selected actors to another terrain"
+							>
+								<span className="icon-[mdi--account-arrow-right] w-4 h-4" />
+								Move
 							</button>
 						</div>
 					</div>
@@ -466,6 +553,14 @@ export function Overview({ onInspectActor }: OverviewProps) {
 				onCancel={() => setShowObjectPicker(false)}
 				title="Give Objects to Selected Actors"
 			/>
+
+			<TerrainPicker
+				isOpen={showTerrainPicker}
+				currentTerrainId={viewedTerrainId ?? undefined}
+				onConfirm={handleMoveSelected}
+				onCancel={() => setShowTerrainPicker(false)}
+				title={`Move ${selectedActorIds.length} actor(s) to…`}
+			/>
 		</div>
 	);
 }
@@ -474,15 +569,23 @@ function getVisibleEntries(
 	filter: OverviewFilter,
 	entries: OverviewActorEntry[]
 ): OverviewActorEntry[] {
-	if (filter === "party") {
-		return entries.filter((entry) => entry.kind === "character");
-	}
+	const isItemDrop = (entry: OverviewActorEntry) =>
+		entry.kind === "entity" && isItemEntity(entry.actor);
 
-	if (filter === "npcs") {
-		return entries.filter((entry) => entry.kind === "entity");
+	switch (filter) {
+		case "party":
+			return entries.filter((entry) => entry.kind === "character");
+		case "npcs":
+			return entries.filter(
+				(entry) => entry.kind === "entity" && !isItemDrop(entry)
+			);
+		case "items":
+			return entries.filter((entry) => isItemDrop(entry));
+		case "all":
+		default:
+			// Everything except item drops, which have their own filter.
+			return entries.filter((entry) => !isItemDrop(entry));
 	}
-
-	return entries;
 }
 
 function getFilterLabel(filter: OverviewFilter): string {
@@ -493,5 +596,7 @@ function getFilterLabel(filter: OverviewFilter): string {
 			return "Party";
 		case "npcs":
 			return "NPCs";
+		case "items":
+			return "Items";
 	}
 }

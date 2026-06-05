@@ -122,7 +122,15 @@ export function DMView() {
 
 					{/* Main Content */}
 					<main className="flex-1 overflow-auto">
-						{activeTab === "main" && <Main />}
+						{/* Main stays mounted across tab switches. Unmounting it tore
+						    down and rebuilt the entire Three.js/WebGL stack (renderer,
+						    post-processing, shader pre-warm) on every return — a very
+						    consistent multi-hundred-ms stutter. Hidden via CSS when
+						    another tab is active; its render loop is paused via `active`
+						    so the resident scene doesn't render offscreen every frame. */}
+						<div className={activeTab === "main" ? "h-full" : "hidden"}>
+							<Main active={activeTab === "main"} />
+						</div>
 						{activeTab === "characters" && <CharacterIndex />}
 						{activeTab === "entities" && <EntityIndex />}
 						{activeTab === "items" && <ItemIndex />}
@@ -130,7 +138,9 @@ export function DMView() {
 						{activeTab === "statuses" && <StatusIndex />}
 						{activeTab === "images" && <ImageIndex />}
 						{activeTab === "audios" && <AudioIndex />}
-						{activeTab === "terrains" && <TerrainIndex />}
+						{activeTab === "terrains" && (
+							<TerrainIndex onViewTerrain={() => setActiveTab("main")} />
+						)}
 						{activeTab === "scenarios" && <ScenarioIndex />}
 						{activeTab === "settings" && <CampaignSettingEdit />}
 					</main>

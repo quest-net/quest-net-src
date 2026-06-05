@@ -13,6 +13,7 @@ import { runMigrations } from "../../migrations/runMigrations";
 import { campaignMigrations } from "../../migrations/campaignMigrations";
 import {
 	addMissingDefaultVoxelStamps,
+	commitEditableVoxelTerrain,
 	createDefaultVoxelStamps,
 } from "../../data/defaultVoxelStamps";
 import { base64ToBlob, blobToBase64 } from "../../utils/base64";
@@ -54,9 +55,12 @@ function generateRoomCode(): string {
  * Creates a blank campaign structure
  */
 function createBlankCampaign(name: string, roomCode?: string): Campaign {
-	const defaultVoxelTerrain = VoxelTerrainActions.createDefault();
-	const defaultVoxelStamps = createDefaultVoxelStamps();
-	defaultVoxelTerrain.VoxelsLoaded = true;
+	const defaultVoxelTerrain = commitEditableVoxelTerrain(
+		VoxelTerrainActions.createDefault()
+	);
+	const defaultVoxelStamps = createDefaultVoxelStamps().map(
+		commitEditableVoxelTerrain
+	);
 
 	return {
 		Id: crypto.randomUUID(),
@@ -87,8 +91,6 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 				EnvironmentImageId: "",
 				FocusImageId: "",
 			},
-			TerrainId: "DEFAULT_TERRAIN",
-			VoxelTerrainId: defaultVoxelTerrain.Id,
 			CalendarDay: 0,
 			RemainingShortRests: 2,
 		},
@@ -109,6 +111,11 @@ export interface CampaignExportData {
 	version: VersionString;
 	campaign: Campaign;
 	imageData: Record<string, { base64: string; mimeType: string }>;
+	// Terrain voxel payloads, keyed by terrain Id. Kept out of the campaign
+	// object (which carries only metadata + ContentHash) and shipped alongside,
+	// the same way image binaries are. Optional for backward compat with
+	// pre-2.7.0 export files (whose voxels are inline and handled by migration).
+	terrainData?: Record<string, { voxels: string; contentHash: string }>;
 }
 
 export interface ExportProgress {
@@ -438,7 +445,9 @@ export const CampaignActions = {
 			return;
 		}
 
-		campaign = await TerrainStorageService.hydrateAllTerrains(campaign);
+		// Terrain voxel payloads travel as a separate bundle (like images); the
+		// campaign object stays payload-free.
+		const terrainData = await TerrainStorageService.exportTerrainPayloads(campaign);
 
 		try {
 			onProgress?.({
@@ -481,6 +490,7 @@ export const CampaignActions = {
 				version: APP_VERSION,
 				campaign,
 				imageData,
+				terrainData,
 			};
 
 			// Download as JSON file
@@ -529,8 +539,9 @@ export const CampaignActions = {
 
 			let campaign: Campaign;
 			let imageData: Record<string, { base64: string; mimeType: string }> = {};
+			let terrainData: Record<string, { voxels: string; contentHash: string }> = {};
 
-			// New-style exports: { version, campaign, imageData }
+			// New-style exports: { version, campaign, imageData, terrainData? }
 			if (
 				data &&
 				typeof data === "object" &&
@@ -541,6 +552,11 @@ export const CampaignActions = {
 				imageData =
 					(data.imageData as Record<string, { base64: string; mimeType: string }>) ||
 					{};
+				terrainData =
+					(data.terrainData as Record<
+						string,
+						{ voxels: string; contentHash: string }
+					>) || {};
 			} else {
 				// Old-style exports (pre-container) – assume it's just the Campaign object
 				campaign = data as Campaign;
@@ -548,10 +564,11 @@ export const CampaignActions = {
 
 			// Generate new ID to avoid conflicts
 			campaign.Id = crypto.randomUUID();
-			for (const terrain of campaign.VoxelTerrains ?? []) {
-				delete terrain.VoxelStorageKey;
-				terrain.VoxelsLoaded = true;
-			}
+
+			// Restore terrain payloads (2.7.0+ exports) into IndexedDB under the new
+			// id. Pre-2.7.0 files carry voxels inline on the campaign instead; the
+			// schema migration below moves those into IndexedDB.
+			await TerrainStorageService.importTerrainPayloads(campaign, terrainData);
 
 			// Run schema migrations against the file's saved version.
 			// For new-style exports the version lives on the container object;

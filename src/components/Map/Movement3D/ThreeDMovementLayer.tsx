@@ -482,7 +482,7 @@ export function ThreeDMovementLayer({
 				isItemEntity(actorObject) ||
 				canOccupyVoxelTile(
 					terrain,
-					{ x: tile.x, y: tile.y, h: targetHeight },
+					{ terrainId: terrain.Id, x: tile.x, y: tile.y, h: targetHeight },
 					charactersRef.current,
 					entitiesRef.current,
 					actor.id
@@ -629,7 +629,7 @@ export function ThreeDMovementLayer({
 				!isItemEntity(actorObject) &&
 				!canOccupyVoxelTile(
 					terrain,
-					{ x: targetTile.x, y: targetTile.y, h: targetHeight },
+					{ terrainId: terrain.Id, x: targetTile.x, y: targetTile.y, h: targetHeight },
 					charactersRef.current,
 					entitiesRef.current,
 					actor.id

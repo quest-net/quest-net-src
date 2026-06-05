@@ -2,7 +2,7 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { Context } from "../Context/Context";
 import { LogActions } from "../Log/LogActions";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
-import { getActiveVoxelTerrain } from "../../utils/terrain/data/VoxelTerrainUtils";
+import { getVoxelTerrainById } from "../../utils/terrain/data/VoxelTerrainUtils";
 import { Actor, Position } from "./Actor";
 
 function isValidPosition(position: Position): boolean {
@@ -55,6 +55,7 @@ export const ActorActions = {
 		// scenario loads, and similar layout-changing actions.
 		const oldPosition = { ...actor.Position };
 		const nextPosition = {
+			terrainId: params.position.terrainId ?? actor.Position.terrainId,
 			x: Math.round(params.position.x),
 			y: Math.round(params.position.y),
 			h: Math.round(params.position.h),
@@ -120,7 +121,7 @@ export const ActorActions = {
 			"CanFly" in params.updates &&
 			previousCanFly &&
 			!actor.CanFly &&
-			getActiveVoxelTerrain(campaign)
+			getVoxelTerrainById(campaign, actor.Position.terrainId)
 		) {
 			VoxelTerrainActions.repairActors(context);
 		}

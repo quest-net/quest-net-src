@@ -159,12 +159,28 @@ export interface VoxelTerrain {
 	Length: number;      // Z extent in tactical units
 	Height: number;      // Y extent in tactical units
 	Resolution?: number; // voxels per tactical unit; defaults to 1 for older saves
-	Voxels: EncodedVoxelSVO;
-	VoxelsLoaded?: boolean;
-	VoxelStorageKey?: string;
+	/**
+	 * Content-identity token for this terrain's voxel payload (see
+	 * `hashVoxels`). The payload itself is NOT a field on the synced campaign
+	 * object — it lives per-client in `TerrainPayloadStore` (in-memory) and
+	 * IndexedDB. `ContentHash` is what travels through state sync; a client
+	 * compares it against its cached payload to decide whether to (re)fetch.
+	 * Optional only for older saves prior to the 2.7.0 migration / empty terrains.
+	 */
+	ContentHash?: string;
 	VoxelCount?: number;
 	Lighting: VoxelTerrainLighting;
 	Background: VoxelTerrainBackground;
 	PreviewColor?: string;
 	Tags?: string[];
 }
+
+/**
+ * A VoxelTerrain plus its decoded voxel payload, used only by transient,
+ * client-local pipelines that work on *uncommitted* voxels: the terrain editor
+ * and stamp sources. The canonical `VoxelTerrain` deliberately omits `Voxels`
+ * so the payload can never ride along on the synced/diffed campaign object;
+ * code that needs the payload either reads it from `TerrainPayloadStore` (for
+ * committed terrains) or carries an `EditableVoxelTerrain` explicitly.
+ */
+export type EditableVoxelTerrain = VoxelTerrain & { Voxels: EncodedVoxelSVO };

@@ -16,6 +16,7 @@ import { SoundEffectService } from "../../../services/SoundEffectService";
 
 export interface ActivePing {
 	id: string;
+	terrainId: string;
 	x: number;
 	y: number;
 	h: number;
@@ -66,6 +67,7 @@ export function useActivePings(): UseActivePingsResult {
 
 			out.push({
 				id: entry.Id,
+				terrainId: parsed.terrainId,
 				x: parsed.x,
 				y: parsed.y,
 				h: parsed.h,

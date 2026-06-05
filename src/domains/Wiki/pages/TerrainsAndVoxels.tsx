@@ -32,6 +32,19 @@ export const terrainsAndVoxelsPage: WikiPage = {
 						coordinates are subcells controlled by{" "}
 						<WikiHighlight tone="primary">Resolution</WikiHighlight>.
 					</p>
+					<WikiCallout tone="warning" title="The voxel payload is not on this object">
+						<p>
+							The canonical <WikiCode>VoxelTerrain</WikiCode> carries only
+							metadata — never the voxel bytes. The base64 SVO payload lives
+							per-client in the in-memory <WikiCode>TerrainPayloadStore</WikiCode>{" "}
+							and IndexedDB; only the <WikiCode>ContentHash</WikiCode> rides along
+							on the synced campaign. Code that needs the payload reads it from
+							the store, or carries an explicit{" "}
+							<WikiCode>EditableVoxelTerrain</WikiCode> (terrain plus its{" "}
+							<WikiCode>Voxels</WikiCode> string) through transient editor and
+							stamp pipelines.
+						</p>
+					</WikiCallout>
 					<WikiFieldGrid
 						items={[
 							{
@@ -47,22 +60,16 @@ export const terrainsAndVoxelsPage: WikiPage = {
 									"Voxels per tactical unit. Current editor options clamp this from 1 through 4.",
 							},
 							{
-								name: "Voxels",
+								name: "ContentHash",
 								tone: "accent",
 								detail:
-									"Base64 encoded Sparse Voxel Octree payload. May be blank when the terrain is packed away.",
+									"Content-identity token for the voxel payload. This — not the payload itself — travels through state sync; clients compare it against their cached payload to decide whether to (re)fetch.",
 							},
 							{
 								name: "Lighting / Background",
 								tone: "success",
 								detail:
 									"Per-terrain environment settings used by the active map display and renderer.",
-							},
-							{
-								name: "VoxelStorageKey",
-								tone: "warning",
-								detail:
-									"IndexedDB key for the external voxel payload, normally campaignId:terrainId.",
 							},
 							{
 								name: "VoxelCount / PreviewColor",
@@ -139,28 +146,35 @@ export const terrainsAndVoxelsPage: WikiPage = {
 			body: (
 				<div className="space-y-4">
 					<p>
-						Large voxel payloads are not meant to stay embedded in every campaign
-						object forever. <WikiCode>TerrainStorageService</WikiCode> packs
-						inactive terrain payloads into IndexedDB and hydrates them when needed.
+						Voxel payloads never live on the synced campaign object.{" "}
+						<WikiCode>TerrainStorageService</WikiCode> backs a per-client
+						materialized buffer (<WikiCode>TerrainPayloadStore</WikiCode>) with
+						IndexedDB, and — for players — an on-demand peer fetch over the{" "}
+						<WikiCode>terrainReq</WikiCode>/<WikiCode>terrainData</WikiCode>{" "}
+						channels. A client materializes a terrain only when it needs to render
+						or validate against it.
 					</p>
 					<WikiDiagram title="Hydration lifecycle">
 						<div className="grid gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr]">
-							<WikiDiagramNode title="Hydrated terrain" tone="success">
-								<WikiCode>Voxels</WikiCode> is present and{" "}
-								<WikiCode>VoxelsLoaded</WikiCode> is true.
-							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
-								-&gt;
-							</div>
-							<WikiDiagramNode title="Save and unload" tone="accent">
-								Payload is saved to the <WikiCode>voxelTerrains</WikiCode>{" "}
-								object store and the in-campaign string is cleared.
-							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
-								-&gt;
-							</div>
 							<WikiDiagramNode title="Stub terrain" tone="warning">
-								Metadata remains available while the large voxel string is absent.
+								Canonical metadata + <WikiCode>ContentHash</WikiCode>; no payload
+								materialized on this client.
+							</WikiDiagramNode>
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+								-&gt;
+							</div>
+							<WikiDiagramNode title="Hydrate" tone="accent">
+								Payload is loaded from the <WikiCode>voxelTerrains</WikiCode>{" "}
+								IndexedDB store when its hash matches, else fetched from the DM,
+								into the per-client buffer.
+							</WikiDiagramNode>
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+								-&gt;
+							</div>
+							<WikiDiagramNode title="Materialized terrain" tone="success">
+								Voxels live in <WikiCode>TerrainPayloadStore</WikiCode>;{" "}
+								<WikiCode>isHydrated</WikiCode> reports true. Dropped again when
+								no longer pinned or occupied.
 							</WikiDiagramNode>
 						</div>
 					</WikiDiagram>
@@ -170,25 +184,31 @@ export const terrainsAndVoxelsPage: WikiPage = {
 								name: "prepareCampaignAfterLoad",
 								tone: "primary",
 								detail:
-									"Hydrates the active terrain, then packs inactive terrains.",
+									"Resets the payload store for the campaign, materializes pinned/occupied terrains, then drops the rest from the buffer.",
 							},
 							{
 								name: "prepareCampaignForStorage",
 								tone: "secondary",
 								detail:
-									"Saves hydrated terrain payloads, then strips inactive voxel strings before campaign storage.",
+									"Persists every materialized terrain payload to IndexedDB. The campaign object stays payload-free either way.",
 							},
 							{
 								name: "loadTerrainForEditing",
 								tone: "accent",
 								detail:
-									"Returns a hydrated draft for the editor without relying on the packed campaign stub.",
+									"Returns an EditableVoxelTerrain (terrain + inline Voxels) for the editor's transient working copy.",
+							},
+							{
+								name: "hydrateTerrain",
+								tone: "info",
+								detail:
+									"Materializes a terrain into the per-client buffer from IndexedDB (hash match) or, for players, the DM over the network.",
 							},
 							{
 								name: "deleteTerrain",
 								tone: "error",
 								detail:
-									"Deletes the IndexedDB payload for the removed terrain.",
+									"Drops the buffered payload and deletes the IndexedDB record for the removed terrain.",
 							},
 						]}
 					/>

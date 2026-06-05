@@ -8,7 +8,7 @@ import { LogActions } from "../Log/LogActions";
 import { ActorActions } from "../Actor/ActorActions";
 import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
 import { createDefaultStatSlots, createDefaultActionSlots, createDefaultAttributeSlots } from "../../utils/ActorResolvers";
-import { getActiveVoxelSpawnPosition, getActiveVoxelTerrain } from "../../utils/terrain/data/VoxelTerrainUtils";
+import { getVoxelSpawnPosition, getVoxelTerrainById } from "../../utils/terrain/data/VoxelTerrainUtils";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 
 /**
@@ -33,7 +33,8 @@ export const EntityActions = {
 			Stats: createDefaultStatSlots(settings.StatDefinitions),
 			Actions: createDefaultActionSlots(settings.ActionDefinitions),
 			Attributes: createDefaultAttributeSlots(settings.AttributeDefinitions ?? []),
-			Position: { x: 0, y: 0, h: 0 },
+			// Template default; terrainId is assigned when the entity is spawned.
+			Position: { terrainId: "", x: 0, y: 0, h: 0 },
 			MoveSpeed: 5,
 			CanFly: false,
 			Size: "small",
@@ -107,6 +108,7 @@ export const EntityActions = {
 	spawn(
 		params: {
 			entityId: string;
+			terrainId?: string;
 			position?: Position;
 			repairActors?: boolean;
 			// Optional: force the new instance's Id instead of generating one.
@@ -117,6 +119,14 @@ export const EntityActions = {
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
+
+		// Prefer an explicit position's terrain, then a caller terrain, then the
+		// first terrain in the list as the default landing.
+		const targetTerrainId =
+			params.position?.terrainId ??
+			params.terrainId ??
+			campaign.VoxelTerrains[0]?.Id ??
+			"";
 
 		// Find the template
 		const template = campaign.EntityTemplates.find(
@@ -172,8 +182,9 @@ export const EntityActions = {
 			Id: params.instanceId ?? crypto.randomUUID(), // New ID for the instance
 			Color: template.Color ?? ACTOR_DEFAULT_COLORS.ENTITY,
 		};
-		const voxelSpawnPosition = getActiveVoxelSpawnPosition(
+		const voxelSpawnPosition = getVoxelSpawnPosition(
 			campaign,
+			targetTerrainId,
 			instance.CanFly
 		);
 
@@ -186,11 +197,16 @@ export const EntityActions = {
 			instance.Name = `${baseName} [${EntityActions.getLetterSuffix(existingCount)}]`;
 		}
 
-		// Set position from the active voxel terrain if not provided.
+		// Set position from the target voxel terrain if not provided.
 		if (params.position) {
 			instance.Position = params.position;
 		} else {
-			instance.Position = voxelSpawnPosition ?? { x: 0, y: 0, h: 0 };
+			instance.Position = voxelSpawnPosition ?? {
+				terrainId: targetTerrainId,
+				x: 0,
+				y: 0,
+				h: 0,
+			};
 		}
 
 		// Add to GameState
@@ -208,7 +224,10 @@ export const EntityActions = {
 			context
 		);
 
-		if (params.repairActors !== false && getActiveVoxelTerrain(campaign)) {
+		if (
+			params.repairActors !== false &&
+			getVoxelTerrainById(campaign, targetTerrainId)
+		) {
 			VoxelTerrainActions.repairActors(context);
 		}
 	},

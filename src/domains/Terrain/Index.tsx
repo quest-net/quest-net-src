@@ -2,16 +2,24 @@ import { useState } from "react";
 import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { replacePathTag } from "../../utils/FolderUtils";
-import { getMostCommonVoxelTerrainColor } from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { useQuestContext } from "../Context/ContextProvider";
+import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import { TerrainEdit } from "./Edit";
-import { TerrainStorageService } from "../../services/TerrainStorageService";
+import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
 
-export function TerrainIndex() {
+export function TerrainIndex({
+	onViewTerrain,
+}: {
+	/** Called after the DM picks a terrain to view, so the parent can switch
+	 *  back to the Main tab and show it. */
+	onViewTerrain?: () => void;
+} = {}) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const campaign = CampaignActions.getActiveCampaign(context);
+	const { viewedTerrainId, setViewedTerrain } = useViewedTerrain();
+	const effectiveViewedTerrainId = viewedTerrainId ?? undefined;
 
 	const [createCounter, setCreateCounter] = useState(0);
 
@@ -28,32 +36,32 @@ export function TerrainIndex() {
 		});
 	};
 
-	const handleSetActive = (terrainId: string) => {
-		if (!actionService) return;
-
-		actionService.execute("terrain:setActive", {
-			terrainId,
-		});
+	// "View Terrain" is purely local UI state — it switches which terrain the DM
+	// is looking at (and which terrain spawns target). It does not broadcast or
+	// move any actor. See docs/multi-terrain-world.md §5.2.
+	// Also jump to the Main tab so the DM immediately sees the terrain they
+	// just selected to view.
+	const handleView = (terrainId: string) => {
+		setViewedTerrain(terrainId);
+		onViewTerrain?.();
 	};
 
 	const items: IndexViewItem[] = campaign.VoxelTerrains.map((terrain) => {
-		const isActive = campaign.GameState.VoxelTerrainId === terrain.Id;
+		const isViewing = effectiveViewedTerrainId === terrain.Id;
 
 		return {
 			id: terrain.Id,
 			label: terrain.Name,
-			details: `${terrain.Width}x${terrain.Length}${terrain.VoxelCount !== undefined ? ` - ${terrain.VoxelCount.toLocaleString()} voxels` : ""}${isActive ? " - Active" : ""}`,
+			details: `${terrain.Width}x${terrain.Length}${terrain.VoxelCount !== undefined ? ` - ${terrain.VoxelCount.toLocaleString()} voxels` : ""}${isViewing ? " - Viewing" : ""}`,
 			icon: "icon-[mdi--terrain]",
-			iconColor: TerrainStorageService.isHydrated(terrain)
-				? getMostCommonVoxelTerrainColor(terrain)
-				: terrain.PreviewColor,
+			iconColor: terrain.PreviewColor,
 			tags: terrain.Tags || [],
-			action: isActive
+			action: isViewing
 				? undefined
 				: {
-					label: "Activate",
-					icon: "icon-[mdi--play]",
-					onClick: () => handleSetActive(terrain.Id),
+					label: "View",
+					icon: "icon-[mdi--eye]",
+					onClick: () => handleView(terrain.Id),
 				},
 		};
 	});
@@ -75,7 +83,6 @@ export function TerrainIndex() {
 				const terrain = item
 					? campaign.VoxelTerrains.find((t) => t.Id === item.id)
 					: undefined;
-				const isActive = terrain?.Id === campaign.GameState.VoxelTerrainId;
 				const initialTags =
 					currentPath.length > 0 ? replacePathTag([], currentPath) : undefined;
 
@@ -83,7 +90,11 @@ export function TerrainIndex() {
 					<TerrainEdit
 						key={item?.id || `create-${createCounter}`}
 						terrain={terrain}
-						isDeleteProtected={isActive}
+						isDeleteProtected={
+							terrain
+								? VoxelTerrainActions.isDeleteProtected(campaign, terrain.Id)
+								: false
+						}
 						initialTags={initialTags}
 						onClose={() => closeDrawer?.()}
 					/>

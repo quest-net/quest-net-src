@@ -86,6 +86,34 @@ export function getVoxelCount(encoded: string): number {
 }
 
 /**
+ * Content identity for a voxel payload. A fast, synchronous, zero-dependency
+ * hash (cyrb53) of the encoded SVO string, prefixed with the string length so
+ * payloads of different sizes can never collide.
+ *
+ * This is a *content-identity token*, not a cryptographic digest: it is only
+ * ever compared against another hash of the same terrain to answer "did this
+ * terrain's content change / do I have the right bytes?". Hashing happens only
+ * at author time (terrain create/edit) and once during migration, never on a
+ * render or per-frame path, so the linear scan of a multi-megabyte string is a
+ * non-issue. The empty payload ("") hashes to a stable, well-known value.
+ */
+export function hashVoxels(encoded: string): string {
+	let h1 = 0xdeadbeef;
+	let h2 = 0x41c6ce57;
+	for (let i = 0; i < encoded.length; i++) {
+		const ch = encoded.charCodeAt(i);
+		h1 = Math.imul(h1 ^ ch, 2654435761);
+		h2 = Math.imul(h2 ^ ch, 1597334677);
+	}
+	h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+	h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+	h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+	h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+	const hash = 4294967296 * (2097151 & h2) + (h1 >>> 0);
+	return `${encoded.length.toString(36)}-${hash.toString(16)}`;
+}
+
+/**
  * Decodes a voxel set into flat parallel typed arrays without allocating a Voxel
  * object per entry. `positions[i]` is packed as x + y*256 + z*65536 (unpack with
  * `& 0xff`, `>>> 8 & 0xff`, `>>> 16 & 0xff`); `colors[i]` is the palette index.

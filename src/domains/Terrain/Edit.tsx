@@ -9,9 +9,13 @@ import VoxelTerrainEditor, {
 	type VoxelTerrainEditorHandle,
 } from "../../components/inputs/VoxelTerrainEditor";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
-import type { VoxelTerrain } from "../VoxelTerrain/VoxelTerrain";
+import type {
+	EditableVoxelTerrain,
+	VoxelTerrain,
+} from "../VoxelTerrain/VoxelTerrain";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
+import { getTerrainVoxels } from "../../utils/terrain/data/terrainPayloadStore";
 import {
 	MAX_VOXEL_TERRAIN_HEIGHT,
 	MAX_VOXEL_TERRAIN_WIDTH,
@@ -50,11 +54,12 @@ export function TerrainEdit({
 	const { actionService } = useActionService();
 	const questContext = useQuestContext();
 	const campaign = questContext.ActiveCampaign;
-	const [loadedTerrain, setLoadedTerrain] = useState<VoxelTerrain | undefined>(
-		() =>
-			terrain && TerrainStorageService.isHydrated(terrain)
-				? { ...terrain }
-				: undefined
+	const [loadedTerrain, setLoadedTerrain] = useState<
+		EditableVoxelTerrain | undefined
+	>(() =>
+		terrain && TerrainStorageService.isHydrated(terrain)
+			? { ...terrain, Voxels: getTerrainVoxels(terrain.Id) }
+			: undefined
 	);
 	const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -69,7 +74,7 @@ export function TerrainEdit({
 		setLoadError(null);
 
 		if (TerrainStorageService.isHydrated(terrain)) {
-			setLoadedTerrain({ ...terrain });
+			setLoadedTerrain({ ...terrain, Voxels: getTerrainVoxels(terrain.Id) });
 			return;
 		}
 
@@ -119,20 +124,18 @@ export function TerrainEdit({
 
 	const terrainData = loadedTerrain;
 
-	const initialData: VoxelTerrain = terrainData
+	const initialData: EditableVoxelTerrain = terrainData
 		? {
 			...terrainData,
 			Voxels: terrainData.Voxels,
-			VoxelsLoaded: true,
 			Tags: initialTags ?? terrainData.Tags,
 		}
 		: {
 			...VoxelTerrainActions.createNew(),
-			VoxelsLoaded: true,
 			Tags: initialTags,
 		};
 
-	const handleSave = (data: VoxelTerrain) => {
+	const handleSave = (data: EditableVoxelTerrain) => {
 		if (!actionService) return;
 
 		if (!terrain) {
@@ -145,15 +148,14 @@ export function TerrainEdit({
 		}
 	};
 
-	const handleClone = (data: VoxelTerrain) => {
+	const handleClone = (data: EditableVoxelTerrain) => {
 		if (!actionService) return;
-		const cloned: VoxelTerrain = {
+		const cloned: EditableVoxelTerrain = {
 			...data,
 			Id: crypto.randomUUID(),
 			Name: `${data.Name} (Copy)`,
 			Voxels: data.Voxels,
-			VoxelsLoaded: true,
-			VoxelStorageKey: undefined,
+			ContentHash: undefined,
 			VoxelCount: undefined,
 			PreviewColor: undefined,
 			Tags: data.Tags ? [...data.Tags] : undefined,
@@ -194,8 +196,8 @@ export function TerrainEdit({
 // ============================================================================
 
 interface TerrainFormProps {
-	data?: VoxelTerrain;
-	onChange?: (data: VoxelTerrain) => void;
+	data?: EditableVoxelTerrain;
+	onChange?: (data: EditableVoxelTerrain) => void;
 }
 
 function TerrainForm({ data, onChange }: TerrainFormProps) {
@@ -213,8 +215,8 @@ function TerrainForm({ data, onChange }: TerrainFormProps) {
 }
 
 interface TerrainFormFieldsProps {
-	data: VoxelTerrain;
-	onChange: (data: VoxelTerrain) => void;
+	data: EditableVoxelTerrain;
+	onChange: (data: EditableVoxelTerrain) => void;
 	readOnly: boolean;
 }
 
@@ -224,21 +226,20 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 	const campaign = questContext.ActiveCampaign;
 	const editorRef = useRef<VoxelTerrainEditorHandle>(null);
 
-	// Show actor positions only when editing the terrain that is currently
-	// active in the game session, so the DM can see where actors stand.
-	const isActiveTerrain = !!(
-		data.Id && campaign?.GameState?.VoxelTerrainId === data.Id
-	);
+	// Show the actors that stand on the terrain being edited (matched by their
+	// per-actor terrainId), so the DM can see where they are while sculpting.
 	const actorOverlayInfos: ActorOverlayInfo[] =
-		isActiveTerrain && campaign
+		data.Id && campaign
 			? [
 				...(campaign.GameState.Characters ?? []),
 				...(campaign.GameState.Entities ?? []),
-			].map(actor => ({
-				id: actor.Id,
-				name: actor.Name,
-				position: actor.Position,
-			}))
+			]
+				.filter((actor) => actor.Position.terrainId === data.Id)
+				.map(actor => ({
+					id: actor.Id,
+					name: actor.Name,
+					position: actor.Position,
+				}))
 			: [];
 
 	// Stamps: any terrain tagged path:stamps (or a subfolder thereof), minus
@@ -251,7 +252,9 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 	const loadStampVoxels = useCallback(
 		async (terrainId: string) => {
 			if (!campaign) return null;
-			return TerrainStorageService.hydrateTerrain(campaign, terrainId);
+			const stamp = campaign.VoxelTerrains.find((t) => t.Id === terrainId);
+			if (!stamp) return null;
+			return TerrainStorageService.loadTerrainForEditing(campaign, stamp);
 		},
 		[campaign]
 	);

@@ -8,7 +8,7 @@
 //   - reports the change count delta (for occupied-voxel running total)
 
 import type { VoxelTerrainIndex } from "../data/VoxelTerrainIndex";
-import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import type { EditableVoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import {
 	iterateStampVoxels,
 	type StampTransform,
@@ -72,7 +72,7 @@ export function applyStampToGrid(
 	dirtyChunks: Set<number>,
 	dims: ChunkDims,
 	anchor: VoxelCoord,
-	source: VoxelTerrain,
+	source: EditableVoxelTerrain,
 	transform: StampTransform,
 	beforeMutation?: (gIdx: number) => void,
 ): MutationResult {

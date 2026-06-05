@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import * as THREE from "three";
 import type { VoxelTerrain } from "../../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCount } from "../../../../utils/terrain/data/VoxelDataUtils";
+import { resolveTerrainVoxels } from "../../../../utils/terrain/data/terrainPayloadStore";
 import { createVoxelTerrainBufferGeometry } from "../geometry/VoxelTerrainGeometryUtils";
 import type {
 	VoxelTerrainFogVolume,
@@ -220,7 +221,8 @@ export function useVoxelTerrainGeometryWorker(
 			return;
 		}
 
-		if (!terrain || getVoxelCount(terrain.Voxels) === 0) {
+		const voxels = terrain ? resolveTerrainVoxels(terrain) : "";
+		if (!terrain || getVoxelCount(voxels) === 0) {
 			setResult(null);
 			setError(null);
 			return;
@@ -275,7 +277,7 @@ export function useVoxelTerrainGeometryWorker(
 		});
 
 		try {
-			worker.postMessage({ buildId, terrain });
+			worker.postMessage({ buildId, terrain, voxels });
 		} catch (postError) {
 			const handler = pendingBuildHandlers.get(buildId);
 			pendingBuildHandlers.delete(buildId);

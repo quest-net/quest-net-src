@@ -8,11 +8,13 @@ import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
 import { replacePathTag } from "../../utils/FolderUtils";
 import { Item } from "./Item";
 import { ItemEdit } from "./Edit";
+import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
 
 export function ItemIndex() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const campaign = CampaignActions.getActiveCampaign(context);
+	const { viewedTerrainId } = useViewedTerrain();
 
 	// Force a fresh key for the create drawer so it resets cleanly each time
 	const [createCounter, setCreateCounter] = useState(0);
@@ -35,6 +37,7 @@ export function ItemIndex() {
 
 		actionService.execute("item:spawn", {
 			itemId,
+			terrainId: viewedTerrainId ?? "",
 		});
 	};
 

@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 import { VOXEL_FACE_DEFINITIONS } from "../../Map/Terrain/geometry/VoxelTerrainGeometryConstants";
-import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import type { EditableVoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import {
 	packVoxelKey,
 	unpackVoxelKey,
@@ -220,7 +220,7 @@ function createSelectionCellGhostGeometry(
 }
 
 function createStampGhostGeometry(
-	source: VoxelTerrain,
+	source: EditableVoxelTerrain,
 	transform: StampTransform,
 	anchor: VoxelCoord,
 	dims: ChunkDims,
@@ -274,7 +274,7 @@ export interface HoverInputs {
 	granularity: EditGranularity;
 	brushSize: number;
 	colorIndex: number;
-	stampSource: VoxelTerrain | null;
+	stampSource: EditableVoxelTerrain | null;
 	stampTransform: StampTransform;
 }
 

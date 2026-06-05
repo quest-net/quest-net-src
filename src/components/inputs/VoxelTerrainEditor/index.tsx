@@ -22,6 +22,7 @@ import {
 } from "react";
 import * as THREE from "three";
 import {
+	type EditableVoxelTerrain,
 	type VoxelTerrain,
 	type VoxelTerrainBackground,
 	type VoxelTerrainLighting,
@@ -144,8 +145,8 @@ import {
 export type { ActorOverlayInfo };
 
 interface VoxelTerrainEditorProps {
-	terrain: VoxelTerrain;
-	onChange: (terrain: VoxelTerrain) => void;
+	terrain: EditableVoxelTerrain;
+	onChange: (terrain: EditableVoxelTerrain) => void;
 	readOnly?: boolean;
 	actors?: ActorOverlayInfo[];
 	/** Stamp-tagged terrains available for the Insert Stamp dropdown.
@@ -153,17 +154,17 @@ interface VoxelTerrainEditorProps {
 	 */
 	stampSources?: VoxelTerrain[];
 	/** Returns the fully hydrated voxel data for a stamp source by id. */
-	loadStampVoxels?: (terrainId: string) => Promise<VoxelTerrain | null>;
+	loadStampVoxels?: (terrainId: string) => Promise<EditableVoxelTerrain | null>;
 }
 
 export interface VoxelTerrainEditorHandle {
-	materializeTerrain: () => VoxelTerrain;
+	materializeTerrain: () => EditableVoxelTerrain;
 	reshapeDraft: (nextShape: {
 		width: number;
 		length: number;
 		height: number;
 		resolution: number;
-	}) => VoxelTerrain;
+	}) => EditableVoxelTerrain;
 }
 
 interface ActiveStroke {
@@ -256,7 +257,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const lastEmittedVoxelsRef   = useRef(terrain.Voxels);
 		const onChangeRef            = useRef(onChange);
 		// Stamp state.
-		const stampSourceRef         = useRef<VoxelTerrain | null>(null);
+		const stampSourceRef         = useRef<EditableVoxelTerrain | null>(null);
 		const stampTransformRef      = useRef<StampTransform>(IDENTITY_STAMP_TRANSFORM);
 		const loadStampVoxelsRef     = useRef(loadStampVoxels);
 		const previousToolRef        = useRef<EditorTool>("place");
@@ -298,12 +299,12 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const [freecamSpeedMult,   setFreecamSpeedMult]   = useState(1);
 		const [voxImportModal,     setVoxImportModal]     = useState<VoxImportModalState | null>(null);
 		const voxFileInputRef = useRef<HTMLInputElement>(null);
-		const [stampSource,        setStampSource]        = useState<VoxelTerrain | null>(null);
+		const [stampSource,        setStampSource]        = useState<EditableVoxelTerrain | null>(null);
 		const [stampTransform,     setStampTransform]     = useState<StampTransform>(IDENTITY_STAMP_TRANSFORM);
 		const [stampLoadingId,     setStampLoadingId]     = useState<string | null>(null);
 		const [selection,          setSelectionState]     = useState<TerrainSelection | null>(null);
 		const [boxSelectionAnchor, setBoxSelectionAnchorState] = useState<VoxelSelectionBounds | null>(null);
-		const [previewTerrain,     setPreviewTerrain]     = useState<VoxelTerrain | null>(null);
+		const [previewTerrain,     setPreviewTerrain]     = useState<EditableVoxelTerrain | null>(null);
 		// editGen ticks on stroke end / undo/redo / external prop. Gates React-
 		// visible updates (sidebar count, camera framing). Never bumped per-voxel.
 		const [editGen, setEditGen] = useState(0);
@@ -343,13 +344,12 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			};
 		}, [selection]);
 
-		const createDraftTerrainSnapshot = useCallback((): VoxelTerrain => {
+		const createDraftTerrainSnapshot = useCallback((): EditableVoxelTerrain => {
 			const dims = chunkDimsRef.current;
 			if (!dims) return terrainRef.current;
 			return {
 				...terrainRef.current,
 				Voxels: encodeEditGrid(editGridRef.current, dims.vW, dims.vH, dims.vL),
-				VoxelsLoaded: true,
 			};
 		}, []);
 
@@ -357,7 +357,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			setPreviewTerrain(createDraftTerrainSnapshot());
 		}, [createDraftTerrainSnapshot]);
 
-		const emitTerrainUpdate = (nextTerrain: VoxelTerrain) => {
+		const emitTerrainUpdate = (nextTerrain: EditableVoxelTerrain) => {
 			terrainRef.current = nextTerrain;
 			lastEmittedVoxelsRef.current = nextTerrain.Voxels;
 			onChangeRef.current(nextTerrain);
@@ -480,7 +480,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			setTerrainSelection(null);
 			setBoxSelectionAnchor(null);
 
-			const newGrid = buildEditGrid(terrain, index);
+			const newGrid = buildEditGrid(terrain.Voxels, index);
 			if (editGridRef.current.length === newGrid.length) {
 				copyEditGrid(editGridRef.current, newGrid);
 			} else {
@@ -526,7 +526,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			if (activeViewRef.current === "preview") refreshPreviewTerrain();
 		}, [bumpEditGen, markDraftDirty, refreshPreviewTerrain]);
 
-		const materializeTerrain = useCallback((): VoxelTerrain => {
+		const materializeTerrain = useCallback((): EditableVoxelTerrain => {
 			const nextTerrain = createDraftTerrainSnapshot();
 			terrainRef.current = nextTerrain;
 			lastEmittedVoxelsRef.current = nextTerrain.Voxels;
@@ -539,7 +539,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				length: number;
 				height: number;
 				resolution: number;
-			}): VoxelTerrain => {
+			}): EditableVoxelTerrain => {
 				const oldDims =
 					chunkDimsRef.current ??
 					computeChunkDimsForShape(
@@ -559,7 +559,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				setRedoDepth(0);
 				clearSelection();
 
-				const nextTerrain: VoxelTerrain = {
+				const nextTerrain: EditableVoxelTerrain = {
 					...terrainRef.current,
 					Width:  result.shape.width,
 					Length: result.shape.length,
@@ -970,7 +970,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			const initIndex   = getVoxelTerrainIndex(initTerrain);
 			const initDims    = computeChunkDims(initIndex);
 			chunkDimsRef.current  = initDims;
-			editGridRef.current   = buildEditGrid(initTerrain, initIndex);
+			editGridRef.current   = buildEditGrid(initTerrain.Voxels, initIndex);
 			occupiedVoxelCountRef.current = countEditGridVoxels(editGridRef.current);
 			markAllChunksDirty(dirtyChunksRef.current, initDims);
 			rebuildBoundsFrame(gridGroup, initDims);

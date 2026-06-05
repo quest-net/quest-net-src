@@ -1,11 +1,13 @@
 // domains/Main/Main.tsx - Updated
 
-import { useQuestContext } from "../Context/ContextProvider";
+import { useQuestContext, triggerContextUpdate } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import MapScene, { type CameraPreference } from "../../components/Map/MapScene";
-import { useEffect, useRef, useState } from "react";
-import { MapStateProvider } from "../../components/Map/MapStateProvider";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { MapStateProvider, useMapState } from "../../components/Map/MapStateProvider";
+import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
+import { DmMapToolbar } from "../../components/Map/DmMapToolbar";
 import { Inspector } from "./Inspector";
 import CalendarDisplay from "../Calendar/CalendarDisplay";
 import TerrainDisplay from "../Terrain/TerrainDisplay";
@@ -44,9 +46,14 @@ type PlayerBottomTab =
 	| "inspector"
 	| "log"
 	| "notes";
-type DMBottomTab = "inspector" | "scene" | "log" | "overview" | "shared-inventories";
+type DMBottomTab =
+	| "inspector"
+	| "scene"
+	| "log"
+	| "overview"
+	| "shared-inventories";
 
-export function Main() {
+export function Main({ active = true }: { active?: boolean } = {}) {
 	const context = useQuestContext();
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const isDM = isDmAccess();
@@ -81,13 +88,38 @@ export function Main() {
 	const selectedCharacter = selectedCharacterId
 		? campaign.GameState.Characters.find((c) => c.Id === selectedCharacterId)
 		: null;
-	const activeTerrain = campaign.VoxelTerrains.find(
-		(t) => t.Id === campaign.GameState.VoxelTerrainId
-	);
-	const hydratedActiveTerrain =
-		activeTerrain && TerrainStorageService.isHydrated(activeTerrain)
-			? activeTerrain
+
+	// The single terrain this client renders. A player follows their selected
+	// character; the DM follows its locally-viewed terrain (default = first
+	// terrain in the list). See docs/multi-terrain-world.md §5.4.
+	const { viewedTerrainId } = useViewedTerrain();
+	const renderedTerrainId = isDM
+		? viewedTerrainId
+		: selectedCharacter?.Position.terrainId ?? null;
+
+	const renderedTerrain = renderedTerrainId
+		? campaign.VoxelTerrains.find((t) => t.Id === renderedTerrainId)
+		: undefined;
+	const hydratedRenderedTerrain =
+		renderedTerrain && TerrainStorageService.isHydrated(renderedTerrain)
+			? renderedTerrain
 			: undefined;
+
+	// Only render the actors that live on the rendered terrain.
+	const visibleCharacters = useMemo(
+		() =>
+			campaign.GameState.Characters.filter(
+				(c) => c.Position.terrainId === renderedTerrainId
+			),
+		[campaign.GameState.Characters, renderedTerrainId]
+	);
+	const visibleEntities = useMemo(
+		() =>
+			campaign.GameState.Entities.filter(
+				(e) => e.Position.terrainId === renderedTerrainId
+			),
+		[campaign.GameState.Entities, renderedTerrainId]
+	);
 	const firstPersonActor = findFirstPersonActor(
 		isDM ? "dm" : "player",
 		campaign.RoomCode,
@@ -203,12 +235,49 @@ export function Main() {
 		);
 	}, [cameraPreference]);
 
-	// Reset map-ready flag whenever the active terrain changes so the loading
+	// Reset map-ready flag whenever the rendered terrain changes so the loading
 	// screen re-appears during the WebGL init + shader compile for the new terrain.
-	const activeTerrainId = campaign.GameState.VoxelTerrainId;
 	useEffect(() => {
 		setMapReady(false);
-	}, [activeTerrainId]);
+	}, [renderedTerrainId]);
+
+	// Ensure the rendered terrain is fully hydrated (voxels loaded) so MapScene
+	// can build its geometry. Previously this was driven by terrain:setActive;
+	// now each client hydrates the terrain it is actually rendering.
+	useEffect(() => {
+		if (!renderedTerrainId) return;
+		const terrain = campaign.VoxelTerrains.find(
+			(t) => t.Id === renderedTerrainId
+		);
+		if (terrain && !TerrainStorageService.isHydrated(terrain)) {
+			void TerrainStorageService.hydrateTerrain(campaign, renderedTerrainId).then(
+				() => triggerContextUpdate()
+			);
+		}
+	}, [renderedTerrainId, campaign]);
+
+	// Pin the rendered terrain so background packing never unloads the terrain
+	// this client is actively displaying. See docs/multi-terrain-world.md §6.3.
+	useEffect(() => {
+		TerrainStorageService.setPinnedTerrains(
+			renderedTerrainId ? [renderedTerrainId] : []
+		);
+	}, [renderedTerrainId]);
+
+	// DM tactical hydration: keep an index loaded for every terrain that has a
+	// player character on it, so cross-terrain moves can be validated without
+	// rendering those terrains. See docs/multi-terrain-world.md §6.2.
+	const characterTerrainSignature = isDM
+		? campaign.GameState.Characters.map((c) => c.Position.terrainId)
+				.sort()
+				.join(",")
+		: "";
+	useEffect(() => {
+		if (!isDM) return;
+		void TerrainStorageService.ensureCharacterTerrainsHydrated(campaign);
+		// campaign read at call time; signature gates re-runs.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [isDM, characterTerrainSignature]);
 
 	// Handle tab changes and clear indicators
 	const handleBottomTabChange = (tab: PlayerBottomTab | DMBottomTab) => {
@@ -257,29 +326,42 @@ export function Main() {
 	return (
 		<DiceRollerProvider>
 		<MapStateProvider>
+			<ViewTerrainSync />
 			<div className="flex h-full relative">
 				{/* Left 70%: Map */}
-				<div className="flex-1 overflow-hidden relative">
-					<SceneDisplay />
+				<div className="flex-1 overflow-hidden relative isolate">
+					<SceneDisplay dmToolbar={isDM && mapViewMode === "world"} />
 					<MapScene
-						characters={campaign.GameState.Characters}
-						entities={campaign.GameState.Entities}
-						terrain={hydratedActiveTerrain}
+						characters={visibleCharacters}
+						entities={visibleEntities}
+						terrain={hydratedRenderedTerrain}
 						xRayActors={isDM && xRayActors}
 						cameraPreference={cameraPreference}
 						viewMode={mapViewMode}
+						paused={!active}
 						onReady={() => setMapReady(true)}
 						onExitFirstPerson={() => setMapViewMode("world")}
 					/>
-					{activeTerrain && (!hydratedActiveTerrain || !mapReady) && (
+					{renderedTerrain && (!hydratedRenderedTerrain || !mapReady) && (
 						<div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-base-200/95 text-base-content">
 							<span className="icon-[mdi--compass] w-12 h-12 animate-spin text-primary" />
 							<span className="text-base font-medium tracking-wide">
-								Travelling to {activeTerrain.Name}...
+								Travelling to {renderedTerrain.Name}...
 							</span>
 						</div>
 					)}
-					{mapViewMode === "world" && (
+					{mapViewMode === "world" && isDM && (
+						<DmMapToolbar
+							campaign={campaign}
+							cameraPreference={cameraPreference}
+							onCameraPreferenceChange={setCameraPreference}
+							xRayActors={xRayActors}
+							onToggleXRay={() => setXRayActors((current) => !current)}
+							showFirstPersonButton={showFirstPersonButton}
+							onEnterFirstPerson={() => setMapViewMode("first-person")}
+						/>
+					)}
+					{mapViewMode === "world" && !isDM && (
 						<div className="absolute left-3 top-3 z-20">
 							<div className="join shadow-sm">
 								{showFirstPersonButton && (
@@ -295,22 +377,9 @@ export function Main() {
 								<CameraModeDropdown
 									value={cameraPreference}
 									onChange={setCameraPreference}
-									showFreecam={isDM}
+									showFreecam={false}
 									joinItem
 								/>
-								{isDM && (
-									<button
-										className={`btn btn-sm join-item tooltip tooltip-bottom ${xRayActors ? "btn-primary" : "btn-neutral"}`}
-										data-tip={xRayActors ? "Disable actor X-Ray" : "Actor X-Ray"}
-										onClick={() => setXRayActors((current) => !current)}
-										aria-label="Toggle actor X-Ray"
-										aria-pressed={xRayActors}
-									>
-										<span
-											className={`${xRayActors ? "icon-[mdi--account-search]" : "icon-[mdi--account-search-outline]"} w-5 h-5`}
-										/>
-									</button>
-								)}
 							</div>
 						</div>
 					)}
@@ -580,7 +649,9 @@ export function Main() {
 								<div className="flex-1 overflow-auto p-4 bg-base-100">
 									{activeTopTab === "music" && <AudioDisplay />}
 									{activeTopTab === "calendar" && <CalendarDisplay />}
-									{activeTopTab === "terrain" && <TerrainDisplay />}
+									{activeTopTab === "terrain" && (
+										<TerrainDisplay terrainId={renderedTerrainId ?? undefined} />
+									)}
 									{activeTopTab === "combat" && <CombatDisplay />}
 								</div>
 							)}
@@ -625,4 +696,30 @@ export function Main() {
 		</MapStateProvider>
 		</DiceRollerProvider>
 	);
+}
+
+/**
+ * Bridges actor selection (MapStateProvider) to the DM's viewed terrain:
+ * when the DM selects an actor that lives on another terrain, the view follows
+ * it. Renders nothing. DM-only — a player's view follows its selected character,
+ * not arbitrary actor selection. See docs/multi-terrain-world.md §5.9.
+ */
+function ViewTerrainSync() {
+	const context = useQuestContext();
+	const campaign = CampaignActions.getActiveCampaign(context);
+	const isDM = isDmAccess();
+	const { selectedActor } = useMapState();
+	const { setViewedTerrain } = useViewedTerrain();
+	const selectedActorId = selectedActor?.id ?? null;
+
+	useEffect(() => {
+		if (!isDM || !selectedActorId) return;
+		const actor =
+			campaign.GameState.Characters.find((c) => c.Id === selectedActorId) ??
+			campaign.GameState.Entities.find((e) => e.Id === selectedActorId);
+		if (actor) setViewedTerrain(actor.Position.terrainId);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [selectedActorId, isDM]);
+
+	return null;
 }

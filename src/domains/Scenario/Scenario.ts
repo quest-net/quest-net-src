@@ -7,9 +7,6 @@ export interface Scenario {
     Id: string;
     Name: string;
 
-    // Voxel terrain to load. Kept as TerrainId for save compatibility.
-    TerrainId: string;
-
     // Scene images
     Scene: Scene;
 
@@ -47,6 +44,14 @@ export interface ActorPlacement {
     UsesLeft?: number;
 
     Position: Position;
+}
+
+/** The distinct terrains a scenario places actors on. A scenario is only valid
+ *  while every one of these still exists — a missing terrain invalidates it. */
+export function getScenarioTerrainIds(scenario: Scenario): Set<string> {
+    return new Set(
+        (scenario.ActorPlacements ?? []).map((p) => p.Position.terrainId)
+    );
 }
 
 /** Tally a scenario's placements by actor type (for logs and UI summaries). */

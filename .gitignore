@@ -31,4 +31,4 @@ localhost+*.pem
 localhost+*-key.pem
 IMPLEMENTATION_PLAN.md
 AGENTS.md
-EDITOR_OPTIMIZATION.md
+*.md

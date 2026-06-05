@@ -20,6 +20,7 @@ import {
 import type { Voxel, VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { isPassableMaterial } from "../../../components/Map/Terrain/materials";
 import { decodeVoxels } from "./VoxelDataUtils";
+import { resolveTerrainVoxels } from "./terrainPayloadStore";
 
 // ---------------------------------------------------------------------------
 // Coordinate primitives. They live here (rather than in VoxelTerrainUtils) so
@@ -80,9 +81,15 @@ export interface VoxelTerrainIndex {
 
 const REVISION_NONE = "none";
 
-/** Value-equal terrain identity. Use anywhere you'd memoize on the terrain. */
+/**
+ * Value-equal terrain identity. Use anywhere you'd memoize on the terrain.
+ * `voxels` defaults to the resolved payload (per-client store, or inline voxels
+ * for an EditableVoxelTerrain); callers that already hold the voxel string can
+ * pass it to avoid a redundant lookup.
+ */
 export function createTerrainRevision(
-	terrain: VoxelTerrain | null | undefined
+	terrain: VoxelTerrain | null | undefined,
+	voxels: string = terrain ? resolveTerrainVoxels(terrain) : ""
 ): string {
 	if (!terrain) return REVISION_NONE;
 	return [
@@ -91,7 +98,7 @@ export function createTerrainRevision(
 		terrain.Length,
 		terrain.Height,
 		getVoxelTerrainResolution(terrain),
-		terrain.Voxels,
+		voxels,
 	].join(":");
 }
 
@@ -142,13 +149,14 @@ function voxelGridIndex(
  */
 export function buildVoxelTerrainIndex(
 	terrain: VoxelTerrain,
+	voxels: string,
 	decodedVoxels?: readonly Voxel[]
 ): VoxelTerrainIndex {
 	const resolution = getVoxelTerrainResolution(terrain);
 	const voxelWidth = terrain.Width * resolution;
 	const voxelLength = terrain.Length * resolution;
 	const voxelHeight = terrain.Height * resolution;
-	const revision = createTerrainRevision(terrain);
+	const revision = createTerrainRevision(terrain, voxels);
 	const voxelLayerSize = voxelWidth * voxelLength;
 
 	// Dense occupancy/color grid. 0 means empty; occupied cells store
@@ -165,8 +173,8 @@ export function buildVoxelTerrainIndex(
 		vz >= 0 && vz < voxelLength;
 
 	// Single decode pass: build occupancy + colors, track per-column maxima.
-	const voxels = decodedVoxels ?? Array.from(decodeVoxels(terrain.Voxels));
-	for (const voxel of voxels) {
+	const decoded = decodedVoxels ?? Array.from(decodeVoxels(voxels));
+	for (const voxel of decoded) {
 		if (!inVoxelBounds(voxel.x, voxel.y, voxel.z)) {
 			continue;
 		}
@@ -191,7 +199,7 @@ export function buildVoxelTerrainIndex(
 	// (floor) and exact heights so renderers can step sub-tactically.
 	const rulesSets = new Map<string, Set<number>>();
 	const exactSets = new Map<string, Set<number>>();
-	for (const voxel of voxels) {
+	for (const voxel of decoded) {
 		if (!inVoxelBounds(voxel.x, voxel.y, voxel.z)) {
 			continue;
 		}
@@ -312,9 +320,16 @@ export function buildVoxelTerrainIndex(
 const INDEX_CACHE_LIMIT = 4;
 const indexCache = new Map<string, VoxelTerrainIndex>();
 
-/** Cached entry point for the main thread. */
-export function getVoxelTerrainIndex(terrain: VoxelTerrain): VoxelTerrainIndex {
-	const revision = createTerrainRevision(terrain);
+/**
+ * Cached entry point for the main thread. `voxels` defaults to the resolved
+ * payload: the per-client materialized buffer for a committed terrain, or the
+ * inline voxels of an EditableVoxelTerrain (editor / preview).
+ */
+export function getVoxelTerrainIndex(
+	terrain: VoxelTerrain,
+	voxels: string = resolveTerrainVoxels(terrain)
+): VoxelTerrainIndex {
+	const revision = createTerrainRevision(terrain, voxels);
 	const cached = indexCache.get(revision);
 	if (cached) {
 		// Refresh LRU position.
@@ -322,7 +337,7 @@ export function getVoxelTerrainIndex(terrain: VoxelTerrain): VoxelTerrainIndex {
 		indexCache.set(revision, cached);
 		return cached;
 	}
-	const index = buildVoxelTerrainIndex(terrain);
+	const index = buildVoxelTerrainIndex(terrain, voxels);
 	indexCache.set(revision, index);
 	while (indexCache.size > INDEX_CACHE_LIMIT) {
 		const oldest = indexCache.keys().next().value;

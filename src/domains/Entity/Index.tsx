@@ -8,11 +8,13 @@ import { EntityEdit } from "./Edit";
 import { IndexView, IndexViewItem, SelectionAction } from "../../components/IndexView/IndexView";
 import { replacePathTag } from "../../utils/FolderUtils";
 import { ObjectPicker, ObjectTypeConfig } from "../../components/inputs/ObjectPicker";
+import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
 
 export function EntityIndex() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const campaign = CampaignActions.getActiveCampaign(context);
+	const { viewedTerrainId } = useViewedTerrain();
 
 	// Add a counter to force new keys on each create
 	const [createCounter, setCreateCounter] = useState(0);
@@ -26,6 +28,7 @@ export function EntityIndex() {
 
 		actionService.execute("entity:spawn", {
 			entityId: entityId,
+			terrainId: viewedTerrainId ?? "",
 		});
 	};
 

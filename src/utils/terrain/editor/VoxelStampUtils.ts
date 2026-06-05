@@ -13,6 +13,7 @@
 // VoxelTerrainEditorUtils.
 
 import type {
+	EditableVoxelTerrain,
 	Voxel,
 	VoxelTerrain,
 } from "../../../domains/VoxelTerrain/VoxelTerrain";
@@ -109,7 +110,7 @@ interface DestCell {
 // it into the cube(s) it covers per axis. Reuses getRescaledVoxelRange so we
 // match the behavior of reshapeVoxelTerrainForEditor exactly.
 function* iterateRescaledCells(
-	source: VoxelTerrain,
+	source: EditableVoxelTerrain,
 	destResolution: number
 ): Generator<DestCell> {
 	const sourceResolution = getVoxelTerrainResolution(source);
@@ -157,7 +158,7 @@ function* iterateRescaledCells(
  * is fine since stamping is last-write-wins on overlap.
  */
 export function* iterateStampVoxels(
-	source: VoxelTerrain,
+	source: EditableVoxelTerrain,
 	destResolution: number,
 	transform: StampTransform
 ): Generator<Voxel> {

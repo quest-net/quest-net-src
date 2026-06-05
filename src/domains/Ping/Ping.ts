@@ -7,6 +7,8 @@
 // the existing replication / migration pipeline does not need to change.
 
 export interface PingDetails {
+	/** Which terrain the ping was placed on (multi-terrain worlds). */
+	terrainId: string;
 	x: number;
 	y: number;
 	h: number;
@@ -36,7 +38,12 @@ export function parsePingDetails(raw: string | undefined): PingDetails | null {
 			Number.isFinite(parsed.y)
 		) {
 			if (typeof parsed.h === "number" && Number.isFinite(parsed.h)) {
-				return { x: parsed.x, y: parsed.y, h: parsed.h };
+				return {
+					terrainId: typeof parsed.terrainId === "string" ? parsed.terrainId : "",
+					x: parsed.x,
+					y: parsed.y,
+					h: parsed.h,
+				};
 			}
 		}
 	} catch {

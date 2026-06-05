@@ -130,7 +130,10 @@ export class ActorPoseService {
 		actionKey: string | undefined,
 		params: any
 	): void {
-		if (actionKey === "terrain:setActive" || actionKey === "scenario:load") {
+		if (
+			actionKey === "terrain:moveActors" ||
+			actionKey === "scenario:load"
+		) {
 			this.clearLiveActorPoses();
 			return;
 		}
@@ -166,7 +169,9 @@ export class ActorPoseService {
 			return;
 		}
 
-		if (campaign.GameState.VoxelTerrainId !== data.terrainId) return;
+		// Store poses for any terrain; consumers filter by the terrain they are
+		// rendering via getLiveActorPoses(terrainId, ...). With per-actor terrain
+		// there is no single global terrain to reject against.
 		if (!this.actorExistsInGameState(campaign, data.actorId)) return;
 		if (!this.canPeerControlActor(peerId, data.actorId, campaign)) return;
 

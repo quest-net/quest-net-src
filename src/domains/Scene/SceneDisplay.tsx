@@ -11,11 +11,20 @@ import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 
 type SceneMode = "fixed" | "window";
 
-export function SceneDisplay() {
+export function SceneDisplay({
+  dmToolbar = false,
+}: {
+  /** Reserve room at the top so the panel clears the DM's full-width map toolbar. */
+  dmToolbar?: boolean;
+} = {}) {
   const context = useQuestContext();
   const campaign = CampaignActions.getActiveCampaign(context);
   const scene = campaign.GameState.Scene;
   const isMobile = useIsMobile();
+
+  // The fixed/collapsed panel sits in the top-right corner; nudge it below the
+  // DM toolbar (which spans the full width) when one is present.
+  const topClass = dmToolbar ? "top-14" : "top-2";
 
   // Load preferences from localStorage
   const [mode, setMode] = useState<SceneMode>(() => {
@@ -56,14 +65,14 @@ export function SceneDisplay() {
       const saved = localStorage.getItem("questnet.sceneWindow");
       return saved ? JSON.parse(saved) : {
         x: window.innerWidth - 520,
-        y: 16,
+        y: dmToolbar ? 64 : 16,
         width: 500,
         height: 281, // Default 16:9 aspect ratio
       };
     } catch {
       return {
         x: window.innerWidth - 520,
-        y: 16,
+        y: dmToolbar ? 64 : 16,
         width: 500,
         height: 281,
       };
@@ -243,7 +252,7 @@ export function SceneDisplay() {
   // Collapsed state
   if (isCollapsed) {
     return (
-      <div className="absolute top-2 right-14 lg:right-2 z-20">
+      <div className={`absolute ${topClass} right-14 lg:right-2 z-20`}>
         <button
           onClick={handleExpand}
           className="btn btn-square btn-primary w-12 h-12 shadow-lg"
@@ -266,7 +275,7 @@ export function SceneDisplay() {
     return (
       <div
         ref={fixedRef}
-        className={`absolute top-2 right-14 lg:right-2 z-20 ${opacityClass} transition-opacity duration-300 ease-in-out`}
+        className={`absolute ${topClass} right-14 lg:right-2 z-20 ${opacityClass} transition-opacity duration-300 ease-in-out`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >

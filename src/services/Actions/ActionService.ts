@@ -14,6 +14,7 @@ import { LogActions } from "../../domains/Log/LogActions";
 import { User } from "../../domains/User/User";
 import { CampaignLoadingService } from "../CampaignLoadingService";
 import { TerrainStorageService } from "../TerrainStorageService";
+import { TerrainTransferService } from "../TerrainTransferService";
 import { ActorPoseService } from "../ActorPoseService";
 
 // Immer freezes producer output by default, which would break code paths
@@ -38,6 +39,7 @@ export class ActionService {
 	private stateSync: StateSync;
 	public imageService: ImageService;
 	public actorPoseService: ActorPoseService;
+	public terrainTransferService: TerrainTransferService;
 
 	private onFirstUpdateCallback?: () => void;
 
@@ -56,6 +58,10 @@ export class ActionService {
 	private peerReconcileInterval?: ReturnType<typeof setInterval>;
 	private lastBroadcastUserJson = "";
 
+	// Serializes campaign mutations so only one Immer producer is ever live.
+	// Always resolved (never rejects) so a failed action can't wedge the queue.
+	private mutationChain: Promise<unknown> = Promise.resolve();
+
 	constructor(context: Context, room: Room) {
 		this.context = context;
 		this.room = room;
@@ -68,6 +74,11 @@ export class ActionService {
 		this.actorPoseService = new ActorPoseService(context, room, {
 			getPeerUser: (peerId) => this.peerUsers.get(peerId),
 		});
+		this.terrainTransferService = new TerrainTransferService(
+			room,
+			context.User.Role === "dm",
+			() => this.context.ActiveCampaign
+		);
 		this.setupChannels();
 		this.setupStateSync();
 		this.setupPeerHandlers();
@@ -397,7 +408,27 @@ export class ActionService {
 	 * the delta instead of re-deriving them with a full-tree compare. Callers
 	 * that don't broadcast (player optimistic, force full-sync) ignore patches.
 	 */
-	private async mutateCampaign(
+	private mutateCampaign(
+		producer: (draft: Campaign) => Promise<void> | void
+	): Promise<{ campaign: Campaign; patches: Patch[] }> {
+		// SERIALIZE: chain every mutation so only one producer is live at a time.
+		// mutateCampaign publishes the live Immer draft on this.context.ActiveCampaign
+		// for the duration of the (async) producer. If two ran concurrently the
+		// second would createDraft() the first's draft, and finishing the drafts out
+		// of order leaves revoked-proxy nodes in the committed campaign -- which
+		// surfaces as "could not be cloned" when the geometry worker postMessages a
+		// terrain and "get on a revoked proxy" crashes across the map. The chain
+		// never rejects (errors are swallowed for the *next* link only), so a failed
+		// action doesn't wedge the queue; the caller still sees this run's rejection.
+		const run = this.mutationChain.then(() => this.runMutateCampaign(producer));
+		this.mutationChain = run.then(
+			() => undefined,
+			() => undefined
+		);
+		return run;
+	}
+
+	private async runMutateCampaign(
 		producer: (draft: Campaign) => Promise<void> | void
 	): Promise<{ campaign: Campaign; patches: Patch[] }> {
 		const previous = CampaignActions.getActiveCampaign(this.context);
@@ -415,6 +446,14 @@ export class ActionService {
 				patches = p;
 			}) as Campaign;
 			this.commitActiveCampaign(next);
+			// Pack inactive terrains AFTER the draft is finalized and committed --
+			// never inside the producer. Packing does async IDB writes; doing it
+			// inside the producer widened the window during which the live draft sat
+			// on this.context, which is what let interleaved re-renders capture a
+			// draft. It makes no campaign mutations (only the per-client voxel buffer
+			// + IDB), so post-commit packing is behavior-preserving for synced state.
+			// It still runs inside the serialized critical section above.
+			await TerrainStorageService.packInactiveTerrains(next);
 			return { campaign: next, patches };
 		} catch (error) {
 			this.commitActiveCampaign(previous);
@@ -451,13 +490,11 @@ export class ActionService {
 	 * DM executes action directly and broadcasts result
 	 */
 	private async executeDM(actionKey: string, params: any): Promise<void> {
-		const { campaign, patches } = await this.mutateCampaign(async (draft) => {
+		const { campaign, patches } = await this.mutateCampaign(async () => {
 			// Execute the domain action against the draft (handlers reach
 			// the draft via context.ActiveCampaign, swapped in by mutateCampaign).
+			// Inactive-terrain packing runs post-commit inside mutateCampaign.
 			await this.runDomainAction(actionKey, params);
-			// Pack inactive terrains inside the producer so its mutations
-			// also flow through Immer's structural sharing.
-			await TerrainStorageService.packInactiveTerrains(draft);
 		});
 
 		const isSecret = this.context.SecretModes?.[campaign.Id];
@@ -482,9 +519,8 @@ export class ActionService {
 		// OPTIMISTIC UPDATE: Run locally first
 		try {
 			this.context.IsOptimistic = true;
-			await this.mutateCampaign(async (draft) => {
+			await this.mutateCampaign(async () => {
 				await this.runDomainAction(actionKey, params);
-				await TerrainStorageService.packInactiveTerrains(draft);
 			});
 		} catch (error) {
 			console.warn("[ActionService] Optimistic update failed (ignoring):", error);
@@ -534,7 +570,7 @@ export class ActionService {
 			// Execute the domain action as the requesting player so
 			// domain-level player validations run in the same context as
 			// optimistic local execution.
-			({ patches } = await this.mutateCampaign(async (draft) => {
+			({ patches } = await this.mutateCampaign(async () => {
 				const originalUser = this.context.User;
 				try {
 					this.context.User = requestingUser;
@@ -542,7 +578,6 @@ export class ActionService {
 				} finally {
 					this.context.User = originalUser;
 				}
-				await TerrainStorageService.packInactiveTerrains(draft);
 			}));
 		} catch (error) {
 			console.error("[ActionService] Error executing player request:", error);
@@ -607,9 +642,9 @@ export class ActionService {
 
 	private async forceSyncAsync(): Promise<void> {
 		if (this.context.User.Role === "dm") {
-			const { campaign } = await this.mutateCampaign(async (draft) => {
-				await TerrainStorageService.packInactiveTerrains(draft);
-			});
+			// Empty producer: mutateCampaign still serializes against in-flight
+			// actions and packs inactive terrains post-commit before we broadcast.
+			const { campaign } = await this.mutateCampaign(async () => {});
 			this.stateSync.broadcastFull(campaign);
 		}
 	}
@@ -620,6 +655,7 @@ export class ActionService {
 			this.peerReconcileInterval = undefined;
 		}
 		this.actorPoseService.cleanup();
+		this.terrainTransferService.cleanup();
 		this.pingIntervals.forEach(clearInterval);
 		this.pingIntervals.clear();
 		this.peerPings.clear();

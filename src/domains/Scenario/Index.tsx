@@ -1,6 +1,5 @@
 // domains/Scenario/Index.tsx
 
-import { useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
@@ -8,18 +7,13 @@ import { ScenarioEdit } from "./Edit";
 import { countPlacements } from "./Scenario";
 import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
 import { replacePathTag } from "../../utils/FolderUtils";
+import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
 
 export function ScenarioIndex() {
     const context = useQuestContext();
     const { actionService } = useActionService();
     const campaign = CampaignActions.getActiveCampaign(context);
-
-    const [captureName, setCaptureName] = useState("");
-
-    // Check if scenario with this name already exists
-    const existingScenario = campaign.Scenarios.find(
-        (s) => s.Name.toLowerCase() === captureName.toLowerCase().trim()
-    );
+    const { setViewedTerrain } = useViewedTerrain();
 
     const handleLoad = (scenarioId: string) => {
         if (!actionService) return;
@@ -27,16 +21,16 @@ export function ScenarioIndex() {
         actionService.execute("scenario:load", {
             scenarioId: scenarioId,
         });
-    };
 
-    const handleCapture = () => {
-        if (!actionService || !captureName.trim()) return;
-
-        actionService.execute("scenario:capture", {
-            name: captureName.trim(),
-        });
-
-        setCaptureName("");
+        // Focus the DM's view on the terrain of the scenario's first character
+        // placement (falling back to the first placement of any type).
+        const scenario = campaign.Scenarios.find((s) => s.Id === scenarioId);
+        const placements = scenario?.ActorPlacements ?? [];
+        const focus =
+            placements.find((p) => p.Type === "character") ?? placements[0];
+        if (focus?.Position.terrainId) {
+            setViewedTerrain(focus.Position.terrainId);
+        }
     };
 
     const handleBulkUpdateItemTags = (
@@ -71,45 +65,6 @@ export function ScenarioIndex() {
 
     return (
         <>
-            {/* Capture Section */}
-            <div className="card border-2 bg-base-100 m-6">
-                <div className="card-body">
-                    <h3 className="card-title text-lg">
-                        <span className="icon-[mdi--camera] w-5 h-5" />
-                        Capture Current State
-                    </h3>
-                    <p className="text-sm opacity-70 mb-4">
-                        Save the current terrain, entities, audio, scene images, and character positions as a scenario.
-                    </p>
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            value={captureName}
-                            onChange={(e) => setCaptureName(e.target.value)}
-                            className="input input-bordered flex-1"
-                            placeholder="Enter scenario name..."
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter") handleCapture();
-                            }}
-                        />
-                        <button
-                            onClick={handleCapture}
-                            disabled={!captureName.trim()}
-                            className={`btn ${existingScenario ? "btn-warning" : "btn-primary"}`}
-                        >
-                            <span className={`w-5 h-5 ${existingScenario ? "icon-[mdi--refresh]" : "icon-[mdi--content-save]"}`} />
-                            {existingScenario ? "Update" : "Create"}
-                        </button>
-                    </div>
-                    {existingScenario && (
-                        <div className="text-warning text-sm mt-2">
-                            <span className="icon-[mdi--alert] w-4 h-4 inline-block mr-1" />
-                            A scenario with this name already exists. Clicking "Update" will overwrite it.
-                        </div>
-                    )}
-                </div>
-            </div>
-
             {/* Scenario List */}
             <IndexView
                 items={items}
@@ -118,7 +73,7 @@ export function ScenarioIndex() {
                 description="Quick-load pre-configured game states"
                 searchEnabled={true}
                 searchPlaceholder="Search scenarios by name..."
-                emptyMessage="No scenarios yet. Capture your first one above!"
+                emptyMessage="No scenarios yet. Use the camera button on the map toolbar to capture one."
                 onBulkUpdateItemTags={handleBulkUpdateItemTags}
                 renderEditForm={(item, { currentPath, closeDrawer }) => {
                     const scenario = item

@@ -47,16 +47,17 @@ export const terrainsPage: WikiPage = {
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Run" tone="accent">
-								Activate the map for play, adjust the atmosphere, and move the
-								table through the encounter.
+								View a map, adjust its atmosphere, and use "Move party here" to
+								bring the visible group through the encounter.
 							</WikiDiagramNode>
 						</div>
 					</WikiDiagram>
 					<WikiCallout tone="info" title="Player visibility">
 						<p>
-							Players see the active map during play. Treat inactive maps as your
-							prep library, and activate a terrain when the table should move to
-							that location.
+							Each player sees the terrain their selected character is standing on,
+							so a split party can be on different maps at once. Treat unused maps
+							as your prep library, and "Move party here" to bring the actors you're
+							currently viewing to a new location.
 						</p>
 					</WikiCallout>
 				</div>
@@ -88,10 +89,10 @@ export const terrainsPage: WikiPage = {
 									"Makes a copy of an existing terrain. Useful for alternate versions, damaged rooms, phased encounters, or seasonal variants.",
 							},
 							{
-								name: "Activate",
+								name: "View",
 								tone: "accent",
 								detail:
-									"Sets that terrain as the live map for the current session.",
+									"Switches your local view to that terrain (and targets it for spawns). It does not move any actor — use the Terrains panel's \"Move party here\" to relocate the visible group.",
 							},
 							{
 								name: "Delete",

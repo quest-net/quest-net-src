@@ -73,7 +73,7 @@ Each domain typically has a model file (`Domain.ts`), an actions file (`DomainAc
 
 - **Campaign** — Root container; holds roster, templates, game state, settings, logs. `Campaign.Id` is the DM's private GUID; `Campaign.RoomCode` is the public join code (max 32 chars).
 - **Actor / Character / Entity** — Characters are player-controlled actors; Entities are NPCs/enemies. Both extend the Actor base (stats, actions, attributes, inventory, equipment, skills, statuses, position, color, size). `Character` additionally has `Notes: Note[]` and `CritMessage?`.
-- **GameState** — Live session state: active characters/entities, combat state, scene, terrain IDs (`TerrainId`, `VoxelTerrainId`), audio list, volume, calendar day, remaining short rests.
+- **GameState** — Live session state: active characters/entities, combat state, scene, audio list, volume, calendar day, remaining short rests. Terrain is no longer tracked here — each actor's `Position.terrainId` determines which terrain it occupies (multi-terrain worlds).
 - **Item / Skill / Status** — Templates stored on the campaign; instances slotted onto actors.
 - **VoxelTerrain** — 3D voxel grid encoded as a **base64-encoded Sparse Voxel Octree (SVO)**; voxel positions are implicit in the octree structure and colors are stored as a parallel byte stream. Supports configurable resolution (1–3 voxels per tactical unit). Has `Lighting` and `Background` properties. Large terrain voxel data is offloaded to IndexedDB via `TerrainStorageService`; the `Voxels` field may be a stub until hydrated. `Campaign.VoxelTerrains[]` holds all terrains; `GameState.VoxelTerrainId` points to the active one.
 - **Terrain** — UI wrapper (Edit/Index/Display) for creating and managing VoxelTerrains.

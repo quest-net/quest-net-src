@@ -263,8 +263,9 @@ export const dataStructuresPage: WikiPage = {
 								<Code>Scene</Code>: current environment and focus images.
 							</div>
 							<div>
-								<Code>TerrainId</Code> and <Code>VoxelTerrainId</Code>: active map
-								references.
+								The active terrain is not stored here — each actor's
+								<Code>Position.terrainId</Code> determines where it is and what
+								renders (multi-terrain worlds).
 							</div>
 							<div>
 								<Code>Audio</Code> and <Code>Volume</Code>: current session audio.
@@ -333,7 +334,7 @@ export const dataStructuresPage: WikiPage = {
 							{
 								name: "Position",
 								detail:
-									"Uses x, y, and h fields. The h field is map height/elevation for actor placement.",
+									"Uses terrainId, x, y, and h fields. terrainId is which voxel terrain the actor occupies; h is map height/elevation for actor placement.",
 								tone: "secondary",
 							},
 							{
@@ -449,7 +450,7 @@ location.reload();`}
 					<WikiFlow>
 						<FlowStep number="1" title="UI calls ActionService.execute">
 							Components request a named action such as <Code>character:move</Code>{" "}
-							or <Code>terrain:setActive</Code>.
+							or <Code>terrain:moveActors</Code>.
 						</FlowStep>
 						<FlowStep number="2" title="Role permission is checked">
 							<Code>canPerformAction</Code> verifies that the local user role can

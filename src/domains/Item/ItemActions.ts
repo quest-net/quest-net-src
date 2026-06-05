@@ -4,7 +4,7 @@ import { Context } from "../Context/Context";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import { Item } from "./Item";
-import { Actor } from "../Actor/Actor";
+import { Actor, Position } from "../Actor/Actor";
 import { rollDiceFormula } from "../../utils/DiceUtils";
 import {
 	syncItemSlotsAfterEdit,
@@ -14,8 +14,8 @@ import { applyActionCost, applyStatCost } from "../../utils/ActorCostUtils";
 import { createItemEntity, createItemEntityFromTemplate, getItemDataFromEntity, isItemEntity } from "./ItemDropUtils";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import {
-	getActiveVoxelSpawnPosition,
-	getActiveVoxelTerrain,
+	getVoxelSpawnPosition,
+	getVoxelTerrainById,
 } from "../../utils/terrain/data/VoxelTerrainUtils";
 
 /**
@@ -710,7 +710,7 @@ export const ItemActions = {
 		// Remove item from actor
 		slots.splice(slotIndex, 1);
 
-		if (getActiveVoxelTerrain(campaign)) {
+		if (getVoxelTerrainById(campaign, actor.Position.terrainId)) {
 			VoxelTerrainActions.repairActors(context);
 		}
 
@@ -803,7 +803,7 @@ export const ItemActions = {
 	 * Position must be provided explicitly.
 	 */
 	spawn(
-		params: { itemId: string; position?: { x: number; y: number; h: number } },
+		params: { itemId: string; terrainId: string; position?: Position },
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
@@ -816,12 +816,18 @@ export const ItemActions = {
 
 		const entity = createItemEntityFromTemplate(
 			template,
-			params.position ?? getActiveVoxelSpawnPosition(campaign) ?? { x: 0, y: 0, h: 0 },
+			params.position ??
+				getVoxelSpawnPosition(campaign, params.terrainId) ?? {
+					terrainId: params.terrainId,
+					x: 0,
+					y: 0,
+					h: 0,
+				},
 			campaign.Settings.StatDefinitions,
 			campaign.Settings.ActionDefinitions
 		);
 		campaign.GameState.Entities.push(entity);
-		if (getActiveVoxelTerrain(campaign)) {
+		if (getVoxelTerrainById(campaign, params.terrainId)) {
 			VoxelTerrainActions.repairActors(context);
 		}
 

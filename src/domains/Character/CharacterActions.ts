@@ -7,7 +7,7 @@ import { LogActions } from "../Log/LogActions";
 import { ActorActions } from "../Actor/ActorActions";
 import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
 import { createDefaultStatSlots, createDefaultActionSlots, createDefaultAttributeSlots } from "../../utils/ActorResolvers";
-import { getActiveVoxelSpawnPosition, getActiveVoxelTerrain } from "../../utils/terrain/data/VoxelTerrainUtils";
+import { getVoxelSpawnPosition, getVoxelTerrainById } from "../../utils/terrain/data/VoxelTerrainUtils";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 
 /**
@@ -32,7 +32,8 @@ export const CharacterActions = {
 			Stats: createDefaultStatSlots(settings.StatDefinitions),
 			Actions: createDefaultActionSlots(settings.ActionDefinitions),
 			Attributes: createDefaultAttributeSlots(settings.AttributeDefinitions ?? []),
-			Position: { x: 0, y: 0, h: 0 },
+			// Roster default; terrainId is assigned when the character is spawned.
+			Position: { terrainId: "", x: 0, y: 0, h: 0 },
 			MoveSpeed: 5,
 			CanFly: false,
 			Size: "small",
@@ -82,12 +83,16 @@ export const CharacterActions = {
 	 * Used by players during character selection
 	 */
 	createAndSpawn(
-		params: { character: Character },
+		params: { character: Character; terrainId?: string },
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
-		const voxelSpawnPosition = getActiveVoxelSpawnPosition(
+		// A player creating a character cannot know the world layout, so default
+		// to the first terrain in the list (§5.4). The DM may relocate later.
+		const terrainId = params.terrainId ?? campaign.VoxelTerrains[0]?.Id ?? "";
+		const voxelSpawnPosition = getVoxelSpawnPosition(
 			campaign,
+			terrainId,
 			params.character.CanFly
 		);
 
@@ -95,7 +100,7 @@ export const CharacterActions = {
 			...params.character,
 			Color: params.character.Color ?? ACTOR_DEFAULT_COLORS.CHARACTER,
 			Notes: params.character.Notes || [],
-			Position: voxelSpawnPosition ?? { x: 0, y: 0, h: 0 },
+			Position: voxelSpawnPosition ?? { terrainId, x: 0, y: 0, h: 0 },
 			// Ensure stats are fully healed upon creation
 			Stats: params.character.Stats.map((stat) => ({
 				...stat,
@@ -118,18 +123,18 @@ export const CharacterActions = {
 			context
 		);
 
-		if (getActiveVoxelTerrain(campaign)) {
+		if (getVoxelTerrainById(campaign, terrainId)) {
 			VoxelTerrainActions.repairActors(context);
 		}
 	},
 
 	/**
 	 * Spawns a character from roster onto the field (MOVE operation)
-	 * Position defaults to origin if not provided
+	 * Position defaults to a spawn point on the target terrain if not provided
 	 * DM only - handled by ACTION_REGISTRY
 	 */
 	spawn(
-		params: { characterId: string; position?: Position },
+		params: { characterId: string; terrainId?: string; position?: Position },
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
@@ -151,16 +156,24 @@ export const CharacterActions = {
 		}
 		// MOVE: Remove from roster
 		const [character] = campaign.CharacterRoster.splice(rosterIndex, 1);
-		const voxelSpawnPosition = getActiveVoxelSpawnPosition(
+		// Prefer an explicit position's terrain, then a caller terrain, then the
+		// first terrain in the list as the default landing (§5.4).
+		const terrainId =
+			params.position?.terrainId ??
+			params.terrainId ??
+			campaign.VoxelTerrains[0]?.Id ??
+			"";
+		const voxelSpawnPosition = getVoxelSpawnPosition(
 			campaign,
+			terrainId,
 			character.CanFly
 		);
 
-		// Set position from the active voxel terrain if not provided.
+		// Set position from the target voxel terrain if not provided.
 		if (params.position) {
 			character.Position = params.position;
 		} else {
-			character.Position = voxelSpawnPosition ?? { x: 0, y: 0, h: 0 };
+			character.Position = voxelSpawnPosition ?? { terrainId, x: 0, y: 0, h: 0 };
 		}
 
 		// Add to GameState
@@ -178,7 +191,7 @@ export const CharacterActions = {
 			context
 		);
 
-		if (getActiveVoxelTerrain(campaign)) {
+		if (getVoxelTerrainById(campaign, terrainId)) {
 			VoxelTerrainActions.repairActors(context);
 		}
 	},

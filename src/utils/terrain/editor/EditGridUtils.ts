@@ -16,7 +16,6 @@ import {
 } from "../data/VoxelBitsetUtils";
 import { decodeVoxels, encodeVoxels } from "../data/VoxelDataUtils";
 import type { VoxelTerrainIndex } from "../data/VoxelTerrainIndex";
-import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import type { VoxelColorGrid } from "./VoxelTerrainSelectionUtils";
 import { normalizeVoxelPaletteIndex } from "./VoxelTerrainEditorUtils";
 
@@ -108,10 +107,10 @@ export function getColumnTopInRange(
 	return { height: minY - 1, color: null };
 }
 
-export function buildEditGrid(terrain: VoxelTerrain, index: VoxelTerrainIndex): EditGrid {
+export function buildEditGrid(voxels: string, index: VoxelTerrainIndex): EditGrid {
 	const { voxelWidth: vW, voxelHeight: vH, voxelLength: vL } = index;
 	const grid = createEditGrid(vW * vH * vL);
-	for (const v of decodeVoxels(terrain.Voxels)) {
+	for (const v of decodeVoxels(voxels)) {
 		if (v.x < 0 || v.x >= vW || v.y < 0 || v.y >= vH || v.z < 0 || v.z >= vL) continue;
 		const idx = editGridIndex(v.x, v.y, v.z, vW, vL);
 		grid.colors[idx] = normalizeVoxelPaletteIndex(v.color);

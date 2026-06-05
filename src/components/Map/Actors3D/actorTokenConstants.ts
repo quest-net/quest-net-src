@@ -2,7 +2,7 @@ import type { ActorSize, Position } from "../../../domains/Actor/Actor";
 import type { ActorKind } from "./actorTokenTypes";
 
 export const ACTOR_TOKEN_DESCRIPTOR_DEFAULTS = {
-	POSITION: { x: 0, y: 0, h: 0 } satisfies Position,
+	POSITION: { terrainId: "", x: 0, y: 0, h: 0 } satisfies Position,
 	MOVE_SPEED: 5,
 	SIZE: "small" as ActorSize,
 } as const;

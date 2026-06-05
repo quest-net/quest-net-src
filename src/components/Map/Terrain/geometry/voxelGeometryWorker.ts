@@ -112,8 +112,10 @@ function postBuildError(buildId: number, phase: string, error: unknown): void {
 	});
 }
 
-self.onmessage = async (event: MessageEvent<{ buildId: number; terrain: VoxelTerrain }>) => {
-	const { buildId, terrain } = event.data;
+self.onmessage = async (
+	event: MessageEvent<{ buildId: number; terrain: VoxelTerrain; voxels: string }>
+) => {
+	const { buildId, terrain, voxels } = event.data;
 
 	let mesher: VoxelMesherType;
 	try {
@@ -125,7 +127,7 @@ self.onmessage = async (event: MessageEvent<{ buildId: number; terrain: VoxelTer
 	}
 
 	try {
-		buildAndPost(mesher, buildId, terrain);
+		buildAndPost(mesher, buildId, terrain, voxels);
 	} catch (e) {
 		console.error('[voxel-build] WASM build FAILED:', e);
 		postBuildError(buildId, 'build the terrain geometry', e);
@@ -135,7 +137,8 @@ self.onmessage = async (event: MessageEvent<{ buildId: number; terrain: VoxelTer
 function buildAndPost(
 	mesher: VoxelMesherType,
 	buildId: number,
-	terrain: VoxelTerrain
+	terrain: VoxelTerrain,
+	voxels: string
 ): void {
 	const resolution = getVoxelTerrainResolution(terrain);
 
@@ -143,7 +146,7 @@ function buildAndPost(
 	// the positions/colors arrays never cross the JS<->WASM boundary on this
 	// gameplay build path.
 	const build = mesher.build_from_svo(
-		base64ToBytes(terrain.Voxels),
+		base64ToBytes(voxels),
 		terrain.Width,
 		terrain.Height,
 		terrain.Length,

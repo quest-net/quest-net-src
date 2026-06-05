@@ -103,10 +103,12 @@ export class CampaignLoadingService {
 			await this.saveCampaign(campaign);
 		}
 
-		const addedDefaultVoxelStamps = addMissingDefaultVoxelStamps(campaign);
-
+		// Prepare BEFORE adding default stamps: prepareCampaignAfterLoad resets the
+		// per-client payload buffer for this campaign, which would otherwise
+		// discard freshly materialized stamp payloads before they are persisted.
 		await TerrainStorageService.prepareCampaignAfterLoad(campaign);
 
+		const addedDefaultVoxelStamps = addMissingDefaultVoxelStamps(campaign);
 		if (addedDefaultVoxelStamps > 0) {
 			await this.saveCampaign(campaign);
 		}

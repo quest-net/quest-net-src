@@ -2,6 +2,7 @@ import { useEffect, type RefObject } from "react";
 import * as THREE from "three";
 import type { VoxelTerrain } from "../../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCount } from "../../../../utils/terrain/data/VoxelDataUtils";
+import { resolveTerrainVoxels } from "../../../../utils/terrain/data/terrainPayloadStore";
 import { getMaxVoxelSurfaceHeight } from "../../../../utils/terrain/data/VoxelTerrainUtils";
 import type { ThreeDSceneResources } from "../../Actors3D/actorTokenTypes";
 import { getShadowCameraBounds } from "../../shadowCameraBounds";
@@ -42,7 +43,7 @@ export function useTerrainEnvironment(
 	useEffect(() => {
 		const dirLight = directionalLightRef.current;
 		if (!resources || !dirLight) return;
-		if (!terrain || getVoxelCount(terrain.Voxels) === 0) return;
+		if (!terrain || getVoxelCount(resolveTerrainVoxels(terrain)) === 0) return;
 
 		const maxSurfaceHeight = getMaxVoxelSurfaceHeight(terrain);
 		const terrainCenterY = (maxSurfaceHeight - 1) / 2;

@@ -16,11 +16,15 @@ export {
 	voxelTopToTacticalHeight,
 } from "./VoxelTerrainIndex";
 
-export function getActiveVoxelTerrain(campaign: Campaign): VoxelTerrain | null {
+type TilePosition = { x: number; y: number; h: number };
+
+export function getVoxelTerrainById(
+	campaign: Campaign,
+	terrainId: string | undefined
+): VoxelTerrain | null {
+	if (!terrainId) return null;
 	return (
-		campaign.VoxelTerrains.find(
-			(terrain) => terrain.Id === campaign.GameState.VoxelTerrainId
-		) ?? null
+		campaign.VoxelTerrains.find((terrain) => terrain.Id === terrainId) ?? null
 	);
 }
 
@@ -35,7 +39,7 @@ function getCenterTile(terrain: VoxelTerrain): { x: number; y: number } {
 	};
 }
 
-function findSpawnSurface(terrain: VoxelTerrain): Position | null {
+function findSpawnSurface(terrain: VoxelTerrain): TilePosition | null {
 	const index = getVoxelTerrainIndex(terrain);
 	const center = getCenterTile(terrain);
 	const maxRadius = Math.max(terrain.Width, terrain.Length);
@@ -61,7 +65,7 @@ function findSpawnSurface(terrain: VoxelTerrain): Position | null {
 	return null;
 }
 
-function getFallbackSpawnPosition(terrain: VoxelTerrain): Position {
+function getFallbackSpawnPosition(terrain: VoxelTerrain): TilePosition {
 	const center = getCenterTile(terrain);
 	return { x: center.x, y: center.y, h: 0 };
 }
@@ -74,7 +78,8 @@ export function getDefaultVoxelSpawnPosition(
 		return getFlyingVoxelSpawnPosition(terrain);
 	}
 
-	return findSpawnSurface(terrain) ?? getFallbackSpawnPosition(terrain);
+	const surface = findSpawnSurface(terrain) ?? getFallbackSpawnPosition(terrain);
+	return { terrainId: terrain.Id, ...surface };
 }
 
 export function getFlyingVoxelSpawnPosition(terrain: VoxelTerrain): Position {
@@ -82,16 +87,18 @@ export function getFlyingVoxelSpawnPosition(terrain: VoxelTerrain): Position {
 	const maxHeight = Math.max(surface.h, terrain.Height);
 
 	return {
+		terrainId: terrain.Id,
 		x: surface.x,
 		y: surface.y,
 		h: Math.min(surface.h + FLYING_SPAWN_ELEVATION, maxHeight),
 	};
 }
 
-export function getActiveVoxelSpawnPosition(
+export function getVoxelSpawnPosition(
 	campaign: Campaign,
+	terrainId: string,
 	canFly = false
 ): Position | null {
-	const terrain = getActiveVoxelTerrain(campaign);
+	const terrain = getVoxelTerrainById(campaign, terrainId);
 	return terrain ? getDefaultVoxelSpawnPosition(terrain, canFly) : null;
 }

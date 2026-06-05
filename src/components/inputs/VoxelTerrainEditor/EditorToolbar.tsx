@@ -7,7 +7,10 @@
 // edit/preview tab, .vox import and camera dropdown sit on the right.
 
 import type { RefObject } from "react";
-import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import type {
+	EditableVoxelTerrain,
+	VoxelTerrain,
+} from "../../../domains/VoxelTerrain/VoxelTerrain";
 import type {
 	CameraMode,
 	EditorView,
@@ -59,7 +62,7 @@ interface EditorToolbarProps {
 	onGranularityChange: (g: EditGranularityType) => void;
 	readOnly: boolean;
 	stampSources?: VoxelTerrain[];
-	loadStampVoxels?: (terrainId: string) => Promise<VoxelTerrain | null>;
+	loadStampVoxels?: (terrainId: string) => Promise<EditableVoxelTerrain | null>;
 	stampLoadingId: string | null;
 	onSelectStamp: (terrainId: string) => Promise<void> | void;
 	onExitStampMode: () => void;

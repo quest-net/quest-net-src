@@ -102,6 +102,7 @@ export function getVoxelTileHeightKey(x: number, y: number, h: number): string {
 
 export function normalizeVoxelPosition(position: Position): Position {
 	return {
+		terrainId: position.terrainId,
 		x: Math.round(position.x),
 		y: Math.round(position.y),
 		h: Math.round(position.h),

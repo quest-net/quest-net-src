@@ -393,9 +393,9 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm"],
 		handler: VoxelTerrainActions.delete,
 	},
-	"terrain:setActive": {
+	"terrain:moveActors": {
 		roles: ["dm"],
-		handler: VoxelTerrainActions.setActive,
+		handler: VoxelTerrainActions.moveActors,
 	},
 	"terrain:bulkEditTags": {
 		roles: ["dm"],

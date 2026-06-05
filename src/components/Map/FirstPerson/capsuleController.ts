@@ -851,6 +851,7 @@ export function worldPositionToRulesPosition(
 	// and well below the tightest safe ceiling of 1/R = 0.25 at resolution 4.
 	const H_FLOOR_EPSILON = 0.1;
 	return {
+		terrainId: terrain.Id,
 		x: Math.round(clamp(worldX + offsetX, 0, terrain.Width - 1)),
 		y: Math.round(clamp(worldZ + offsetZ, 0, terrain.Length - 1)),
 		h: Math.floor(h + H_FLOOR_EPSILON),
@@ -901,6 +902,7 @@ export function firstPersonCapsuleToRulesPosition(
 	}
 
 	return {
+		terrainId: terrain.Id,
 		x: tileX,
 		y: tileZ,
 		h: h_floored,

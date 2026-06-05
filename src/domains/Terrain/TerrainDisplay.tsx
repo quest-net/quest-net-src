@@ -158,15 +158,19 @@ function EnvironmentSlider({
 	);
 }
 
-export default function TerrainDisplay() {
+export default function TerrainDisplay({
+	terrainId,
+}: {
+	terrainId?: string;
+}) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const isDM = context.User.Role === "dm";
 
-	const activeTerrain = campaign.VoxelTerrains.find(
-		(t) => t.Id === campaign.GameState.VoxelTerrainId
-	);
+	// The terrain whose atmosphere we display/edit is the one being rendered
+	// (passed from Main). With per-actor terrain there is no single global one.
+	const activeTerrain = campaign.VoxelTerrains.find((t) => t.Id === terrainId);
 
 	const isInteractive = isDM && !!actionService && !!activeTerrain;
 	const name = activeTerrain?.Name ?? "Unknown Terrain";

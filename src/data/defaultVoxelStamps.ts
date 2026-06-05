@@ -6,8 +6,10 @@
 import {
 	createDefaultVoxelTerrainBackground,
 	createDefaultVoxelTerrainLighting,
+	type EditableVoxelTerrain,
 	type VoxelTerrain,
 } from "../domains/VoxelTerrain/VoxelTerrain";
+import { TerrainStorageService } from "../services/TerrainStorageService";
 
 export interface DefaultVoxelStampTemplate {
 	TemplateId: string;
@@ -283,7 +285,9 @@ export const DEFAULT_VOXEL_STAMP_TEMPLATES = [
 	},
 ] as const satisfies readonly DefaultVoxelStampTemplate[];
 
-function createDefaultVoxelStamp(stamp: DefaultVoxelStampTemplate): VoxelTerrain {
+function createDefaultVoxelStamp(
+	stamp: DefaultVoxelStampTemplate
+): EditableVoxelTerrain {
 	return {
 		Id: crypto.randomUUID(),
 		Name: stamp.Name,
@@ -292,7 +296,6 @@ function createDefaultVoxelStamp(stamp: DefaultVoxelStampTemplate): VoxelTerrain
 		Height: stamp.Height,
 		Resolution: stamp.Resolution,
 		Voxels: stamp.Voxels,
-		VoxelsLoaded: true,
 		Lighting: createDefaultVoxelTerrainLighting(),
 		Background: createDefaultVoxelTerrainBackground(),
 		Tags: [...stamp.Tags],
@@ -310,10 +313,25 @@ export function getDefaultVoxelStampTemplateId(
 
 export function createDefaultVoxelStamps(
 	existingTemplateIds: ReadonlySet<string> = new Set()
-): VoxelTerrain[] {
+): EditableVoxelTerrain[] {
 	return DEFAULT_VOXEL_STAMP_TEMPLATES
 		.filter((stamp) => !existingTemplateIds.has(stamp.TemplateId))
 		.map(createDefaultVoxelStamp);
+}
+
+/**
+ * Splits an EditableVoxelTerrain into a canonical (payload-free) terrain whose
+ * voxels have been materialized into the per-client store and whose metadata
+ * (ContentHash / VoxelCount / PreviewColor) has been stamped. The campaign owns
+ * only the returned metadata object; the payload is persisted to IndexedDB the
+ * next time the campaign is saved (prepareCampaignForStorage).
+ */
+export function commitEditableVoxelTerrain(
+	editable: EditableVoxelTerrain
+): VoxelTerrain {
+	const { Voxels, ...meta } = editable;
+	TerrainStorageService.materialize(meta, Voxels);
+	return meta;
 }
 
 export function addMissingDefaultVoxelStamps(campaign: {
@@ -327,6 +345,8 @@ export function addMissingDefaultVoxelStamps(campaign: {
 	}
 
 	const missing = createDefaultVoxelStamps(existingTemplateIds);
-	campaign.VoxelTerrains.push(...missing);
+	for (const editable of missing) {
+		campaign.VoxelTerrains.push(commitEditableVoxelTerrain(editable));
+	}
 	return missing.length;
 }

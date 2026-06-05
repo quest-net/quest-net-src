@@ -1,34 +1,32 @@
 // services/StateSyncSanitize.ts
 //
 // Shared sanitization rules for state broadcast to players. The DM holds the
-// canonical campaign with two secrets that players must never see:
+// canonical campaign with ONE secret that players must never see:
 //
-//   1. Campaign.Id          -- the DM's private GUID; replaced with RoomCode.
-//   2. VoxelTerrain.VoxelStorageKey -- formatted `${Campaign.Id}:${terrain.Id}`;
-//                              the Id prefix is rewritten to RoomCode.
+//   Campaign.Id -- the DM's private GUID; replaced with the public RoomCode.
+//
+// (Terrain voxel payloads and their storage keys are no longer fields on the
+// synced campaign object -- they live per-client in TerrainPayloadStore /
+// IndexedDB and are fetched over a dedicated channel -- so there is nothing
+// terrain-shaped left to sanitize here.)
 //
 // Both the full-state path (sanitizeCampaignForPlayers) and the per-action
-// delta path (sanitizeImmerPatchesForPlayers) apply the SAME rules so the two
-// can't drift -- a missed field would leak the DM's GUID/terrain keys.
+// delta path (sanitizeImmerPatchesForPlayers) apply the SAME rule so the two
+// can't drift.
 
 import type { Patch } from "immer";
 import type { Operation } from "fast-json-patch";
 import type { Campaign } from "../domains/Campaign/Campaign";
 
 /**
- * Full-object sanitize: deep-clones the campaign and rewrites the secret
- * fields. Used by full-state broadcasts (peer join, periodic fallback,
- * force-with-no-changes).
+ * Full-object sanitize: deep-clones the campaign and rewrites the secret Id.
+ * Used by full-state broadcasts (peer join, periodic fallback, force-with-no-
+ * changes).
  */
 export function sanitizeCampaignForPlayers(campaign: Campaign): Campaign {
 	const sanitized = structuredClone(campaign);
 	// Replace secret Campaign ID with room code so players can identify it.
 	sanitized.Id = campaign.RoomCode;
-	for (const terrain of sanitized.VoxelTerrains ?? []) {
-		if (terrain.VoxelStorageKey) {
-			terrain.VoxelStorageKey = `${sanitized.Id}:${terrain.Id}`;
-		}
-	}
 	return sanitized;
 }
 
@@ -36,28 +34,24 @@ export function sanitizeCampaignForPlayers(campaign: Campaign): Campaign {
  * Sanitizes a stream of Immer patches (produced against the DM's PRIVATE
  * campaign) into fast-json-patch operations safe to send to players.
  *
- * Three concerns, all handled here:
- *   - Secret rewrite: any patch that sets the root Id, or that carries a
- *     VoxelStorageKey anywhere in its value, is rewritten to use RoomCode.
- *   - Deep values: a single patch can replace an entire VoxelTerrain (or the
- *     whole VoxelTerrains array), carrying a nested VoxelStorageKey -- so patch
- *     values are walked recursively.
+ * Two concerns, both handled here:
+ *   - Secret rewrite: a patch that sets the root Id is rewritten to RoomCode.
  *   - Format: Immer paths are arrays with no leading slash; fast-json-patch
  *     applyPatch (the player apply path) expects JSON-Pointer strings.
+ *
+ * `secretId` is retained in the signature for call-site symmetry with the
+ * full-state path; the storage-key rewrite that used it is gone.
  */
 export function sanitizeImmerPatchesForPlayers(
 	patches: readonly Patch[],
 	secretId: string,
 	roomCode: string
 ): Operation[] {
-	return patches.map((patch) => sanitizePatch(patch, secretId, roomCode));
+	void secretId;
+	return patches.map((patch) => sanitizePatch(patch, roomCode));
 }
 
-function sanitizePatch(
-	patch: Patch,
-	secretId: string,
-	roomCode: string
-): Operation {
+function sanitizePatch(patch: Patch, roomCode: string): Operation {
 	const path = toJsonPointer(patch.path);
 
 	// `remove` carries no value.
@@ -65,7 +59,7 @@ function sanitizePatch(
 		return { op: "remove", path };
 	}
 
-	const value = sanitizeValue(patch.path, patch.value, secretId, roomCode);
+	const value = sanitizeValue(patch.path, patch.value, roomCode);
 
 	// A non-remove op whose value resolved to `undefined` can't be represented
 	// as a JSON Patch add/replace: JSON transport drops the `value` key, and
@@ -80,14 +74,13 @@ function sanitizePatch(
 }
 
 /**
- * Sanitizes a patch value given the path it lands on. The path tells us when a
- * scalar value is itself a secret (root Id, or a VoxelStorageKey leaf);
- * otherwise we deep-walk the value to catch nested VoxelStorageKey fields.
+ * Sanitizes a patch value given the path it lands on. The only secret is the
+ * root campaign Id; otherwise we deep-walk the value to strip `undefined`
+ * (which JSON transport would drop and the validator forbids).
  */
 function sanitizeValue(
 	path: (string | number)[],
 	value: unknown,
-	secretId: string,
 	roomCode: string
 ): unknown {
 	const leaf = path[path.length - 1];
@@ -97,33 +90,21 @@ function sanitizeValue(
 		return roomCode;
 	}
 
-	// A patch that targets a VoxelStorageKey leaf directly.
-	if (leaf === "VoxelStorageKey" && typeof value === "string") {
-		return rewriteStorageKey(value, secretId, roomCode);
-	}
-
-	// Otherwise the value may be a subtree (e.g. a replaced VoxelTerrain or the
-	// whole VoxelTerrains array) carrying nested secret fields.
-	return sanitizeValueDeep(value, secretId, roomCode);
+	return sanitizeValueDeep(value);
 }
 
 /**
- * Recursively rewrites any `VoxelStorageKey` string field found inside an
- * arbitrary patch value, and strips `undefined` to mirror what JSON transport
- * does over the wire (object keys with `undefined` values are dropped; array
- * holes become `null`). This keeps the emitted ops valid for fast-json-patch's
+ * Recursively strips `undefined` to mirror what JSON transport does over the
+ * wire (object keys with `undefined` values are dropped; array holes become
+ * `null`). This keeps the emitted ops valid for fast-json-patch's
  * `validate=true` apply path -- Immer freely carries `undefined`-valued keys
  * (e.g. a LogEntry's optional ActorId/TargetId), which the validator rejects.
  * Returns the input unchanged for primitives.
  */
-function sanitizeValueDeep(
-	value: unknown,
-	secretId: string,
-	roomCode: string
-): unknown {
+function sanitizeValueDeep(value: unknown): unknown {
 	if (Array.isArray(value)) {
 		return value.map((entry) =>
-			entry === undefined ? null : sanitizeValueDeep(entry, secretId, roomCode)
+			entry === undefined ? null : sanitizeValueDeep(entry)
 		);
 	}
 	if (value && typeof value === "object") {
@@ -131,31 +112,11 @@ function sanitizeValueDeep(
 		for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
 			// Drop undefined-valued keys -- JSON would, and the validator forbids them.
 			if (entry === undefined) continue;
-			if (key === "VoxelStorageKey" && typeof entry === "string") {
-				out[key] = rewriteStorageKey(entry, secretId, roomCode);
-			} else {
-				out[key] = sanitizeValueDeep(entry, secretId, roomCode);
-			}
+			out[key] = sanitizeValueDeep(entry);
 		}
 		return out;
 	}
 	return value;
-}
-
-/**
- * Rewrites a `${secretId}:${terrainId}` storage key to `${roomCode}:${terrainId}`.
- * Defensive: only swaps when the secret-Id prefix is actually present.
- */
-function rewriteStorageKey(
-	key: string,
-	secretId: string,
-	roomCode: string
-): string {
-	const prefix = `${secretId}:`;
-	if (key.startsWith(prefix)) {
-		return `${roomCode}:${key.slice(prefix.length)}`;
-	}
-	return key;
 }
 
 /**

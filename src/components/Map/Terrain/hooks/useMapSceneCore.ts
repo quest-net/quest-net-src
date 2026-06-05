@@ -76,6 +76,13 @@ export interface MapSceneCoreOptions {
 	/** The core sets this to the scene's directional light on mount, null on unmount. */
 	directionalLightRef: RefObject<THREE.DirectionalLight | null>;
 	createController: (ctx: MapSceneControllerContext) => MapSceneController;
+	/**
+	 * When true the RAF loop keeps scheduling but skips per-frame work + render.
+	 * Used while the map is mounted-but-hidden (e.g. the DM is on another tab) so
+	 * the WebGL stack stays resident — no teardown/rebuild stutter on return —
+	 * without burning CPU/GPU rendering an offscreen scene every frame.
+	 */
+	paused?: boolean;
 }
 
 export interface MapSceneCore {
@@ -271,6 +278,9 @@ export function useMapSceneCore(
 				Math.max(0, (now - lastFrameTime) / 1000)
 			);
 			lastFrameTime = now;
+			// Mounted but hidden: skip frame work + render entirely. lastFrameTime is
+			// still advanced above so dt doesn't spike on resume (it's clamped anyway).
+			if (optionsRef.current.paused) return;
 			controller.onFrame(now, dt);
 			for (const callback of resources.animationCallbacks) {
 				callback(now);

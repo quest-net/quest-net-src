@@ -2,8 +2,8 @@ import {
 	MAX_HEIGHT,
 	createDefaultVoxelTerrainBackground,
 	createDefaultVoxelTerrainLighting,
+	type EditableVoxelTerrain,
 	type Voxel,
-	type VoxelTerrain,
 } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import {
 	DEFAULT_TERRAIN_COLOR_INDEX,
@@ -149,14 +149,14 @@ export function getRescaledVoxelRange(
 }
 
 export function reshapeVoxelTerrainForEditor(
-	terrain: VoxelTerrain,
+	terrain: EditableVoxelTerrain,
 	nextShape: {
 		width: number;
 		length: number;
 		height: number;
 		resolution: number;
 	}
-): VoxelTerrain {
+): EditableVoxelTerrain {
 	const oldResolution = getVoxelTerrainResolution(terrain);
 	const newResolution = clampVoxelTerrainResolution(nextShape.resolution);
 	const nextHeight = clampVoxelTerrainHeight(nextShape.height);
@@ -222,7 +222,7 @@ export function createFlatVoxelTerrain(params: {
 	maxHeight?: number;
 	colorIndex?: number;
 	tags?: string[];
-}): VoxelTerrain {
+}): EditableVoxelTerrain {
 	const height = clamp(
 		Math.floor(params.height ?? DEFAULT_VOXEL_TERRAIN_HEIGHT),
 		0,
@@ -255,17 +255,16 @@ export function createFlatVoxelTerrain(params: {
 		Height: maxHeight,
 		Resolution: 1,
 		Voxels: encodeVoxels(voxels),
-		VoxelsLoaded: true,
 		Lighting: createDefaultVoxelTerrainLighting(),
 		Background: createDefaultVoxelTerrainBackground(),
 		Tags: params.tags,
 	};
 }
 
-export function getMostCommonVoxelTerrainColor(terrain: VoxelTerrain): string {
+export function getMostCommonVoxelTerrainColor(voxels: string): string {
 	const colorCounts = new Map<number, number>();
 
-	for (const voxel of decodeVoxels(terrain.Voxels)) {
+	for (const voxel of decodeVoxels(voxels)) {
 		const color = normalizeVoxelPaletteIndex(voxel.color);
 		colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
 	}
