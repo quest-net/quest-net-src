@@ -919,3 +919,45 @@ export function isFirstPersonCapsuleSettled(
 
 	return state.grounded && speedSq <= thresholdSq;
 }
+
+// Soft movement-range boundary. Call after the controller step when the body has
+// strayed past its allowed range (the caller decides this from the movement-cost
+// lookup, so this stays pure physics). It cancels the velocity component pointing
+// away from the turn-start position and imposes a gentle inward drift toward it
+// (RANGE_RETURN_SPEED), so the player can't push further out and the body eases
+// back inside -- without snapping it back or discarding the move. Motion already
+// heading inward faster than the return speed is left untouched, and the
+// tangential component is preserved so the player can still slide along the edge.
+// Walkers are pulled horizontally only (vertical stays with gravity/ground);
+// flyers are pulled in full 3D toward the turn-start cell.
+export function applyRangeContainment(
+	state: FirstPersonCapsuleState,
+	targetX: number,
+	targetY: number,
+	targetZ: number,
+	canFly: boolean
+): void {
+	const dx = targetX - state.position.x;
+	const dy = canFly ? targetY - state.position.y : 0;
+	const dz = targetZ - state.position.z;
+	const distSq = dx * dx + dy * dy + dz * dz;
+	if (distSq <= FIRST_PERSON_PHYSICS.COLLISION_EPSILON) return;
+
+	const dist = Math.sqrt(distSq);
+	const inX = dx / dist;
+	const inY = dy / dist;
+	const inZ = dz / dist;
+
+	// Signed speed along the inward direction (positive = already moving inward).
+	const along =
+		state.velocity.x * inX +
+		(canFly ? state.velocity.y * inY : 0) +
+		state.velocity.z * inZ;
+	const targetAlong = Math.max(along, FIRST_PERSON_PHYSICS.RANGE_RETURN_SPEED);
+	const delta = targetAlong - along;
+	if (delta <= 0) return;
+
+	state.velocity.x += inX * delta;
+	if (canFly) state.velocity.y += inY * delta;
+	state.velocity.z += inZ * delta;
+}

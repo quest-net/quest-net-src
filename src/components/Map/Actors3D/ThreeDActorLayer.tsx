@@ -73,6 +73,15 @@ interface ThreeDActorLayerProps {
 	 * Called when a height drag commits a new h for the actor's current tile.
 	 */
 	onActorDragEnd?: (actor: SelectedActor, position: Position) => void;
+	/**
+	 * When set, the selected actor's height drag (the flying "ladder") is
+	 * clamped to this reachable rules-height span at its current column instead
+	 * of the full terrain bounds. MapScene supplies it for restricted players
+	 * (combat / restrict-movement setting) so vertical flight honors the same
+	 * budget as lateral movement. null/undefined leaves the drag bounded only by
+	 * the terrain (DMs, or restriction off).
+	 */
+	draggableHeightRange?: { min: number; max: number } | null;
 }
 
 interface ColorHandle {
@@ -908,6 +917,7 @@ export function ThreeDActorLayer({
 	onActorSelect,
 	canControlActor,
 	onActorDragEnd,
+	draggableHeightRange,
 }: ThreeDActorLayerProps) {
 	// Stash callable/external dependencies in refs so a fresh ImageService
 	// (e.g., after CampaignView reconnects) or a new onActorClick callback
@@ -919,6 +929,7 @@ export function ThreeDActorLayer({
 	const onActorSelectRef = useRef(onActorSelect);
 	const canControlActorRef = useRef(canControlActor);
 	const onActorDragEndRef = useRef(onActorDragEnd);
+	const draggableHeightRangeRef = useRef(draggableHeightRange);
 	const selectedActorRef = useRef(selectedActor);
 	const xRayActorsRef = useRef(xRayActors);
 	const terrainRef = useRef(terrain);
@@ -967,6 +978,10 @@ export function ThreeDActorLayer({
 	useEffect(() => {
 		onActorDragEndRef.current = onActorDragEnd;
 	}, [onActorDragEnd]);
+
+	useEffect(() => {
+		draggableHeightRangeRef.current = draggableHeightRange;
+	}, [draggableHeightRange]);
 
 	useEffect(() => {
 		selectedActorRef.current = selectedActor;
@@ -1428,15 +1443,26 @@ export function ThreeDActorLayer({
 			const projectedDelta =
 				(pointerDx * drag.projectedUpX + pointerDy * drag.projectedUpY) /
 				(drag.pixelsPerHeight * drag.pixelsPerHeight);
-			const heightRange = getActorHeightRange(
+			const terrainHeightRange = getActorHeightRange(
 				drag.descriptor,
 				terrainRef.current,
 				terrainIndexRef.current
 			);
+			// When the player is restricted to their movement range, the ladder is
+			// further clamped to the heights actually reachable (by cost) at this
+			// column, intersected with the terrain bounds. DMs / unrestricted moves
+			// pass no budget range and keep the full terrain span.
+			const budgetRange = draggableHeightRangeRef.current;
+			const minH = budgetRange
+				? Math.max(terrainHeightRange.min, budgetRange.min)
+				: terrainHeightRange.min;
+			const maxH = budgetRange
+				? Math.min(terrainHeightRange.max, budgetRange.max)
+				: terrainHeightRange.max;
 			const nextH = clampHeight(
 				Math.round(drag.startPosition.h + projectedDelta),
-				heightRange.min,
-				heightRange.max
+				minH,
+				Math.max(minH, maxH)
 			);
 
 			if (nextH === drag.candidatePosition.h) return;

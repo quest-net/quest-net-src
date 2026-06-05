@@ -74,8 +74,6 @@ export interface VoxelMovementAdjacency {
 	): readonly (readonly VoxelMovementNeighbor[])[];
 }
 
-const HEIGHT_EPSILON = 1e-6;
-
 // Shared empty result for non-surface lookups. Single array of 4 frozen empty
 // inner arrays so getNeighborsByDirection misses are allocation-free.
 const EMPTY_DIRECTION_BUCKET: readonly VoxelMovementNeighbor[] = Object.freeze([]);
@@ -84,90 +82,48 @@ const EMPTY_NEIGHBORS_BY_DIRECTION: readonly (readonly VoxelMovementNeighbor[])[
 		VOXEL_MOVEMENT_DIRECTIONS.map(() => EMPTY_DIRECTION_BUCKET)
 	);
 
-interface AdjacencyBuildCache {
-	exactSurfaceHeights: Map<string, number | null>;
-	airClearances: Map<string, boolean>;
-}
-
 function tileHeightKey(x: number, y: number, h: number): string {
 	return `${x},${y},${h}`;
 }
 
 /**
- * Looks up the exact (sub-tactical) surface height for a rules-height integer
- * at (tileX, tileY). Memoized via `cache.exactSurfaceHeights` during a single
- * adjacency build.
+ * PASSAGE / clearance predicate: whether the tactical cell at rules-height `h`
+ * over (x, y) is open enough to pass through -- clear unless the cell is *fully*
+ * covered by solid voxels across the whole res*res footprint. This strictness is
+ * deliberate: it is what stops actors tunnelling through a wall via a one-voxel
+ * gap. It governs the non-flyer climb/step clearance below and the flyer's
+ * open-air hover test, but it is NOT the standing authority -- a walkable surface
+ * (`allSurfaces`) can exist in a cell this rejects (a low surface beside a taller
+ * sub-column pillar), and such surfaces are standable. See `canStandVoxel` in
+ * VoxelMovementUtilities for the single standing rule. "Not fully covered" rather
+ * than "no solid voxel" is what lets actors rest or pass just above terrain whose
+ * exact surface height is fractional -- the integer rules-height plane falls
+ * inside the straddling surface voxel.
  */
-function getExactSurfaceHeightForRulesHeight(
+export function isCellStandable(
 	index: VoxelTerrainIndex,
-	tileX: number,
-	tileY: number,
-	rulesH: number,
-	cache: AdjacencyBuildCache
-): number | null {
-	const key = `${tileX},${tileY},${rulesH}`;
-	if (cache.exactSurfaceHeights.has(key)) {
-		return cache.exactSurfaceHeights.get(key) ?? null;
-	}
-
-	const exactSurfaces = index.allSurfaceHeights.get(`${tileX},${tileY}`) ?? [];
-	let match: number | null = null;
-
-	for (const surfaceH of exactSurfaces) {
-		if (
-			Math.abs(surfaceH - rulesH) <= HEIGHT_EPSILON ||
-			Math.floor(surfaceH) === rulesH
-		) {
-			match = surfaceH;
-		}
-	}
-
-	cache.exactSurfaceHeights.set(key, match);
-	return match;
-}
-
-/**
- * True when the voxel column at (tileX, tileY) is clear of solid voxels in
- * the open interval (lowerExactH, upperExactH).
- */
-function isTileAirClearBetweenHeights(
-	index: VoxelTerrainIndex,
-	tileX: number,
-	tileY: number,
-	lowerExactH: number,
-	upperExactH: number,
-	cache: AdjacencyBuildCache
+	x: number,
+	y: number,
+	h: number
 ): boolean {
-	if (upperExactH <= lowerExactH + HEIGHT_EPSILON) return true;
-	const key = `${tileX},${tileY},${lowerExactH},${upperExactH}`;
-	const cached = cache.airClearances.get(key);
-	if (cached !== undefined) return cached;
-
-	const startVoxelY = Math.max(
-		0,
-		Math.ceil(lowerExactH * index.resolution - HEIGHT_EPSILON)
-	);
-	const endVoxelY = Math.min(
-		index.voxelHeight - 1,
-		Math.ceil(upperExactH * index.resolution - HEIGHT_EPSILON) - 1
-	);
-
+	if (h < 0) return false;
+	const { resolution } = index;
+	const startVoxelY = Math.max(0, Math.floor(h * resolution));
+	const endVoxelY = Math.max(startVoxelY, Math.floor((h + 1) * resolution) - 1);
 	for (let voxelY = startVoxelY; voxelY <= endVoxelY; voxelY++) {
-		if (index.isVoxelOccupiedAtTile(tileX, tileY, voxelY)) {
-			cache.airClearances.set(key, false);
-			return false;
-		}
+		if (!index.isVoxelOccupiedAtTile(x, y, voxelY)) return true;
 	}
-
-	cache.airClearances.set(key, true);
-	return true;
+	return false;
 }
 
 /**
- * Whether an actor can step from (fromX, fromY, fromH) onto neighbor surface
- * (toX, toY, toH). Pure function of terrain geometry. Used only during the
- * adjacency build; once the graph exists, callers read precomputed neighbor
- * heights via getNeighborsByDirection() instead.
+ * Whether a non-flyer can step from surface (fromX, fromY, fromH) onto neighbor
+ * surface (toX, toY, toH). Climbing, the actor rises through its own column;
+ * stepping down, it descends through the destination column -- and every cell it
+ * passes through must be standable, the SAME occupancy rule a flyer uses. Pure
+ * function of terrain geometry, used only during the adjacency build; once the
+ * graph exists, callers read precomputed neighbor heights via
+ * getNeighborsByDirection() instead.
  */
 function isSurfaceTransitionReachable(
 	index: VoxelTerrainIndex,
@@ -176,46 +132,23 @@ function isSurfaceTransitionReachable(
 	fromH: number,
 	toX: number,
 	toY: number,
-	toH: number,
-	cache: AdjacencyBuildCache
+	toH: number
 ): boolean {
 	if (toH === fromH) return true;
 
-	const fromExactH = getExactSurfaceHeightForRulesHeight(
-		index,
-		fromX,
-		fromY,
-		fromH,
-		cache
-	);
-	const toExactH = getExactSurfaceHeightForRulesHeight(
-		index,
-		toX,
-		toY,
-		toH,
-		cache
-	);
-	if (fromExactH === null || toExactH === null) return false;
-
-	if (toExactH > fromExactH) {
-		return isTileAirClearBetweenHeights(
-			index,
-			fromX,
-			fromY,
-			fromExactH,
-			toExactH,
-			cache
-		);
+	if (toH > fromH) {
+		// Climb: rise through the from-column from just above fromH up to toH.
+		for (let h = fromH + 1; h <= toH; h++) {
+			if (!isCellStandable(index, fromX, fromY, h)) return false;
+		}
+		return true;
 	}
 
-	return isTileAirClearBetweenHeights(
-		index,
-		toX,
-		toY,
-		toExactH,
-		fromExactH,
-		cache
-	);
+	// Step down: descend through the to-column from just above toH up to fromH.
+	for (let h = toH + 1; h <= fromH; h++) {
+		if (!isCellStandable(index, toX, toY, h)) return false;
+	}
+	return true;
 }
 
 /**
@@ -236,10 +169,6 @@ export function buildVoxelMovementAdjacency(
 	terrain: VoxelTerrain
 ): VoxelMovementAdjacency {
 	const index = getVoxelTerrainIndex(terrain);
-	const buildCache: AdjacencyBuildCache = {
-		exactSurfaceHeights: new Map(),
-		airClearances: new Map(),
-	};
 
 	// Per-(x,y,h) neighbor buckets, populated on demand. `null` records a tile
 	// that was checked and has no walkable neighbors (or is not a surface),
@@ -274,18 +203,7 @@ export function buildVoxelMovementAdjacency(
 			if (neighborSurfaces.length === 0) continue;
 
 			for (const nh of neighborSurfaces) {
-				if (
-					!isSurfaceTransitionReachable(
-						index,
-						x,
-						y,
-						h,
-						nx,
-						ny,
-						nh,
-						buildCache
-					)
-				) {
+				if (!isSurfaceTransitionReachable(index, x, y, h, nx, ny, nh)) {
 					continue;
 				}
 

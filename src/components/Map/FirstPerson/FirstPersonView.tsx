@@ -21,12 +21,18 @@ import {
 	canOccupyVoxelTile,
 	getVoxelTileHeightKey,
 	normalizeVoxelPosition,
+	shouldRestrictPlayerMovementToRange,
 } from "../../../utils/terrain/movement/VoxelMovementUtilities";
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants";
 import { useLiveActorPoseOverrides } from "../hooks/useLiveActorPoseOverrides";
 import { useMapState } from "../MapStateProvider";
-import { findFirstPersonActor, getEyeHeight } from "./actor";
 import {
+	actorPositionToGroundWorld,
+	findFirstPersonActor,
+	getEyeHeight,
+} from "./actor";
+import {
+	applyRangeContainment,
 	createFirstPersonCapsuleState,
 	firstPersonCapsuleToRulesPosition,
 	isFirstPersonCapsuleSettled,
@@ -141,6 +147,8 @@ export default function FirstPersonView({
 	const movementCostLookupRef = useRef<Map<string, number> | null>(null);
 	const canControlFirstPersonActorRef = useRef(false);
 	const isCombatActiveRef = useRef(false);
+	const restrictMovementToRangeRef = useRef(false);
+	const turnStartWorldRef = useRef<THREE.Vector3 | null>(null);
 	const charactersRef = useRef(characters);
 	const entitiesRef = useRef(entities);
 	const liveActorPosesRef = useRef<ReadonlyMap<string, LiveActorPose> | null>(
@@ -191,6 +199,12 @@ export default function FirstPersonView({
 	const isCombatActive = campaign.GameState.CombatState?.isActive ?? false;
 	const canControlFirstPersonActor = actor ? canAccessActor(actor.id) : false;
 	const voxelTerrainIndex = terrainIndex;
+	const restrictMovementToRange =
+		shouldRestrictPlayerMovementToRange(
+			context.User.Role,
+			isCombatActive,
+			campaign.Settings.MovementSettings
+		);
 
 	const movementCostLookup = useMemo(() => {
 		if (!terrain || !actor || !canControlFirstPersonActor) return null;
@@ -255,6 +269,21 @@ export default function FirstPersonView({
 	useEffect(() => {
 		isCombatActiveRef.current = isCombatActive;
 	}, [isCombatActive]);
+
+	useEffect(() => {
+		restrictMovementToRangeRef.current = restrictMovementToRange;
+	}, [restrictMovementToRange]);
+
+	// World-space ground position of the turn-start cell -- the point the soft
+	// range boundary pulls the body back toward.
+	useEffect(() => {
+		const turnStart = actor?.actor.TurnStartPosition;
+		if (!terrain || !actor || !turnStart) {
+			turnStartWorldRef.current = null;
+			return;
+		}
+		turnStartWorldRef.current = actorPositionToGroundWorld(actor, terrain, turnStart);
+	}, [terrain, actor, actorTurnStartX, actorTurnStartY, actorTurnStartH]);
 
 	useEffect(() => {
 		lastSentKeyRef.current = "";
@@ -601,6 +630,37 @@ export default function FirstPersonView({
 						index,
 						currentActor.actor.CanFly ?? false
 					);
+
+					// Soft movement-range boundary: when the body has strayed past its
+					// allowed range, nudge it back toward the turn-start position
+					// instead of rejecting the move. Done before the settled check so
+					// the imposed inward drift keeps it from settling/committing out of
+					// range -- it can only come to rest (and commit) once back inside.
+					if (restrictMovementToRangeRef.current) {
+						const lookup = movementCostLookupRef.current;
+						const target = turnStartWorldRef.current;
+						if (lookup && target) {
+							const moveSpeed = getActorMoveSpeed(currentActor);
+							const cost = getMovementCostFromLookup(
+								lookup,
+								index,
+								rulesPosition
+							);
+							const outOfRange =
+								cost === undefined ||
+								cost > moveSpeed + MOVEMENT_OVERAGE_EPSILON;
+							if (outOfRange) {
+								applyRangeContainment(
+									state,
+									target.x,
+									target.y,
+									target.z,
+									currentActor.actor.CanFly ?? false
+								);
+							}
+						}
+					}
+
 					const settled = isFirstPersonCapsuleSettled(
 						state,
 						currentActor.actor.CanFly ?? false

@@ -29,6 +29,7 @@ import { getVoxelTerrainIndex } from '../../utils/terrain/data/VoxelTerrainIndex
 import {
 	calculateVoxelMovementRange,
 	calculateVoxelRemainingMovementRange,
+	shouldRestrictPlayerMovementToRange,
 } from '../../utils/terrain/movement/VoxelMovementUtilities';
 import type { VoxelTerrain } from '../../domains/VoxelTerrain/VoxelTerrain';
 import { useMapState } from './MapStateProvider';
@@ -216,8 +217,11 @@ export default function MapScene({
 			? context.User.SelectedCharacters?.[campaign.RoomCode]
 			: (context.User.ImpersonatedActors ?? {})[campaign.RoomCode];
 	const restrictMovementToRange =
-		context.User.Role === "player" &&
-		(campaign.Settings.MovementSettings?.restrictPlayerMovementToRange ?? false);
+		shouldRestrictPlayerMovementToRange(
+			context.User.Role,
+			isCombatActive,
+			campaign.Settings.MovementSettings
+		);
 	const preserveFlyingHeightOnTileMove =
 		AppSettingActions.getPreserveFlyingHeightOnTileMove(context);
 
@@ -344,6 +348,36 @@ export default function MapScene({
 		selectedActorTurnStartH,
 		selectedActorMoveSpeed,
 		selectedActorCanFly,
+	]);
+
+	// Reachable rules-height span at the selected actor's own column, used to
+	// clamp the flying height-drag ("ladder") when the player is restricted to
+	// their movement range. Mirrors the lateral restriction: remaining range in
+	// combat, full range otherwise. null = unrestricted (DM or setting off) ->
+	// the drag stays bounded only by the terrain.
+	const draggableHeightRange = useMemo(() => {
+		if (!isWorld || !restrictMovementToRange || !selectedActorObject) return null;
+		const range = isCombatActive ? remainingMovementRange : movementRange;
+		if (!range || range.length === 0) return null;
+		const x = Math.round(selectedActorObject.Position.x);
+		const y = Math.round(selectedActorObject.Position.y);
+		let min = Infinity;
+		let max = -Infinity;
+		for (const tile of range) {
+			if (tile.x !== x || tile.y !== y) continue;
+			if (tile.h < min) min = tile.h;
+			if (tile.h > max) max = tile.h;
+		}
+		return min === Infinity ? null : { min, max };
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [
+		isWorld,
+		restrictMovementToRange,
+		isCombatActive,
+		movementRange,
+		remainingMovementRange,
+		selectedActorPositionX,
+		selectedActorPositionY,
 	]);
 
 	const handleActorClick = useCallback(
@@ -556,6 +590,7 @@ export default function MapScene({
 						onActorSelect={handleActorSelect}
 						canControlActor={isWorld ? canControlActor : undefined}
 						onActorDragEnd={isWorld ? handleActorDragEnd : undefined}
+						draggableHeightRange={draggableHeightRange}
 					/>
 					{isWorld && (
 						<ThreeDMovementLayer

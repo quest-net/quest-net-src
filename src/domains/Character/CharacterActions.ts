@@ -9,7 +9,6 @@ import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
 import { createDefaultStatSlots, createDefaultActionSlots, createDefaultAttributeSlots } from "../../utils/ActorResolvers";
 import { getActiveVoxelSpawnPosition, getActiveVoxelTerrain } from "../../utils/terrain/data/VoxelTerrainUtils";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
-import { isVoxelMoveInAllowedRange } from "../../utils/terrain/movement/VoxelMovementUtilities";
 
 /**
  * Character action handlers
@@ -302,39 +301,10 @@ export const CharacterActions = {
 				return;
 			}
 
-			const restrictMovement =
-				campaign.Settings.MovementSettings?.restrictPlayerMovementToRange ??
-				false;
-			const voxelTerrain = getActiveVoxelTerrain(campaign);
-			if (restrictMovement) {
-				if (!voxelTerrain) {
-					console.warn("Cannot validate restricted movement without voxel terrain");
-					return;
-				}
-
-				const targetX = Math.round(params.position.x);
-				const targetY = Math.round(params.position.y);
-				const targetH = Math.round(params.position.h);
-				const canMove = isVoxelMoveInAllowedRange(
-					voxelTerrain,
-					character.Position,
-					character.TurnStartPosition,
-					character.MoveSpeed,
-					character.CanFly ?? false,
-					campaign.Settings.MovementSettings,
-					campaign.GameState.CombatState?.isActive ?? false,
-					targetX,
-					targetY,
-					targetH
-				);
-
-				if (!canMove) {
-					console.warn(
-						`Player ${context.User.Id} cannot move character ${params.characterId} to (${targetX}, ${targetY}, h=${targetH})`
-					);
-					return;
-				}
-			}
+			// Movement-range restriction is enforced entirely client-side now (world
+			// view blocks out-of-range clicks; first-person applies a soft pull-back
+			// toward the turn-start position). The DM trusts the requested position
+			// rather than re-validating range here.
 		}
 
 		ActorActions.moveActor(

@@ -45,21 +45,21 @@ export const ActorActions = {
 			return;
 		}
 
-		const validation = VoxelTerrainActions.validateActorMove(
-			actor,
-			params.position,
-			campaign
-		);
-		if (!validation.ok) {
-			console.warn(
-				`Invalid ${type} move position for ${params.actorId}: ${validation.reason}`
-			);
-			return;
-		}
-
+		// Per-move terrain validation is intentionally NOT run here. The client UI
+		// derives legal positions from the shared voxel movement model, so the DM
+		// trusts the requested position rather than snapping/rejecting it against
+		// terrain -- that re-validation was the source of the jarring rubber-band
+		// when a player moved onto a visually-valid tile. Gameplay range limits
+		// are intentionally UI-only. Terrain validity is reconciled by
+		// VoxelTerrainActions.repairActors on terrain changes, CanFly toggles,
+		// scenario loads, and similar layout-changing actions.
 		const oldPosition = { ...actor.Position };
-		const nextPosition = validation.position;
-		actor.Position = { ...nextPosition };
+		const nextPosition = {
+			x: Math.round(params.position.x),
+			y: Math.round(params.position.y),
+			h: Math.round(params.position.h),
+		};
+		actor.Position = nextPosition;
 
 		LogActions.create(
 			{
@@ -118,8 +118,8 @@ export const ActorActions = {
 		if (
 			isSpawnedActor &&
 			"CanFly" in params.updates &&
-			!previousCanFly &&
-			actor.CanFly &&
+			previousCanFly &&
+			!actor.CanFly &&
 			getActiveVoxelTerrain(campaign)
 		) {
 			VoxelTerrainActions.repairActors(context);

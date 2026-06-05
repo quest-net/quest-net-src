@@ -447,7 +447,9 @@ function CampaignSettingForm({
 					/>
 				</FormField>
 
-				<FormField label="Restrict player movement to range">
+				<FormField
+					label="Restrict player movement to range (in combat)"
+				>
 					<input
 						type="checkbox"
 						checked={data.MovementSettings.restrictPlayerMovementToRange ?? false}

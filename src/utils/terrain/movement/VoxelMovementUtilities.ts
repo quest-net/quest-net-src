@@ -10,6 +10,7 @@ import {
 } from "../data/VoxelTerrainIndex";
 import {
 	getVoxelMovementAdjacency,
+	isCellStandable,
 	VOXEL_MOVEMENT_DIRECTIONS,
 	type VoxelMovementAdjacency,
 } from "./VoxelMovementAdjacency";
@@ -115,16 +116,98 @@ export function isVoxelTileInBounds(
 	return x >= 0 && x < terrain.Width && y >= 0 && y < terrain.Length;
 }
 
+export function shouldRestrictPlayerMovementToRange(
+	userRole: "dm" | "player" | undefined,
+	isCombatActive: boolean,
+	movementSettings?:
+		| Pick<MovementSettings, "restrictPlayerMovementToRange">
+		| null
+): boolean {
+	return (
+		userRole === "player" &&
+		isCombatActive &&
+		(movementSettings?.restrictPlayerMovementToRange ?? false)
+	);
+}
+
+// ---------------------------------------------------------------------------
+// Shared actor physics: the single "where can an actor STAND" authority
+// (`canStandVoxel`), consumed by both movement-range pathing (below) and DM-side
+// position validation/repair. Two distinct geometric notions feed it, and
+// keeping them separate is what makes flyer-standable a superset of
+// walker-standable by construction:
+//
+//   - SURFACE (`allSurfaces`): a walkable surface exists at rules-height h. This
+//     is where a non-flyer can put its feet. It is detected per voxel sub-column
+//     (an exposed top, floored to rules height), so it can report a surface in a
+//     tactical tile even when a taller neighbouring sub-column fills the rest of
+//     that rules cell.
+//   - CLEARANCE (`isCellStandable`): the rules cell is not *fully* solid across
+//     the whole res*res footprint. This is the strict PASSAGE predicate -- it is
+//     what stops actors tunnelling through a wall via a one-voxel gap -- and it
+//     also serves as the flyer's open-air hover test.
+//
+// Standing rule:
+//   - non-flyer: SURFACE(h)                  (a detected surface is always standable)
+//   - flyer:     CLEARANCE(h) OR SURFACE(h)  (open air, or anywhere a walker can stand)
+//
+// Because SURFACE(h) appears in the flyer clause, every tile a walker can stand
+// on a flyer can stand on too. Actor size plays no part here -- it is purely
+// visual.
+// ---------------------------------------------------------------------------
+
 /**
- * Returns all walkable surface heights at tactical tile (tileX, tileY) from
- * pre-computed surface data.  An empty array means the column has no voxels.
+ * Whether a flyer may occupy the rules cell at (x, y, h): true in open air
+ * (`isCellStandable`) OR on any walkable surface (`allSurfaces`). The surface
+ * clause is what guarantees flyer-standable >= walker-standable even on rugged
+ * sub-tactical terrain where a surface cell is not whole-tile-clear. Callers in
+ * the Dijkstra hot loop must have already bounds/height-checked (x, y, h).
  */
-function getSurfacesAtTile(
+function isFlyerStandableCell(
 	index: VoxelTerrainIndex,
-	tileX: number,
-	tileY: number
-): readonly number[] {
-	return index.allSurfaces.get(`${tileX},${tileY}`) ?? [];
+	x: number,
+	y: number,
+	h: number
+): boolean {
+	if (isCellStandable(index, x, y, h)) return true;
+	return (index.allSurfaces.get(`${x},${y}`) ?? []).includes(h);
+}
+
+/**
+ * Highest rules-height an actor may occupy on this terrain. Matches the bound
+ * used by position validation so pathing and validation agree on the ceiling.
+ */
+export function getMaxActorHeight(
+	terrain: VoxelTerrain,
+	index: VoxelTerrainIndex
+): number {
+	return Math.ceil(Math.max(terrain.Height, index.maxSurfaceHeight));
+}
+
+/**
+ * The single standing authority. A non-flyer stands exactly on detected
+ * surfaces (`allSurfaces`); a flyer stands on those surfaces OR hovers in any
+ * open cell (`isFlyerStandableCell`). Flyer-standable is therefore a superset of
+ * walker-standable by construction. (The strict whole-tile clearance rule lives
+ * in `isCellStandable` and governs PASSAGE -- climbing through, tunnel
+ * prevention -- not standing.)
+ */
+export function canStandVoxel(
+	terrain: VoxelTerrain,
+	index: VoxelTerrainIndex,
+	x: number,
+	y: number,
+	h: number,
+	canFly: boolean
+): boolean {
+	if (!isVoxelTileInBounds(terrain, x, y)) return false;
+	if (h < 0 || h > getMaxActorHeight(terrain, index)) return false;
+
+	if (canFly) return isFlyerStandableCell(index, x, y, h);
+
+	// Non-flyer: feet must land on an exposed surface at this rules height. A
+	// detected surface is always standable -- no separate clearance gate.
+	return (index.allSurfaces.get(`${x},${y}`) ?? []).includes(h);
 }
 
 export function isVoxelTileOccupiedAtHeight(
@@ -198,8 +281,8 @@ export function calculateVoxelMovementRange(
 ): VoxelMovementRangeResult {
 	const start = normalizeVoxelPosition(from);
 	const budget = getMoveSpeedBudget(moveSpeed);
-	// costs and bestTiles are now keyed by (x,y,h) so multiple heights per
-	// column are tracked independently.
+	// costs and bestTiles are keyed by (x,y,h) so multiple heights per column
+	// (a flier's ladder, or stacked surfaces) are tracked independently.
 	const costs = new Map<string, number>();
 	const bestTiles = new Map<string, VoxelMovementTile>();
 
@@ -208,7 +291,13 @@ export function calculateVoxelMovementRange(
 	}
 
 	const index = getVoxelTerrainIndex(terrain);
-	const adjacency: VoxelMovementAdjacency = getVoxelMovementAdjacency(terrain);
+	const maxActorHeight = getMaxActorHeight(terrain, index);
+	// Non-flyers traverse the cached surface adjacency graph; flyers flood through
+	// any cell they can stand in (open air or a walkable surface, see
+	// isFlyerStandableCell) at any height and never touch it.
+	const adjacency: VoxelMovementAdjacency | null = canFly
+		? null
+		: getVoxelMovementAdjacency(terrain);
 
 	const addBestTile = (x: number, y: number, h: number, cost: number) => {
 		const key = getVoxelTileHeightKey(x, y, h);
@@ -227,27 +316,85 @@ export function calculateVoxelMovementRange(
 
 	const queue = new PriorityQueue<PathNode>();
 	const nodeCosts = new Map<string, number>();
-	const nodeKey = (x: number, y: number, h: number) =>
-		`${x},${y},${h}`;
+	const nodeKey = (x: number, y: number, h: number) => `${x},${y},${h}`;
 
 	const startKey = nodeKey(start.x, start.y, start.h);
 	nodeCosts.set(startKey, 0);
 	queue.enqueue({ x: start.x, y: start.y, h: start.h }, 0);
 
+	const relax = (nx: number, ny: number, nh: number, newCost: number) => {
+		if (newCost > budget) return;
+		const nextKey = nodeKey(nx, ny, nh);
+		const existingCost = nodeCosts.get(nextKey);
+		if (existingCost !== undefined && existingCost <= newCost) return;
+		nodeCosts.set(nextKey, newCost);
+		queue.enqueue({ x: nx, y: ny, h: nh }, newCost);
+		addBestTile(nx, ny, nh, newCost);
+	};
+
+	// Vertical cost for a flier to occupy rules-height `h`, measured as the NET
+	// ascent above the start height the flood originates from. The setting
+	// `flyingIgnoresHeight` picks the rate: when on, climbing is a flat 1 per
+	// height level (so a Δh climb costs Δh); when off, a flier pays the same
+	// height-cost lookup a non-flyer does, charged on the TOTAL ascent
+	// (lookup(Δh)) rather than per level. Dropping back toward (or below) the
+	// start costs nothing. The ladder edges below add the per-level increment of
+	// this total so a contiguous climb telescopes exactly to it.
+	const verticalCostAtHeight = (h: number): number => {
+		const netAscent = Math.max(0, h - start.h);
+		if (netAscent === 0) return 0;
+		return movementSettings.flyingIgnoresHeight
+			? netAscent
+			: getHeightCost(netAscent, movementSettings.heightCostLookup);
+	};
+
 	while (!queue.isEmpty()) {
 		const current = queue.dequeue()!;
-		const currentKey = nodeKey(current.x, current.y, current.h);
-		const currentCost = nodeCosts.get(currentKey)!;
+		const currentCost = nodeCosts.get(
+			nodeKey(current.x, current.y, current.h)
+		)!;
 
-		// Surface-to-surface neighbors are precomputed per terrain revision in
-		// VoxelMovementAdjacency, keyed by direction. The build runs
-		// isSurfaceTransitionReachable across every (x, y, h) surface tile and
-		// every cardinal step once per revision, so Dijkstra no longer rescans
-		// voxel columns for air clearance during traversal -- it just reads
-		// the precomputed neighbor heights here. Flier extras (maintain altitude
-		// over non-empty columns, cross empty columns at current.h) depend on
-		// `current.h` so they're computed inline below.
-		const neighborsByDirection = adjacency.getNeighborsByDirection(
+		if (canFly) {
+			// Lateral flight: step to any standable neighbor cell at the current
+			// altitude for the flat lateral cost. A flier can be in open air OR on
+			// any walkable surface (isFlyerStandableCell), so it crosses gaps,
+			// passes over walls at height, and -- crucially -- can step onto the
+			// same surface tiles a walker uses even where those cells are not
+			// whole-tile-clear. Altitude changes are the vertical "ladder" below.
+			for (let d = 0; d < VOXEL_MOVEMENT_DIRECTIONS.length; d++) {
+				const { dx, dy } = VOXEL_MOVEMENT_DIRECTIONS[d];
+				const nx = current.x + dx;
+				const ny = current.y + dy;
+				if (!isVoxelTileInBounds(terrain, nx, ny)) continue;
+				if (isFlyerStandableCell(index, nx, ny, current.h)) {
+					relax(nx, ny, current.h, currentCost + 1);
+				}
+			}
+
+			// Vertical flight: the "ladder". Ascend/descend one rules-height at a
+			// time through clear cells in the current column. Each edge charges the
+			// increment of the net-ascent cost (clamped non-negative); descending
+			// yields a non-positive delta, i.e. free.
+			for (const dh of [1, -1]) {
+				const nh = current.h + dh;
+				if (nh < 0 || nh > maxActorHeight) continue;
+				if (isFlyerStandableCell(index, current.x, current.y, nh)) {
+					const stepCost = Math.max(
+						0,
+						verticalCostAtHeight(nh) - verticalCostAtHeight(current.h)
+					);
+					relax(current.x, current.y, nh, currentCost + stepCost);
+				}
+			}
+
+			continue;
+		}
+
+		// Non-flyer: surface-to-surface transitions from the cached adjacency
+		// graph (lazily built per terrain revision). Each cardinal step lands on
+		// a reachable neighbor surface; climbing up to it pays the height cost,
+		// dropping down is free.
+		const neighborsByDirection = adjacency!.getNeighborsByDirection(
 			current.x,
 			current.y,
 			current.h
@@ -257,55 +404,18 @@ export function calculateVoxelMovementRange(
 			const { dx, dy } = VOXEL_MOVEMENT_DIRECTIONS[d];
 			const nx = current.x + dx;
 			const ny = current.y + dy;
-
 			if (!isVoxelTileInBounds(terrain, nx, ny)) continue;
 
-			const walking = neighborsByDirection[d];
-
-			// Candidate destination heights for this direction. Walking heights
-			// come from cached adjacency; flier extras are layered on top.
-			const candidateHeights: number[] = [];
-			for (const n of walking) candidateHeights.push(n.h);
-
-			if (canFly) {
-				const surfaceList = getSurfacesAtTile(index, nx, ny);
-				if (surfaceList.length === 0) {
-					// Empty tile -- flying actor can cross at current altitude.
-					candidateHeights.push(current.h);
-					if (current.h !== 0) candidateHeights.push(0);
-				} else if (!walking.some((n) => n.h === current.h)) {
-					// Flier maintains altitude over non-empty terrain only when
-					// current.h is not already a walking-reachable neighbor.
-					candidateHeights.push(current.h);
-				}
-			}
-
-			for (const targetH of candidateHeights) {
+			for (const neighbor of neighborsByDirection[d]) {
 				let stepCost = 1;
-				const heightDiff = targetH - current.h;
-
-				if (heightDiff > 0 && !(canFly && movementSettings.flyingIgnoresHeight)) {
-					// Non-flying actors (or fliers when the setting does not waive
-					// height costs) pay the configured climb cost. Fliers with
-					// `flyingIgnoresHeight` ascend freely, which keeps the state
-					// space to (x, y, h) and prevents the Dijkstra blowup that
-					// crashed the tab when entering FP on a flier.
+				const heightDiff = neighbor.h - current.h;
+				if (heightDiff > 0) {
 					stepCost += getHeightCost(
 						heightDiff,
 						movementSettings.heightCostLookup
 					);
 				}
-
-				const newCost = currentCost + stepCost;
-				if (newCost > budget) continue;
-
-				const nextKey = nodeKey(nx, ny, targetH);
-				const existingCost = nodeCosts.get(nextKey);
-				if (existingCost !== undefined && existingCost <= newCost) continue;
-
-				nodeCosts.set(nextKey, newCost);
-				queue.enqueue({ x: nx, y: ny, h: targetH }, newCost);
-				addBestTile(nx, ny, targetH, newCost);
+				relax(nx, ny, neighbor.h, currentCost + stepCost);
 			}
 		}
 	}
@@ -363,59 +473,4 @@ export function calculateVoxelRemainingMovementRange(
 		canFly,
 		movementSettings
 	);
-}
-
-export function isVoxelMoveInAllowedRange(
-	terrain: VoxelTerrain,
-	current: Position,
-	turnStart: Position | undefined,
-	moveSpeed: number | undefined | null,
-	canFly: boolean,
-	movementSettings: Pick<
-		MovementSettings,
-		"heightCostLookup" | "flyingIgnoresHeight"
-	>,
-	isCombatActive: boolean,
-	targetX: number,
-	targetY: number,
-	targetH?: number
-): boolean {
-	if (!isVoxelTileInBounds(terrain, targetX, targetY)) return false;
-
-	let budget = getMoveSpeedBudget(moveSpeed);
-
-	if (isCombatActive) {
-		if (!turnStart) return false;
-
-		const normalizedCurrent = normalizeVoxelPosition(current);
-		const { costs: startCosts } = calculateVoxelMovementRange(
-			terrain,
-			turnStart,
-			budget,
-			canFly,
-			movementSettings
-		);
-		const spentCost = startCosts.get(
-			getVoxelTileHeightKey(normalizedCurrent.x, normalizedCurrent.y, normalizedCurrent.h)
-		);
-		if (spentCost === undefined) return false;
-
-		budget -= spentCost;
-		if (budget <= 0) return false;
-	}
-
-	const { tiles } = calculateVoxelMovementRange(
-		terrain,
-		current,
-		budget,
-		canFly,
-		movementSettings
-	);
-
-	if (targetH !== undefined) {
-		return tiles.some(
-			(tile) => tile.x === targetX && tile.y === targetY && tile.h === targetH
-		);
-	}
-	return tiles.some((tile) => tile.x === targetX && tile.y === targetY);
 }

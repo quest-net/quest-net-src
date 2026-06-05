@@ -39,7 +39,7 @@ export function findFirstPersonActor(
 	return null;
 }
 
-function actorPositionToGroundWorld(
+export function actorPositionToGroundWorld(
 	actor: FirstPersonActor,
 	terrain: VoxelTerrain,
 	position: Position

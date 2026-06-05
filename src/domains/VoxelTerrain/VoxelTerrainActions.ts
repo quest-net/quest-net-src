@@ -16,15 +16,9 @@ import {
 	type VoxelTerrainIndex,
 } from "../../utils/terrain/data/VoxelTerrainIndex";
 import { createFlatVoxelTerrain } from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
+import { canStandVoxel } from "../../utils/terrain/movement/VoxelMovementUtilities";
 import type { VoxelTerrain } from "./VoxelTerrain";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
-
-const FLYING_ACTOR_CLEARANCE_BY_SIZE = {
-	"extra-small": 1,
-	small: 1.25,
-	medium: 1.5,
-	large: 1.75,
-} as const;
 
 const POSITION_HEIGHT_EPSILON = 1e-6;
 
@@ -40,28 +34,28 @@ type ActorPositionValidationResult =
 			reason: string;
 	  };
 
-function getCenterTile(terrain: VoxelTerrain): { x: number; y: number } {
-	return {
-		x: Math.max(0, Math.min(terrain.Width - 1, Math.floor(terrain.Width / 2))),
-		y: Math.max(0, Math.min(terrain.Length - 1, Math.floor(terrain.Length / 2))),
-	};
-}
-
 function isInBounds(x: number, y: number, terrain: VoxelTerrain): boolean {
 	return x >= 0 && x < terrain.Width && y >= 0 && y < terrain.Length;
 }
 
-function findTileFromCenter<T>(
+function clampTileCoordinate(value: number, maxExclusive: number): number {
+	if (!Number.isFinite(value)) return Math.max(0, Math.floor(maxExclusive / 2));
+	return Math.max(0, Math.min(maxExclusive - 1, Math.round(value)));
+}
+
+function findTileFromOrigin<T>(
 	terrain: VoxelTerrain,
+	origin: { x: number; y: number },
 	findAtTile: (x: number, y: number) => T | null
 ): T | null {
-	const center = getCenterTile(terrain);
+	const startX = clampTileCoordinate(origin.x, terrain.Width);
+	const startY = clampTileCoordinate(origin.y, terrain.Length);
 	const maxRadius = Math.max(terrain.Width, terrain.Length);
 
 	for (let radius = 0; radius <= maxRadius; radius++) {
-		for (let y = center.y - radius; y <= center.y + radius; y++) {
-			for (let x = center.x - radius; x <= center.x + radius; x++) {
-				if (Math.max(Math.abs(x - center.x), Math.abs(y - center.y)) !== radius) {
+		for (let y = startY - radius; y <= startY + radius; y++) {
+			for (let x = startX - radius; x <= startX + radius; x++) {
+				if (Math.max(Math.abs(x - startX), Math.abs(y - startY)) !== radius) {
 					continue;
 				}
 				if (!isInBounds(x, y, terrain)) {
@@ -79,16 +73,25 @@ function findTileFromCenter<T>(
 	return null;
 }
 
+function getPreferredSurfaceHeights(
+	surfaces: readonly number[],
+	preferredH: number
+): number[] {
+	const belowOrEqual = surfaces
+		.filter((surface) => surface <= preferredH)
+		.sort((a, b) => b - a);
+	const above = surfaces
+		.filter((surface) => surface > preferredH)
+		.sort((a, b) => a - b);
+	return [...belowOrEqual, ...above];
+}
+
 function getSurfaceHeights(
 	index: VoxelTerrainIndex,
 	x: number,
 	y: number
 ): readonly number[] {
 	return index.allSurfaces.get(`${x},${y}`) ?? [];
-}
-
-function getFlyingActorClearance(actor: Actor): number {
-	return FLYING_ACTOR_CLEARANCE_BY_SIZE[actor.Size ?? "small"];
 }
 
 function normalizeHeight(height: number): number {
@@ -142,32 +145,6 @@ function getStandingSurfaceHeight(
 	}
 
 	return rulesHeightSurface;
-}
-
-function isFlyingHeightClear(
-	actor: Actor,
-	terrain: VoxelTerrain,
-	index: VoxelTerrainIndex,
-	x: number,
-	y: number,
-	h: number
-): boolean {
-	if (!isInBounds(x, y, terrain)) return false;
-	if (h < 0) return false;
-	if (h > getMaxActorHeight(terrain)) return false;
-
-	const { resolution } = index;
-	const startVoxelY = Math.max(0, Math.floor(h * resolution));
-	const endVoxelY = Math.max(
-		startVoxelY,
-		Math.ceil((h + getFlyingActorClearance(actor)) * resolution) - 1
-	);
-
-	for (let voxelY = startVoxelY; voxelY <= endVoxelY; voxelY++) {
-		if (index.isVoxelOccupiedAtTile(x, y, voxelY)) return false;
-	}
-
-	return true;
 }
 
 function validateActorPositionForTerrain(
@@ -248,7 +225,7 @@ function validateActorPositionForTerrain(
 			};
 		}
 
-		if (isFlyingHeightClear(actor, terrain, index, normalized.x, normalized.y, normalized.h)) {
+		if (canStandVoxel(terrain, index, normalized.x, normalized.y, normalized.h, true)) {
 			return { ok: true, position: normalized, mode: "flying" };
 		}
 
@@ -324,6 +301,59 @@ function returnCharacterToRoster(
 			level: "important",
 			visibility: ["all"],
 			actorId: character.Id,
+		},
+		context
+	);
+}
+
+type RepairActorEntry = {
+	actor: Actor;
+	type: "character" | "entity";
+};
+
+function getRepairActorEntries(campaign: Campaign): RepairActorEntry[] {
+	return [
+		...campaign.GameState.Characters.map((actor) => ({
+			actor,
+			type: "character" as const,
+		})),
+		...campaign.GameState.Entities.map((actor) => ({
+			actor,
+			type: "entity" as const,
+		})),
+	];
+}
+
+function removeInvalidActor(
+	entry: RepairActorEntry,
+	campaign: Campaign,
+	context: Context
+): void {
+	if (entry.type === "character") {
+		const arrayIndex = campaign.GameState.Characters.findIndex(
+			(actor) => actor.Id === entry.actor.Id
+		);
+		if (arrayIndex === -1) return;
+
+		const [character] = campaign.GameState.Characters.splice(arrayIndex, 1);
+		returnCharacterToRoster(campaign, character, context);
+		return;
+	}
+
+	const arrayIndex = campaign.GameState.Entities.findIndex(
+		(actor) => actor.Id === entry.actor.Id
+	);
+	if (arrayIndex === -1) return;
+
+	const [actor] = campaign.GameState.Entities.splice(arrayIndex, 1);
+	LogActions.create(
+		{
+			action: `${entry.type} despawned`,
+			details: `${actor.Name} was removed due to invalid voxel position`,
+			category: "system",
+			level: "verbose",
+			visibility: ["dm"],
+			actorId: actor.Id,
 		},
 		context
 	);
@@ -514,97 +544,57 @@ export const VoxelTerrainActions = {
 
 		const occupiedTiles = new Set<string>();
 		const index = getVoxelTerrainIndex(terrain);
+		const entries = getRepairActorEntries(campaign);
+		const needsRepair: RepairActorEntry[] = [];
 
-		VoxelTerrainActions.repairActorArray(
-			campaign.GameState.Entities,
-			terrain,
-			index,
-			occupiedTiles,
-			"entity",
-			campaign,
-			context
-		);
-		VoxelTerrainActions.repairActorArray(
-			campaign.GameState.Characters,
-			terrain,
-			index,
-			occupiedTiles,
-			"character",
-			campaign,
-			context
-		);
-	},
+		// First keep every already-valid actor in priority order (characters, then
+		// entities). This preserves stable occupants before repairing invalid or
+		// overlapping actors into the remaining space.
+		for (const entry of entries) {
+			const validation = validateActorPositionForTerrain(
+				entry.actor,
+				entry.actor.Position,
+				terrain,
+				index
+			);
 
-	repairActorArray(
-		actors: Actor[],
-		terrain: VoxelTerrain,
-		index: VoxelTerrainIndex,
-		occupiedTiles: Set<string>,
-		type: "entity" | "character",
-		campaign: Campaign,
-		context: Context
-	): void {
-		const toRemove: string[] = [];
+			if (!validation.ok) {
+				needsRepair.push(entry);
+				continue;
+			}
 
-		const reposition = (actor: Actor): void => {
+			entry.actor.Position = validation.position;
+			if (isItemEntity(entry.actor)) continue;
+
+			const key = positionKey(validation.position);
+			if (occupiedTiles.has(key)) {
+				needsRepair.push(entry);
+				continue;
+			}
+
+			occupiedTiles.add(key);
+		}
+
+		const toRemove: RepairActorEntry[] = [];
+		for (const entry of needsRepair) {
 			const validPosition = VoxelTerrainActions.findValidPosition(
-				actor,
+				entry.actor,
 				terrain,
 				occupiedTiles,
 				index
 			);
 			if (validPosition) {
-				actor.Position = validPosition;
-				occupiedTiles.add(positionKey(validPosition));
+				entry.actor.Position = validPosition;
+				if (!isItemEntity(entry.actor)) {
+					occupiedTiles.add(positionKey(validPosition));
+				}
 			} else {
-				toRemove.push(actor.Id);
-			}
-		};
-
-		for (const actor of actors) {
-			const isItem = isItemEntity(actor);
-			const validation = validateActorPositionForTerrain(
-				actor,
-				actor.Position,
-				terrain,
-				index,
-				occupiedTiles
-			);
-
-			if (!validation.ok) {
-				reposition(actor);
-				continue;
-			}
-
-			actor.Position = validation.position;
-
-			if (!isItem) {
-				occupiedTiles.add(positionKey(validation.position));
+				toRemove.push(entry);
 			}
 		}
 
-		for (const actorId of toRemove) {
-			const arrayIndex = actors.findIndex((actor) => actor.Id === actorId);
-			if (arrayIndex === -1) continue;
-
-			const actor = actors[arrayIndex];
-			actors.splice(arrayIndex, 1);
-			if (type === "character") {
-				returnCharacterToRoster(campaign, actor as Character, context);
-				continue;
-			}
-
-			LogActions.create(
-				{
-					action: `${type} despawned`,
-					details: `${actor.Name} was removed due to invalid voxel position`,
-					category: "system",
-					level: "verbose",
-					visibility: ["dm"],
-					actorId: actor.Id,
-				},
-				context
-			);
+		for (const entry of toRemove) {
+			removeInvalidActor(entry, campaign, context);
 		}
 	},
 
@@ -650,7 +640,15 @@ export const VoxelTerrainActions = {
 	): { x: number; y: number; h: number } | null {
 		const maxHeight = getMaxActorHeight(terrain);
 		const normalizedCurrent =
-			normalizePositionForValidation(actor.Position) ?? actor.Position;
+			normalizePositionForValidation(actor.Position) ?? {
+				x: clampTileCoordinate(actor.Position.x, terrain.Width),
+				y: clampTileCoordinate(actor.Position.y, terrain.Length),
+				h: 0,
+			};
+		const searchOrigin = {
+			x: clampTileCoordinate(normalizedCurrent.x, terrain.Width),
+			y: clampTileCoordinate(normalizedCurrent.y, terrain.Length),
+		};
 		const isPositionAvailable = (x: number, y: number, h: number): Position | null => {
 			const validation = validateActorPositionForTerrain(
 				actor,
@@ -672,7 +670,10 @@ export const VoxelTerrainActions = {
 
 			if (!actor.CanFly) {
 				const surfaces = getSurfaceHeights(index, x, y);
-				for (const h of surfaces) {
+				for (const h of getPreferredSurfaceHeights(
+					surfaces,
+					normalizedCurrent.h
+				)) {
 					const position = isPositionAvailable(x, y, h);
 					if (position) return position;
 				}
@@ -711,17 +712,30 @@ export const VoxelTerrainActions = {
 		);
 		if (currentPosition) return currentPosition;
 
-		// Step 2: prefer horizontal displacement to a nearby tile. We deliberately
-		// skip the actor's own column here so a collision doesn't "teleport" them
-		// up to the next surface in the same column.
-		const displaced = findTileFromCenter(terrain, (x, y) => {
-			if (x === normalizedCurrent.x && y === normalizedCurrent.y) return null;
+		// Step 2: try the same column before horizontal displacement. This is what
+		// makes a flyer who loses CanFly drop onto the floor below when possible.
+		const sameColumn = findAvailablePosition(
+			normalizedCurrent.x,
+			normalizedCurrent.y
+		);
+		if (sameColumn) return sameColumn;
+
+		// Step 3: search outward from the actor's current/nearest tile, not the
+		// terrain center, so repair moves are as local as possible.
+		const skipOriginalColumn = isInBounds(
+			normalizedCurrent.x,
+			normalizedCurrent.y,
+			terrain
+		);
+		return findTileFromOrigin(terrain, searchOrigin, (x, y) => {
+			if (
+				skipOriginalColumn &&
+				x === normalizedCurrent.x &&
+				y === normalizedCurrent.y
+			) {
+				return null;
+			}
 			return findAvailablePosition(x, y);
 		});
-		if (displaced) return displaced;
-
-		// Step 3: last resort -- fall back to another valid height in the original
-		// column.
-		return findAvailablePosition(normalizedCurrent.x, normalizedCurrent.y);
 	},
 };

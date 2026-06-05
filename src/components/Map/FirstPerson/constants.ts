@@ -43,6 +43,13 @@ export const FIRST_PERSON_PHYSICS = {
 	COLLISION_EPSILON: 0.000001,
 	SETTLED_SPEED: 0.045,
 	MIN_WORLD_Y: -20,
+	// Soft movement-range boundary (combat, when player movement is restricted to
+	// range). When the body is past its allowed range, its outward velocity is
+	// cancelled and a gentle inward drift toward the turn-start position is imposed
+	// at this speed (world units/sec). Small enough to feel like a soft pull rather
+	// than a hard wall, but firm enough that the body can't settle/commit out of
+	// range. Does not impede inward motion faster than this.
+	RANGE_RETURN_SPEED: 1.8,
 	RADIUS_BY_SIZE: {
 		"extra-small": 0.16,
 		small: 0.22,
