@@ -247,7 +247,6 @@ export class TerrainStorageService {
 	/**
 	 * Tactical hydration (DM-as-authority): materializes every terrain that has a
 	 * player CHARACTER on it so cross-terrain moves can be validated synchronously.
-	 * See docs/multi-terrain-world.md §6.1-6.2.
 	 */
 	static async ensureCharacterTerrainsHydrated(
 		campaign: Campaign
@@ -283,7 +282,7 @@ export class TerrainStorageService {
 		return { ...terrain, Voxels: voxels };
 	}
 
-	// Terrains the local client is actively rendering. See multi-terrain-world §6.3.
+	// Terrains the local client is actively rendering.
 	private static pinnedTerrainIds: Set<string> = new Set();
 
 	static setPinnedTerrains(terrainIds: Iterable<string>): void {

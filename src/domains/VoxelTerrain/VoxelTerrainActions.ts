@@ -19,7 +19,7 @@ import { createFlatVoxelTerrain } from "../../utils/terrain/editor/VoxelTerrainE
 import { isStampTerrain } from "../../utils/terrain/editor/VoxelStampUtils";
 import type { EditableVoxelTerrain, VoxelTerrain } from "./VoxelTerrain";
 import { getScenarioTerrainIds } from "../Scenario/Scenario";
-import { doorReferencesTerrain } from "../Door/Door";
+import { terrainLinkReferencesTerrain } from "../TerrainLink/TerrainLink";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 
 const FLYING_ACTOR_CLEARANCE_BY_SIZE = {
@@ -473,12 +473,12 @@ export const VoxelTerrainActions = {
 		campaign.VoxelTerrains.splice(arrayIndex, 1);
 		await TerrainStorageService.deleteTerrain(campaign, terrain);
 
-		// Cascade: purge any door that anchors to the deleted terrain, otherwise
-		// the world-map graph and hover logic would carry dangling edges. Geometry
-		// edits never touch doors; only deletion does. See multi-terrain-world §4.3.
-		if (Array.isArray(campaign.Doors)) {
-			campaign.Doors = campaign.Doors.filter(
-				(door) => !doorReferencesTerrain(door, terrain.Id)
+		// Cascade: purge any terrain link that anchors to the deleted terrain,
+		// otherwise the world-map graph and hover logic would carry dangling edges.
+		// Geometry edits never touch links; only deletion does.
+		if (Array.isArray(campaign.TerrainLinks)) {
+			campaign.TerrainLinks = campaign.TerrainLinks.filter(
+				(link) => !terrainLinkReferencesTerrain(link, terrain.Id)
 			);
 		}
 
@@ -500,7 +500,6 @@ export const VoxelTerrainActions = {
 	 * This is the DM's actor-management "move" gesture, driven by selection in the
 	 * Overview/Inspector rather than by which terrain is being viewed. Actors not
 	 * named in `actorIds`, and any already on the destination, are untouched.
-	 * See docs/multi-terrain-world.md §5.3.
 	 */
 	async moveActors(
 		params: { actorIds: string[]; toTerrainId: string },
@@ -587,8 +586,7 @@ export const VoxelTerrainActions = {
 	 * Validates and snaps every on-field actor against the geometry of the
 	 * terrain it actually lives in. Runs one pass per distinct, hydrated terrain
 	 * that has occupants; terrains that are not hydrated on this client are
-	 * skipped (their actors are validated by whoever is rendering them). See
-	 * docs/multi-terrain-world.md §6.2.
+	 * skipped (their actors are validated by whoever is rendering them).
 	 */
 	repairActors(context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
@@ -726,7 +724,6 @@ export const VoxelTerrainActions = {
 		// validating a player on a terrain it is not viewing and that is not
 		// tactically loaded), trust the submitted position — the originating
 		// client validated it locally against its own fully-hydrated terrain.
-		// See docs/multi-terrain-world.md §6.2.
 		if (!terrain || !TerrainStorageService.isHydrated(terrain)) {
 			if (
 				!Number.isFinite(position.x) ||

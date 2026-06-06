@@ -136,8 +136,7 @@ export interface StatusSlot {
 export interface Position {
 	/**
 	 * Which VoxelTerrain this position lives in. The single source of truth for
-	 * where an actor is and what terrain renders when it is selected. See
-	 * docs/multi-terrain-world.md.
+	 * where an actor is and what terrain renders when it is selected.
 	 */
 	terrainId: string;
 	x: number;

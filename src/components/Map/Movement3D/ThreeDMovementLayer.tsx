@@ -75,19 +75,30 @@ function getTileFromPointerEvent(
 ): HoveredTile | null {
 	setRaycasterFromPointer(raycaster, event, resources, pointer);
 
-	// Suppress the tile pick if the cursor is on top of an actor OR a door
+	// Suppress the tile pick if the cursor is on top of an actor OR a terrain-link
 	// hitbox. Those pick meshes are closer to the camera than the terrain they
 	// sit on, so their hit distance wins. This stops tiles from highlighting
-	// "behind" an actor token or door, making it clear that clicking will
-	// interact with the actor / door, not walk onto the tile.
+	// "behind" an actor token or link, making it clear that clicking will
+	// interact with the actor / link, not walk onto the tile.
 	const actorHits = raycaster.intersectObjects(
 		resources.actorPickTargets,
 		true
 	);
-	const doorHits = raycaster.intersectObjects(resources.doorPickTargets, true);
+	const linkHits = raycaster
+		.intersectObjects(resources.linkPickTargets, true)
+		.filter((hit) => resources.isLinkPickTargetInteractive?.(hit.object) ?? true);
+	// DM link-display markers render through terrain, so they block terrain hover
+	// even when the physical terrain surface is closer along the ray.
+	if (
+		linkHits.some(
+			(hit) => resources.isLinkPickTargetTerrainBlocking?.(hit.object) === true
+		)
+	) {
+		return null;
+	}
 	const closestActorDistance = Math.min(
 		actorHits[0]?.distance ?? Infinity,
-		doorHits[0]?.distance ?? Infinity
+		linkHits[0]?.distance ?? Infinity
 	);
 
 	const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex);
@@ -569,7 +580,7 @@ export function ThreeDMovementLayer({
 				pointerId: event.pointerId,
 				startX: event.clientX,
 				startY: event.clientY,
-				startedAtTile: hoveredTileRef.current ?? getValidHoverTile(event),
+				startedAtTile: getValidHoverTile(event),
 			};
 		};
 
@@ -596,11 +607,12 @@ export function ThreeDMovementLayer({
 
 			// Re-evaluate the tile under the cursor at release time. The
 			// pointerdown's tile is a fallback if the cursor has since
-			// drifted off the terrain (still within threshold).
+			// drifted off the terrain (still within threshold). Avoid falling
+			// back to hoveredTileRef here; it may be stale when another layer
+			// consumes the pointer event before the hover RAF catches up.
 			const tile =
 				getValidHoverTile(event) ??
-				click.startedAtTile ??
-				hoveredTileRef.current;
+				click.startedAtTile;
 			if (!tile) return;
 
 			const targetHeight = resolveMoveTargetHeight(

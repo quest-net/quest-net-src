@@ -38,7 +38,7 @@ export function TerrainIndex({
 
 	// "View Terrain" is purely local UI state — it switches which terrain the DM
 	// is looking at (and which terrain spawns target). It does not broadcast or
-	// move any actor. See docs/multi-terrain-world.md §5.2.
+	// move any actor.
 	// Also jump to the Main tab so the DM immediately sees the terrain they
 	// just selected to view.
 	const handleView = (terrainId: string) => {

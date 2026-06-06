@@ -1,19 +1,19 @@
-// domains/Door/Door.ts
+// domains/TerrainLink/TerrainLink.ts
 //
-// Doors are invisible, undirected, interactable links from one tile to another
-// tile — across terrains or within the same terrain. A single Door entry links
-// both ends both ways: interacting at end A carries the actor to end B, and vice
-// versa. Doors live in a central campaign-level registry (Campaign.Doors) rather
-// than on a terrain, because a door references TWO terrains and storing it on one
-// would leave the other ignorant of it. See docs/multi-terrain-world.md §4.3.
+// Terrain links are invisible, undirected, interactable links from one tile to
+// another tile — across terrains or within the same terrain. A single TerrainLink
+// entry links both ends both ways: interacting at end A carries the actor to end
+// B, and vice versa. Links live in a central campaign-level registry
+// (Campaign.TerrainLinks) rather than on a terrain, because a link references TWO
+// terrains and storing it on one would leave the other ignorant of it.
 //
-// A door has no geometry, label, or facing of its own — any visual ("door arch",
+// A link has no geometry, label, or facing of its own — any visual ("door arch",
 // "cave mouth", "trapdoor") is a purely cosmetic, fully-decoupled voxel stamp the
-// DM places at the anchor tile. The mechanical door neither knows nor cares about
-// it, so a door can even be buried under voxels for a secret passage.
+// DM places at the anchor tile. The mechanical link neither knows nor cares about
+// it, so a link can even be buried under voxels for a secret passage.
 
-/** One end of a door: a specific tile on a specific terrain. */
-export interface DoorAnchor {
+/** One end of a terrain link: a specific tile on a specific terrain. */
+export interface TerrainLinkAnchor {
 	terrainId: string;
 	x: number;
 	y: number;
@@ -21,101 +21,81 @@ export interface DoorAnchor {
 }
 
 /**
- * An undirected link between two tiles (DoorAnchors). Same-terrain links are
- * allowed (puzzles / portals: both ends may share a `terrainId`).
+ * An undirected link between two tiles (TerrainLinkAnchors). Same-terrain links
+ * are allowed (puzzles / portals: both ends may share a `terrainId`).
  */
-export interface Door {
+export interface TerrainLink {
 	Id: string;
-	A: DoorAnchor;
-	B: DoorAnchor;
-	/** When locked, players cannot traverse and hover does not reveal the
-	 *  destination. The DM can still pass and can unlock. See §5.6. */
+	A: TerrainLinkAnchor;
+	B: TerrainLinkAnchor;
+	/** When locked, the link is invisible and inert to anyone controlling an actor
+	 *  -- players and impersonating DMs alike: no prompt, no hover reveal, no
+	 *  traversal. Only the DM's "Display Terrain Links" authoring mode surfaces a
+	 *  locked link (so the DM can unlock it). */
 	Locked: boolean;
 }
 
-/** Which end of a door an anchor is. */
-export type DoorEnd = "A" | "B";
+/** Which end of a terrain link an anchor is. */
+export type TerrainLinkEnd = "A" | "B";
 
-/** Creates a new, unlocked door linking two anchors. */
-export function createDoor(a: DoorAnchor, b: DoorAnchor): Door {
+/** Creates a new, unlocked terrain link linking two anchors. */
+export function createTerrainLink(
+	a: TerrainLinkAnchor,
+	b: TerrainLinkAnchor
+): TerrainLink {
 	return { Id: crypto.randomUUID(), A: { ...a }, B: { ...b }, Locked: false };
 }
 
-/** Stable key for a tile, useful for set membership / hitbox lookups. */
-export function anchorKey(anchor: DoorAnchor): string {
-	return `${anchor.terrainId}:${anchor.x},${anchor.y},${anchor.h}`;
-}
-
 /** Whether two anchors refer to the same tile on the same terrain. */
-export function anchorsEqual(a: DoorAnchor, b: DoorAnchor): boolean {
+export function anchorsEqual(a: TerrainLinkAnchor, b: TerrainLinkAnchor): boolean {
 	return (
 		a.terrainId === b.terrainId && a.x === b.x && a.y === b.y && a.h === b.h
 	);
 }
 
-/** The end of `door` whose anchor matches `anchor`, or null if neither does. */
-export function getDoorEndAt(door: Door, anchor: DoorAnchor): DoorEnd | null {
-	if (anchorsEqual(door.A, anchor)) return "A";
-	if (anchorsEqual(door.B, anchor)) return "B";
-	return null;
-}
-
-/** The anchor on the far side of the door from `end`. */
-export function getOppositeAnchor(door: Door, end: DoorEnd): DoorAnchor {
-	return end === "A" ? door.B : door.A;
-}
-
-/** Whether either end of `door` lives on `terrainId`. */
-export function doorReferencesTerrain(door: Door, terrainId: string): boolean {
-	return door.A.terrainId === terrainId || door.B.terrainId === terrainId;
-}
-
-/** Whether any existing door already has an anchor at `anchor`'s exact tile.
- *  Two doors may not share a tile (one anchor per tile). */
-export function isDoorAnchorOccupied(
-	doors: readonly Door[],
-	anchor: DoorAnchor
+/** Whether either end of `link` lives on `terrainId`. */
+export function terrainLinkReferencesTerrain(
+	link: TerrainLink,
+	terrainId: string
 ): boolean {
-	return doors.some(
-		(door) => anchorsEqual(door.A, anchor) || anchorsEqual(door.B, anchor)
+	return link.A.terrainId === terrainId || link.B.terrainId === terrainId;
+}
+
+/** Whether any existing link already has an anchor at `anchor`'s exact tile.
+ *  Two links may not share a tile (one anchor per tile). */
+export function isTerrainLinkAnchorOccupied(
+	links: readonly TerrainLink[],
+	anchor: TerrainLinkAnchor
+): boolean {
+	return links.some(
+		(link) => anchorsEqual(link.A, anchor) || anchorsEqual(link.B, anchor)
 	);
 }
 
 /**
- * All doors with at least one anchor on `terrainId` — the doors that should be
- * hover-pickable / rendered while that terrain is the one in view.
- */
-export function getDoorsOnTerrain(
-	doors: readonly Door[],
-	terrainId: string
-): Door[] {
-	return doors.filter((door) => doorReferencesTerrain(door, terrainId));
-}
-
-/**
- * Every anchor that sits on `terrainId`, paired with its end and the door it
- * belongs to. A same-terrain door contributes both of its anchors. This is the
+ * Every anchor that sits on `terrainId`, paired with its end and the link it
+ * belongs to. A same-terrain link contributes both of its anchors. This is the
  * shape the map's invisible hitbox layer and the player's one-hop world map both
  * consume: each entry is a pickable tile plus where it leads.
  */
-export interface DoorAnchorOnTerrain {
-	door: Door;
-	end: DoorEnd;
-	anchor: DoorAnchor;
-	destination: DoorAnchor;
+export interface TerrainLinkAnchorOnTerrain {
+	link: TerrainLink;
+	end: TerrainLinkEnd;
+	anchor: TerrainLinkAnchor;
+	destination: TerrainLinkAnchor;
 }
 
-export function getDoorAnchorsOnTerrain(
-	doors: readonly Door[],
+export function getTerrainLinkAnchorsOnTerrain(
+	links: readonly TerrainLink[],
 	terrainId: string
-): DoorAnchorOnTerrain[] {
-	const result: DoorAnchorOnTerrain[] = [];
-	for (const door of doors) {
-		if (door.A.terrainId === terrainId) {
-			result.push({ door, end: "A", anchor: door.A, destination: door.B });
+): TerrainLinkAnchorOnTerrain[] {
+	const result: TerrainLinkAnchorOnTerrain[] = [];
+	for (const link of links) {
+		if (link.A.terrainId === terrainId) {
+			result.push({ link, end: "A", anchor: link.A, destination: link.B });
 		}
-		if (door.B.terrainId === terrainId) {
-			result.push({ door, end: "B", anchor: door.B, destination: door.A });
+		if (link.B.terrainId === terrainId) {
+			result.push({ link, end: "B", anchor: link.B, destination: link.A });
 		}
 	}
 	return result;
@@ -123,14 +103,14 @@ export function getDoorAnchorsOnTerrain(
 
 /**
  * Whether `position` is on or orthogonally/diagonally adjacent to `anchor` —
- * the traversal gate (§5.5). Same terrain, Chebyshev distance on the tactical
- * (x, y) grid <= 1. Height is ignored: standing on the tile at any surface, or
- * one tile away, counts. The walk-on case is deliberately excluded as the
- * trigger (it would ping-pong between paired doors); this only governs whether
- * an *interaction* is allowed.
+ * the traversal gate. Same terrain, Chebyshev distance on the tactical (x, y)
+ * grid <= 1. Height is ignored: standing on the tile at any surface, or one tile
+ * away, counts. The walk-on case is deliberately excluded as the trigger (it
+ * would ping-pong between paired links); this only governs whether an
+ * *interaction* is allowed.
  */
 export function isAdjacentToAnchor(
-	anchor: DoorAnchor,
+	anchor: TerrainLinkAnchor,
 	position: { terrainId: string; x: number; y: number }
 ): boolean {
 	if (anchor.terrainId !== position.terrainId) return false;
@@ -139,31 +119,32 @@ export function isAdjacentToAnchor(
 	);
 }
 
+export interface TerrainLinkInteractionState {
+	/** The actor is close enough to notice this link endpoint. */
+	visible: boolean;
+	/** The actor can traverse this endpoint now (adjacent and unlocked). */
+	usable: boolean;
+	/** The underlying link lock flag. */
+	locked: boolean;
+}
+
 /**
- * The end of `door` an actor at `position` may traverse from, or null if it is
- * not adjacent to either end. Prefers the end the actor is standing exactly on
- * (matters for same-terrain doors where both ends could be in range), then the
- * nearer adjacent end, then A as a tie-break. The actor moves to the OPPOSITE
- * anchor (`getOppositeAnchor`).
+ * UI-only interaction gate for a terrain-link endpoint. Link traversal remains an
+ * ordinary actor move; this helper keeps hover, prompts, click suppression, and
+ * first-person targeting on the same adjacency rule. Role plays no part: a locked
+ * link is unusable for everyone controlling an actor (players and an impersonating
+ * DM alike). Only the DM's separate authoring/display mode -- which does not go
+ * through this helper -- ever surfaces a locked link.
  */
-export function resolveTraversableEnd(
-	door: Door,
-	position: { terrainId: string; x: number; y: number }
-): DoorEnd | null {
-	const ends: DoorEnd[] = ["A", "B"];
-	let best: DoorEnd | null = null;
-	let bestDistance = Infinity;
-	for (const end of ends) {
-		const anchor = end === "A" ? door.A : door.B;
-		if (!isAdjacentToAnchor(anchor, position)) continue;
-		const distance = Math.max(
-			Math.abs(anchor.x - position.x),
-			Math.abs(anchor.y - position.y)
-		);
-		if (distance < bestDistance) {
-			best = end;
-			bestDistance = distance;
-		}
-	}
-	return best;
+export function getTerrainLinkInteractionState(
+	anchor: TerrainLinkAnchor,
+	position: { terrainId: string; x: number; y: number } | null | undefined,
+	locked: boolean
+): TerrainLinkInteractionState | null {
+	if (!position || !isAdjacentToAnchor(anchor, position)) return null;
+	return {
+		visible: true,
+		usable: !locked,
+		locked,
+	};
 }

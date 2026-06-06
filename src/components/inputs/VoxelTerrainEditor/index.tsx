@@ -78,6 +78,7 @@ import {
 	MAX_BRUSH_SIZE,
 	MIN_BRUSH_SIZE,
 	getPickSelectionBounds,
+	pickToTacticalAnchor,
 	type PickInfo,
 } from "../../../utils/terrain/editor/VoxelBrushUtils";
 import {
@@ -131,16 +132,19 @@ import {
 	type ActorOverlayInfo,
 } from "./editorActorMarkers";
 import {
-	buildDoorMarkers,
-	projectDoorMarkers,
-	type DoorMarkerInfo,
-} from "./doorMarkers";
+	buildTerrainLinkMarkerMeshes,
+	disposeTerrainLinkMarkerMeshes,
+	type TerrainLinkMarkerInfo,
+} from "./terrainLinkMarkers";
 import {
-	getDoorAnchorsOnTerrain,
-	type Door,
-	type DoorAnchor,
-} from "../../../domains/Door/Door";
-import { DoorPlacementOverlay } from "./DoorPlacement/DoorPlacementOverlay";
+	anchorsEqual,
+	getTerrainLinkAnchorsOnTerrain,
+	isTerrainLinkAnchorOccupied,
+	type TerrainLink,
+	type TerrainLinkAnchor,
+} from "../../../domains/TerrainLink/TerrainLink";
+import { TerrainPicker } from "../TerrainPicker";
+import { TerrainAnchorPickerCanvas } from "./TerrainAnchorPickerCanvas";
 import { EditorToolbar } from "./EditorToolbar";
 import { EditorSidebar } from "./EditorSidebar";
 import { PreviewSettingsPanel } from "./PreviewSettingsPanel";
@@ -166,18 +170,20 @@ interface VoxelTerrainEditorProps {
 	stampSources?: VoxelTerrain[];
 	/** Returns the fully hydrated voxel data for a stamp source by id. */
 	loadStampVoxels?: (terrainId: string) => Promise<EditableVoxelTerrain | null>;
-	/** Campaign doors, for the "Display Doors" overlay (filtered to this terrain). */
-	doors?: Door[];
-	/** Terrain id -> name, for door destination labels. */
+	/** Campaign terrain links, for the "Show links" overlay (filtered to this terrain). */
+	links?: TerrainLink[];
+	/** Terrain id -> name, for link destination labels. */
 	terrainNamesById?: ReadonlyMap<string, string>;
-	/** Loads any terrain's voxels by id, for the door destination picker. */
+	/** Loads any terrain's voxels by id, for the link destination picker. */
 	loadTerrainVoxels?: (terrainId: string) => Promise<EditableVoxelTerrain | null>;
-	/** Creates a door between two anchors (dispatches door:create upstream). */
-	onCreateDoor?: (a: DoorAnchor, b: DoorAnchor) => void;
-	/** Deletes a door by id (dispatches door:delete upstream). */
-	onDeleteDoor?: (doorId: string) => void;
-	/** Whether door placement is allowed (false until the terrain is saved). */
-	canPlaceDoors?: boolean;
+	/** Creates a link between two anchors (dispatches terrainLink:create upstream). */
+	onCreateLink?: (a: TerrainLinkAnchor, b: TerrainLinkAnchor) => void;
+	/** Deletes a link by id (dispatches terrainLink:delete upstream). */
+	onDeleteLink?: (linkId: string) => void;
+	/** Edits a link by id (dispatches terrainLink:edit upstream). */
+	onEditLink?: (linkId: string, updates: Partial<Pick<TerrainLink, "Locked">>) => void;
+	/** Whether terrain-link authoring is allowed (false until the terrain is saved). */
+	canPlaceLinks?: boolean;
 }
 
 export interface VoxelTerrainEditorHandle {
@@ -231,12 +237,13 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			actors,
 			stampSources,
 			loadStampVoxels,
-			doors,
+			links,
 			terrainNamesById,
 			loadTerrainVoxels,
-			onCreateDoor,
-			onDeleteDoor,
-			canPlaceDoors = false,
+			onCreateLink,
+			onDeleteLink,
+			onEditLink,
+			canPlaceLinks = false,
 		}: VoxelTerrainEditorProps,
 		ref,
 	) {
@@ -271,11 +278,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const activeViewRef    = useRef<EditorView>("edit");
 		const actorMarkerElemsRef = useRef<Map<string, HTMLDivElement>>(new Map());
 		const actorOverlayRef  = useRef<HTMLDivElement>(null);
-		// Door overlay (mirrors the actor overlay): markers projected each frame.
-		const showDoorsRef        = useRef(false);
-		const doorOverlayRef      = useRef<HTMLDivElement>(null);
-		const doorMarkerElemsRef  = useRef<Map<string, HTMLDivElement>>(new Map());
-		const doorMarkersDataRef  = useRef<DoorMarkerInfo[]>([]);
+		// Link markers are transparent scene meshes, matching link placement.
+		const showLinksRef        = useRef(false);
+		const linkMarkerGroupRef  = useRef<THREE.Group | null>(null);
+		const linkMarkerPickTargetsRef = useRef<THREE.Mesh[]>([]);
 		// Stroke state.
 		const activeStrokeRef        = useRef<ActiveStroke | null>(null);
 		const strokeStartedRef       = useRef(false);
@@ -294,7 +300,15 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const stampSourceRef         = useRef<EditableVoxelTerrain | null>(null);
 		const stampTransformRef      = useRef<StampTransform>(IDENTITY_STAMP_TRANSFORM);
 		const loadStampVoxelsRef     = useRef(loadStampVoxels);
+		const loadTerrainVoxelsRef   = useRef(loadTerrainVoxels);
 		const previousToolRef        = useRef<EditorTool>("place");
+		// Link placement state mirrored for the editor input hot path.
+		const linksRef               = useRef<TerrainLink[]>(links ?? []);
+		const onCreateLinkRef        = useRef(onCreateLink);
+		const onEditLinkRef          = useRef(onEditLink);
+		const onDeleteLinkRef        = useRef(onDeleteLink);
+		const linkOriginRef          = useRef<TerrainLinkAnchor | null>(null);
+		const linkTargetTerrainRef   = useRef<EditableVoxelTerrain | null>(null);
 		// Selection state mirrored in refs for pointer handlers, in React for UI.
 		const selectionRef           = useRef<TerrainSelection | null>(null);
 		const boxSelectionAnchorRef  = useRef<VoxelSelectionBounds | null>(null);
@@ -327,11 +341,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const showTacticalGrid = granularity === "tactical";
 		const showVoxelGrid    = granularity === "voxel";
 		const [showActors,         setShowActors]         = useState(true);
-		const [showDoors,          setShowDoors]          = useState(false);
-		const [doorPlacementOpen,  setDoorPlacementOpen]  = useState(false);
-		// Snapshot of the edited terrain's live voxels, captured when the door
-		// placement flow opens so its origin canvas renders the current draft.
-		const [doorOriginTerrain,  setDoorOriginTerrain]  = useState<EditableVoxelTerrain | null>(null);
+		const [showLinks,          setShowLinks]          = useState(false);
+		const [selectedLinkId,     setSelectedLinkId]     = useState<string | null>(null);
+		const [linkPickerOpen,     setLinkPickerOpen]     = useState(false);
+		const [linkTargetTerrain,  setLinkTargetTerrain]  = useState<EditableVoxelTerrain | null>(null);
 		const [undoDepth,          setUndoDepth]          = useState(0);
 		const [redoDepth,          setRedoDepth]          = useState(0);
 		const [cameraMode,         setCameraMode]         = useState<CameraMode>("ortho");
@@ -344,6 +357,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const [selection,          setSelectionState]     = useState<TerrainSelection | null>(null);
 		const [boxSelectionAnchor, setBoxSelectionAnchorState] = useState<VoxelSelectionBounds | null>(null);
 		const [previewTerrain,     setPreviewTerrain]     = useState<EditableVoxelTerrain | null>(null);
+		const [sceneReady,         setSceneReady]         = useState(0);
 		// editGen ticks on stroke end / undo/redo / external prop. Gates React-
 		// visible updates (sidebar count, camera framing). Never bumped per-voxel.
 		const [editGen, setEditGen] = useState(0);
@@ -396,15 +410,75 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			setPreviewTerrain(createDraftTerrainSnapshot());
 		}, [createDraftTerrainSnapshot]);
 
-		const openDoorPlacement = useCallback(() => {
-			setDoorOriginTerrain(createDraftTerrainSnapshot());
-			setDoorPlacementOpen(true);
-		}, [createDraftTerrainSnapshot]);
-
-		const closeDoorPlacement = useCallback(() => {
-			setDoorPlacementOpen(false);
-			setDoorOriginTerrain(null);
+		const pickToLinkAnchor = useCallback((
+			pick: PickInfo,
+			targetTerrain: EditableVoxelTerrain
+		): TerrainLinkAnchor => {
+			const index = getVoxelTerrainIndex(targetTerrain);
+			const { x, y, h } = pickToTacticalAnchor(pick, index);
+			return { terrainId: targetTerrain.Id, x, y, h };
 		}, []);
+
+		const resetLinkFlow = useCallback(() => {
+			linkOriginRef.current = null;
+			linkTargetTerrainRef.current = null;
+			setLinkPickerOpen(false);
+			setLinkTargetTerrain(null);
+		}, []);
+
+		const exitLinkMode = useCallback(() => {
+			resetLinkFlow();
+			setTool(previousToolRef.current);
+		}, [resetLinkFlow]);
+
+		const handleLinkAnchorPick = useCallback((anchor: TerrainLinkAnchor) => {
+			const origin = linkOriginRef.current;
+			if (isTerrainLinkAnchorOccupied(linksRef.current, anchor)) {
+				console.warn("[VoxelTerrainEditor] Link rejected: tile already has a link.");
+				return;
+			}
+			if (!origin) {
+				linkOriginRef.current = anchor;
+				setShowLinks(true);
+				setLinkPickerOpen(true);
+				return;
+			}
+			if (anchorsEqual(origin, anchor)) {
+				console.warn("[VoxelTerrainEditor] Link rejected: endpoints are the same tile.");
+				return;
+			}
+			const createLink = onCreateLinkRef.current;
+			if (!createLink) return;
+			createLink(origin, anchor);
+			setShowLinks(true);
+			resetLinkFlow();
+		}, [resetLinkFlow]);
+
+		const handleLinkDestinationTerrain = useCallback(async (terrainId: string) => {
+			const origin = linkOriginRef.current;
+			if (!origin) {
+				resetLinkFlow();
+				return;
+			}
+			setLinkPickerOpen(false);
+			if (terrainId === terrainRef.current.Id) {
+				linkTargetTerrainRef.current = null;
+				setLinkTargetTerrain(null);
+				return;
+			}
+			const loader = loadTerrainVoxelsRef.current;
+			if (!loader) {
+				console.warn("[VoxelTerrainEditor] Cannot load terrain data for link placement.");
+				return;
+			}
+			const loaded = await loader(terrainId);
+			if (!loaded) {
+				console.warn("[VoxelTerrainEditor] Could not load terrain data for link placement.");
+				return;
+			}
+			linkTargetTerrainRef.current = loaded;
+			setLinkTargetTerrain(loaded);
+		}, [resetLinkFlow]);
 
 		const emitTerrainUpdate = (nextTerrain: EditableVoxelTerrain) => {
 			terrainRef.current = nextTerrain;
@@ -476,7 +550,12 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 		useEffect(() => { actorsRef.current    = actors ?? []; }, [actors]);
 		useEffect(() => { showActorsRef.current = showActors;   }, [showActors]);
-		useEffect(() => { showDoorsRef.current  = showDoors;    }, [showDoors]);
+		useEffect(() => {
+			showLinksRef.current = showLinks;
+			if (linkMarkerGroupRef.current) {
+				linkMarkerGroupRef.current.visible = showLinks;
+			}
+		}, [showLinks]);
 		useEffect(() => { activeViewRef.current = activeView;   }, [activeView]);
 		useEffect(() => {
 			cameraModeRef.current = cameraMode;
@@ -493,12 +572,24 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			refreshHoverRef.current?.();
 		}, [stampTransform]);
 		useEffect(() => { loadStampVoxelsRef.current = loadStampVoxels; }, [loadStampVoxels]);
+		useEffect(() => { loadTerrainVoxelsRef.current = loadTerrainVoxels; }, [loadTerrainVoxels]);
+		useEffect(() => { linksRef.current = links ?? []; }, [links]);
+		useEffect(() => { onCreateLinkRef.current = onCreateLink; }, [onCreateLink]);
+		useEffect(() => { onEditLinkRef.current = onEditLink; }, [onEditLink]);
+		useEffect(() => { onDeleteLinkRef.current = onDeleteLink; }, [onDeleteLink]);
+		useEffect(() => { linkTargetTerrainRef.current = linkTargetTerrain; }, [linkTargetTerrain]);
 
 		useEffect(() => {
 			if (tool !== "boxSelect" && boxSelectionAnchorRef.current) {
 				setBoxSelectionAnchor(null);
 			}
 		}, [setBoxSelectionAnchor, tool]);
+
+		useEffect(() => {
+			if (tool !== "link" && (linkOriginRef.current || linkTargetTerrainRef.current || linkPickerOpen)) {
+				resetLinkFlow();
+			}
+		}, [linkPickerOpen, resetLinkFlow, tool]);
 
 		// -------------------------------------------------------------------------
 		// Terrain prop adoption
@@ -835,6 +926,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				return true;
 			}
 
+			if (tool === "link") {
+				handleLinkAnchorPick(pickToLinkAnchor(pick, terrainRef.current));
+				return false;
+			}
+
 			// Fill only operates on an active selection (handled above). With no
 			// selection there is nothing to flood, so it has no brush behaviour.
 			if (tool === "fill") return false;
@@ -870,7 +966,9 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			return true;
 		}, [
 			recordVoxelBefore,
+			handleLinkAnchorPick,
 			nextSelectionId,
+			pickToLinkAnchor,
 			selectVoxelsByColor,
 			setBoxSelectionAnchor,
 			setTerrainSelection,
@@ -948,7 +1046,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const selectStamp = useCallback(async (terrainId: string) => {
 			const loader = loadStampVoxelsRef.current;
 			if (!loader) return;
-			if (toolRef.current !== "stamp") {
+			if (toolRef.current !== "stamp" && toolRef.current !== "link") {
 				previousToolRef.current = toolRef.current;
 			}
 			setStampLoadingId(terrainId);
@@ -999,34 +1097,62 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		}, [actors]);
 
 		// -------------------------------------------------------------------------
-		// Imperative door overlay (markers for invisible doors on this terrain)
+		// Scene link markers (transparent blocks for invisible links on this terrain)
 		// -------------------------------------------------------------------------
-		const doorMarkersData = useMemo<DoorMarkerInfo[]>(() => {
-			if (!doors || doors.length === 0) return [];
-			return getDoorAnchorsOnTerrain(doors, terrain.Id).map(
-				({ door, end, anchor, destination }) => ({
-					id: `${door.Id}:${end}`,
-					doorId: door.Id,
+		const linkMarkersData = useMemo<TerrainLinkMarkerInfo[]>(() => {
+			if (!links || links.length === 0) return [];
+			return getTerrainLinkAnchorsOnTerrain(links, terrain.Id).map(
+				({ link, end, anchor, destination }) => ({
+					id: `${link.Id}:${end}`,
+					linkId: link.Id,
 					anchor: { x: anchor.x, y: anchor.y, h: anchor.h },
+					locked: link.Locked,
 					destinationName:
 						terrainNamesById?.get(destination.terrainId) ?? "another area",
 				})
 			);
-		}, [doors, terrain.Id, terrainNamesById]);
-
-		const onDeleteDoorRef = useRef(onDeleteDoor);
-		useEffect(() => { onDeleteDoorRef.current = onDeleteDoor; }, [onDeleteDoor]);
+		}, [links, terrain.Id, terrainNamesById]);
 
 		useEffect(() => {
-			doorMarkersDataRef.current = doorMarkersData;
-			const overlay = doorOverlayRef.current;
-			if (!overlay) return;
-			doorMarkerElemsRef.current = buildDoorMarkers(
-				overlay,
-				doorMarkersData,
-				readOnly ? undefined : (doorId) => onDeleteDoorRef.current?.(doorId)
+			if (
+				selectedLinkId &&
+				!linkMarkersData.some((entry) => entry.linkId === selectedLinkId)
+			) {
+				setSelectedLinkId(null);
+			}
+		}, [linkMarkersData, selectedLinkId]);
+
+		useEffect(() => {
+			const resources = resourcesRef.current;
+			if (!resources) return;
+
+			if (linkMarkerGroupRef.current) {
+				resources.scene.remove(linkMarkerGroupRef.current);
+				disposeTerrainLinkMarkerMeshes(linkMarkerGroupRef.current);
+				linkMarkerGroupRef.current = null;
+				linkMarkerPickTargetsRef.current = [];
+			}
+
+			if (linkMarkersData.length === 0) return;
+			const { group, pickTargets } = buildTerrainLinkMarkerMeshes(
+				terrain,
+				linkMarkersData,
+				selectedLinkId
 			);
-		}, [doorMarkersData, readOnly]);
+			group.visible = showLinksRef.current;
+			resources.scene.add(group);
+			linkMarkerGroupRef.current = group;
+			linkMarkerPickTargetsRef.current = pickTargets;
+
+			return () => {
+				resources.scene.remove(group);
+				disposeTerrainLinkMarkerMeshes(group);
+				if (linkMarkerGroupRef.current === group) {
+					linkMarkerGroupRef.current = null;
+					linkMarkerPickTargetsRef.current = [];
+				}
+			};
+		}, [linkMarkersData, sceneReady, selectedLinkId, terrain]);
 
 		// -------------------------------------------------------------------------
 		// Three.js mount (runs once)
@@ -1037,6 +1163,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 			const resources = createEditorScene(container, readOnlyRef.current);
 			resourcesRef.current = resources;
+			setSceneReady((value) => value + 1);
 			const gridGroup = createEditorGridGroup(resources.gridGroup);
 			gridGroupRef.current = gridGroup;
 
@@ -1128,17 +1255,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					);
 				}
 
-				const doorOverlay = doorOverlayRef.current;
-				if (doorOverlay && doorMarkerElemsRef.current.size > 0) {
-					projectDoorMarkers(
-						resources.renderer.domElement,
-						resources.camera,
-						terrainRef.current,
-						doorMarkersDataRef.current,
-						doorMarkerElemsRef.current,
-						showDoorsRef.current,
-					);
-				}
 			};
 			rafId = requestAnimationFrame(animate);
 
@@ -1320,6 +1436,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					!pick ||
 					toolRef.current === "sample" ||
 					toolRef.current === "stamp" ||
+					toolRef.current === "link" ||
 					toolRef.current === "boxSelect" ||
 					toolRef.current === "colorSelect" ||
 					(selectionRef.current && isSelectionEditTool(toolRef.current))
@@ -1338,12 +1455,34 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				if (changed) refreshHover(getPickForStroke(event, activeStroke));
 			};
 
+			const selectLinkMarkerFromEvent = (event: PointerEvent): boolean => {
+				if (
+					toolRef.current === "link" ||
+					!showLinksRef.current ||
+					linkMarkerPickTargetsRef.current.length === 0
+				) {
+					return false;
+				}
+				const raycaster = picker.getEventRaycaster(event);
+				if (!raycaster) return false;
+				const hits = raycaster.intersectObjects(linkMarkerPickTargetsRef.current, false);
+				const linkId = hits[0]?.object.userData?.linkId;
+				if (typeof linkId !== "string") return false;
+				event.preventDefault();
+				event.stopPropagation();
+				setSelectedLinkId((current) => current === linkId ? null : linkId);
+				setShowLinks(true);
+				return true;
+			};
+
 			const handlePointerDown = (event: PointerEvent) => {
 				if (activeViewRef.current !== "edit") return;
 				// Pointer-locked freecam consumes mouse motion -- skip paint dispatch.
 				if (pointerLockedRef.current) return;
 				if (event.button === 1) { event.preventDefault(); return; }
-				if (event.button !== 0 || readOnlyRef.current) return;
+				if (event.button !== 0) return;
+				if (selectLinkMarkerFromEvent(event)) return;
+				if (readOnlyRef.current) return;
 				event.preventDefault();
 
 				// Grab a selection-gizmo handle if the pointer is over one. This
@@ -1391,9 +1530,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				const wasSelectionTool =
 					toolRef.current === "boxSelect" || toolRef.current === "colorSelect";
 				const wasSampleTool = toolRef.current === "sample";
+				const wasLinkTool = toolRef.current === "link";
 				applyEdit(pick);
 				refreshHover(getPickForStroke(event, activeStroke));
-				if (wasSampleTool || wasSelectionTool) {
+				if (wasSampleTool || wasSelectionTool || wasLinkTool) {
 					resources.renderer.domElement.releasePointerCapture(event.pointerId);
 					clearStrokeState();
 				}
@@ -1661,6 +1801,12 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					}
 				}
 
+				if (key === "escape" && toolRef.current === "link") {
+					event.preventDefault();
+					exitLinkMode();
+					return;
+				}
+
 				if (key === "escape" && (selectionRef.current || boxSelectionAnchorRef.current)) {
 					event.preventDefault();
 					clearSelection();
@@ -1673,6 +1819,20 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					case "r":           setTool("erase");  break;
 					case "g":           setTool("paint");  break;
 					case "i":           setTool("sample"); break;
+					case "k":
+						if (canPlaceLinks) {
+							if (toolRef.current === "link") {
+								exitLinkMode();
+								break;
+							}
+							if (toolRef.current !== "stamp") {
+								previousToolRef.current = toolRef.current;
+							}
+							setStampSource(null);
+							setStampLoadingId(null);
+							setTool("link");
+						}
+						break;
 					case "b":
 						if (selectionRef.current?.kind === "mask") clearSelection();
 						setTool("boxSelect");
@@ -1689,7 +1849,16 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			};
 			window.addEventListener("keydown", handleKeyDown);
 			return () => window.removeEventListener("keydown", handleKeyDown);
-		}, [clearSelection, exitStampMode, fillSelection, redo, toggleCameraMode, undo]);
+		}, [
+			canPlaceLinks,
+			clearSelection,
+			exitLinkMode,
+			exitStampMode,
+			fillSelection,
+			redo,
+			toggleCameraMode,
+			undo,
+		]);
 
 		// -------------------------------------------------------------------------
 		// VOX import
@@ -1746,8 +1915,37 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				: selection?.kind === "mask"
 				? "colorSelect"
 				: null;
+		const linkSidebarEntries = useMemo(() => {
+			const seen = new Set<string>();
+			return linkMarkersData
+				.filter((link) => {
+					if (seen.has(link.linkId)) return false;
+					seen.add(link.linkId);
+					return true;
+				})
+				.map((link) => ({
+					linkId: link.linkId,
+					destinationName: link.destinationName,
+					locked: link.locked,
+				}));
+		}, [linkMarkersData]);
 
 		const handleToolButtonClick = useCallback((buttonId: EditorTool) => {
+			if (buttonId === "link") {
+				if (!canPlaceLinks) return;
+				if (toolRef.current === "link") {
+					exitLinkMode();
+					return;
+				}
+				if (toolRef.current !== "stamp") {
+					previousToolRef.current = toolRef.current;
+				}
+				setStampSource(null);
+				setStampLoadingId(null);
+				clearSelection();
+				setTool("link");
+				return;
+			}
 			if (buttonId === "boxSelect" || buttonId === "colorSelect") {
 				if (activeSelectionTool === buttonId) {
 					clearSelection();
@@ -1758,7 +1956,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				}
 			}
 			setTool(buttonId);
-		}, [activeSelectionTool, clearSelection]);
+		}, [activeSelectionTool, canPlaceLinks, clearSelection, exitLinkMode]);
 
 		const handleBrushSizeChange = useCallback((value: number) => {
 			setBrushSize(clamp(Math.floor(value) || MIN_BRUSH_SIZE, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE));
@@ -1771,7 +1969,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			<>
 				<div className="border-2 rounded-lg bg-base-100 min-h-152 h-[72dvh] flex overflow-hidden">
 					<div className="flex-1 min-w-0 flex flex-col">
-						{!doorPlacementOpen && (
 						<EditorToolbar
 							tool={tool}
 							activeSelectionTool={activeSelectionTool}
@@ -1803,18 +2000,13 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 							cameraMode={cameraMode}
 							onSelectCameraMode={setCameraModeTo}
 							freecamSpeedMult={freecamSpeedMult}
-							onOpenDoorPlacement={
-								loadTerrainVoxels && onCreateDoor ? openDoorPlacement : undefined
-							}
-							canPlaceDoors={canPlaceDoors}
+							canPlaceLinks={canPlaceLinks}
 						/>
-						)}
 
 						<div className="relative flex-1 min-h-0 bg-base-200">
 							<div className={activeView === "edit" ? "absolute inset-0" : "hidden"}>
 								<div ref={containerRef} className="absolute inset-0" />
 								<div ref={actorOverlayRef} className="absolute inset-0 pointer-events-none overflow-hidden" />
-								<div ref={doorOverlayRef} className="absolute inset-0 pointer-events-none overflow-hidden" />
 							</div>
 							{activeView === "preview" && (
 								<div className="absolute inset-0">
@@ -1823,15 +2015,23 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 									</MapStateProvider>
 								</div>
 							)}
-							{doorPlacementOpen && doorOriginTerrain && loadTerrainVoxels && onCreateDoor && (
-								<DoorPlacementOverlay
-									originTerrain={doorOriginTerrain}
-									doors={doors ?? []}
-									loadTerrainVoxels={loadTerrainVoxels}
-									onCreateDoor={onCreateDoor}
-									onClose={closeDoorPlacement}
-								/>
+							{linkTargetTerrain && (
+								<div className="absolute inset-0 z-30 bg-base-200">
+									<TerrainAnchorPickerCanvas
+										terrain={linkTargetTerrain}
+										existingAnchors={getTerrainLinkAnchorsOnTerrain(links ?? [], linkTargetTerrain.Id).map((entry) => entry.anchor)}
+										onPick={handleLinkAnchorPick}
+									/>
+								</div>
 							)}
+							<TerrainPicker
+								isOpen={linkPickerOpen}
+								title="Link leads to..."
+								confirmLabel="Select"
+								currentTerrainId={terrain.Id}
+								onConfirm={(terrainId) => void handleLinkDestinationTerrain(terrainId)}
+								onCancel={exitLinkMode}
+							/>
 						</div>
 					</div>
 
@@ -1857,9 +2057,29 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 									actors={actors}
 									showActors={showActors}
 									onShowActorsChange={setShowActors}
-									doorCount={doorMarkersData.length}
-									showDoors={showDoors}
-									onShowDoorsChange={setShowDoors}
+									linkCount={linkSidebarEntries.length}
+									links={linkSidebarEntries}
+									selectedLinkId={selectedLinkId}
+									showLinks={showLinks}
+									onShowLinksChange={setShowLinks}
+									onSelectLink={(linkId) => {
+										setSelectedLinkId((current) => current === linkId ? null : linkId);
+										setShowLinks(true);
+									}}
+									onToggleLinkLocked={
+										readOnly
+											? undefined
+											: (linkId, locked) => onEditLinkRef.current?.(linkId, { Locked: locked })
+									}
+									onDeleteLink={
+										readOnly
+											? undefined
+											: (linkId) => {
+												onDeleteLinkRef.current?.(linkId);
+												if (selectedLinkId === linkId) setSelectedLinkId(null);
+												resetLinkFlow();
+											}
+									}
 								/>
 							)}
 						</div>

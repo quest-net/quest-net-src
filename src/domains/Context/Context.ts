@@ -23,7 +23,7 @@ export interface Context {
 	SecretModes?: Record<string, boolean>;
 	// The DM's most-recently-viewed terrains per campaign ID (newest first,
 	// capped at 10; index 0 is the active terrain). Local UI state only, never
-	// broadcast (see docs/multi-terrain-world.md §4.2). Mirrors the SecretModes
-	// shape so it needs no extra context provider.
+	// broadcast. Mirrors the SecretModes shape so it needs no extra context
+	// provider.
 	ViewedTerrains?: Record<string, string[]>;
 }

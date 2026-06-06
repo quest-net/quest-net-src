@@ -613,7 +613,7 @@ export class ActionService {
 		campaign.Audios = [...campaign.Audios];
 		campaign.Images = [...campaign.Images];
 		campaign.Scenarios = [...campaign.Scenarios];
-		campaign.Doors = [...(campaign.Doors ?? [])];
+		campaign.TerrainLinks = [...(campaign.TerrainLinks ?? [])];
 		campaign.Log = [...campaign.Log];
 		campaign.GameState = {
 			...campaign.GameState,

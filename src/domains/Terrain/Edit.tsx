@@ -13,7 +13,7 @@ import type {
 	EditableVoxelTerrain,
 	VoxelTerrain,
 } from "../VoxelTerrain/VoxelTerrain";
-import type { DoorAnchor } from "../Door/Door";
+import type { TerrainLinkAnchor } from "../TerrainLink/TerrainLink";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { getTerrainVoxels } from "../../utils/terrain/data/terrainPayloadStore";
@@ -151,9 +151,11 @@ export function TerrainEdit({
 
 	const handleClone = (data: EditableVoxelTerrain) => {
 		if (!actionService) return;
+		const sourceId = data.Id;
+		const newId = crypto.randomUUID();
 		const cloned: EditableVoxelTerrain = {
 			...data,
-			Id: crypto.randomUUID(),
+			Id: newId,
 			Name: `${data.Name} (Copy)`,
 			Voxels: data.Voxels,
 			ContentHash: undefined,
@@ -162,6 +164,27 @@ export function TerrainEdit({
 			Tags: data.Tags ? [...data.Tags] : undefined,
 		};
 		actionService.execute("terrain:create", { terrain: cloned });
+
+		// Clone only the source terrain's *intra-terrain* links -- those with both
+		// ends on the source -- onto the copy, remapping both anchors to the new
+		// terrain id (same tile coords). Cross-terrain links are intentionally not
+		// cloned: duplicating one would force a second anchor onto the far terrain's
+		// already-occupied tile, which the one-anchor-per-tile rule forbids (and
+		// multi-destination tiles are out of scope). terrainLink:create mints fresh
+		// link ids; these are queued after terrain:create, and the DM mutation chain
+		// runs them in order, so the new terrain exists when each link create validates.
+		const remapAnchor = (anchor: TerrainLinkAnchor): TerrainLinkAnchor => ({
+			...anchor,
+			terrainId: newId,
+		});
+		for (const link of campaign?.TerrainLinks ?? []) {
+			if (link.A.terrainId !== sourceId || link.B.terrainId !== sourceId) continue;
+			actionService.execute("terrainLink:create", {
+				a: remapAnchor(link.A),
+				b: remapAnchor(link.B),
+			});
+		}
+
 		onClose();
 	};
 
@@ -228,23 +251,29 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 	const campaign = questContext.ActiveCampaign;
 	const editorRef = useRef<VoxelTerrainEditorHandle>(null);
 
-	// Door placement plumbing. Doors reference terrain ids, so the edited terrain
-	// must already exist in the campaign (i.e. saved) before doors can link to it.
-	const canPlaceDoors = !!campaign?.VoxelTerrains.some((t) => t.Id === data.Id);
+	// Terrain-link plumbing. Links reference terrain ids, so the edited terrain
+	// must already exist in the campaign (i.e. saved) before links can attach to it.
+	const canPlaceLinks = !!campaign?.VoxelTerrains.some((t) => t.Id === data.Id);
 	const terrainNamesById = useMemo(() => {
 		const map = new Map<string, string>();
 		for (const t of campaign?.VoxelTerrains ?? []) map.set(t.Id, t.Name);
 		return map;
 	}, [campaign?.VoxelTerrains]);
-	const handleCreateDoor = useCallback(
-		(a: DoorAnchor, b: DoorAnchor) => {
-			actionService?.execute("door:create", { a, b });
+	const handleCreateLink = useCallback(
+		(a: TerrainLinkAnchor, b: TerrainLinkAnchor) => {
+			actionService?.execute("terrainLink:create", { a, b });
 		},
 		[actionService]
 	);
-	const handleDeleteDoor = useCallback(
-		(doorId: string) => {
-			actionService?.execute("door:delete", { doorId });
+	const handleDeleteLink = useCallback(
+		(linkId: string) => {
+			actionService?.execute("terrainLink:delete", { linkId });
+		},
+		[actionService]
+	);
+	const handleEditLink = useCallback(
+		(linkId: string, updates: { Locked?: boolean }) => {
+			actionService?.execute("terrainLink:edit", { linkId, updates });
 		},
 		[actionService]
 	);
@@ -487,12 +516,13 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 				actors={actorOverlayInfos}
 				stampSources={stampSources}
 				loadStampVoxels={loadStampVoxels}
-				doors={campaign?.Doors}
+				links={campaign?.TerrainLinks}
 				terrainNamesById={terrainNamesById}
 				loadTerrainVoxels={loadStampVoxels}
-				onCreateDoor={handleCreateDoor}
-				onDeleteDoor={handleDeleteDoor}
-				canPlaceDoors={canPlaceDoors}
+				onCreateLink={handleCreateLink}
+				onDeleteLink={handleDeleteLink}
+				onEditLink={handleEditLink}
+				canPlaceLinks={canPlaceLinks}
 			/>
 
 			{/* Tags at the bottom */}

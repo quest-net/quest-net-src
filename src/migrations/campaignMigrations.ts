@@ -9,7 +9,7 @@ import { terrainEnvironmentPresetsV240Migration } from "./v2_4_0_terrainEnvironm
 import { scenarioPlacementsV250Migration } from "./v2_5_0_scenarioPlacements";
 import { perActorTerrainV260Migration } from "./v2_6_0_perActorTerrain";
 import { terrainContentHashV270Migration } from "./v2_7_0_terrainContentHash";
-import { doorsV280Migration } from "./v2_8_0_doors";
+import { terrainLinksV280Migration } from "./v2_8_0_terrainLinks";
 
 /**
  * Ordered list of campaign-level migrations, sorted ascending by version.
@@ -26,5 +26,5 @@ export const campaignMigrations: Migration[] = [
 	scenarioPlacementsV250Migration,
 	perActorTerrainV260Migration,
 	terrainContentHashV270Migration,
-	doorsV280Migration,
+	terrainLinksV280Migration,
 ];

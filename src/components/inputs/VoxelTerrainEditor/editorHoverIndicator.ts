@@ -36,6 +36,7 @@ import {
 	collectAffectedCoords,
 	getPickSelectionBounds,
 	isVoxelInBounds,
+	pickToTacticalAnchor,
 	type EditGranularity,
 	type PickInfo,
 } from "../../../utils/terrain/editor/VoxelBrushUtils";
@@ -44,6 +45,10 @@ import {
 	type EditorSceneResources,
 } from "./editorScene";
 import { createSelectionBoundsFrame } from "./editorGridLines";
+import {
+	createTerrainLinkMarkerGeometry,
+	createTerrainLinkMarkerMesh,
+} from "../../Map/TerrainLinks3D/terrainLinkMarkerMesh";
 
 const HOVER_FACE_OFFSET = 0.014;
 const BOX_SELECTION_COLOR = 0xef4444;
@@ -56,6 +61,7 @@ export type HoverTool =
 	| "paint"
 	| "sample"
 	| "stamp"
+	| "link"
 	| "boxSelect"
 	| "colorSelect";
 
@@ -341,6 +347,21 @@ export function updateHoverIndicator(
 		});
 		const mesh = new THREE.Mesh(geometry, material);
 		mesh.renderOrder = 30;
+		resources.hoverGroup.add(mesh);
+		return;
+	}
+
+	if (tool === "link") {
+		const anchor = pickToTacticalAnchor(pick, index);
+		const mesh = createTerrainLinkMarkerMesh({
+			terrain: { Width: index.width, Length: index.length },
+			geometry: createTerrainLinkMarkerGeometry(),
+			anchor,
+			locked: false,
+			selected: true,
+			opacity: 0.35,
+			renderOrder: 30,
+		});
 		resources.hoverGroup.add(mesh);
 		return;
 	}

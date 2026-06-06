@@ -17,7 +17,7 @@
 //
 // Hovering a tab reveals the names of the actors on that terrain (up to five,
 // characters before entities). Switching tab is purely local view state (see
-// useViewedTerrain / docs/multi-terrain-world.md §5.2).
+// useViewedTerrain).
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CameraPreference } from "./MapScene";
@@ -48,6 +48,8 @@ interface DmMapToolbarProps {
 	onCameraPreferenceChange: (mode: CameraPreference) => void;
 	xRayActors: boolean;
 	onToggleXRay: () => void;
+	showTerrainLinks: boolean;
+	onToggleTerrainLinks: () => void;
 	showFirstPersonButton: boolean;
 	onEnterFirstPerson: () => void;
 }
@@ -67,6 +69,8 @@ export function DmMapToolbar({
 	onCameraPreferenceChange,
 	xRayActors,
 	onToggleXRay,
+	showTerrainLinks,
+	onToggleTerrainLinks,
 	showFirstPersonButton,
 	onEnterFirstPerson,
 }: DmMapToolbarProps) {
@@ -258,6 +262,17 @@ export function DmMapToolbar({
 								: "icon-[mdi--account-search-outline]"
 						} w-5 h-5`}
 					/>
+				</button>
+				<button
+					className={`btn btn-sm join-item tooltip tooltip-bottom ${
+						showTerrainLinks ? "btn-primary" : "btn-neutral"
+					}`}
+					data-tip={showTerrainLinks ? "Hide terrain links" : "Show terrain links"}
+					onClick={onToggleTerrainLinks}
+					aria-label="Toggle terrain link display"
+					aria-pressed={showTerrainLinks}
+				>
+					<span className="icon-[mdi--link-variant] w-5 h-5" />
 				</button>
 				<button
 					className="btn btn-sm btn-neutral join-item tooltip tooltip-bottom"

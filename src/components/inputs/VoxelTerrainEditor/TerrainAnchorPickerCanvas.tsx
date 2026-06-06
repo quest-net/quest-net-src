@@ -1,92 +1,57 @@
-// components/inputs/VoxelTerrainEditor/DoorPlacement/TerrainTilePickerCanvas.tsx
+// components/inputs/VoxelTerrainEditor/TerrainAnchorPickerCanvas.tsx
 //
-// A self-contained, read-only voxel terrain renderer used by the door-placement
-// flow to pick a single tactical tile on a terrain. It reuses the editor's scene
-// (createEditorScene) + picker (createPicker) but does NO editing: it renders the
-// given terrain, shows a transparent door-sized ghost (1 tile wide/deep, 2 tactical
-// units tall) at the hovered tile, and reports the chosen tile via onPick.
+// A self-contained, read-only voxel terrain renderer used by link placement to
+// pick a single tactical anchor on a terrain. It reuses the editor's scene
+// (createEditorScene) + picker (createPicker) but does no editing: it renders the
+// given terrain, shows a transparent link-sized ghost, and reports the chosen
+// anchor via onPick.
 //
-// Kept deliberately separate from the main VoxelTerrainEditor so the door flow
-// never touches the editor's brush/undo/selection pipeline.
+// Kept separate from the main editor state so picking an anchor on another
+// terrain never touches the current terrain's brush/undo pipeline.
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
-import type { EditableVoxelTerrain } from "../../../../domains/VoxelTerrain/VoxelTerrain";
-import type { DoorAnchor } from "../../../../domains/Door/Door";
-import {
-	getVoxelTerrainIndex,
-	getVoxelTerrainResolution,
-} from "../../../../utils/terrain/data/VoxelTerrainIndex";
-import { buildEditGrid, createEditGrid, type EditGrid } from "../../../../utils/terrain/editor/EditGridUtils";
+import type { EditableVoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import type { TerrainLinkAnchor } from "../../../domains/TerrainLink/TerrainLink";
+import { getVoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import { buildEditGrid, createEditGrid, type EditGrid } from "../../../utils/terrain/editor/EditGridUtils";
 import {
 	computeChunkDims,
 	markAllChunksDirty,
 	unpackChunkIndex,
 	type ChunkDims,
-} from "../../../../utils/terrain/editor/EditGridChunkUtils";
-import type { PickInfo } from "../../../../utils/terrain/editor/VoxelBrushUtils";
-import { terrainHeightToWorldY } from "../../../Map/Actors3D/actorTokenPlacement";
+} from "../../../utils/terrain/editor/EditGridChunkUtils";
+import { pickToTacticalAnchor } from "../../../utils/terrain/editor/VoxelBrushUtils";
 import {
 	createEditorScene,
 	clearObjectGroup,
 	frameOrthoCamera,
 	resizeRenderer,
 	type EditorSceneResources,
-} from "../editorScene";
-import { clearAllChunkMeshes, rebuildChunk } from "../editorChunkMeshes";
-import { createPicker } from "../editorPicking";
+} from "./editorScene";
+import { clearAllChunkMeshes, rebuildChunk } from "./editorChunkMeshes";
+import { createPicker } from "./editorPicking";
+import {
+	createTerrainLinkMarkerGeometry,
+	createTerrainLinkMarkerMesh,
+	disposeTerrainLinkMarkerGroup,
+	positionTerrainLinkMarkerMesh,
+} from "../../Map/TerrainLinks3D/terrainLinkMarkerMesh";
 
 const CLICK_DRAG_THRESHOLD_PX = 5;
-const DOOR_GHOST_HEIGHT = 2;
 
-/**
- * Converts a voxel pick into a tactical door anchor on `terrainId`. The tile is
- * the tactical column under the pick; the height snaps to the nearest standing
- * surface in that column (or 0 for an empty column / ground pick).
- */
-function pickToDoorAnchor(
-	pick: PickInfo,
-	terrainId: string,
-	surfaces: ReadonlyMap<string, readonly number[]>,
-	resolution: number
-): DoorAnchor {
-	const x = Math.floor(pick.voxel.x / resolution);
-	const y = Math.floor(pick.voxel.z / resolution);
-	const pickedTactical = pick.ground
-		? 0
-		: Math.floor((pick.voxel.y + (pick.normal.y > 0 ? 1 : 0)) / resolution);
-
-	const columnSurfaces = surfaces.get(`${x},${y}`) ?? [];
-	let h = pick.ground ? 0 : pickedTactical;
-	if (columnSurfaces.length > 0) {
-		let best = columnSurfaces[0];
-		let bestDist = Math.abs(best - pickedTactical);
-		for (const surface of columnSurfaces) {
-			const dist = Math.abs(surface - pickedTactical);
-			if (dist < bestDist) {
-				best = surface;
-				bestDist = dist;
-			}
-		}
-		h = best;
-	}
-
-	return { terrainId, x, y, h };
-}
-
-interface TerrainTilePickerCanvasProps {
+interface TerrainAnchorPickerCanvasProps {
 	terrain: EditableVoxelTerrain;
-	onPick: (anchor: DoorAnchor) => void;
-	/** Existing door anchors on this terrain, drawn as static transparent boxes
-	 *  so the DM can see where doors already are while placing a new one. */
-	existingAnchors?: DoorAnchor[];
+	onPick: (anchor: TerrainLinkAnchor) => void;
+	/** Existing anchors on this terrain, drawn as static transparent boxes. */
+	existingAnchors?: TerrainLinkAnchor[];
 }
 
-export function TerrainTilePickerCanvas({
+export function TerrainAnchorPickerCanvas({
 	terrain,
 	onPick,
 	existingAnchors,
-}: TerrainTilePickerCanvasProps) {
+}: TerrainAnchorPickerCanvasProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const onPickRef = useRef(onPick);
 	useEffect(() => {
@@ -100,8 +65,7 @@ export function TerrainTilePickerCanvas({
 	const terrainRef = useRef<EditableVoxelTerrain>(terrain);
 	const chunkMeshesRef = useRef<Map<number, THREE.Mesh | null>>(new Map());
 	const ghostRef = useRef<THREE.Mesh | null>(null);
-	const currentAnchorRef = useRef<DoorAnchor | null>(null);
-	const existingDoorsGroupRef = useRef<THREE.Group | null>(null);
+	const currentAnchorRef = useRef<TerrainLinkAnchor | null>(null);
 
 	// --- Mount the scene once. ---
 	useEffect(() => {
@@ -111,15 +75,17 @@ export function TerrainTilePickerCanvas({
 		const resources = createEditorScene(container, true);
 		resourcesRef.current = resources;
 
-		// Transparent door-sized ghost.
-		const ghostGeometry = new THREE.BoxGeometry(1, DOOR_GHOST_HEIGHT, 1);
-		const ghostMaterial = new THREE.MeshBasicMaterial({
-			color: 0x60a5fa,
-			transparent: true,
+		// Transparent link-sized ghost.
+		const ghostGeometry = createTerrainLinkMarkerGeometry();
+		const ghost = createTerrainLinkMarkerMesh({
+			terrain,
+			geometry: ghostGeometry,
+			anchor: { x: 0, y: 0, h: 0 },
+			locked: false,
+			selected: true,
 			opacity: 0.35,
-			depthWrite: false,
+			renderOrder: 30,
 		});
-		const ghost = new THREE.Mesh(ghostGeometry, ghostMaterial);
 		ghost.visible = false;
 		resources.hoverGroup.add(ghost);
 		ghostRef.current = ghost;
@@ -150,12 +116,9 @@ export function TerrainTilePickerCanvas({
 		const resizeObserver = new ResizeObserver(() => resizeRenderer(resources, container));
 		resizeObserver.observe(container);
 
-		const positionGhost = (anchor: DoorAnchor) => {
+		const positionGhost = (anchor: TerrainLinkAnchor) => {
 			const t = terrainRef.current;
-			const worldX = anchor.x + 0.5 - t.Width / 2;
-			const worldZ = anchor.y + 0.5 - t.Length / 2;
-			const worldY = terrainHeightToWorldY(anchor.h);
-			ghost.position.set(worldX, worldY + DOOR_GHOST_HEIGHT / 2, worldZ);
+			positionTerrainLinkMarkerMesh(ghost, t, anchor);
 			ghost.visible = true;
 		};
 
@@ -168,12 +131,8 @@ export function TerrainTilePickerCanvas({
 			}
 			const t = terrainRef.current;
 			const index = getVoxelTerrainIndex(t);
-			const anchor = pickToDoorAnchor(
-				pick,
-				t.Id,
-				index.allSurfaces,
-				getVoxelTerrainResolution(t)
-			);
+			const { x, y, h } = pickToTacticalAnchor(pick, index);
+			const anchor: TerrainLinkAnchor = { terrainId: t.Id, x, y, h };
 			currentAnchorRef.current = anchor;
 			positionGhost(anchor);
 		};
@@ -227,8 +186,6 @@ export function TerrainTilePickerCanvas({
 			dom.removeEventListener("pointercancel", handlePointerLeave);
 			resources.rig.dispose();
 			clearAllChunkMeshes(resources.chunkGroup, chunkMeshesRef.current);
-			ghostGeometry.dispose();
-			ghostMaterial.dispose();
 			clearObjectGroup(resources.hoverGroup);
 			resources.terrainMaterial.dispose();
 			resources.renderer.dispose();
@@ -273,7 +230,7 @@ export function TerrainTilePickerCanvas({
 		frameOrthoCamera(resources, terrain, container);
 	}, [terrain]);
 
-	// --- Draw existing doors on this terrain as static transparent boxes. ---
+	// --- Draw existing anchors on this terrain as static transparent boxes. ---
 	const anchorsKey = (existingAnchors ?? [])
 		.map((a) => `${a.x},${a.y},${a.h}`)
 		.join("|");
@@ -282,31 +239,22 @@ export function TerrainTilePickerCanvas({
 		if (!resources) return;
 
 		const group = new THREE.Group();
-		const geometry = new THREE.BoxGeometry(1, DOOR_GHOST_HEIGHT, 1);
-		const material = new THREE.MeshBasicMaterial({
-			color: 0xf59e0b,
-			transparent: true,
-			opacity: 0.22,
-			depthWrite: false,
-		});
+		const geometry = createTerrainLinkMarkerGeometry();
 		for (const anchor of existingAnchors ?? []) {
-			const box = new THREE.Mesh(geometry, material);
-			box.position.set(
-				anchor.x + 0.5 - terrain.Width / 2,
-				terrainHeightToWorldY(anchor.h) + DOOR_GHOST_HEIGHT / 2,
-				anchor.y + 0.5 - terrain.Length / 2
-			);
+			const box = createTerrainLinkMarkerMesh({
+				terrain,
+				geometry,
+				anchor,
+				locked: false,
+				opacity: 0.22,
+			});
 			group.add(box);
 		}
 		resources.scene.add(group);
-		existingDoorsGroupRef.current = group;
 
 		return () => {
 			resources.scene.remove(group);
-			group.clear();
-			geometry.dispose();
-			material.dispose();
-			existingDoorsGroupRef.current = null;
+			disposeTerrainLinkMarkerGroup(group);
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [terrain, anchorsKey]);

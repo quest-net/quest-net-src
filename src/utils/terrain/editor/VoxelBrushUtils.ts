@@ -34,6 +34,41 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * Snaps a pick to a tactical tile anchor: the tactical (x, y) column under the
+ * pick, with the height snapped to the nearest standing surface in that column
+ * (or 0 for an empty column / ground pick). Shared by terrain-link placement,
+ * the link-destination anchor picker, and the link hover ghost so all three
+ * resolve the same tile from a given pick.
+ */
+export function pickToTacticalAnchor(
+	pick: PickInfo,
+	index: VoxelTerrainIndex,
+): { x: number; y: number; h: number } {
+	const x = Math.floor(pick.voxel.x / index.resolution);
+	const y = Math.floor(pick.voxel.z / index.resolution);
+	const pickedTactical = pick.ground
+		? 0
+		: Math.floor((pick.voxel.y + (pick.normal.y > 0 ? 1 : 0)) / index.resolution);
+
+	const columnSurfaces = index.allSurfaces.get(`${x},${y}`) ?? [];
+	let h = pick.ground ? 0 : pickedTactical;
+	if (columnSurfaces.length > 0) {
+		let best = columnSurfaces[0];
+		let bestDist = Math.abs(best - pickedTactical);
+		for (const surface of columnSurfaces) {
+			const dist = Math.abs(surface - pickedTactical);
+			if (dist < bestDist) {
+				best = surface;
+				bestDist = dist;
+			}
+		}
+		h = best;
+	}
+
+	return { x, y, h };
+}
+
 export function isVoxelInBounds(index: VoxelTerrainIndex, coord: VoxelCoord): boolean {
 	return (
 		coord.x >= 0 && coord.x < index.voxelWidth &&

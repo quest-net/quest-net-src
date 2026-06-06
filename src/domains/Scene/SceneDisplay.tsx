@@ -24,7 +24,7 @@ export function SceneDisplay({
 
   // The fixed/collapsed panel sits in the top-right corner; nudge it below the
   // DM toolbar (which spans the full width) when one is present.
-  const topClass = dmToolbar ? "top-14" : "top-2";
+  const topClass = dmToolbar ? "top-12" : "top-2";
 
   // Load preferences from localStorage
   const [mode, setMode] = useState<SceneMode>(() => {

@@ -22,7 +22,7 @@ import { SharedInventoryActions } from "../../domains/SharedInventory/SharedInve
 import { ActorActions } from "../../domains/Actor/ActorActions";
 import { PingActions } from "../../domains/Ping/PingActions";
 import { StickerActions } from "../../domains/Sticker/StickerActions";
-import { DoorActions } from "../../domains/Door/DoorActions";
+import { TerrainLinkActions } from "../../domains/TerrainLink/TerrainLinkActions";
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
 // import { CombatActions } from '../domains/Combat/CombatActions';
@@ -404,19 +404,19 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	},
 
 	// ============================================================================
-	// DOOR ACTIONS
+	// TERRAIN LINK ACTIONS
 	// ============================================================================
-	"door:create": {
+	"terrainLink:create": {
 		roles: ["dm"],
-		handler: DoorActions.create,
+		handler: TerrainLinkActions.create,
 	},
-	"door:edit": {
+	"terrainLink:edit": {
 		roles: ["dm"],
-		handler: DoorActions.edit,
+		handler: TerrainLinkActions.edit,
 	},
-	"door:delete": {
+	"terrainLink:delete": {
 		roles: ["dm"],
-		handler: DoorActions.delete,
+		handler: TerrainLinkActions.delete,
 	},
 
 	// ============================================================================

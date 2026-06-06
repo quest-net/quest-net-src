@@ -57,12 +57,23 @@ export interface ThreeDSceneResources {
 	 */
 	actorPickTargets: THREE.Object3D[];
 	/**
-	 * Mutable list of invisible door hitbox meshes shared with the door layer.
-	 * The movement layer raycasts against this to suppress tile clicks over a
-	 * door (so clicking a door interacts with it instead of walking onto it).
-	 * The door layer owns the lifecycle of these meshes.
+	 * Mutable list of invisible terrain-link hitbox meshes shared with the
+	 * terrain-link layer. The movement layer raycasts against this to suppress
+	 * tile clicks over a link (so clicking a link interacts with it instead of
+	 * walking onto it). The terrain-link layer owns the lifecycle of these meshes.
 	 */
-	doorPickTargets: THREE.Object3D[];
+	linkPickTargets: THREE.Object3D[];
+	/**
+	 * Link hitboxes always exist for raycasting, but only adjacent/visible links
+	 * should block terrain hover and tile clicks.
+	 */
+	isLinkPickTargetInteractive?: (target: THREE.Object3D) => boolean;
+	/**
+	 * Some visible link authoring markers intentionally render through terrain.
+	 * Those should block terrain hover/click even when the terrain surface is
+	 * closer than the marker along the ray.
+	 */
+	isLinkPickTargetTerrainBlocking?: (target: THREE.Object3D) => boolean;
 	/**
 	 * Set to true by the actor layer while a height-drag gesture is in
 	 * flight. Other layers should pause hover/click handling so they

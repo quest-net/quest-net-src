@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import type { CameraRigConfig } from '../../utils/camera/CameraRig';
 import type { Character } from '../../domains/Character/Character';
 import type { Entity } from '../../domains/Entity/Entity';
+import type { Position } from '../../domains/Actor/Actor';
 import { useQuestContext } from '../../domains/Context/ContextProvider';
 import { useActionService } from '../../services/Actions/ActionServiceProvider';
 import { CampaignActions } from '../../domains/Campaign/CampaignActions';
@@ -38,7 +39,7 @@ import { ThreeDActorLayer } from './Actors3D/ThreeDActorLayer';
 import { ThreeDMovementLayer } from './Movement3D/ThreeDMovementLayer';
 import { ThreeDStickerLayer } from './Stickers3D/ThreeDStickerLayer';
 import { ThreeDPingLayer } from './Pings3D/ThreeDPingLayer';
-import { ThreeDDoorLayer, type DoorInteractionFocus } from './Doors3D/ThreeDDoorLayer';
+import { ThreeDTerrainLinkLayer, type TerrainLinkInteractionFocus } from './TerrainLinks3D/ThreeDTerrainLinkLayer';
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from './Actors3D/actorTokenConstants';
 import { useActiveStickers } from './hooks/useActiveStickers';
 import { useActivePings } from './hooks/useActivePings';
@@ -65,6 +66,7 @@ import {
 	type MapSceneControllerContext,
 } from './Terrain/hooks/useMapSceneCore';
 import { MapModeController, type MapViewMode } from './MapModeController';
+import { useViewedTerrain } from './useViewedTerrain';
 
 export type CameraPreference = 'ortho' | 'perspective' | 'freecam';
 
@@ -107,6 +109,7 @@ interface MapSceneProps {
 	characters?: Character[];
 	entities?: Entity[];
 	xRayActors?: boolean;
+	showTerrainLinks?: boolean;
 	cameraPreference?: CameraPreference;
 	viewMode?: MapViewMode;
 	/** Pause the render loop while the map is mounted but not visible (e.g. the
@@ -145,6 +148,7 @@ export default function MapScene({
 	characters = [],
 	entities = [],
 	xRayActors = false,
+	showTerrainLinks = false,
 	cameraPreference = 'ortho',
 	viewMode = 'world',
 	paused = false,
@@ -215,6 +219,7 @@ export default function MapScene({
 	const isDM = context.User.Role === "dm";
 	const imageService = (actionService as any)?.imageService ?? null;
 	const campaign = CampaignActions.getActiveCampaign(context);
+	const { setViewedTerrain } = useViewedTerrain();
 	const selectedActorObject = useMemo(
 		() => findSelectedActor(selectedActor, characters, entities),
 		[selectedActor, characters, entities]
@@ -229,31 +234,44 @@ export default function MapScene({
 			? context.User.SelectedCharacters?.[campaign.RoomCode]
 			: (context.User.ImpersonatedActors ?? {})[campaign.RoomCode];
 
-	// The actor a door would move: the player's selected character, or the DM's
-	// impersonated actor. A bare DM (no impersonation) has none, so cannot use a
-	// door (nothing to move). Resolved only against rendered-terrain actors, so it
-	// is null when the controlled actor is on a terrain the client isn't showing.
-	const controlledActorForDoors = useMemo(() => {
+	// The actor a terrain link would move: the player's selected character, or the
+	// DM's impersonated actor. Resolve from canonical GameState instead of the
+	// rendered actor props so DM impersonation does not depend on the visible-actor
+	// filter.
+	const controlledActorForLinks = useMemo(() => {
 		if (!pingActiveActorId) return null;
-		const character = characters.find((c) => c.Id === pingActiveActorId);
+		const character = campaign.GameState.Characters.find((c) => c.Id === pingActiveActorId);
 		if (character) {
 			return { id: character.Id, kind: "character" as const, position: character.Position };
 		}
-		const entity = entities.find((e) => e.Id === pingActiveActorId);
+		const entity = campaign.GameState.Entities.find((e) => e.Id === pingActiveActorId);
 		if (entity) {
 			return { id: entity.Id, kind: "entity" as const, position: entity.Position };
 		}
 		return null;
-	}, [pingActiveActorId, characters, entities]);
+	}, [pingActiveActorId, campaign.GameState.Characters, campaign.GameState.Entities]);
 
-	// Terrain id -> name, for the door's "leads to ___" hover/prompt label.
+	// Terrain id -> name, for the link's "leads to ___" hover/prompt label.
 	const terrainNamesById = useMemo(() => {
 		const map = new Map<string, string>();
 		for (const t of campaign.VoxelTerrains) map.set(t.Id, t.Name);
 		return map;
 	}, [campaign.VoxelTerrains]);
 
-	const [doorFocus, setDoorFocus] = useState<DoorInteractionFocus | null>(null);
+	const [linkFocus, setLinkFocus] = useState<TerrainLinkInteractionFocus | null>(null);
+	const liveFirstPersonRulesPositionRef = useRef<Position | null>(null);
+	const getControlledLinkActorPosition = useCallback((): Position | null => {
+		if (!isWorld && liveFirstPersonRulesPositionRef.current) {
+			return liveFirstPersonRulesPositionRef.current;
+		}
+		return controlledActorForLinks?.position ?? null;
+	}, [controlledActorForLinks, isWorld]);
+	const handleLiveFirstPersonRulesPositionChange = useCallback((position: Position | null) => {
+		liveFirstPersonRulesPositionRef.current = position;
+	}, []);
+	useEffect(() => {
+		if (isWorld) liveFirstPersonRulesPositionRef.current = null;
+	}, [isWorld]);
 	const restrictMovementToRange =
 		shouldRestrictPlayerMovementToRange(
 			context.User.Role,
@@ -460,16 +478,20 @@ export default function MapScene({
 		[selectedActor, actionService, updateHoveredTile, clearSelection]
 	);
 
-	// Using a door is just a terrain-crossing move of the controlled actor to the
-	// door's opposite anchor (the move handler honors the destination terrainId
-	// and re-anchors the combat budget on a terrain change). For a player this
-	// switches their selected character's terrain, so Main re-renders the new map.
-	const handleDoorTraverse = useCallback(
+	// Using a terrain link is just a terrain-crossing move of the controlled actor
+	// to the link's opposite anchor (the move handler honors the destination
+	// terrainId and re-anchors the combat budget on a terrain change). For a player
+	// this switches their selected character's terrain, so Main re-renders the new
+	// map.
+	const handleLinkTraverse = useCallback(
 		(
 			actor: { id: string; kind: "character" | "entity" },
 			destination: { terrainId: string; x: number; y: number; h: number }
 		) => {
 			if (!actionService) return;
+			if (!isWorld) {
+				liveFirstPersonRulesPositionRef.current = destination;
+			}
 			if (actor.kind === "character") {
 				actionService.execute("character:move", {
 					characterId: actor.id,
@@ -481,9 +503,24 @@ export default function MapScene({
 					position: destination,
 				});
 			}
-			setDoorFocus(null);
+			if (isDM) {
+				setViewedTerrain(destination.terrainId);
+			}
+			setLinkFocus(null);
 		},
-		[actionService]
+		[actionService, isDM, isWorld, setViewedTerrain]
+	);
+
+	const handleToggleLinkLocked = useCallback(
+		(linkId: string, locked: boolean) => {
+			if (!actionService || !isDM) return;
+			actionService.execute("terrainLink:edit", {
+				linkId,
+				updates: { Locked: locked },
+			});
+			setLinkFocus(null);
+		},
+		[actionService, isDM]
 	);
 
 	const handlePingTile = useCallback(
@@ -698,56 +735,54 @@ export default function MapScene({
 						activePings={activePings}
 						onPingTile={handlePingTile}
 					/>
-					<ThreeDDoorLayer
+					<ThreeDTerrainLinkLayer
 						resources={sceneResources}
 						isWorld={isWorld}
 						terrain={terrain}
 						terrainIndex={terrainIndex}
-						doors={campaign.Doors}
+						links={campaign.TerrainLinks}
 						terrainNamesById={terrainNamesById}
-						controlledActor={controlledActorForDoors}
+						controlledActor={controlledActorForLinks}
+						getControlledActorPosition={getControlledLinkActorPosition}
 						isDM={isDM}
-						onTraverse={handleDoorTraverse}
-						onFocusChange={setDoorFocus}
+						showLinkMarkers={isWorld && isDM && showTerrainLinks}
+						onTraverse={handleLinkTraverse}
+						onToggleLinkLocked={handleToggleLinkLocked}
+						onFocusChange={setLinkFocus}
 					/>
 				</>
 			)}
-			{/* World-view door hover tooltip: follows the cursor, reveals destination. */}
-			{hasTerrain && isWorld && doorFocus?.screen && (
+			{/* World-view link hover tooltip: follows the cursor, reveals destination. */}
+			{hasTerrain && isWorld && linkFocus?.screen && (
 				<div
-					className="pointer-events-none fixed z-40 -translate-x-1/2 -translate-y-[140%] whitespace-nowrap rounded bg-base-300/90 px-2 py-1 text-xs font-medium text-base-content shadow"
-					style={{ left: doorFocus.screen.x, top: doorFocus.screen.y }}
+					className="pointer-events-none fixed z-40 -translate-x-1/2 -translate-y-[140%] whitespace-nowrap rounded bg-base-100/90 border border-base-300 px-3 py-1.5 text-sm font-semibold text-base-content shadow"
+					style={{ left: linkFocus.screen.x, top: linkFocus.screen.y }}
 				>
-					{doorFocus.locked && !doorFocus.destinationName ? (
+					{linkFocus.authoring ? (
 						<span className="flex items-center gap-1">
-							<span className="icon-[mdi--lock] h-3.5 w-3.5" /> Locked
+							<span
+								className={`${
+									linkFocus.locked
+										? "icon-[mdi--lock]"
+										: "icon-[mdi--lock-open-variant]"
+								} h-3.5 w-3.5`}
+							/>
+							{linkFocus.destinationName
+								? `To ${linkFocus.destinationName}`
+								: "Terrain link"}
+							<span className="opacity-60">
+								- click to {linkFocus.locked ? "unlock" : "lock"}
+							</span>
 						</span>
 					) : (
 						<span className="flex items-center gap-1">
-							<span className="icon-[mdi--door] h-3.5 w-3.5" />
-							{doorFocus.destinationName
-								? `To ${doorFocus.destinationName}`
-								: "Door"}
-							{doorFocus.usable && (
+							<span className="icon-[mdi--link-variant] h-3.5 w-3.5" />
+							{linkFocus.destinationName
+								? `To ${linkFocus.destinationName}`
+								: "Terrain link"}
+							{linkFocus.usable && (
 								<span className="opacity-60">- click to enter</span>
 							)}
-						</span>
-					)}
-				</div>
-			)}
-			{/* First-person interact prompt, centered under the reticle. */}
-			{hasTerrain && !isWorld && doorFocus && (doorFocus.usable || doorFocus.locked) && (
-				<div className="pointer-events-none absolute left-1/2 top-[58%] z-40 -translate-x-1/2 rounded bg-base-300/90 px-3 py-1.5 text-sm font-medium text-base-content shadow">
-					{doorFocus.usable ? (
-						<span className="flex items-center gap-1.5">
-							<kbd className="kbd kbd-sm">E</kbd>
-							{doorFocus.destinationName
-								? `Travel to ${doorFocus.destinationName}`
-								: "Use door"}
-						</span>
-					) : (
-						<span className="flex items-center gap-1.5">
-							<span className="icon-[mdi--lock] h-4 w-4" /> Locked
 						</span>
 					)}
 				</div>
@@ -760,6 +795,8 @@ export default function MapScene({
 					characters={characters}
 					entities={entities}
 					onExitFirstPerson={onExitFirstPerson}
+					onLiveRulesPositionChange={handleLiveFirstPersonRulesPositionChange}
+					linkFocus={linkFocus}
 				/>
 			)}
 			{terrainGeometryError && (

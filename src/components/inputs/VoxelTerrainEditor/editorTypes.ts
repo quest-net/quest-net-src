@@ -9,6 +9,7 @@ export type EditorTool =
 	| "paint"
 	| "sample"
 	| "stamp"
+	| "link"
 	| "boxSelect"
 	| "colorSelect";
 

@@ -1,28 +1,31 @@
-// domains/Door/DoorActions.ts
+// domains/TerrainLink/TerrainLinkActions.ts
 //
-// DM authoring handlers for doors — the invisible, undirected tile-to-tile links
-// in Campaign.Doors. The DM creates, edits, locks, and deletes doors.
+// DM authoring handlers for terrain links — the invisible, undirected
+// tile-to-tile links in Campaign.TerrainLinks. The DM creates, edits, locks, and
+// deletes links.
 //
-// Note: there is no "traverse" action. Using a door is just a terrain-crossing
-// move: the map's door layer resolves the destination from the door (via the
-// helpers in Door.ts) and dispatches the ordinary character:move / entity:move,
-// which already honors a destination terrainId and re-anchors the combat budget
-// on a terrain change (ActorActions.moveActor, §5.7). Lock and adjacency are
-// enforced client-side at the interaction point, consistent with how movement
-// legality is handled throughout the app. See docs/multi-terrain-world.md §5.5.
+// Note: there is no "traverse" action. Using a link is just a terrain-crossing
+// move: the map's link layer resolves the destination from the link (via the
+// helpers in TerrainLink.ts) and dispatches the ordinary character:move /
+// entity:move, which already honors a destination terrainId and re-anchors the
+// combat budget on a terrain change (ActorActions.moveActor). Lock and adjacency
+// are enforced client-side at the interaction point, consistent with how movement
+// legality is handled throughout the app.
 
 import type { Context } from "../Context/Context";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "../Log/LogActions";
 import {
 	anchorsEqual,
-	createDoor,
-	isDoorAnchorOccupied,
-	type Door,
-	type DoorAnchor,
-} from "./Door";
+	createTerrainLink,
+	isTerrainLinkAnchorOccupied,
+	type TerrainLink,
+	type TerrainLinkAnchor,
+} from "./TerrainLink";
 
-function isValidAnchor(anchor: DoorAnchor | undefined | null): anchor is DoorAnchor {
+function isValidAnchor(
+	anchor: TerrainLinkAnchor | undefined | null
+): anchor is TerrainLinkAnchor {
 	return (
 		!!anchor &&
 		typeof anchor.terrainId === "string" &&
@@ -33,13 +36,25 @@ function isValidAnchor(anchor: DoorAnchor | undefined | null): anchor is DoorAnc
 	);
 }
 
-export const DoorActions = {
-	/** Creates an undirected door linking two anchors (DM authoring). */
-	create(params: { a: DoorAnchor; b: DoorAnchor }, context: Context): void {
+function isAnchorOccupiedByOtherLink(
+	links: readonly TerrainLink[],
+	anchor: TerrainLinkAnchor,
+	linkId: string
+): boolean {
+	return links.some(
+		(link) =>
+			link.Id !== linkId &&
+			(anchorsEqual(link.A, anchor) || anchorsEqual(link.B, anchor))
+	);
+}
+
+export const TerrainLinkActions = {
+	/** Creates an undirected terrain link between two anchors (DM authoring). */
+	create(params: { a: TerrainLinkAnchor; b: TerrainLinkAnchor }, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
 
 		if (!isValidAnchor(params.a) || !isValidAnchor(params.b)) {
-			console.warn("Door create rejected: invalid anchor(s)");
+			console.warn("Terrain link create rejected: invalid anchor(s)");
 			return;
 		}
 
@@ -47,29 +62,29 @@ export const DoorActions = {
 		const terrainExists = (id: string) =>
 			campaign.VoxelTerrains.some((t) => t.Id === id);
 		if (!terrainExists(params.a.terrainId) || !terrainExists(params.b.terrainId)) {
-			console.warn("Door create rejected: anchor references a missing terrain");
+			console.warn("Terrain link create rejected: anchor references a missing terrain");
 			return;
 		}
 
-		// A door's two ends can't be the same tile, and no tile may host two doors.
+		// A link's two ends can't be the same tile, and no tile may host two links.
 		if (anchorsEqual(params.a, params.b)) {
-			console.warn("Door create rejected: both ends are the same tile");
+			console.warn("Terrain link create rejected: both ends are the same tile");
 			return;
 		}
 		if (
-			isDoorAnchorOccupied(campaign.Doors, params.a) ||
-			isDoorAnchorOccupied(campaign.Doors, params.b)
+			isTerrainLinkAnchorOccupied(campaign.TerrainLinks, params.a) ||
+			isTerrainLinkAnchorOccupied(campaign.TerrainLinks, params.b)
 		) {
-			console.warn("Door create rejected: a door already exists at that position");
+			console.warn("Terrain link create rejected: a link already exists at that position");
 			return;
 		}
 
-		const door = createDoor(params.a, params.b);
-		campaign.Doors.push(door);
+		const link = createTerrainLink(params.a, params.b);
+		campaign.TerrainLinks.push(link);
 
 		LogActions.create(
 			{
-				action: "Door created",
+				action: "Terrain link created",
 				details: `Linked a tile on one map to another`,
 				category: "system",
 				level: "info",
@@ -79,44 +94,60 @@ export const DoorActions = {
 		);
 	},
 
-	/** Edits a door's anchors and/or lock state (DM). */
+	/** Edits a link's anchors and/or lock state (DM). */
 	edit(
-		params: { doorId: string; updates: Partial<Pick<Door, "A" | "B" | "Locked">> },
+		params: { linkId: string; updates: Partial<Pick<TerrainLink, "A" | "B" | "Locked">> },
 		context: Context
 	): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
-		const door = campaign.Doors.find((d) => d.Id === params.doorId);
-		if (!door) {
-			console.warn(`Door not found: ${params.doorId}`);
+		const link = campaign.TerrainLinks.find((l) => l.Id === params.linkId);
+		if (!link) {
+			console.warn(`Terrain link not found: ${params.linkId}`);
 			return;
 		}
 
-		if (params.updates.A !== undefined) {
-			if (!isValidAnchor(params.updates.A)) return;
-			door.A = { ...params.updates.A };
+		const nextA = params.updates.A !== undefined ? params.updates.A : link.A;
+		const nextB = params.updates.B !== undefined ? params.updates.B : link.B;
+		if (!isValidAnchor(nextA) || !isValidAnchor(nextB)) return;
+
+		const terrainExists = (id: string) =>
+			campaign.VoxelTerrains.some((t) => t.Id === id);
+		if (!terrainExists(nextA.terrainId) || !terrainExists(nextB.terrainId)) {
+			console.warn("Terrain link edit rejected: anchor references a missing terrain");
+			return;
 		}
-		if (params.updates.B !== undefined) {
-			if (!isValidAnchor(params.updates.B)) return;
-			door.B = { ...params.updates.B };
+		if (anchorsEqual(nextA, nextB)) {
+			console.warn("Terrain link edit rejected: both ends are the same tile");
+			return;
 		}
+		if (
+			isAnchorOccupiedByOtherLink(campaign.TerrainLinks, nextA, link.Id) ||
+			isAnchorOccupiedByOtherLink(campaign.TerrainLinks, nextB, link.Id)
+		) {
+			console.warn("Terrain link edit rejected: a link already exists at that position");
+			return;
+		}
+
+		link.A = { ...nextA };
+		link.B = { ...nextB };
 		if (typeof params.updates.Locked === "boolean") {
-			door.Locked = params.updates.Locked;
+			link.Locked = params.updates.Locked;
 		}
 	},
 
-	/** Deletes a door (DM). */
-	delete(params: { doorId: string }, context: Context): void {
+	/** Deletes a terrain link (DM). */
+	delete(params: { linkId: string }, context: Context): void {
 		const campaign = CampaignActions.getActiveCampaign(context);
-		const index = campaign.Doors.findIndex((d) => d.Id === params.doorId);
+		const index = campaign.TerrainLinks.findIndex((l) => l.Id === params.linkId);
 		if (index === -1) {
-			console.warn(`Door not found: ${params.doorId}`);
+			console.warn(`Terrain link not found: ${params.linkId}`);
 			return;
 		}
-		campaign.Doors.splice(index, 1);
+		campaign.TerrainLinks.splice(index, 1);
 
 		LogActions.create(
 			{
-				action: "Door deleted",
+				action: "Terrain link deleted",
 				details: "",
 				category: "system",
 				level: "verbose",

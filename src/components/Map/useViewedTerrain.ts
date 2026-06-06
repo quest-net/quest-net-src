@@ -1,9 +1,8 @@
 // components/Map/useViewedTerrain.ts
 //
 // The DM's locally-viewed terrains. With multi-terrain worlds there is no single
-// "active terrain" in shared state (see docs/multi-terrain-world.md §4.2); which
-// terrains the DM has been looking at is purely local UI state and is never
-// broadcast.
+// "active terrain" in shared state; which terrains the DM has been looking at is
+// purely local UI state and is never broadcast.
 //
 // Stored as a most-recently-viewed list (newest first, capped at MAX_RECENT) per
 // campaign id on the global Context, mirroring SecretModes so it needs no

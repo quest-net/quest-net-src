@@ -66,6 +66,7 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 	const [topTabsCollapsed, setTopTabsCollapsed] = useState(false);
 	const [mapViewMode, setMapViewMode] = useState<MapViewMode>("world");
 	const [xRayActors, setXRayActors] = useState(false);
+	const [showTerrainLinks, setShowTerrainLinks] = useState(false);
 	const [cameraPreference, setCameraPreference] = useState<CameraPreference>(() => {
 		const saved = localStorage.getItem("quest-net:cameraPreference");
 		if (saved === "perspective") return "perspective";
@@ -91,8 +92,8 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 
 	// The single terrain this client renders. A player follows their selected
 	// character; the DM follows its locally-viewed terrain (default = first
-	// terrain in the list). See docs/multi-terrain-world.md §5.4.
-	const { viewedTerrainId } = useViewedTerrain();
+	// terrain in the list).
+	const { viewedTerrainId, setViewedTerrain } = useViewedTerrain();
 	const renderedTerrainId = isDM
 		? viewedTerrainId
 		: selectedCharacter?.Position.terrainId ?? null;
@@ -129,7 +130,12 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 		campaign.GameState.Entities
 	);
 	const firstPersonActorId = firstPersonActor?.id ?? null;
-	const showFirstPersonButton = !isDM || firstPersonActorId !== null;
+	const firstPersonActorTerrainId = firstPersonActor?.actor.Position.terrainId ?? null;
+	const firstPersonActorOnRenderedTerrain =
+		firstPersonActorTerrainId !== null &&
+		firstPersonActorTerrainId === renderedTerrainId;
+	const showFirstPersonButton =
+		!isDM || (firstPersonActorId !== null && firstPersonActorOnRenderedTerrain);
 
 	// Hide Shared Inventories tab when none are configured. Tracking the count
 	// (rather than the array reference) keeps the effect from firing on every
@@ -219,14 +225,22 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 	}, [hasSharedInventories, activeBottomTab, isDM]);
 
 	useEffect(() => {
-		if (
-			mapViewMode === "first-person" &&
-			isDM &&
-			!firstPersonActorId
-		) {
+		if (mapViewMode !== "first-person" || !isDM) return;
+		if (!firstPersonActorId) {
 			setMapViewMode("world");
+			return;
 		}
-	}, [firstPersonActorId, isDM, mapViewMode]);
+		if (!firstPersonActorOnRenderedTerrain && firstPersonActorTerrainId) {
+			setViewedTerrain(firstPersonActorTerrainId);
+		}
+	}, [
+		firstPersonActorId,
+		firstPersonActorOnRenderedTerrain,
+		firstPersonActorTerrainId,
+		isDM,
+		mapViewMode,
+		setViewedTerrain,
+	]);
 
 	useEffect(() => {
 		LocalStorageUtilities.saveString(
@@ -257,7 +271,7 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 	}, [renderedTerrainId, campaign]);
 
 	// Pin the rendered terrain so background packing never unloads the terrain
-	// this client is actively displaying. See docs/multi-terrain-world.md §6.3.
+	// this client is actively displaying.
 	useEffect(() => {
 		TerrainStorageService.setPinnedTerrains(
 			renderedTerrainId ? [renderedTerrainId] : []
@@ -266,7 +280,7 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 
 	// DM tactical hydration: keep an index loaded for every terrain that has a
 	// player character on it, so cross-terrain moves can be validated without
-	// rendering those terrains. See docs/multi-terrain-world.md §6.2.
+	// rendering those terrains.
 	const characterTerrainSignature = isDM
 		? campaign.GameState.Characters.map((c) => c.Position.terrainId)
 				.sort()
@@ -336,6 +350,7 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 						entities={visibleEntities}
 						terrain={hydratedRenderedTerrain}
 						xRayActors={isDM && xRayActors}
+						showTerrainLinks={isDM && mapViewMode === "world" && showTerrainLinks}
 						cameraPreference={cameraPreference}
 						viewMode={mapViewMode}
 						paused={!active}
@@ -357,6 +372,8 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 							onCameraPreferenceChange={setCameraPreference}
 							xRayActors={xRayActors}
 							onToggleXRay={() => setXRayActors((current) => !current)}
+							showTerrainLinks={showTerrainLinks}
+							onToggleTerrainLinks={() => setShowTerrainLinks((current) => !current)}
 							showFirstPersonButton={showFirstPersonButton}
 							onEnterFirstPerson={() => setMapViewMode("first-person")}
 						/>
@@ -702,7 +719,7 @@ export function Main({ active = true }: { active?: boolean } = {}) {
  * Bridges actor selection (MapStateProvider) to the DM's viewed terrain:
  * when the DM selects an actor that lives on another terrain, the view follows
  * it. Renders nothing. DM-only — a player's view follows its selected character,
- * not arbitrary actor selection. See docs/multi-terrain-world.md §5.9.
+ * not arbitrary actor selection.
  */
 function ViewTerrainSync() {
 	const context = useQuestContext();

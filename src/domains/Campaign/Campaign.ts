@@ -10,7 +10,7 @@ import { Entity } from "../Entity/Entity";
 import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
 import { VoxelTerrain } from "../VoxelTerrain/VoxelTerrain";
 import { Scenario } from "../Scenario/Scenario";
-import { Door } from "../Door/Door";
+import { TerrainLink } from "../TerrainLink/TerrainLink";
 
 export interface Campaign {
 	Id: string;
@@ -28,9 +28,9 @@ export interface Campaign {
 	Images: Image[];
 	Scenarios: Scenario[];
 	// Campaign-level registry of invisible tile-to-tile links between terrains
-	// (or within one). Undirected; deleting a terrain cascades to purge doors
-	// that reference it. See docs/multi-terrain-world.md §4.3.
-	Doors: Door[];
+	// (or within one). Undirected; deleting a terrain cascades to purge links
+	// that reference it.
+	TerrainLinks: TerrainLink[];
 	//GameState
 	GameState: GameState;
 	//Campaign Log

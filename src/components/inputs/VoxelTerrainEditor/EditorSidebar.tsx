@@ -26,6 +26,12 @@ interface SelectionSummary {
 	spaceCount: number;
 }
 
+export interface TerrainLinkSidebarEntry {
+	linkId: string;
+	destinationName: string;
+	locked: boolean;
+}
+
 interface EditorSidebarProps {
 	voxelCount: number;
 	tool: EditorTool;
@@ -37,9 +43,14 @@ interface EditorSidebarProps {
 	actors: { id: string; name: string }[] | undefined;
 	showActors: boolean;
 	onShowActorsChange: (next: boolean) => void;
-	doorCount: number;
-	showDoors: boolean;
-	onShowDoorsChange: (next: boolean) => void;
+	linkCount: number;
+	links: TerrainLinkSidebarEntry[];
+	selectedLinkId: string | null;
+	showLinks: boolean;
+	onShowLinksChange: (next: boolean) => void;
+	onSelectLink: (linkId: string) => void;
+	onToggleLinkLocked?: (linkId: string, locked: boolean) => void;
+	onDeleteLink?: (linkId: string) => void;
 }
 
 export function EditorSidebar(props: EditorSidebarProps) {
@@ -54,9 +65,14 @@ export function EditorSidebar(props: EditorSidebarProps) {
 		actors,
 		showActors,
 		onShowActorsChange,
-		doorCount,
-		showDoors,
-		onShowDoorsChange,
+		linkCount,
+		links,
+		selectedLinkId,
+		showLinks,
+		onShowLinksChange,
+		onSelectLink,
+		onToggleLinkLocked,
+		onDeleteLink,
 	} = props;
 
 	const showSelectionPanel =
@@ -191,23 +207,83 @@ export function EditorSidebar(props: EditorSidebarProps) {
 
 			<div>
 				<div className="text-sm font-semibold mb-2">
-					Doors
-					{doorCount > 0 && (
+					Links
+					{linkCount > 0 && (
 						<span className="ml-1 text-xs font-normal text-base-content/60">
-							({doorCount})
+							({linkCount})
 						</span>
 					)}
 				</div>
 				<div className="flex flex-col gap-2">
 					<label className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2">
-						<span className="label-text">Display doors</span>
+						<span className="label-text">Show on map</span>
 						<input
 							type="checkbox"
 							className="toggle toggle-sm toggle-secondary"
-							checked={showDoors}
-							onChange={(e) => onShowDoorsChange(e.target.checked)}
+							checked={showLinks}
+							onChange={(e) => onShowLinksChange(e.target.checked)}
 						/>
 					</label>
+					{links.length > 0 && (
+						<div className="flex flex-col gap-1">
+							{links.map((link) => {
+								const selected = selectedLinkId === link.linkId;
+								const selectLink = () => {
+									onSelectLink(link.linkId);
+									onShowLinksChange(true);
+								};
+								return (
+									<div
+										key={link.linkId}
+										role="button"
+										tabIndex={0}
+										className={`flex cursor-pointer items-center gap-2 rounded border px-2 py-1.5 text-xs transition-colors ${
+											selected ? "border-primary bg-primary/10" : "border-base-300"
+										}`}
+										onClick={selectLink}
+										onKeyDown={(event) => {
+											if (event.key !== "Enter" && event.key !== " ") return;
+											event.preventDefault();
+											selectLink();
+										}}
+									>
+										<span className="icon-[mdi--link-variant] h-4 w-4 text-primary" />
+										<div className="min-w-0 flex-1">
+											<div className="truncate font-medium">
+												{link.destinationName}
+											</div>
+										</div>
+										<button
+											type="button"
+											className={`btn btn-xs btn-square ${link.locked ? "btn-neutral" : "btn-ghost"}`}
+											onClick={(event) => {
+												event.stopPropagation();
+												onToggleLinkLocked?.(link.linkId, !link.locked);
+											}}
+											disabled={!onToggleLinkLocked}
+											title={link.locked ? "Unlock link" : "Lock link"}
+											aria-label={link.locked ? "Unlock link" : "Lock link"}
+										>
+											<span className={`${link.locked ? "icon-[mdi--lock]" : "icon-[mdi--lock-open-variant]"} w-4 h-4`} />
+										</button>
+										<button
+											type="button"
+											className="btn btn-xs btn-square btn-ghost text-error"
+											onClick={(event) => {
+												event.stopPropagation();
+												onDeleteLink?.(link.linkId);
+											}}
+											disabled={!onDeleteLink}
+											title="Delete link"
+											aria-label="Delete link"
+										>
+											<span className="icon-[mdi--trash-can] w-4 h-4" />
+										</button>
+									</div>
+								);
+							})}
+						</div>
+					)}
 				</div>
 			</div>
 		</>

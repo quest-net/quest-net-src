@@ -8,8 +8,6 @@
 // - Each scenario's ActorPlacement.Position is stamped from scenario.TerrainId,
 //   then scenario.TerrainId is dropped (redundant once placements carry it).
 // - GameState.VoxelTerrainId is removed.
-//
-// See docs/multi-terrain-world.md §8.
 
 import type { Migration } from "./types";
 

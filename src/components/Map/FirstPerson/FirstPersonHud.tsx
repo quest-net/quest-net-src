@@ -1,11 +1,13 @@
 import type { MovementOverlayState } from "./types";
 import { formatMovementValue } from "./movement";
+import type { TerrainLinkInteractionFocus } from "../TerrainLinks3D/ThreeDTerrainLinkLayer";
 
 interface FirstPersonHudProps {
 	isPointerLocked: boolean;
 	movementOverlay: MovementOverlayState;
 	canFly?: boolean;
 	onExitFirstPerson?: () => void;
+	linkFocus?: TerrainLinkInteractionFocus | null;
 }
 
 function MovementOverlayText({
@@ -55,6 +57,7 @@ export function FirstPersonHud({
 	movementOverlay,
 	canFly,
 	onExitFirstPerson,
+	linkFocus,
 }: FirstPersonHudProps) {
 	return (
 		<>
@@ -107,6 +110,18 @@ export function FirstPersonHud({
 				<div className="absolute left-1/2 top-3 -translate-x-1/2 z-20">
 					<div className="rounded bg-base-100/90 border border-base-300 px-3 py-1 shadow text-sm font-semibold">
 						<MovementOverlayText movementOverlay={movementOverlay} />
+					</div>
+				</div>
+			)}
+			{linkFocus?.usable && (
+				<div className="pointer-events-none absolute left-1/2 top-[58%] z-20 -translate-x-1/2">
+					<div className="rounded bg-base-100/90 border border-base-300 px-3 py-1.5 text-sm font-semibold text-base-content shadow">
+						<span className="flex items-center gap-1.5">
+							<kbd className="kbd kbd-sm text-neutral">E</kbd>
+							{linkFocus.destinationName
+								? `Travel to ${linkFocus.destinationName}`
+								: "Use link"}
+						</span>
 					</div>
 				</div>
 			)}

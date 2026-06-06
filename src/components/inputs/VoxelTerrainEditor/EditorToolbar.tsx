@@ -66,10 +66,8 @@ interface EditorToolbarProps {
 	stampLoadingId: string | null;
 	onSelectStamp: (terrainId: string) => Promise<void> | void;
 	onExitStampMode: () => void;
-	/** Opens the door-placement flow. Omitted when door placement is unavailable. */
-	onOpenDoorPlacement?: () => void;
-	/** Whether door placement is allowed (false until the terrain is saved). */
-	canPlaceDoors?: boolean;
+	/** Whether terrain-link authoring is allowed (false until the terrain is saved). */
+	canPlaceLinks?: boolean;
 	undoDepth: number;
 	redoDepth: number;
 	onUndo: () => void;
@@ -106,8 +104,7 @@ export function EditorToolbar(props: EditorToolbarProps) {
 		stampLoadingId,
 		onSelectStamp,
 		onExitStampMode,
-		onOpenDoorPlacement,
-		canPlaceDoors,
+		canPlaceLinks,
 		undoDepth,
 		redoDepth,
 		onUndo,
@@ -317,24 +314,36 @@ export function EditorToolbar(props: EditorToolbarProps) {
 					</>
 				)}
 
-				{/* Door placement (next to the stamp control) */}
-				{!readOnly && onOpenDoorPlacement && (
+				{/* Link placement (next to the stamp control) */}
+				{!readOnly && (
 					<>
 						<ToolbarDivider />
-						<button
-							type="button"
-							className="btn btn-square btn-sm btn-outline"
-							onClick={onOpenDoorPlacement}
-							disabled={!canPlaceDoors}
-							title={
-								canPlaceDoors
-									? "Place a door (link this terrain to another)"
-									: "Save the terrain before adding doors"
-							}
-							aria-label="Place a door"
-						>
-							<span className="icon-[mdi--door] w-5 h-5" />
-						</button>
+						{tool === "link" ? (
+							<button
+								type="button"
+								className="btn btn-sm btn-warning"
+								onClick={() => onToolClick("link")}
+								title="Stop linking (Esc)"
+							>
+								<span className="icon-[mdi--link-variant] w-5 h-5" />
+								ESC to stop
+							</button>
+						) : (
+							<button
+								type="button"
+								className="btn btn-square btn-sm btn-outline"
+								onClick={() => onToolClick("link")}
+								disabled={!canPlaceLinks}
+								title={
+									canPlaceLinks
+										? "Add terrain link (K)"
+										: "Save the terrain before adding links"
+								}
+								aria-label="Add terrain link"
+							>
+								<span className="icon-[mdi--link-variant] w-5 h-5" />
+							</button>
+						)}
 					</>
 				)}
 
@@ -449,6 +458,7 @@ function ShortcutsHelpDropdown({ modKeyLabel }: { modKeyLabel: string }) {
 								<tr><td className="opacity-70 py-0.5">Sample (eyedropper)</td><td className="text-right"><kbd className="kbd kbd-sm">I</kbd></td></tr>
 								<tr><td className="opacity-70 py-0.5">Box select</td><td className="text-right"><kbd className="kbd kbd-sm">B</kbd></td></tr>
 								<tr><td className="opacity-70 py-0.5">Color select</td><td className="text-right"><kbd className="kbd kbd-sm">C</kbd></td></tr>
+								<tr><td className="opacity-70 py-0.5">Link terrain</td><td className="text-right"><kbd className="kbd kbd-sm">K</kbd></td></tr>
 								<tr><td className="opacity-70 py-0.5">Tile brush</td><td className="text-right"><kbd className="kbd kbd-sm">1</kbd></td></tr>
 								<tr><td className="opacity-70 py-0.5">Voxel brush</td><td className="text-right"><kbd className="kbd kbd-sm">2</kbd></td></tr>
 								<tr>

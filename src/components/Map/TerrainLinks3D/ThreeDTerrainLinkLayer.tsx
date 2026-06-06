@@ -1,47 +1,52 @@
-// components/Map/Doors3D/ThreeDDoorLayer.tsx
+// components/Map/TerrainLinks3D/ThreeDTerrainLinkLayer.tsx
 //
-// Renders doors as invisible, pickable hitboxes (1 tile wide/deep, 2 tactical
-// units tall) at each door anchor on the rendered terrain, and drives the door
-// interaction in both world and first-person views.
+// Renders terrain links as invisible, pickable hitboxes (1 tile wide/deep, 2
+// tactical units tall) at each link anchor on the rendered terrain, and drives
+// the link interaction in both world and first-person views.
 //
-// Doors have no visible geometry of their own (the DM signals them with cosmetic
-// stamps). Hovering a door's hitbox reveals where it leads (unless locked, for
-// non-DMs). "Using" a door is just a terrain-crossing move of the controlled
-// actor to the door's opposite anchor, dispatched via onTraverse -> the ordinary
-// character:move / entity:move (see DoorActions header). Use is gated on the
-// controlled actor being within DOOR_INTERACT_DISTANCE of the anchor AND having
-// line of sight to it (voxel DDA), and on the door not being locked (DM bypasses
-// the lock). See docs/multi-terrain-world.md §5.5.
+// Links have no visible geometry of their own (the DM signals them with cosmetic
+// stamps). Hovering a link's hitbox reveals where it leads (unless locked, for
+// non-DMs). "Using" a link is just a terrain-crossing move of the controlled
+// actor to the link's opposite anchor, dispatched via onTraverse -> the ordinary
+// character:move / entity:move (see TerrainLinkActions header). Use is gated on
+// the controlled actor being on or adjacent to the anchor, and on the link not
+// being locked (DM bypasses the lock).
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import type { Position } from "../../../domains/Actor/Actor";
-import { getDoorAnchorsOnTerrain, type Door, type DoorAnchor } from "../../../domains/Door/Door";
+import {
+	getTerrainLinkAnchorsOnTerrain,
+	getTerrainLinkInteractionState,
+	type TerrainLink,
+	type TerrainLinkAnchor,
+} from "../../../domains/TerrainLink/TerrainLink";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
-import { terrainHeightToWorldY } from "../Actors3D/actorTokenPlacement";
 import { setRaycasterFromPointer } from "../mapSceneUtils";
 import { raycastTerrainDDA } from "../Movement3D/movement3DHelpers";
+import {
+	createTerrainLinkMarkerGeometry,
+	createTerrainLinkMarkerMesh,
+	disposeTerrainLinkMarkerGroup,
+} from "./terrainLinkMarkerMesh";
 
-// A door spans one tile and stands two tactical units tall.
-const DOOR_BOX_FOOTPRINT = 1;
-const DOOR_BOX_HEIGHT = 2;
-// How close (in tactical tiles, horizontal) the controlled actor must be to use
-// a door. ~2 tiles = "walk up to it" without demanding pixel-perfect adjacency.
-const DOOR_INTERACT_DISTANCE = 2;
+const LINK_MARKER_OPACITY = 0.34;
 // Tolerance for the world-view occlusion comparison (transparent hitbox vs terrain).
 const OCCLUSION_EPSILON = 0.001;
 const CLICK_DRAG_THRESHOLD_PX = 5;
 
-/** The door currently hovered (world) or centered in view (first person). */
-export interface DoorInteractionFocus {
-	doorId: string;
+/** The link currently hovered (world) or centered in view (first person). */
+export interface TerrainLinkInteractionFocus {
+	linkId: string;
 	/** Destination terrain name, or null when concealed (locked & not the DM). */
 	destinationName: string | null;
 	locked: boolean;
-	/** Whether the controlled actor can traverse it right now (range + LOS + unlocked). */
+	/** Whether the controlled actor can traverse it right now (adjacent + unlocked, unless DM). */
 	usable: boolean;
+	/** DM authoring mode: click toggles lock state instead of traversing. */
+	authoring?: boolean;
 	/** Cursor position for the world-view tooltip; null in first person. */
 	screen: { x: number; y: number } | null;
 }
@@ -52,61 +57,70 @@ interface ControlledActor {
 	position: Position;
 }
 
-interface DoorBoxData {
-	doorId: string;
-	anchor: DoorAnchor;
-	destination: DoorAnchor;
+interface LinkBoxData {
+	linkId: string;
+	anchor: TerrainLinkAnchor;
+	destination: TerrainLinkAnchor;
 	locked: boolean;
 }
 
-interface ThreeDDoorLayerProps {
+interface ThreeDTerrainLinkLayerProps {
 	resources: ThreeDSceneResources;
 	isWorld: boolean;
 	terrain: VoxelTerrain;
 	terrainIndex: VoxelTerrainIndex;
-	doors: Door[];
+	links: TerrainLink[];
 	terrainNamesById: ReadonlyMap<string, string>;
 	controlledActor: ControlledActor | null;
+	getControlledActorPosition: () => Position | null;
 	isDM: boolean;
+	showLinkMarkers: boolean;
 	onTraverse: (
 		actor: { id: string; kind: "character" | "entity" },
 		destination: Position
 	) => void;
-	onFocusChange: (focus: DoorInteractionFocus | null) => void;
+	onToggleLinkLocked?: (linkId: string, locked: boolean) => void;
+	onFocusChange: (focus: TerrainLinkInteractionFocus | null) => void;
 }
 
-function doorAnchorsSignature(doors: Door[], terrainId: string): string {
-	return getDoorAnchorsOnTerrain(doors, terrainId)
+function linkAnchorsSignature(links: TerrainLink[], terrainId: string): string {
+	return getTerrainLinkAnchorsOnTerrain(links, terrainId)
 		.map(
-			({ door, anchor, destination }) =>
-				`${door.Id}:${anchor.x},${anchor.y},${anchor.h}->${destination.terrainId}:${door.Locked ? 1 : 0}`
+			({ link, anchor, destination }) =>
+				`${link.Id}:${anchor.x},${anchor.y},${anchor.h}->${destination.terrainId},${destination.x},${destination.y},${destination.h}:${link.Locked ? 1 : 0}`
 		)
 		.sort()
 		.join("|");
 }
 
-function focusSignature(focus: DoorInteractionFocus | null): string {
+function focusSignature(focus: TerrainLinkInteractionFocus | null): string {
 	if (!focus) return "";
-	return `${focus.doorId}:${focus.usable ? 1 : 0}:${focus.locked ? 1 : 0}:${focus.destinationName ?? ""}`;
+	return `${focus.linkId}:${focus.usable ? 1 : 0}:${focus.locked ? 1 : 0}:${focus.authoring ? 1 : 0}:${focus.destinationName ?? ""}`;
 }
 
-export function ThreeDDoorLayer({
+export function ThreeDTerrainLinkLayer({
 	resources,
 	isWorld,
 	terrain,
 	terrainIndex,
-	doors,
+	links,
 	terrainNamesById,
 	controlledActor,
+	getControlledActorPosition,
 	isDM,
+	showLinkMarkers,
 	onTraverse,
+	onToggleLinkLocked,
 	onFocusChange,
-}: ThreeDDoorLayerProps) {
+}: ThreeDTerrainLinkLayerProps) {
 	// Live values read by the long-lived input effect without re-subscribing.
 	const controlledActorRef = useRef(controlledActor);
 	const terrainNamesRef = useRef(terrainNamesById);
 	const isDMRef = useRef(isDM);
+	const showLinkMarkersRef = useRef(showLinkMarkers);
+	const getControlledActorPositionRef = useRef(getControlledActorPosition);
 	const onTraverseRef = useRef(onTraverse);
+	const onToggleLinkLockedRef = useRef(onToggleLinkLocked);
 	const onFocusChangeRef = useRef(onFocusChange);
 	const boxesRef = useRef<THREE.Mesh[]>([]);
 
@@ -114,49 +128,59 @@ export function ThreeDDoorLayer({
 		controlledActorRef.current = controlledActor;
 		terrainNamesRef.current = terrainNamesById;
 		isDMRef.current = isDM;
+		showLinkMarkersRef.current = showLinkMarkers;
+		getControlledActorPositionRef.current = getControlledActorPosition;
 		onTraverseRef.current = onTraverse;
+		onToggleLinkLockedRef.current = onToggleLinkLocked;
 		onFocusChangeRef.current = onFocusChange;
-	}, [controlledActor, terrainNamesById, isDM, onTraverse, onFocusChange]);
+	}, [
+		controlledActor,
+		terrainNamesById,
+		isDM,
+		showLinkMarkers,
+		getControlledActorPosition,
+		onTraverse,
+		onToggleLinkLocked,
+		onFocusChange,
+	]);
 
-	// --- Build the invisible hitboxes for doors on this terrain. ---
-	const anchorSignature = doorAnchorsSignature(doors, terrain.Id);
 	useEffect(() => {
-		const anchors = getDoorAnchorsOnTerrain(doors, terrain.Id);
+		if (!showLinkMarkers) onFocusChange(null);
+	}, [showLinkMarkers, onFocusChange]);
+
+	// --- Build the invisible hitboxes for links on this terrain. ---
+	const anchorSignature = linkAnchorsSignature(links, terrain.Id);
+	useEffect(() => {
+		const anchors = getTerrainLinkAnchorsOnTerrain(links, terrain.Id);
 		const group = new THREE.Group();
 		const boxes: THREE.Mesh[] = [];
+		const renderLinkMarkers = isDM && showLinkMarkers;
 
-		const offsetX = (terrain.Width - 1) / 2;
-		const offsetZ = (terrain.Length - 1) / 2;
-		const geometry = new THREE.BoxGeometry(
-			DOOR_BOX_FOOTPRINT,
-			DOOR_BOX_HEIGHT,
-			DOOR_BOX_FOOTPRINT
-		);
+		const geometry = createTerrainLinkMarkerGeometry();
 
-		for (const { door, anchor, destination } of anchors) {
-			// Invisible but raycastable: no color/depth write, fully transparent.
-			const material = new THREE.MeshBasicMaterial({
-				transparent: true,
-				opacity: 0,
-				depthWrite: false,
-				colorWrite: false,
+		for (const { link, anchor, destination } of anchors) {
+			// Always raycastable. Normally invisible; in DM display mode it becomes
+			// a depth-test-free authoring marker so hidden links are still visible.
+			const box = createTerrainLinkMarkerMesh({
+				terrain,
+				geometry,
+				anchor,
+				locked: link.Locked,
+				opacity: renderLinkMarkers ? LINK_MARKER_OPACITY : 0,
+				depthTest: !renderLinkMarkers,
+				colorWrite: renderLinkMarkers,
+				renderOrder: renderLinkMarkers ? 42 : 0,
 			});
-			const box = new THREE.Mesh(geometry, material);
-			box.position.set(
-				anchor.x - offsetX,
-				terrainHeightToWorldY(anchor.h) + DOOR_BOX_HEIGHT / 2,
-				anchor.y - offsetZ
-			);
-			const data: DoorBoxData = {
-				doorId: door.Id,
+			const data: LinkBoxData = {
+				linkId: link.Id,
 				anchor,
 				destination,
-				locked: door.Locked,
+				locked: link.Locked,
 			};
 			box.userData = data;
 			group.add(box);
 			boxes.push(box);
-			resources.doorPickTargets.push(box);
+			resources.linkPickTargets.push(box);
 		}
 
 		resources.scene.add(group);
@@ -165,16 +189,14 @@ export function ThreeDDoorLayer({
 		return () => {
 			resources.scene.remove(group);
 			for (const box of boxes) {
-				const index = resources.doorPickTargets.indexOf(box);
-				if (index !== -1) resources.doorPickTargets.splice(index, 1);
-				(box.material as THREE.Material).dispose();
+				const index = resources.linkPickTargets.indexOf(box);
+				if (index !== -1) resources.linkPickTargets.splice(index, 1);
 			}
-			geometry.dispose();
-			group.clear();
+			disposeTerrainLinkMarkerGroup(group);
 			boxesRef.current = [];
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [resources, terrain, anchorSignature]);
+	}, [resources, terrain, anchorSignature, isDM, showLinkMarkers]);
 
 	// --- Interaction (world: pointer; first person: center-screen + E key). ---
 	useEffect(() => {
@@ -184,55 +206,90 @@ export function ThreeDDoorLayer({
 		const buildFocus = (
 			box: THREE.Mesh,
 			screen: { x: number; y: number } | null
-		): DoorInteractionFocus => {
-			const data = box.userData as DoorBoxData;
-			const actor = controlledActorRef.current;
-			const revealable = !data.locked || isDMRef.current;
-			const destinationName = revealable
-				? terrainNamesRef.current.get(data.destination.terrainId) ?? "another area"
-				: null;
-
-			let usable = false;
-			if (
-				actor &&
-				actor.position.terrainId === terrain.Id &&
-				(!data.locked || isDMRef.current)
-			) {
-				const dist = Math.hypot(
-					actor.position.x - data.anchor.x,
-					actor.position.y - data.anchor.y
-				);
-				if (dist <= DOOR_INTERACT_DISTANCE) {
-					usable = true;
-				}
+		): TerrainLinkInteractionFocus | null => {
+			const data = box.userData as LinkBoxData;
+			const authoring = isWorld && isDMRef.current && showLinkMarkersRef.current;
+			if (authoring) {
+				return {
+					linkId: data.linkId,
+					destinationName:
+						terrainNamesRef.current.get(data.destination.terrainId) ??
+						"another area",
+					locked: data.locked,
+					usable: false,
+					authoring: true,
+					screen,
+				};
 			}
+			const actor = controlledActorRef.current;
+			const actorPosition =
+				actor ? getControlledActorPositionRef.current() ?? actor.position : null;
+			const interaction = getTerrainLinkInteractionState(
+				data.anchor,
+				actorPosition,
+				data.locked
+			);
+			// A locked link is invisible and inert to anyone controlling an actor --
+			// players and impersonating DMs alike. Returning null means no focus, and
+			// thus no hover tooltip, no first-person prompt, and no click/E handling:
+			// it is as if the link were not there. Only the DM authoring/display mode
+			// handled above ever surfaces a locked link.
+			if (!interaction || interaction.locked) return null;
 
 			return {
-				doorId: data.doorId,
-				destinationName,
-				locked: data.locked,
-				usable,
+				linkId: data.linkId,
+				destinationName:
+					terrainNamesRef.current.get(data.destination.terrainId) ?? "another area",
+				locked: false,
+				usable: interaction.usable,
 				screen,
 			};
 		};
 
-		// The closest non-occluded door hitbox under the current ray, or null.
-		const pickDoor = (): THREE.Mesh | null => {
+		const isInteractiveLinkBox = (target: THREE.Object3D): boolean => {
+			const box = target as THREE.Mesh;
+			if (!box.userData?.linkId) return false;
+			if (isWorld && isDMRef.current && showLinkMarkersRef.current) return true;
+			return buildFocus(box, null) !== null;
+		};
+		const isTerrainBlockingLinkBox = (target: THREE.Object3D): boolean =>
+			!!target.userData?.linkId &&
+			isWorld &&
+			isDMRef.current &&
+			showLinkMarkersRef.current;
+
+		const previousLinkPredicate = resources.isLinkPickTargetInteractive;
+		const previousTerrainBlockingPredicate =
+			resources.isLinkPickTargetTerrainBlocking;
+		resources.isLinkPickTargetInteractive = isInteractiveLinkBox;
+		resources.isLinkPickTargetTerrainBlocking = isTerrainBlockingLinkBox;
+
+		// The closest non-occluded link hitbox under the current ray, or null.
+		const pickRawLink = (): THREE.Mesh | null => {
 			const hits = raycaster.intersectObjects(boxesRef.current, false);
 			if (hits.length === 0) return null;
 			const hit = hits[0];
-			// A door buried behind/under terrain (closer terrain hit) reads as hidden.
-			const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex);
-			if (terrainHit && terrainHit.distance + OCCLUSION_EPSILON < hit.distance) {
-				return null;
+			if (!(isWorld && isDMRef.current && showLinkMarkersRef.current)) {
+				// A link buried behind/under terrain (closer terrain hit) reads as hidden.
+				const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex);
+				if (terrainHit && terrainHit.distance + OCCLUSION_EPSILON < hit.distance) {
+					return null;
+				}
 			}
 			return hit.object as THREE.Mesh;
+		};
+
+		const pickLink = (): { box: THREE.Mesh; focus: TerrainLinkInteractionFocus } | null => {
+			const box = pickRawLink();
+			if (!box) return null;
+			const focus = buildFocus(box, null);
+			return focus ? { box, focus } : null;
 		};
 
 		const traverse = (box: THREE.Mesh) => {
 			const actor = controlledActorRef.current;
 			if (!actor) return;
-			const data = box.userData as DoorBoxData;
+			const data = box.userData as LinkBoxData;
 			onTraverseRef.current(
 				{ id: actor.id, kind: actor.kind },
 				{
@@ -244,8 +301,13 @@ export function ThreeDDoorLayer({
 			);
 		};
 
-		const lastFocusRef = { current: null as DoorInteractionFocus | null };
-		const emitFocus = (focus: DoorInteractionFocus | null) => {
+		const toggleLock = (box: THREE.Mesh) => {
+			const data = box.userData as LinkBoxData;
+			onToggleLinkLockedRef.current?.(data.linkId, !data.locked);
+		};
+
+		const lastFocusRef = { current: null as TerrainLinkInteractionFocus | null };
+		const emitFocus = (focus: TerrainLinkInteractionFocus | null) => {
 			if (focusSignature(focus) === focusSignature(lastFocusRef.current)) {
 				// World view still needs cursor position updates so the tooltip
 				// follows the pointer; only short-circuit when nothing meaningful
@@ -271,10 +333,10 @@ export function ThreeDDoorLayer({
 					return;
 				}
 				setRaycasterFromPointer(raycaster, event, resources, pointer);
-				const box = pickDoor();
+				const picked = pickLink();
 				emitFocus(
-					box
-						? buildFocus(box, { x: event.clientX, y: event.clientY })
+					picked
+						? { ...picked.focus, screen: { x: event.clientX, y: event.clientY } }
 						: null
 				);
 			};
@@ -303,10 +365,14 @@ export function ThreeDDoorLayer({
 					return;
 				}
 				setRaycasterFromPointer(raycaster, event, resources, pointer);
-				if (!pickDoor()) {
+				const picked = pickLink();
+				if (!picked) {
 					pendingClick = null;
 					return;
 				}
+				event.preventDefault();
+				event.stopPropagation();
+				event.stopImmediatePropagation();
 				pendingClick = {
 					pointerId: event.pointerId,
 					startX: event.clientX,
@@ -326,14 +392,18 @@ export function ThreeDDoorLayer({
 				if (Math.hypot(dx, dy) > CLICK_DRAG_THRESHOLD_PX) return;
 
 				setRaycasterFromPointer(raycaster, event, resources, pointer);
-				const box = pickDoor();
-				if (!box) return;
-				const focus = buildFocus(box, null);
-				if (!focus.usable) return;
+				const picked = pickLink();
 				// Consume so the movement layer's window pointerup doesn't also act.
+				event.preventDefault();
 				event.stopPropagation();
 				event.stopImmediatePropagation();
-				traverse(box);
+				if (picked?.focus.authoring) {
+					toggleLock(picked.box);
+					emitFocus(null);
+					return;
+				}
+				if (!picked || !picked.focus.usable) return;
+				traverse(picked.box);
 				emitFocus(null);
 			};
 
@@ -354,15 +424,30 @@ export function ThreeDDoorLayer({
 				window.removeEventListener("pointerup", handlePointerUp, true);
 				window.removeEventListener("pointercancel", handlePointerCancel, true);
 				if (rafId !== 0) cancelAnimationFrame(rafId);
+				if (resources.isLinkPickTargetInteractive === isInteractiveLinkBox) {
+					resources.isLinkPickTargetInteractive = previousLinkPredicate;
+				}
+				if (
+					resources.isLinkPickTargetTerrainBlocking === isTerrainBlockingLinkBox
+				) {
+					resources.isLinkPickTargetTerrainBlocking =
+						previousTerrainBlockingPredicate;
+				}
 				emitFocus(null);
 			};
 		}
 
 		// ----- First person: proximity targeting + E to go through -----
-		// There is no crosshair to aim with, so the prompt tracks the NEAREST
-		// usable door (in range + line of sight + unlocked) to the controlled
-		// actor rather than whatever the camera happens to point at.
+		// There is no crosshair to aim with, so the prompt tracks the nearest
+		// visible link to the controlled actor rather than whatever the camera
+		// happens to point at. buildFocus already filters out locked links, so only
+		// usable links are ever targeted here.
 		const fpTargetRef = { current: null as THREE.Mesh | null };
+		// True only while an E press is being held after it actually triggered a
+		// traversal, so auto-repeat can't fire a second one. A press that doesn't
+		// traverse (no target / not usable) must NOT latch, otherwise the next valid
+		// press would be swallowed until the key is released and pressed again.
+		const eConsumedRef = { current: false };
 
 		const tick = () => {
 			const actor = controlledActorRef.current;
@@ -372,15 +457,17 @@ export function ThreeDDoorLayer({
 				return;
 			}
 			let bestBox: THREE.Mesh | null = null;
-			let bestFocus: DoorInteractionFocus | null = null;
+			let bestFocus: TerrainLinkInteractionFocus | null = null;
 			let bestDistance = Infinity;
 			for (const box of boxesRef.current) {
 				const focus = buildFocus(box, null);
-				if (!focus.usable) continue;
-				const data = box.userData as DoorBoxData;
-				const distance = Math.hypot(
-					actor.position.x - data.anchor.x,
-					actor.position.y - data.anchor.y
+				if (!focus) continue;
+				const data = box.userData as LinkBoxData;
+				const actorPosition =
+					getControlledActorPositionRef.current() ?? actor.position;
+				const distance = Math.max(
+					Math.abs(actorPosition.x - data.anchor.x),
+					Math.abs(actorPosition.y - data.anchor.y)
 				);
 				if (distance < bestDistance) {
 					bestDistance = distance;
@@ -393,24 +480,44 @@ export function ThreeDDoorLayer({
 		};
 
 		const handleKeyDown = (event: KeyboardEvent) => {
-			if (event.code !== "KeyE" || event.repeat) return;
+			if (event.code !== "KeyE" || event.repeat || eConsumedRef.current) return;
 			const box = fpTargetRef.current;
 			if (!box) return;
 			const focus = buildFocus(box, null);
-			if (!focus.usable) return;
+			if (!focus?.usable) return;
+			// Latch only now that we're committing, so an early miss above doesn't
+			// block a follow-up press.
+			eConsumedRef.current = true;
 			event.preventDefault();
+			fpTargetRef.current = null;
+			emitFocus(null);
 			traverse(box);
+		};
+
+		const handleKeyUp = (event: KeyboardEvent) => {
+			if (event.code === "KeyE") eConsumedRef.current = false;
 		};
 
 		resources.animationCallbacks.add(tick);
 		window.addEventListener("keydown", handleKeyDown);
+		window.addEventListener("keyup", handleKeyUp);
 
 		return () => {
 			resources.animationCallbacks.delete(tick);
 			window.removeEventListener("keydown", handleKeyDown);
+			window.removeEventListener("keyup", handleKeyUp);
+			if (resources.isLinkPickTargetInteractive === isInteractiveLinkBox) {
+				resources.isLinkPickTargetInteractive = previousLinkPredicate;
+			}
+			if (
+				resources.isLinkPickTargetTerrainBlocking === isTerrainBlockingLinkBox
+			) {
+				resources.isLinkPickTargetTerrainBlocking =
+					previousTerrainBlockingPredicate;
+			}
 			emitFocus(null);
 		};
-	}, [resources, isWorld, terrain, terrainIndex]);
+	}, [resources, isWorld, terrainIndex]);
 
 	return null;
 }

@@ -50,6 +50,7 @@ import {
 } from "./constants";
 import { FirstPersonHud, MissingActorMessage } from "./FirstPersonHud";
 import { createMovementCostLookup } from "./movement";
+import type { TerrainLinkInteractionFocus } from "../TerrainLinks3D/ThreeDTerrainLinkLayer";
 import type {
 	FirstPersonActor,
 	FirstPersonFrameInput,
@@ -70,6 +71,8 @@ interface FirstPersonViewProps {
 	characters?: Character[];
 	entities?: Entity[];
 	onExitFirstPerson?: () => void;
+	onLiveRulesPositionChange?: (position: Position | null) => void;
+	linkFocus?: TerrainLinkInteractionFocus | null;
 }
 
 function getActorMoveSpeed(actor: FirstPersonActor): number {
@@ -114,6 +117,8 @@ export default function FirstPersonView({
 	characters = [],
 	entities = [],
 	onExitFirstPerson,
+	onLiveRulesPositionChange,
+	linkFocus,
 }: FirstPersonViewProps) {
 	// The first-person camera is owned by the shared controller; mirror it into a
 	// ref so the existing camera-from-body code reads it unchanged.
@@ -132,12 +137,24 @@ export default function FirstPersonView({
 	const lastMovementInputAtRef = useRef(0);
 	const spaceWasPressedRef = useRef(false);
 	const pendingSyncPositionRef = useRef<Position | null>(null);
+	const onLiveRulesPositionChangeRef = useRef(onLiveRulesPositionChange);
 	// Tracks the last position committed to the DM and when it was sent.
 	// Used to suppress rubber-banding (see the original FirstPersonMap notes).
 	const lastSentPositionRef = useRef<Position | null>(null);
 	const lastSentAtRef = useRef(0);
 	const lastPoseSentAtRef = useRef(0);
 	const lastPoseSentPositionRef = useRef<THREE.Vector3 | null>(null);
+
+	useEffect(() => {
+		onLiveRulesPositionChangeRef.current = onLiveRulesPositionChange;
+	}, [onLiveRulesPositionChange]);
+
+	useEffect(
+		() => () => {
+			onLiveRulesPositionChangeRef.current?.(null);
+		},
+		[]
+	);
 	const hadFirstPersonActorRef = useRef(false);
 	const lastStateUpdateRef = useRef(0);
 	const activeActorRef = useRef<FirstPersonActor | null>(null);
@@ -178,16 +195,16 @@ export default function FirstPersonView({
 				campaign.RoomCode,
 				context.User.SelectedCharacters,
 				context.User.ImpersonatedActors,
-				characters,
-				entities
+				campaign.GameState.Characters,
+				campaign.GameState.Entities
 			),
 		[
 			userRole,
 			campaign.RoomCode,
 			context.User.SelectedCharacters,
 			context.User.ImpersonatedActors,
-			characters,
-			entities,
+			campaign.GameState.Characters,
+			campaign.GameState.Entities,
 		]
 	);
 	const actorPositionX = actor?.actor.Position.x;
@@ -198,6 +215,8 @@ export default function FirstPersonView({
 	const actorTurnStartH = actor?.actor.TurnStartPosition?.h;
 	const isCombatActive = campaign.GameState.CombatState?.isActive ?? false;
 	const canControlFirstPersonActor = actor ? canAccessActor(actor.id) : false;
+	const actorOnTerrain =
+		!!terrain && !!actor && actor.actor.Position.terrainId === terrain.Id;
 	const voxelTerrainIndex = terrainIndex;
 	const restrictMovementToRange =
 		shouldRestrictPlayerMovementToRange(
@@ -207,7 +226,7 @@ export default function FirstPersonView({
 		);
 
 	const movementCostLookup = useMemo(() => {
-		if (!terrain || !actor || !canControlFirstPersonActor) return null;
+		if (!terrain || !actor || !actorOnTerrain || !canControlFirstPersonActor) return null;
 		return createMovementCostLookup(
 			terrain,
 			actor,
@@ -217,6 +236,7 @@ export default function FirstPersonView({
 	}, [
 		terrain,
 		actor?.id,
+		actorOnTerrain,
 		canControlFirstPersonActor,
 		isCombatActive,
 		campaign.Settings.MovementSettings,
@@ -278,12 +298,12 @@ export default function FirstPersonView({
 	// range boundary pulls the body back toward.
 	useEffect(() => {
 		const turnStart = actor?.actor.TurnStartPosition;
-		if (!terrain || !actor || !turnStart) {
+		if (!terrain || !actor || !actorOnTerrain || !turnStart) {
 			turnStartWorldRef.current = null;
 			return;
 		}
 		turnStartWorldRef.current = actorPositionToGroundWorld(actor, terrain, turnStart);
-	}, [terrain, actor, actorTurnStartX, actorTurnStartY, actorTurnStartH]);
+	}, [terrain, actor, actorOnTerrain, actorTurnStartX, actorTurnStartY, actorTurnStartH]);
 
 	useEffect(() => {
 		lastSentKeyRef.current = "";
@@ -535,8 +555,12 @@ export default function FirstPersonView({
 			const currentTerrain = terrainRef.current;
 			const currentActor = activeActorRef.current;
 			const index = voxelTerrainIndexRef.current;
+			const actorOnCurrentTerrain =
+				!!currentTerrain &&
+				!!currentActor &&
+				currentActor.actor.Position.terrainId === currentTerrain.Id;
 			let cameraSmoothing: number = FIRST_PERSON_CAMERA.POSITION_SMOOTHING;
-			if (currentTerrain && currentActor) {
+			if (currentTerrain && currentActor && actorOnCurrentTerrain) {
 				const lastSent = lastSentPositionRef.current;
 				if (lastSent) {
 					const authoritative = normalizeVoxelPosition(currentActor.actor.Position);
@@ -564,6 +588,7 @@ export default function FirstPersonView({
 				currentTerrain &&
 				index &&
 				currentActor &&
+				actorOnCurrentTerrain &&
 				canControlFirstPersonActorRef.current
 			) {
 				if (!capsuleStateRef.current) {
@@ -624,7 +649,7 @@ export default function FirstPersonView({
 						}
 					);
 
-					const rulesPosition = firstPersonCapsuleToRulesPosition(
+					let rulesPosition = firstPersonCapsuleToRulesPosition(
 						currentTerrain,
 						state,
 						index,
@@ -657,9 +682,16 @@ export default function FirstPersonView({
 									target.z,
 									currentActor.actor.CanFly ?? false
 								);
+								rulesPosition = firstPersonCapsuleToRulesPosition(
+									currentTerrain,
+									state,
+									index,
+									currentActor.actor.CanFly ?? false
+								);
 							}
 						}
 					}
+					onLiveRulesPositionChangeRef.current?.(rulesPosition);
 
 					const settled = isFirstPersonCapsuleSettled(
 						state,
@@ -740,6 +772,7 @@ export default function FirstPersonView({
 		pendingSyncPositionRef.current = null;
 		capsuleInitializedRef.current = false;
 		capsuleStateRef.current = null;
+		onLiveRulesPositionChangeRef.current?.(null);
 		setMovementOverlay((current) => (current === null ? current : null));
 
 		if (isPointerLocked && document.pointerLockElement) {
@@ -753,7 +786,11 @@ export default function FirstPersonView({
 	}, [actor, isPointerLocked, onExitFirstPerson]);
 
 	useEffect(() => {
-		if (!terrain || !actor) return;
+		if (!terrain || !actor || !actorOnTerrain) {
+			onLiveRulesPositionChangeRef.current?.(null);
+			setMovementOverlay((current) => (current === null ? current : null));
+			return;
+		}
 
 		const authoritative = normalizeVoxelPosition(actor.actor.Position);
 		const authoritativeState = createFirstPersonCapsuleState(actor, terrain);
@@ -773,6 +810,7 @@ export default function FirstPersonView({
 			voxelTerrainIndex,
 			actor.actor.CanFly ?? false
 		);
+		onLiveRulesPositionChangeRef.current?.(currentRules);
 		const sameTile =
 			capsuleInitializedRef.current &&
 			currentRules.x === authoritativeRules.x &&
@@ -815,6 +853,7 @@ export default function FirstPersonView({
 		terrain,
 		actor?.id,
 		actor?.kind,
+		actorOnTerrain,
 		actorPositionX,
 		actorPositionY,
 		actorPositionH,
@@ -834,6 +873,7 @@ export default function FirstPersonView({
 					movementOverlay={movementOverlay}
 					canFly={actor.actor.CanFly ?? false}
 					onExitFirstPerson={onExitFirstPerson}
+					linkFocus={linkFocus}
 				/>
 			)}
 		</>
