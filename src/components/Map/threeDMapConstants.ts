@@ -52,10 +52,21 @@ export const THREE_D_MAP_SHADOW = {
 export const THREE_D_MAP_CONTROLS = {
 	DAMPING_FACTOR: 0.05,
 	MIN_ZOOM: 0.2,
-	MAX_ZOOM: 8,
+	// Max orthographic magnification (zoom-in limit). Higher = can zoom in closer.
+	MAX_ZOOM: 20,
 	MIN_PAN_LIMIT_RADIUS: 4,
 	PAN_LIMIT_ELEVATION_SCALE: 0.5,
 	PAN_LIMIT_PADDING: 2,
+	// Perspective-mode dolly clamp, as multiples of the entry framing distance.
+	// minZoom/maxZoom above only bound the ortho camera; these bound how far the
+	// perspective camera can dolly in/out.
+	PERSPECTIVE_MIN_DISTANCE_MULTIPLIER: 0.12,
+	PERSPECTIVE_MAX_DISTANCE_MULTIPLIER: 4,
+	// Adaptive orbit sensitivity, applied to BOTH orbit cameras: rotateSpeed
+	// ramps from MIN (fully zoomed in) to MAX (at/beyond the default framing) so
+	// rotation stays controllable up close instead of twitchy.
+	ADAPTIVE_ROTATE_MIN_SPEED: 0.25,
+	ADAPTIVE_ROTATE_MAX_SPEED: 1,
 } as const;
 
 export const THREE_D_TERRAIN_MATERIAL = {

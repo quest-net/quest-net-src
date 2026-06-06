@@ -16,6 +16,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
+import { adaptiveOrbitRotateSpeed } from "./adaptiveOrbitSpeed";
 
 export type CameraMode = "ortho" | "perspective" | "freecam";
 
@@ -44,11 +45,24 @@ export interface CameraRigConfig {
 		fov: number;
 		near: number;
 		far: number;
+		/** Dolly distance clamp for the perspective camera, as multiples of the
+		 *  entry framing distance. OrbitControls' minZoom/maxZoom only bound the
+		 *  ORTHOgraphic camera; the perspective camera is bounded by
+		 *  minDistance/maxDistance, which these drive. Default 0.12 / 4. */
+		minDistanceMultiplier?: number;
+		maxDistanceMultiplier?: number;
 	};
 	controls: {
 		dampingFactor: number;
 		minZoom: number;
 		maxZoom: number;
+		/** Zoom/distance-adaptive orbit sensitivity, applied to BOTH orbit cameras.
+		 *  OrbitControls rotation is angular and zoom-independent, so zoomed in the
+		 *  same drag feels twitchy. rotateSpeed is ramped from minRotateSpeed (fully
+		 *  zoomed in) up to maxRotateSpeed (at/beyond the default framing). Default
+		 *  0.25 / 1. See adaptiveOrbitSpeed.ts. */
+		minRotateSpeed?: number;
+		maxRotateSpeed?: number;
 		/** Optional mouse-button remap; omitted buttons keep OrbitControls defaults. */
 		mouseButtons?: {
 			LEFT?: THREE.MOUSE | null;
@@ -109,6 +123,14 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, value));
 }
 
+// Defaults used when a consumer's config omits the optional tuning fields. The
+// dolly clamp is perspective-specific (CameraRigConfig.perspective); the orbit
+// sensitivity ramp applies to both orbit cameras (CameraRigConfig.controls).
+const DEFAULT_PERSPECTIVE_MIN_DISTANCE_MULT = 0.12;
+const DEFAULT_PERSPECTIVE_MAX_DISTANCE_MULT = 4;
+const DEFAULT_MIN_ROTATE_SPEED = 0.25;
+const DEFAULT_MAX_ROTATE_SPEED = 1;
+
 /** Freecam entry framing: tight enough to fill the view, with a floor so tiny
  *  terrains aren't framed from inside, and a height term so tall terrains fit.
  *  Shared by both consumers (the orthographic frame can be wider; this is the
@@ -135,6 +157,13 @@ export class CameraRig {
 	private _pointerLocked = false;
 	private _speedMult = 1;
 	private _terrain: TerrainDims | null = null;
+	/** Entry framing distance the perspective dolly clamp and adaptive orbit
+	 *  sensitivity are measured against; refreshed on every entry positioning. */
+	private _perspectiveReferenceDistance = 1;
+	private readonly perspMinDistanceMult: number;
+	private readonly perspMaxDistanceMult: number;
+	private readonly minRotateSpeed: number;
+	private readonly maxRotateSpeed: number;
 	private viewportWidth = 1;
 	private viewportHeight = 1;
 	private inputAttached = false;
@@ -156,6 +185,15 @@ export class CameraRig {
 		this.domElement = domElement;
 		this.config = config;
 		this.callbacks = callbacks;
+
+		this.perspMinDistanceMult =
+			config.perspective.minDistanceMultiplier ?? DEFAULT_PERSPECTIVE_MIN_DISTANCE_MULT;
+		this.perspMaxDistanceMult =
+			config.perspective.maxDistanceMultiplier ?? DEFAULT_PERSPECTIVE_MAX_DISTANCE_MULT;
+		this.minRotateSpeed =
+			config.controls.minRotateSpeed ?? DEFAULT_MIN_ROTATE_SPEED;
+		this.maxRotateSpeed =
+			config.controls.maxRotateSpeed ?? DEFAULT_MAX_ROTATE_SPEED;
 
 		const h = config.ortho.initialHalfSize;
 		this.orthoCamera = new THREE.OrthographicCamera(
@@ -235,6 +273,7 @@ export class CameraRig {
 			if (mode === "perspective") {
 				this.positionPerspectiveEntry(lookTarget);
 			}
+			this.applyAdaptiveRotateSpeed();
 			this.controls.update();
 		}
 
@@ -258,6 +297,7 @@ export class CameraRig {
 			if (this.keys.space) cam.position.y += speed;
 			if (this.keys.shift) cam.position.y -= speed;
 		} else {
+			this.applyAdaptiveRotateSpeed();
 			this.controls.update();
 		}
 	}
@@ -359,6 +399,29 @@ export class CameraRig {
 		const dist = halfSize * this.config.freecam.initialDistanceMultiplier;
 		this.perspectiveCamera.position.copy(target).addScaledVector(dir, dist);
 		this.perspectiveCamera.lookAt(target);
+
+		// Bound the perspective dolly against this entry distance. minZoom/maxZoom
+		// only affect the orthographic camera; the perspective camera reads
+		// min/maxDistance, so without these it can dolly straight through the
+		// target. Harmless while ortho is active (those modes ignore distance).
+		this._perspectiveReferenceDistance = dist;
+		this.controls.minDistance = dist * this.perspMinDistanceMult;
+		this.controls.maxDistance = dist * this.perspMaxDistanceMult;
+	}
+
+	/** Ramp orbit sensitivity with how zoomed-in the active orbit camera is, so
+	 *  rotation feels consistent across zoom levels instead of twitchy up close.
+	 *  The "out-ness" ratio is 1 at the default framing and shrinks as you zoom
+	 *  in: perspective measures it from dolly distance, ortho from zoom factor. */
+	private applyAdaptiveRotateSpeed(): void {
+		const outnessRatio =
+			this._mode === "perspective"
+				? this.controls.getDistance() / (this._perspectiveReferenceDistance || 1)
+				: 1 / (this.orthoCamera.zoom || 1);
+		this.controls.rotateSpeed = adaptiveOrbitRotateSpeed(outnessRatio, {
+			minSpeed: this.minRotateSpeed,
+			maxSpeed: this.maxRotateSpeed,
+		});
 	}
 
 	private updateProjections(): void {
