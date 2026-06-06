@@ -35,6 +35,8 @@ A single `Context` object lives in React context and is persisted to localStorag
 
 All state mutations go through `ACTION_REGISTRY` — a map of `"domain:action"` keys to handlers with role-based permissions. `ActionService.execute()` dispatches locally for the DM or sends a request to the DM for players. This pattern enables permission checks, logging, and network serialization in one place.
 
+`ActionService.bumpCampaignRefs()` maintains fresh references for campaign collections that React components memoize against after in-place domain mutations. Whenever you add, rename, remove, or start memoizing against a top-level `Campaign` collection, a `GameState` collection, or nested mutable campaign arrays such as `Settings.SharedInventories`, check whether `bumpCampaignRefs()` must be updated.
+
 ### State Sync
 
 `StateSync` broadcasts campaign state to peers using delta patches (fast-json-patch) with compression via `StateUpdateCompression`. A full-state fallback fires periodically or on desync detection. The DM's secret `Campaign.Id` is replaced with the public `RoomCode` before broadcast to players.
@@ -172,6 +174,7 @@ npm run deploy:2.0
 
 - Domain files live together: model, actions, and UI components for each domain
 - All state mutations flow through the action registry — never mutate campaign state directly in components
+- When changing mutable campaign collections or memoized campaign-derived arrays, update `ActionService.bumpCampaignRefs()` if the new/changed reference must invalidate React memo/effect dependencies after an action
 - Role permissions are checked via `canPerformAction(user, actionKey)`
 - Images are always metadata-in-campaign, binary-in-IndexedDB
 - Large terrain voxel data is always stored in IndexedDB via `TerrainStorageService`; never embed large `Voxels` strings directly in the campaign object or localStorage

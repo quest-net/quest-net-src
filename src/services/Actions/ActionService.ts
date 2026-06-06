@@ -1,6 +1,5 @@
 // services/Actions/ActionService.ts
 
-import { createDraft, finishDraft, enablePatches, setAutoFreeze, type Patch } from "immer";
 import { Context } from "../../domains/Context/Context";
 import { canPerformAction, ACTION_REGISTRY } from "./ActionRegistry";
 import type { Campaign } from "../../domains/Campaign/Campaign";
@@ -16,19 +15,6 @@ import { CampaignLoadingService } from "../CampaignLoadingService";
 import { TerrainStorageService } from "../TerrainStorageService";
 import { TerrainTransferService } from "../TerrainTransferService";
 import { ActorPoseService } from "../ActorPoseService";
-
-// Immer freezes producer output by default, which would break code paths
-// outside the action pipeline that still mutate the campaign in place
-// (e.g. migrations on load, structuredClone-then-edit in applyPlayerStateUpdate).
-// Disable freezing globally so Immer is purely a structural-sharing tool here:
-// new references only appear on paths that were actually mutated.
-setAutoFreeze(false);
-
-// Opt into Immer's patch recording so mutateCampaign can hand StateSync the
-// exact change set (captured via finishDraft's patch listener) -- this is what
-// lets the DM broadcast path skip the per-action structuredClone + full-tree
-// compare.
-enablePatches();
 
 const PING_INTERVAL_MS = 3000;
 const PEER_RECONCILE_INTERVAL_MS = 2000;
@@ -58,8 +44,9 @@ export class ActionService {
 	private peerReconcileInterval?: ReturnType<typeof setInterval>;
 	private lastBroadcastUserJson = "";
 
-	// Serializes campaign mutations so only one Immer producer is ever live.
-	// Always resolved (never rejects) so a failed action can't wedge the queue.
+	// Serializes campaign mutations so async action handlers cannot interleave
+	// campaign writes while awaiting terrain/IDB work. Always resolved (never
+	// rejects) so a failed action can't wedge the queue.
 	private mutationChain: Promise<unknown> = Promise.resolve();
 
 	constructor(context: Context, room: Room) {
@@ -246,14 +233,9 @@ export class ActionService {
 			const didChangeConnection = this.addConnectedPeer(peerId);
 
 			if (this.context.User.Role === "dm") {
-				const campaign = CampaignActions.getActiveCampaign(this.context);
-				const isSecret = this.context.SecretModes?.[campaign.Id];
-				if (!isSecret) {
-					// Force full state for new peer
-					void TerrainStorageService.packInactiveTerrains(campaign).then(() => {
-						this.stateSync.broadcastFull(campaign);
-					});
-				}
+				void this.broadcastFullAfterPendingMutations().catch((error) => {
+					console.error("[ActionService] Error broadcasting full state:", error);
+				});
 			}
 
 			if (didChangeConnection) {
@@ -388,38 +370,15 @@ export class ActionService {
 	}
 
 	/**
-	 * Runs a producer against an Immer draft of the active campaign and
-	 * commits the result back into context. Handlers that read
-	 * context.ActiveCampaign during the producer see the draft, so existing
-	 * in-place mutations (e.g. `actor.Position = {...}`) are captured by
-	 * Immer and translated into a structurally shared new campaign:
-	 * unmutated paths keep their references, mutated ones get new ones.
-	 *
-	 * This replaces the old bumpMapRefs hack, which created new Characters /
-	 * Entities / SharedInventories arrays on every action regardless of what
-	 * actually changed. The Immer path produces new arrays ONLY where the
-	 * handler touched them, so memo deps invalidate more precisely.
-	 *
-	 * On error the previous campaign is restored so a partial draft doesn't
-	 * leak into context.
-	 *
-	 * Returns the next campaign together with the Immer patches describing
-	 * exactly what changed, so the DM broadcast path can ship those patches as
-	 * the delta instead of re-deriving them with a full-tree compare. Callers
-	 * that don't broadcast (player optimistic, force full-sync) ignore patches.
+	 * Runs a campaign action under the mutation queue, then publishes fresh
+	 * references for memoized UI paths and packs inactive terrain payloads. This
+	 * intentionally uses the real campaign object, not an Immer draft: several
+	 * action handlers await terrain hydration / IndexedDB work, and drafts are
+	 * revoked after finalization, making them unsafe to expose through context.
 	 */
 	private mutateCampaign(
-		producer: (draft: Campaign) => Promise<void> | void
-	): Promise<{ campaign: Campaign; patches: Patch[] }> {
-		// SERIALIZE: chain every mutation so only one producer is live at a time.
-		// mutateCampaign publishes the live Immer draft on this.context.ActiveCampaign
-		// for the duration of the (async) producer. If two ran concurrently the
-		// second would createDraft() the first's draft, and finishing the drafts out
-		// of order leaves revoked-proxy nodes in the committed campaign -- which
-		// surfaces as "could not be cloned" when the geometry worker postMessages a
-		// terrain and "get on a revoked proxy" crashes across the map. The chain
-		// never rejects (errors are swallowed for the *next* link only), so a failed
-		// action doesn't wedge the queue; the caller still sees this run's rejection.
+		producer: () => Promise<void> | void
+	): Promise<Campaign> {
 		const run = this.mutationChain.then(() => this.runMutateCampaign(producer));
 		this.mutationChain = run.then(
 			() => undefined,
@@ -429,36 +388,23 @@ export class ActionService {
 	}
 
 	private async runMutateCampaign(
-		producer: (draft: Campaign) => Promise<void> | void
-	): Promise<{ campaign: Campaign; patches: Patch[] }> {
-		const previous = CampaignActions.getActiveCampaign(this.context);
-		const draft = createDraft(previous) as Campaign;
-		this.context.ActiveCampaign = draft;
-		try {
-			await producer(draft);
-			// Capture the patch set as Immer finalizes the draft. We keep
-			// createDraft/finishDraft (not produceWithPatches) because the
-			// producer is async, and this Immer version's recipe type rejects a
-			// Promise return -- the createDraft/finishDraft pair runs the async
-			// work outside the recipe and still records patches via this listener.
-			let patches: Patch[] = [];
-			const next = finishDraft(draft, (p) => {
-				patches = p;
-			}) as Campaign;
-			this.commitActiveCampaign(next);
-			// Pack inactive terrains AFTER the draft is finalized and committed --
-			// never inside the producer. Packing does async IDB writes; doing it
-			// inside the producer widened the window during which the live draft sat
-			// on this.context, which is what let interleaved re-renders capture a
-			// draft. It makes no campaign mutations (only the per-client voxel buffer
-			// + IDB), so post-commit packing is behavior-preserving for synced state.
-			// It still runs inside the serialized critical section above.
-			await TerrainStorageService.packInactiveTerrains(next);
-			return { campaign: next, patches };
-		} catch (error) {
-			this.commitActiveCampaign(previous);
-			throw error;
-		}
+		producer: () => Promise<void> | void
+	): Promise<Campaign> {
+		await producer();
+		const campaign = CampaignActions.getActiveCampaign(this.context);
+		await TerrainStorageService.packInactiveTerrains(campaign);
+		this.bumpCampaignRefs(campaign);
+		this.commitActiveCampaign(campaign);
+		return campaign;
+	}
+
+	private async broadcastFullAfterPendingMutations(): Promise<void> {
+		await this.mutationChain;
+		const campaign = CampaignActions.getActiveCampaign(this.context);
+		const isSecret = this.context.SecretModes?.[campaign.Id];
+		if (isSecret) return;
+		await TerrainStorageService.packInactiveTerrains(campaign);
+		this.stateSync.broadcastFull(campaign);
 	}
 
 	/**
@@ -469,15 +415,10 @@ export class ActionService {
 	 * Context, so this.context becomes a captured-but-stale wrapper around
 	 * the same inner fields.
 	 *
-	 * When the campaign reference was preserved across actions (the
-	 * pre-Immer in-place-mutation regime), this divergence didn't matter:
-	 * both Context objects' ActiveCampaign field pointed at the same
-	 * physical campaign. With Immer, each action produces a NEW campaign
-	 * object, so the two Contexts must be reconciled explicitly or React
-	 * state stays one revision behind and the UI silently ignores the
-	 * latest action.
-	 *
-	 * This is the same pattern used by applyPlayerStateUpdate.
+	 * This is the same pattern used by applyPlayerStateUpdate. It is still
+	 * useful in the in-place mutation regime because ActionService holds a
+	 * captured top-level Context object, while React owns the live top-level
+	 * Context object after the first triggerContextUpdate() spread.
 	 */
 	private commitActiveCampaign(campaign: Campaign): void {
 		this.context.ActiveCampaign = campaign;
@@ -490,16 +431,13 @@ export class ActionService {
 	 * DM executes action directly and broadcasts result
 	 */
 	private async executeDM(actionKey: string, params: any): Promise<void> {
-		const { campaign, patches } = await this.mutateCampaign(async () => {
-			// Execute the domain action against the draft (handlers reach
-			// the draft via context.ActiveCampaign, swapped in by mutateCampaign).
-			// Inactive-terrain packing runs post-commit inside mutateCampaign.
+		const campaign = await this.mutateCampaign(async () => {
 			await this.runDomainAction(actionKey, params);
 		});
 
 		const isSecret = this.context.SecretModes?.[campaign.Id];
 		if (!isSecret) {
-			this.stateSync.broadcast(campaign, patches);
+			this.stateSync.broadcast(campaign);
 		}
 
 		this.actorPoseService.clearForAuthoritativeAction(actionKey, params);
@@ -562,15 +500,11 @@ export class ActionService {
 			return;
 		}
 
-		// Patches default to empty: if the mutation throws we want to broadcast
-		// the pre-mutation state (no delta) and let the forced full-sync reset
-		// the player's optimistic update.
-		let patches: Patch[] = [];
 		try {
 			// Execute the domain action as the requesting player so
 			// domain-level player validations run in the same context as
 			// optimistic local execution.
-			({ patches } = await this.mutateCampaign(async () => {
+			await this.mutateCampaign(async () => {
 				const originalUser = this.context.User;
 				try {
 					this.context.User = requestingUser;
@@ -578,7 +512,7 @@ export class ActionService {
 				} finally {
 					this.context.User = originalUser;
 				}
-			}));
+			});
 		} catch (error) {
 			console.error("[ActionService] Error executing player request:", error);
 			// We continue to broadcast below to force a reset if needed
@@ -593,10 +527,8 @@ export class ActionService {
 		if (LogActions.isCommand(data.params, "/REQUEST_FULL_SYNC")) {
 			this.stateSync.broadcastFull(campaign);
 		} else {
-			// FORCE SYNC: Always broadcast, even if no changes (reverts optimistic
-			// state). With zero patches + force, broadcast() falls back to a full
-			// sync so the optimistic player is reset.
-			this.stateSync.broadcast(campaign, patches, true);
+			// FORCE SYNC: Always broadcast, even if no changes (reverts optimistic state)
+			this.stateSync.broadcast(campaign, true);
 		}
 		this.actorPoseService.clearForAuthoritativeAction(
 			data?.actionKey,
@@ -643,8 +575,8 @@ export class ActionService {
 	private async forceSyncAsync(): Promise<void> {
 		if (this.context.User.Role === "dm") {
 			// Empty producer: mutateCampaign still serializes against in-flight
-			// actions and packs inactive terrains post-commit before we broadcast.
-			const { campaign } = await this.mutateCampaign(async () => {});
+			// actions and packs inactive terrains before we broadcast.
+			const campaign = await this.mutateCampaign(async () => {});
 			this.stateSync.broadcastFull(campaign);
 		}
 	}
@@ -664,6 +596,36 @@ export class ActionService {
 		if (this.room) {
 			RoomActions.leave(this.room);
 		}
+	}
+
+	/**
+	 * Make new references for collections commonly used as memo dependencies.
+	 * Domain actions still mutate in place; the context update re-renders the
+	 * tree, and these shallow bumps keep useMemo/useEffect deps from going stale.
+	 */
+	private bumpCampaignRefs(campaign: Campaign): void {
+		campaign.CharacterRoster = [...campaign.CharacterRoster];
+		campaign.ItemTemplates = [...campaign.ItemTemplates];
+		campaign.SkillTemplates = [...campaign.SkillTemplates];
+		campaign.StatusTemplates = [...campaign.StatusTemplates];
+		campaign.EntityTemplates = [...campaign.EntityTemplates];
+		campaign.VoxelTerrains = [...campaign.VoxelTerrains];
+		campaign.Audios = [...campaign.Audios];
+		campaign.Images = [...campaign.Images];
+		campaign.Scenarios = [...campaign.Scenarios];
+		campaign.Doors = [...(campaign.Doors ?? [])];
+		campaign.Log = [...campaign.Log];
+		campaign.GameState = {
+			...campaign.GameState,
+			Characters: [...campaign.GameState.Characters],
+			Entities: [...campaign.GameState.Entities],
+		};
+		campaign.Settings = {
+			...campaign.Settings,
+			SharedInventories: campaign.Settings.SharedInventories
+				? [...campaign.Settings.SharedInventories]
+				: campaign.Settings.SharedInventories,
+		};
 	}
 
 }

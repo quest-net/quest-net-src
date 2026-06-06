@@ -1,6 +1,5 @@
 // domains/Entity/EntityActions.ts
 
-import { current } from "immer";
 import { Context } from "../Context/Context";
 import { Entity } from "./Entity";
 import { CampaignActions } from "../Campaign/CampaignActions";
@@ -173,12 +172,8 @@ export const EntityActions = {
 		}
 
 		// CLONE: Create new instance with new ID.
-		// `template` is a property of the Immer draft campaign (ActionService
-		// swaps context.ActiveCampaign for a draft during mutation), so it is a
-		// draft Proxy. structuredClone() cannot clone a Proxy (DataCloneError),
-		// so unwrap it with current() to a plain snapshot before deep-cloning.
 		const instance: Entity = {
-			...structuredClone(current(template)),
+			...structuredClone(template),
 			Id: params.instanceId ?? crypto.randomUUID(), // New ID for the instance
 			Color: template.Color ?? ACTOR_DEFAULT_COLORS.ENTITY,
 		};

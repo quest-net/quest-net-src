@@ -2,12 +2,9 @@
 
 import { Campaign } from "../domains/Campaign/Campaign";
 import { Room } from "../domains/Room/Room";
-import { applyPatch, Operation } from "fast-json-patch";
-import type { Patch } from "immer";
-import {
-	sanitizeCampaignForPlayers,
-	sanitizeImmerPatchesForPlayers,
-} from "./StateSyncSanitize";
+import { compare, applyPatch } from "fast-json-patch";
+import type { Operation } from "fast-json-patch";
+import { sanitizeCampaignForPlayers } from "./StateSyncSanitize";
 import {
 	compressStateUpdateForTransport,
 	decompressStateUpdateIfNeeded,
@@ -34,21 +31,13 @@ export class StateSync {
 	private actionExecute: (actionKey: string, params: any) => void;
 	private sendQueue: Promise<void> = Promise.resolve();
 
-	// State tracking for differential updates.
-	// `hasBaseline` records whether players have received an initial full sync;
-	// until they have, the first broadcast must be full. We no longer keep a
-	// cloned baseline campaign for diffing -- Immer hands us the patches.
-	private hasBaseline = false;
+	// State tracking for differential updates. The DM keeps the last sanitized
+	// campaign sent to players, then compares it with the next sanitized campaign
+	// to build JSON Patch deltas.
+	private lastBroadcastState: Campaign | null = null;
 	private currentState: Campaign | null = null;
 	private version = 0;
 	private updateCount = 0;
-
-	// DEV-only correctness oracle: the last sanitized campaign players should
-	// hold. After building a delta we apply it to this baseline and assert the
-	// result deep-equals a fresh full sanitize -- catching any leaked secret or
-	// malformed (e.g. array-index) patch before it reaches a player. Never
-	// populated in production builds.
-	private devOracleBaseline: Campaign | null = null;
 
 	// Configuration
 	// Periodic full-state fallback: send a full sync every N delta updates.
@@ -95,25 +84,24 @@ export class StateSync {
 
 	/**
 	 * Broadcasts the campaign state to all peers (DM only).
-	 *
-	 * @param campaign - the DM's PRIVATE campaign (unsanitized). Patches were
-	 *   computed against it, so we sanitize using campaign.Id / campaign.RoomCode.
-	 * @param patches - Immer patches describing exactly what this action changed.
 	 * @param force - If true, ensures a broadcast is sent even with no changes
 	 *   (sends a full sync to reset an optimistic player).
 	 */
-	broadcast(campaign: Campaign, patches: Patch[], force = false): void {
+	broadcast(campaign: Campaign, force = false): void {
 		this.updateCount++;
+
+		const sanitized = sanitizeCampaignForPlayers(campaign);
 
 		// First broadcast (no baseline yet) or periodic fallback: send full state
 		// to recover from any desync.
 		const shouldSendFull =
-			!this.hasBaseline || this.updateCount % this.fullStateInterval === 0;
+			!this.lastBroadcastState ||
+			this.updateCount % this.fullStateInterval === 0;
 
 		if (shouldSendFull) {
-			this.sendFull(sanitizeCampaignForPlayers(campaign));
+			this.sendFull(sanitized);
 		} else {
-			this.broadcastDelta(campaign, patches, force);
+			this.broadcastDelta(sanitized, force);
 		}
 	}
 
@@ -138,50 +126,32 @@ export class StateSync {
 
 		this.queueStateSend(update);
 
-		// Players now hold a baseline; subsequent broadcasts can be deltas.
-		this.hasBaseline = true;
+		// `sanitized` is a fresh StateSync-owned clone that nothing mutates after
+		// this point, so adopt it as the diff baseline directly.
+		this.lastBroadcastState = sanitized;
 
 		// Reset counters on full state.
 		this.version = 0;
 		this.updateCount = 0;
-
-		if (import.meta.env.DEV) {
-			// `sanitized` is a fresh StateSync-owned clone that nothing mutates
-			// after this point, so adopt it as the oracle baseline directly.
-			this.devOracleBaseline = sanitized;
-		}
 	}
 
 	/**
-	 * Broadcasts a differential update built from Immer patches.
-	 *
-	 * @param campaign - the DM's PRIVATE campaign (for sanitization context).
-	 * @param immerPatches - the change set Immer recorded for this mutation.
+	 * Broadcasts a differential update.
 	 */
-	private broadcastDelta(
-		campaign: Campaign,
-		immerPatches: Patch[],
-		force = false
-	): void {
-		if (immerPatches.length === 0) {
-			if (force) {
-				// Forced with no changes: full sync resets an optimistic player.
-				this.sendFull(sanitizeCampaignForPlayers(campaign));
-			}
+	private broadcastDelta(campaign: Campaign, force = false): void {
+		if (!this.lastBroadcastState) {
+			this.sendFull(campaign);
 			return;
 		}
 
-		// Sanitize + convert the Immer patches into player-safe JSON Patch ops.
-		// No structuredClone of the campaign and no full-tree compare: this is
-		// O(changed-paths) instead of O(campaign-size).
-		const patches = sanitizeImmerPatchesForPlayers(
-			immerPatches,
-			campaign.Id,
-			campaign.RoomCode
-		);
+		const patches = compare(this.lastBroadcastState, campaign);
 
-		if (import.meta.env.DEV) {
-			this.assertSanitizedPatchesMatch(campaign, patches);
+		if (patches.length === 0) {
+			if (force) {
+				// Forced with no changes: full sync resets an optimistic player.
+				this.sendFull(campaign);
+			}
+			return;
 		}
 
 		const update: StateUpdate = {
@@ -192,48 +162,8 @@ export class StateSync {
 		};
 
 		this.queueStateSend(update);
+		this.lastBroadcastState = campaign;
 		this.version++;
-	}
-
-	/**
-	 * DEV-only oracle: apply the sanitized patches to the baseline players hold
-	 * and assert the result deep-equals a fresh full sanitize of the next
-	 * campaign. Catches leaked secrets and malformed/array-index patches before
-	 * they reach a player. Also advances the baseline for the next check.
-	 */
-	private assertSanitizedPatchesMatch(
-		campaign: Campaign,
-		patches: Operation[]
-	): void {
-		const expected = sanitizeCampaignForPlayers(campaign);
-		try {
-			if (!this.devOracleBaseline) {
-				this.devOracleBaseline = expected;
-				return;
-			}
-			const applied = applyPatch(
-				structuredClone(this.devOracleBaseline),
-				patches,
-				true,
-				false
-			).newDocument;
-			if (JSON.stringify(applied) !== JSON.stringify(expected)) {
-				console.error(
-					"[StateSync] DEV oracle: sanitized patch result diverged from full sanitize.",
-					{ patches }
-				);
-			}
-		} catch (error) {
-			console.error(
-				"[StateSync] DEV oracle: failed to apply sanitized patches.",
-				error,
-				{ patches }
-			);
-		} finally {
-			// Advance to the canonical expected state regardless of mismatch so a
-			// single divergence doesn't cascade into every subsequent check.
-			this.devOracleBaseline = expected;
-		}
 	}
 
 	private queueStateSend(update: StateUpdate): void {
