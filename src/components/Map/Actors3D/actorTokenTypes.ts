@@ -57,6 +57,13 @@ export interface ThreeDSceneResources {
 	 */
 	actorPickTargets: THREE.Object3D[];
 	/**
+	 * Mutable list of invisible door hitbox meshes shared with the door layer.
+	 * The movement layer raycasts against this to suppress tile clicks over a
+	 * door (so clicking a door interacts with it instead of walking onto it).
+	 * The door layer owns the lifecycle of these meshes.
+	 */
+	doorPickTargets: THREE.Object3D[];
+	/**
 	 * Set to true by the actor layer while a height-drag gesture is in
 	 * flight. Other layers should pause hover/click handling so they
 	 * don't fight the drag.

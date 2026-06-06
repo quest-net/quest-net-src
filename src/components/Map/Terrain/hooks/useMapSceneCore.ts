@@ -224,6 +224,7 @@ export function useMapSceneCore(
 				renderer.shadowMap.needsUpdate = true;
 			},
 			actorPickTargets: [],
+			doorPickTargets: [],
 			dragState: { active: false },
 			setFogVolume: postProcessing.setFogVolume,
 		};

@@ -13,6 +13,7 @@ import type {
 	EditableVoxelTerrain,
 	VoxelTerrain,
 } from "../VoxelTerrain/VoxelTerrain";
+import type { DoorAnchor } from "../Door/Door";
 import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { getTerrainVoxels } from "../../utils/terrain/data/terrainPayloadStore";
@@ -222,9 +223,31 @@ interface TerrainFormFieldsProps {
 
 function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps) {
 	const questContext = useQuestContext();
+	const { actionService } = useActionService();
 	const { registerSaveResolver } = useFormContext();
 	const campaign = questContext.ActiveCampaign;
 	const editorRef = useRef<VoxelTerrainEditorHandle>(null);
+
+	// Door placement plumbing. Doors reference terrain ids, so the edited terrain
+	// must already exist in the campaign (i.e. saved) before doors can link to it.
+	const canPlaceDoors = !!campaign?.VoxelTerrains.some((t) => t.Id === data.Id);
+	const terrainNamesById = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const t of campaign?.VoxelTerrains ?? []) map.set(t.Id, t.Name);
+		return map;
+	}, [campaign?.VoxelTerrains]);
+	const handleCreateDoor = useCallback(
+		(a: DoorAnchor, b: DoorAnchor) => {
+			actionService?.execute("door:create", { a, b });
+		},
+		[actionService]
+	);
+	const handleDeleteDoor = useCallback(
+		(doorId: string) => {
+			actionService?.execute("door:delete", { doorId });
+		},
+		[actionService]
+	);
 
 	// Show the actors that stand on the terrain being edited (matched by their
 	// per-actor terrainId), so the DM can see where they are while sculpting.
@@ -464,6 +487,12 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 				actors={actorOverlayInfos}
 				stampSources={stampSources}
 				loadStampVoxels={loadStampVoxels}
+				doors={campaign?.Doors}
+				terrainNamesById={terrainNamesById}
+				loadTerrainVoxels={loadStampVoxels}
+				onCreateDoor={handleCreateDoor}
+				onDeleteDoor={handleDeleteDoor}
+				canPlaceDoors={canPlaceDoors}
 			/>
 
 			{/* Tags at the bottom */}

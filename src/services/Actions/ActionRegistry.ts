@@ -22,6 +22,7 @@ import { SharedInventoryActions } from "../../domains/SharedInventory/SharedInve
 import { ActorActions } from "../../domains/Actor/ActorActions";
 import { PingActions } from "../../domains/Ping/PingActions";
 import { StickerActions } from "../../domains/Sticker/StickerActions";
+import { DoorActions } from "../../domains/Door/DoorActions";
 // import { ItemActions } from '../domains/Item/ItemActions';
 // import { SkillActions } from '../domains/Skill/SkillActions';
 // import { CombatActions } from '../domains/Combat/CombatActions';
@@ -400,6 +401,22 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"terrain:bulkEditTags": {
 		roles: ["dm"],
 		handler: VoxelTerrainActions.bulkEditTags,
+	},
+
+	// ============================================================================
+	// DOOR ACTIONS
+	// ============================================================================
+	"door:create": {
+		roles: ["dm"],
+		handler: DoorActions.create,
+	},
+	"door:edit": {
+		roles: ["dm"],
+		handler: DoorActions.edit,
+	},
+	"door:delete": {
+		roles: ["dm"],
+		handler: DoorActions.delete,
 	},
 
 	// ============================================================================

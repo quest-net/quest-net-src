@@ -130,6 +130,17 @@ import {
 	projectActorMarkers,
 	type ActorOverlayInfo,
 } from "./editorActorMarkers";
+import {
+	buildDoorMarkers,
+	projectDoorMarkers,
+	type DoorMarkerInfo,
+} from "./doorMarkers";
+import {
+	getDoorAnchorsOnTerrain,
+	type Door,
+	type DoorAnchor,
+} from "../../../domains/Door/Door";
+import { DoorPlacementOverlay } from "./DoorPlacement/DoorPlacementOverlay";
 import { EditorToolbar } from "./EditorToolbar";
 import { EditorSidebar } from "./EditorSidebar";
 import { PreviewSettingsPanel } from "./PreviewSettingsPanel";
@@ -155,6 +166,18 @@ interface VoxelTerrainEditorProps {
 	stampSources?: VoxelTerrain[];
 	/** Returns the fully hydrated voxel data for a stamp source by id. */
 	loadStampVoxels?: (terrainId: string) => Promise<EditableVoxelTerrain | null>;
+	/** Campaign doors, for the "Display Doors" overlay (filtered to this terrain). */
+	doors?: Door[];
+	/** Terrain id -> name, for door destination labels. */
+	terrainNamesById?: ReadonlyMap<string, string>;
+	/** Loads any terrain's voxels by id, for the door destination picker. */
+	loadTerrainVoxels?: (terrainId: string) => Promise<EditableVoxelTerrain | null>;
+	/** Creates a door between two anchors (dispatches door:create upstream). */
+	onCreateDoor?: (a: DoorAnchor, b: DoorAnchor) => void;
+	/** Deletes a door by id (dispatches door:delete upstream). */
+	onDeleteDoor?: (doorId: string) => void;
+	/** Whether door placement is allowed (false until the terrain is saved). */
+	canPlaceDoors?: boolean;
 }
 
 export interface VoxelTerrainEditorHandle {
@@ -208,6 +231,12 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			actors,
 			stampSources,
 			loadStampVoxels,
+			doors,
+			terrainNamesById,
+			loadTerrainVoxels,
+			onCreateDoor,
+			onDeleteDoor,
+			canPlaceDoors = false,
 		}: VoxelTerrainEditorProps,
 		ref,
 	) {
@@ -242,6 +271,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const activeViewRef    = useRef<EditorView>("edit");
 		const actorMarkerElemsRef = useRef<Map<string, HTMLDivElement>>(new Map());
 		const actorOverlayRef  = useRef<HTMLDivElement>(null);
+		// Door overlay (mirrors the actor overlay): markers projected each frame.
+		const showDoorsRef        = useRef(false);
+		const doorOverlayRef      = useRef<HTMLDivElement>(null);
+		const doorMarkerElemsRef  = useRef<Map<string, HTMLDivElement>>(new Map());
+		const doorMarkersDataRef  = useRef<DoorMarkerInfo[]>([]);
 		// Stroke state.
 		const activeStrokeRef        = useRef<ActiveStroke | null>(null);
 		const strokeStartedRef       = useRef(false);
@@ -293,6 +327,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const showTacticalGrid = granularity === "tactical";
 		const showVoxelGrid    = granularity === "voxel";
 		const [showActors,         setShowActors]         = useState(true);
+		const [showDoors,          setShowDoors]          = useState(false);
+		const [doorPlacementOpen,  setDoorPlacementOpen]  = useState(false);
+		// Snapshot of the edited terrain's live voxels, captured when the door
+		// placement flow opens so its origin canvas renders the current draft.
+		const [doorOriginTerrain,  setDoorOriginTerrain]  = useState<EditableVoxelTerrain | null>(null);
 		const [undoDepth,          setUndoDepth]          = useState(0);
 		const [redoDepth,          setRedoDepth]          = useState(0);
 		const [cameraMode,         setCameraMode]         = useState<CameraMode>("ortho");
@@ -356,6 +395,16 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const refreshPreviewTerrain = useCallback(() => {
 			setPreviewTerrain(createDraftTerrainSnapshot());
 		}, [createDraftTerrainSnapshot]);
+
+		const openDoorPlacement = useCallback(() => {
+			setDoorOriginTerrain(createDraftTerrainSnapshot());
+			setDoorPlacementOpen(true);
+		}, [createDraftTerrainSnapshot]);
+
+		const closeDoorPlacement = useCallback(() => {
+			setDoorPlacementOpen(false);
+			setDoorOriginTerrain(null);
+		}, []);
 
 		const emitTerrainUpdate = (nextTerrain: EditableVoxelTerrain) => {
 			terrainRef.current = nextTerrain;
@@ -427,6 +476,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 		useEffect(() => { actorsRef.current    = actors ?? []; }, [actors]);
 		useEffect(() => { showActorsRef.current = showActors;   }, [showActors]);
+		useEffect(() => { showDoorsRef.current  = showDoors;    }, [showDoors]);
 		useEffect(() => { activeViewRef.current = activeView;   }, [activeView]);
 		useEffect(() => {
 			cameraModeRef.current = cameraMode;
@@ -949,6 +999,36 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		}, [actors]);
 
 		// -------------------------------------------------------------------------
+		// Imperative door overlay (markers for invisible doors on this terrain)
+		// -------------------------------------------------------------------------
+		const doorMarkersData = useMemo<DoorMarkerInfo[]>(() => {
+			if (!doors || doors.length === 0) return [];
+			return getDoorAnchorsOnTerrain(doors, terrain.Id).map(
+				({ door, end, anchor, destination }) => ({
+					id: `${door.Id}:${end}`,
+					doorId: door.Id,
+					anchor: { x: anchor.x, y: anchor.y, h: anchor.h },
+					destinationName:
+						terrainNamesById?.get(destination.terrainId) ?? "another area",
+				})
+			);
+		}, [doors, terrain.Id, terrainNamesById]);
+
+		const onDeleteDoorRef = useRef(onDeleteDoor);
+		useEffect(() => { onDeleteDoorRef.current = onDeleteDoor; }, [onDeleteDoor]);
+
+		useEffect(() => {
+			doorMarkersDataRef.current = doorMarkersData;
+			const overlay = doorOverlayRef.current;
+			if (!overlay) return;
+			doorMarkerElemsRef.current = buildDoorMarkers(
+				overlay,
+				doorMarkersData,
+				readOnly ? undefined : (doorId) => onDeleteDoorRef.current?.(doorId)
+			);
+		}, [doorMarkersData, readOnly]);
+
+		// -------------------------------------------------------------------------
 		// Three.js mount (runs once)
 		// -------------------------------------------------------------------------
 		useEffect(() => {
@@ -1045,6 +1125,18 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 						actorsRef.current,
 						actorMarkerElemsRef.current,
 						showActorsRef.current,
+					);
+				}
+
+				const doorOverlay = doorOverlayRef.current;
+				if (doorOverlay && doorMarkerElemsRef.current.size > 0) {
+					projectDoorMarkers(
+						resources.renderer.domElement,
+						resources.camera,
+						terrainRef.current,
+						doorMarkersDataRef.current,
+						doorMarkerElemsRef.current,
+						showDoorsRef.current,
 					);
 				}
 			};
@@ -1679,6 +1771,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			<>
 				<div className="border-2 rounded-lg bg-base-100 min-h-152 h-[72dvh] flex overflow-hidden">
 					<div className="flex-1 min-w-0 flex flex-col">
+						{!doorPlacementOpen && (
 						<EditorToolbar
 							tool={tool}
 							activeSelectionTool={activeSelectionTool}
@@ -1710,12 +1803,18 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 							cameraMode={cameraMode}
 							onSelectCameraMode={setCameraModeTo}
 							freecamSpeedMult={freecamSpeedMult}
+							onOpenDoorPlacement={
+								loadTerrainVoxels && onCreateDoor ? openDoorPlacement : undefined
+							}
+							canPlaceDoors={canPlaceDoors}
 						/>
+						)}
 
 						<div className="relative flex-1 min-h-0 bg-base-200">
 							<div className={activeView === "edit" ? "absolute inset-0" : "hidden"}>
 								<div ref={containerRef} className="absolute inset-0" />
 								<div ref={actorOverlayRef} className="absolute inset-0 pointer-events-none overflow-hidden" />
+								<div ref={doorOverlayRef} className="absolute inset-0 pointer-events-none overflow-hidden" />
 							</div>
 							{activeView === "preview" && (
 								<div className="absolute inset-0">
@@ -1723,6 +1822,15 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 										<MapScene terrain={previewTerrain ?? terrain} />
 									</MapStateProvider>
 								</div>
+							)}
+							{doorPlacementOpen && doorOriginTerrain && loadTerrainVoxels && onCreateDoor && (
+								<DoorPlacementOverlay
+									originTerrain={doorOriginTerrain}
+									doors={doors ?? []}
+									loadTerrainVoxels={loadTerrainVoxels}
+									onCreateDoor={onCreateDoor}
+									onClose={closeDoorPlacement}
+								/>
 							)}
 						</div>
 					</div>
@@ -1749,6 +1857,9 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 									actors={actors}
 									showActors={showActors}
 									onShowActorsChange={setShowActors}
+									doorCount={doorMarkersData.length}
+									showDoors={showDoors}
+									onShowDoorsChange={setShowDoors}
 								/>
 							)}
 						</div>

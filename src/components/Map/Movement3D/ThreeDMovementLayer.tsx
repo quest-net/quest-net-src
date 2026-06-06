@@ -75,16 +75,20 @@ function getTileFromPointerEvent(
 ): HoveredTile | null {
 	setRaycasterFromPointer(raycaster, event, resources, pointer);
 
-	// Suppress the tile pick if the cursor is on top of an actor. The
-	// actor pick mesh is closer to the camera than the terrain it's
-	// standing on, so its hit distance wins. This stops tiles from
-	// highlighting "behind" an actor token, making it clear that
-	// clicking will interact with the actor, not the tile.
+	// Suppress the tile pick if the cursor is on top of an actor OR a door
+	// hitbox. Those pick meshes are closer to the camera than the terrain they
+	// sit on, so their hit distance wins. This stops tiles from highlighting
+	// "behind" an actor token or door, making it clear that clicking will
+	// interact with the actor / door, not walk onto the tile.
 	const actorHits = raycaster.intersectObjects(
 		resources.actorPickTargets,
 		true
 	);
-	const closestActorDistance = actorHits[0]?.distance ?? Infinity;
+	const doorHits = raycaster.intersectObjects(resources.doorPickTargets, true);
+	const closestActorDistance = Math.min(
+		actorHits[0]?.distance ?? Infinity,
+		doorHits[0]?.distance ?? Infinity
+	);
 
 	const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex);
 

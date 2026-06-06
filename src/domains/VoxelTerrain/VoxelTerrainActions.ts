@@ -19,6 +19,7 @@ import { createFlatVoxelTerrain } from "../../utils/terrain/editor/VoxelTerrainE
 import { isStampTerrain } from "../../utils/terrain/editor/VoxelStampUtils";
 import type { EditableVoxelTerrain, VoxelTerrain } from "./VoxelTerrain";
 import { getScenarioTerrainIds } from "../Scenario/Scenario";
+import { doorReferencesTerrain } from "../Door/Door";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 
 const FLYING_ACTOR_CLEARANCE_BY_SIZE = {
@@ -471,6 +472,15 @@ export const VoxelTerrainActions = {
 
 		campaign.VoxelTerrains.splice(arrayIndex, 1);
 		await TerrainStorageService.deleteTerrain(campaign, terrain);
+
+		// Cascade: purge any door that anchors to the deleted terrain, otherwise
+		// the world-map graph and hover logic would carry dangling edges. Geometry
+		// edits never touch doors; only deletion does. See multi-terrain-world §4.3.
+		if (Array.isArray(campaign.Doors)) {
+			campaign.Doors = campaign.Doors.filter(
+				(door) => !doorReferencesTerrain(door, terrain.Id)
+			);
+		}
 
 		LogActions.create(
 			{

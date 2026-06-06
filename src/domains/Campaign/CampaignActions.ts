@@ -76,6 +76,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 		Audios: [],
 		Images: [],
 		Scenarios: [],
+		Doors: [],
 		GameState: {
 			Characters: [],
 			Entities: [],

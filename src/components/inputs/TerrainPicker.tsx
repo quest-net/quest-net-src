@@ -22,6 +22,8 @@ interface TerrainPickerProps {
 	onConfirm: (terrainId: string) => void;
 	onCancel: () => void;
 	title?: string;
+	/** Label for the confirm button. Defaults to "Move Here". */
+	confirmLabel?: string;
 	/** Terrain to mark as the current location (rendered with a "Current" badge). */
 	currentTerrainId?: string;
 }
@@ -33,6 +35,7 @@ export function TerrainPicker({
 	onConfirm,
 	onCancel,
 	title = "Select Terrain",
+	confirmLabel = "Move Here",
 	currentTerrainId,
 }: TerrainPickerProps) {
 	const context = useQuestContext();
@@ -269,7 +272,7 @@ export function TerrainPicker({
 							className="btn btn-primary btn-sm"
 							disabled={!selectedId}
 						>
-							Move Here
+							{confirmLabel}
 						</button>
 					</div>
 				</div>

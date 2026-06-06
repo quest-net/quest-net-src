@@ -62,6 +62,19 @@ export const ActorActions = {
 		};
 		actor.Position = nextPosition;
 
+		// A move that crosses terrains (e.g. interacting with a door) re-anchors the
+		// combat movement budget to the destination, so remaining-range pathing runs
+		// within the new terrain rather than pointing back into the old one. Ordinary
+		// intra-terrain moves leave TurnStartPosition untouched, exactly as before.
+		// See docs/multi-terrain-world.md §5.7.
+		if (
+			nextPosition.terrainId !== oldPosition.terrainId &&
+			campaign.GameState.CombatState?.isActive &&
+			actor.TurnStartPosition
+		) {
+			actor.TurnStartPosition = { ...nextPosition };
+		}
+
 		LogActions.create(
 			{
 				action: `${type} moved`,

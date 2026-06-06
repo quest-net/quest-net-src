@@ -14,7 +14,7 @@
 //
 // Addon imports use three/examples/jsm/ -- see CLAUDE.md for why.
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import type { CameraRigConfig } from '../../utils/camera/CameraRig';
 import type { Character } from '../../domains/Character/Character';
@@ -38,6 +38,7 @@ import { ThreeDActorLayer } from './Actors3D/ThreeDActorLayer';
 import { ThreeDMovementLayer } from './Movement3D/ThreeDMovementLayer';
 import { ThreeDStickerLayer } from './Stickers3D/ThreeDStickerLayer';
 import { ThreeDPingLayer } from './Pings3D/ThreeDPingLayer';
+import { ThreeDDoorLayer, type DoorInteractionFocus } from './Doors3D/ThreeDDoorLayer';
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from './Actors3D/actorTokenConstants';
 import { useActiveStickers } from './hooks/useActiveStickers';
 import { useActivePings } from './hooks/useActivePings';
@@ -227,6 +228,32 @@ export default function MapScene({
 		context.User.Role === "player"
 			? context.User.SelectedCharacters?.[campaign.RoomCode]
 			: (context.User.ImpersonatedActors ?? {})[campaign.RoomCode];
+
+	// The actor a door would move: the player's selected character, or the DM's
+	// impersonated actor. A bare DM (no impersonation) has none, so cannot use a
+	// door (nothing to move). Resolved only against rendered-terrain actors, so it
+	// is null when the controlled actor is on a terrain the client isn't showing.
+	const controlledActorForDoors = useMemo(() => {
+		if (!pingActiveActorId) return null;
+		const character = characters.find((c) => c.Id === pingActiveActorId);
+		if (character) {
+			return { id: character.Id, kind: "character" as const, position: character.Position };
+		}
+		const entity = entities.find((e) => e.Id === pingActiveActorId);
+		if (entity) {
+			return { id: entity.Id, kind: "entity" as const, position: entity.Position };
+		}
+		return null;
+	}, [pingActiveActorId, characters, entities]);
+
+	// Terrain id -> name, for the door's "leads to ___" hover/prompt label.
+	const terrainNamesById = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const t of campaign.VoxelTerrains) map.set(t.Id, t.Name);
+		return map;
+	}, [campaign.VoxelTerrains]);
+
+	const [doorFocus, setDoorFocus] = useState<DoorInteractionFocus | null>(null);
 	const restrictMovementToRange =
 		shouldRestrictPlayerMovementToRange(
 			context.User.Role,
@@ -431,6 +458,32 @@ export default function MapScene({
 			clearSelection();
 		},
 		[selectedActor, actionService, updateHoveredTile, clearSelection]
+	);
+
+	// Using a door is just a terrain-crossing move of the controlled actor to the
+	// door's opposite anchor (the move handler honors the destination terrainId
+	// and re-anchors the combat budget on a terrain change). For a player this
+	// switches their selected character's terrain, so Main re-renders the new map.
+	const handleDoorTraverse = useCallback(
+		(
+			actor: { id: string; kind: "character" | "entity" },
+			destination: { terrainId: string; x: number; y: number; h: number }
+		) => {
+			if (!actionService) return;
+			if (actor.kind === "character") {
+				actionService.execute("character:move", {
+					characterId: actor.id,
+					position: destination,
+				});
+			} else {
+				actionService.execute("entity:move", {
+					entityId: actor.id,
+					position: destination,
+				});
+			}
+			setDoorFocus(null);
+		},
+		[actionService]
 	);
 
 	const handlePingTile = useCallback(
@@ -645,7 +698,59 @@ export default function MapScene({
 						activePings={activePings}
 						onPingTile={handlePingTile}
 					/>
+					<ThreeDDoorLayer
+						resources={sceneResources}
+						isWorld={isWorld}
+						terrain={terrain}
+						terrainIndex={terrainIndex}
+						doors={campaign.Doors}
+						terrainNamesById={terrainNamesById}
+						controlledActor={controlledActorForDoors}
+						isDM={isDM}
+						onTraverse={handleDoorTraverse}
+						onFocusChange={setDoorFocus}
+					/>
 				</>
+			)}
+			{/* World-view door hover tooltip: follows the cursor, reveals destination. */}
+			{hasTerrain && isWorld && doorFocus?.screen && (
+				<div
+					className="pointer-events-none fixed z-40 -translate-x-1/2 -translate-y-[140%] whitespace-nowrap rounded bg-base-300/90 px-2 py-1 text-xs font-medium text-base-content shadow"
+					style={{ left: doorFocus.screen.x, top: doorFocus.screen.y }}
+				>
+					{doorFocus.locked && !doorFocus.destinationName ? (
+						<span className="flex items-center gap-1">
+							<span className="icon-[mdi--lock] h-3.5 w-3.5" /> Locked
+						</span>
+					) : (
+						<span className="flex items-center gap-1">
+							<span className="icon-[mdi--door] h-3.5 w-3.5" />
+							{doorFocus.destinationName
+								? `To ${doorFocus.destinationName}`
+								: "Door"}
+							{doorFocus.usable && (
+								<span className="opacity-60">- click to enter</span>
+							)}
+						</span>
+					)}
+				</div>
+			)}
+			{/* First-person interact prompt, centered under the reticle. */}
+			{hasTerrain && !isWorld && doorFocus && (doorFocus.usable || doorFocus.locked) && (
+				<div className="pointer-events-none absolute left-1/2 top-[58%] z-40 -translate-x-1/2 rounded bg-base-300/90 px-3 py-1.5 text-sm font-medium text-base-content shadow">
+					{doorFocus.usable ? (
+						<span className="flex items-center gap-1.5">
+							<kbd className="kbd kbd-sm">E</kbd>
+							{doorFocus.destinationName
+								? `Travel to ${doorFocus.destinationName}`
+								: "Use door"}
+						</span>
+					) : (
+						<span className="flex items-center gap-1.5">
+							<span className="icon-[mdi--lock] h-4 w-4" /> Locked
+						</span>
+					)}
+				</div>
 			)}
 			{sceneResources && !isWorld && controller && (
 				<FirstPersonView

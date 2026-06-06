@@ -37,6 +37,9 @@ interface EditorSidebarProps {
 	actors: { id: string; name: string }[] | undefined;
 	showActors: boolean;
 	onShowActorsChange: (next: boolean) => void;
+	doorCount: number;
+	showDoors: boolean;
+	onShowDoorsChange: (next: boolean) => void;
 }
 
 export function EditorSidebar(props: EditorSidebarProps) {
@@ -51,6 +54,9 @@ export function EditorSidebar(props: EditorSidebarProps) {
 		actors,
 		showActors,
 		onShowActorsChange,
+		doorCount,
+		showDoors,
+		onShowDoorsChange,
 	} = props;
 
 	const showSelectionPanel =
@@ -182,6 +188,28 @@ export function EditorSidebar(props: EditorSidebarProps) {
 					</div>
 				</div>
 			)}
+
+			<div>
+				<div className="text-sm font-semibold mb-2">
+					Doors
+					{doorCount > 0 && (
+						<span className="ml-1 text-xs font-normal text-base-content/60">
+							({doorCount})
+						</span>
+					)}
+				</div>
+				<div className="flex flex-col gap-2">
+					<label className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border border-base-300 px-3 py-2">
+						<span className="label-text">Display doors</span>
+						<input
+							type="checkbox"
+							className="toggle toggle-sm toggle-secondary"
+							checked={showDoors}
+							onChange={(e) => onShowDoorsChange(e.target.checked)}
+						/>
+					</label>
+				</div>
+			</div>
 		</>
 	);
 }

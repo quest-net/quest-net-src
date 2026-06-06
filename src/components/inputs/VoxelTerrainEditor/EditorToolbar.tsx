@@ -66,6 +66,10 @@ interface EditorToolbarProps {
 	stampLoadingId: string | null;
 	onSelectStamp: (terrainId: string) => Promise<void> | void;
 	onExitStampMode: () => void;
+	/** Opens the door-placement flow. Omitted when door placement is unavailable. */
+	onOpenDoorPlacement?: () => void;
+	/** Whether door placement is allowed (false until the terrain is saved). */
+	canPlaceDoors?: boolean;
 	undoDepth: number;
 	redoDepth: number;
 	onUndo: () => void;
@@ -102,6 +106,8 @@ export function EditorToolbar(props: EditorToolbarProps) {
 		stampLoadingId,
 		onSelectStamp,
 		onExitStampMode,
+		onOpenDoorPlacement,
+		canPlaceDoors,
 		undoDepth,
 		redoDepth,
 		onUndo,
@@ -308,6 +314,27 @@ export function EditorToolbar(props: EditorToolbarProps) {
 								</div>
 							</div>
 						)}
+					</>
+				)}
+
+				{/* Door placement (next to the stamp control) */}
+				{!readOnly && onOpenDoorPlacement && (
+					<>
+						<ToolbarDivider />
+						<button
+							type="button"
+							className="btn btn-square btn-sm btn-outline"
+							onClick={onOpenDoorPlacement}
+							disabled={!canPlaceDoors}
+							title={
+								canPlaceDoors
+									? "Place a door (link this terrain to another)"
+									: "Save the terrain before adding doors"
+							}
+							aria-label="Place a door"
+						>
+							<span className="icon-[mdi--door] w-5 h-5" />
+						</button>
 					</>
 				)}
 
