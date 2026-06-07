@@ -21,6 +21,10 @@ import type { EditableVoxelTerrain, VoxelTerrain } from "./VoxelTerrain";
 import { getScenarioTerrainIds } from "../Scenario/Scenario";
 import { terrainLinkReferencesTerrain } from "../TerrainLink/TerrainLink";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
+import {
+	getMaterializedContentHash,
+	getTerrainVoxels,
+} from "../../utils/terrain/data/terrainPayloadStore";
 
 const FLYING_ACTOR_CLEARANCE_BY_SIZE = {
 	"extra-small": 1,
@@ -404,13 +408,44 @@ export const VoxelTerrainActions = {
 		}
 
 		const { Voxels, ...metaUpdates } = params.updates;
+
+		// Capture the pre-edit base BEFORE materialize overwrites the buffer, so the
+		// DM can broadcast a delta (changed voxels only) instead of forcing every
+		// player to re-fetch the full payload. Empty base / missing hash -> no delta
+		// (broadcastTerrainDelta skips), and players fall back to the full fetch.
+		const oldB64 = getTerrainVoxels(terrain.Id);
+		const baseHash = getMaterializedContentHash(terrain.Id);
+		const oldWidth = terrain.Width;
+		const oldLength = terrain.Length;
+		const oldHeight = terrain.Height;
+		const oldResolution = terrain.Resolution ?? 1;
+
 		Object.assign(terrain, metaUpdates);
 
 		// A voxel edit re-materializes the payload and stamps a fresh ContentHash
 		// (which is what tells every client their cached payload is now stale).
 		if (Voxels !== undefined) {
-			TerrainStorageService.materialize(terrain, Voxels);
+			const newHash = TerrainStorageService.materialize(terrain, Voxels);
 			await TerrainStorageService.saveTerrain(campaign, terrain);
+
+			// A dimension/resolution change rewrites the coordinate space wholesale;
+			// skip the delta and let players full-fetch (the threshold guard would
+			// reject it anyway, but this avoids the diff work).
+			const dimensionsChanged =
+				terrain.Width !== oldWidth ||
+				terrain.Length !== oldLength ||
+				terrain.Height !== oldHeight ||
+				(terrain.Resolution ?? 1) !== oldResolution;
+
+			if (!dimensionsChanged) {
+				TerrainStorageService.broadcastTerrainDelta({
+					terrainId: terrain.Id,
+					oldB64,
+					newB64: Voxels,
+					baseHash,
+					newHash,
+				});
+			}
 		}
 
 		LogActions.create(

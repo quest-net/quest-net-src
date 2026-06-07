@@ -41,7 +41,6 @@ import {
 	type FirstPersonCapsuleState,
 } from "./capsuleController";
 import type { LiveActorPose } from "../../../services/ActorPoseService";
-import { createTerrainSignature } from "../Terrain/hooks/useVoxelTerrainGeometryWorker";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	FIRST_PERSON_CAMERA,
@@ -172,8 +171,19 @@ export default function FirstPersonView({
 		null
 	);
 
-	const terrainSignature = useMemo(
-		() => createTerrainSignature(terrain),
+	// Identity that determines when the first-person sim must reset: which terrain
+	// and its extents, deliberately excluding voxel content. A content edit (e.g.
+	// a synced DM voxel change) must NOT reset the capsule -- that would yank a
+	// walking player back to their last-synced tile. The per-frame capsule sim
+	// already re-collides against the updated terrain index, so geometry changes
+	// are handled without a reset. A terrain switch or resize still resets.
+	const terrainFramingKey = useMemo(
+		() =>
+			terrain
+				? `${terrain.Id}:${terrain.Width}:${terrain.Length}:${terrain.Height}:${
+						terrain.Resolution ?? 1
+				  }`
+				: "",
 		[terrain]
 	);
 	const context = useQuestContext();
@@ -315,7 +325,7 @@ export default function FirstPersonView({
 		lastPoseSentAtRef.current = 0;
 		lastPoseSentPositionRef.current = null;
 		spaceWasPressedRef.current = false;
-	}, [actor?.id, actor?.kind, terrainSignature]);
+	}, [actor?.id, actor?.kind, terrainFramingKey]);
 
 	useEffect(() => {
 		if (!actor) return;

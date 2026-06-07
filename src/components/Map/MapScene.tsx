@@ -332,6 +332,21 @@ export default function MapScene({
 		return ids;
 	}, [campaign]);
 	const terrainSignature = useMemo(() => createTerrainSignature(terrain), [terrain]);
+	// Identity that determines camera FRAMING: which terrain and its extents,
+	// deliberately excluding voxel content. The framing reset must fire on a
+	// terrain switch or resize but NOT on a content edit, otherwise every voxel
+	// change (e.g. a synced DM edit) would snap the viewer's rotation/pan back to
+	// the default isometric pose. (Zoom is on orthoCamera.zoom, which the reset
+	// never touches, which is why only rotation/pan were resetting.)
+	const terrainFramingKey = useMemo(
+		() =>
+			terrain
+				? `${terrain.Id}:${terrain.Width}:${terrain.Length}:${terrain.Height}:${
+						terrain.Resolution ?? 1
+				  }`
+				: "",
+		[terrain]
+	);
 	const terrainVoxels = useMemo(
 		() => (terrain ? resolveTerrainVoxels(terrain) : ""),
 		// terrainSignature is the value-equal identity for the voxel terrain.
@@ -576,11 +591,13 @@ export default function MapScene({
 		[actionService, selectActor, updateHoveredTile]
 	);
 
-	// Reframe once per terrain. A view toggle never reframes (no remount), so the
-	// user's pan/zoom is preserved across world <-> first-person switches.
+	// Reframe only when the terrain identity/extents change (switch or resize),
+	// not on content edits -- so a synced voxel edit preserves the viewer's
+	// rotation/pan/zoom. A view toggle never reframes (no remount), so pan/zoom is
+	// also preserved across world <-> first-person switches.
 	useEffect(() => {
 		hasFramedTerrainRef.current = false;
-	}, [terrainSignature]);
+	}, [terrainFramingKey]);
 
 	// Per-terrain camera framing + pan limits. Light/shadow bounds live in
 	// useTerrainEnvironment.

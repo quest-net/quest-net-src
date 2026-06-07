@@ -45,6 +45,36 @@ export type TerrainNetworkProvider = (
 ) => Promise<TerrainPayload | null>;
 
 /**
+ * Brief grace hook consulted on a ContentHash mismatch before falling back to a
+ * full network fetch. Installed by TerrainTransferService (players only).
+ * Resolves when a matching delta for `expectedHash` has been applied, or after a
+ * short grace window elapses. Returning before the delta arrives is fine --
+ * hydrate then proceeds to the (always-correct) full fetch. See
+ * docs/terrain-delta-updates-plan.md, "Ordering".
+ */
+export type TerrainDeltaWaiter = (
+	terrainId: string,
+	expectedHash: string
+) => Promise<void>;
+
+/** A terrain edit's before/after payloads, handed to the delta broadcaster. */
+export interface TerrainEditDelta {
+	terrainId: string;
+	oldB64: string;
+	baseHash: string | undefined;
+	newB64: string;
+	newHash: string;
+}
+
+/**
+ * Broadcasts the changed voxels of a terrain edit to peers (DM only). Installed
+ * by TerrainTransferService, which owns the `terrainDelta` channel and the delta
+ * codec. TerrainStorageService stays networking-free and only forwards the edit
+ * through this hook, mirroring `setNetworkProvider`.
+ */
+export type TerrainDeltaBroadcaster = (edit: TerrainEditDelta) => void;
+
+/**
  * Durable + network layer for terrain voxel payloads. The in-memory
  * materialized buffer lives in `terrainPayloadStore`; this service backs it with
  * IndexedDB (the per-client source of truth for payloads) and, for players, an
@@ -53,9 +83,29 @@ export type TerrainNetworkProvider = (
  */
 export class TerrainStorageService {
 	private static networkProvider: TerrainNetworkProvider | null = null;
+	private static deltaWaiter: TerrainDeltaWaiter | null = null;
+	private static deltaBroadcaster: TerrainDeltaBroadcaster | null = null;
 
 	static setNetworkProvider(provider: TerrainNetworkProvider | null): void {
 		this.networkProvider = provider;
+	}
+
+	static setDeltaWaiter(waiter: TerrainDeltaWaiter | null): void {
+		this.deltaWaiter = waiter;
+	}
+
+	static setDeltaBroadcaster(broadcaster: TerrainDeltaBroadcaster | null): void {
+		this.deltaBroadcaster = broadcaster;
+	}
+
+	/**
+	 * Forwards a terrain edit's before/after payloads to the installed delta
+	 * broadcaster (DM only; no-op otherwise). The broadcaster computes and sends
+	 * the changed voxels so players can reconstruct the new payload locally
+	 * instead of re-fetching it whole.
+	 */
+	static broadcastTerrainDelta(edit: TerrainEditDelta): void {
+		this.deltaBroadcaster?.(edit);
 	}
 
 	// Local IDB key. Purely client-local now -- it never travels in synced state,
@@ -190,6 +240,26 @@ export class TerrainStorageService {
 			return terrain;
 		}
 
+		// Before paying for a full fetch, give an in-flight delta a brief window
+		// to land (it races the ContentHash state-sync patch with no cross-channel
+		// ordering). If the matching delta applies, the terrain materializes and we
+		// avoid the multi-MB transfer entirely; otherwise we fall through below.
+		if (this.deltaWaiter && terrain.ContentHash) {
+			await this.deltaWaiter(terrainId, terrain.ContentHash);
+			if (isTerrainHydrated(terrain)) return terrain;
+			const refreshed = await this.readRecord(
+				this.buildStorageKey(campaign, terrainId)
+			);
+			if (refreshed && this.recordMatches(refreshed, terrain)) {
+				setTerrainVoxels(
+					terrainId,
+					refreshed.Voxels,
+					this.recordContentHash(refreshed)
+				);
+				return terrain;
+			}
+		}
+
 		if (this.networkProvider) {
 			try {
 				const fetched = await this.networkProvider(terrainId, terrain.ContentHash);
@@ -242,6 +312,42 @@ export class TerrainStorageService {
 		const record = await this.readRecord(this.buildStorageKey(campaign, terrainId));
 		if (!record) return null;
 		return { voxels: record.Voxels, contentHash: this.recordContentHash(record) };
+	}
+
+	/**
+	 * Reads a terrain's durably-stored payload from IndexedDB (NOT the in-memory
+	 * buffer). Used as a delta base when a delta arrives for a terrain this client
+	 * has cached on disk but not materialized in memory. Returns null when there
+	 * is no stored record.
+	 */
+	static async readStoredPayload(
+		campaign: Campaign,
+		terrainId: string
+	): Promise<TerrainPayload | null> {
+		const record = await this.readRecord(this.buildStorageKey(campaign, terrainId));
+		if (!record) return null;
+		return { voxels: record.Voxels, contentHash: this.recordContentHash(record) };
+	}
+
+	/**
+	 * Commits a delta-reconstructed payload (player side). Always refreshes the
+	 * durable IndexedDB record so future loads cache-hit, and updates the
+	 * in-memory buffer only when the terrain was already materialized -- so a
+	 * delta for a non-rendered terrain warms the disk cache without growing the
+	 * resident voxel set. No-op when the terrain is unknown to this campaign.
+	 */
+	static async commitDeltaPayload(
+		campaign: Campaign,
+		terrainId: string,
+		voxels: string,
+		contentHash: string
+	): Promise<void> {
+		const terrain = campaign.VoxelTerrains.find((t) => t.Id === terrainId);
+		if (!terrain) return;
+		if (hasTerrainPayload(terrainId)) {
+			setTerrainVoxels(terrainId, voxels, contentHash);
+		}
+		await this.writeRecord(campaign, terrain, voxels, contentHash);
 	}
 
 	/**
