@@ -18,22 +18,27 @@ const DEBOUNCE_MS = 2_000;
  *
  * --- Why this exists ---
  *
- * Trystero's Nostr strategy sends REQ subscription messages to relay
- * WebSockets exactly once, at the time joinRoom() is called. When a relay
- * WebSocket closes and reconnects (via Trystero's own onclose handler), a
- * fresh WebSocket is assigned to client.socket — but the REQ subscriptions
- * are never re-sent. The reconnected relay therefore delivers no signaling
- * messages to this peer. For the DM this is critical: new players announce
- * themselves over the relay, but the DM's subscription is gone, so
- * onPeerJoin never fires and new peers can never join. Existing direct
- * WebRTC channels are unaffected (they are fully peer-to-peer after ICE
- * negotiation and never touch the relay again).
+ * The DM's discoverability depends on its relay subscriptions staying live:
+ * new players announce themselves over the relay, and the DM must be
+ * subscribed (and announcing) to see them and offer a connection. Existing
+ * direct WebRTC channels are unaffected when relay signaling degrades (they
+ * are fully peer-to-peer after ICE negotiation and never touch the relay
+ * again), so the DM can keep its current players while silently becoming
+ * unreachable to new joiners — with no error anywhere.
  *
- * A full leave() + joinRoom() cycle fixes this by rebuilding the relay
- * clients and re-sending all REQ subscriptions. This hook detects the
- * socket close event — the root of the problem — and calls onSignalingBroken
- * so the caller can trigger that recovery at the exact moment it is needed,
- * rather than on a fixed timer.
+ * Trystero 0.25.1 reconnects relay sockets and re-sends REQ subscriptions
+ * automatically *when a socket actually closes*. But it has no liveness
+ * check: a socket that silently dies (readyState stays OPEN, sends dropped)
+ * is never detected, and routine relay churn can leave the DM's signaling in
+ * a degraded state that the library doesn't fully recover from on its own.
+ * `useAutoReconnect` only helps when peer count hits 0, which never happens
+ * while the DM still has players — so it is not a backstop here.
+ *
+ * This hook (DM-only) is that backstop. It listens for relay socket close
+ * events and, on one, calls onSignalingBroken so the caller can force a full
+ * leave() + joinRoom() recovery — rebuilding every relay client, subscription,
+ * and offer pool from scratch at the moment signaling is most likely stale.
+ * Empirically this is what keeps a long-lived DM room reliably joinable.
  *
  * --- Dependency on actionServiceSwapVersion ---
  *

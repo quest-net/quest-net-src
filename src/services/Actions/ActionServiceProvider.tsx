@@ -13,13 +13,14 @@
 //                               on swap (e.g. useRelayWatchdog needs the new
 //                               room's fresh WebSocket objects).
 //
-// Why this matters: useRelayWatchdog tears the room down and rebuilds it
-// roughly once per minute on relays with idle timeouts (e.g. wss://relay.mostr.pub).
-// Before this split, every component that put actionService in its useEffect
-// deps -- ImageDisplay, the slot displays, TerrainDisplay, FirstPersonMap, etc.
-// -- re-fired on every cycle, refetching image blobs, recreating object URLs,
-// and churning closures. Over an hour that adds up to a steady FPS decay even
-// though the heap stays bounded (GC pauses between frames).
+// Why this matters: useRelayWatchdog tears the room down and rebuilds it on
+// relay socket closes (which happen routinely on relays with idle timeouts,
+// e.g. wss://relay.mostr.pub). Before this split, every component that put
+// actionService in its useEffect deps -- ImageDisplay, the slot displays,
+// TerrainDisplay, FirstPersonMap, etc. -- re-fired on every cycle, refetching
+// image blobs, recreating object URLs, and churning closures. Over an hour
+// that adds up to a steady FPS decay even though the heap stays bounded (GC
+// pauses between frames).
 
 import {
 	createContext,

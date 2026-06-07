@@ -1,26 +1,23 @@
 // services/TerrainTransferService.ts
 //
-// On-demand peer transfer of terrain voxel payloads, mirroring ImageService's
-// imgReq/imgData pattern. Terrain payloads are no longer part of state sync
-// (only the ContentHash metadata is), so a client that needs a terrain it does
-// not have cached fetches it here:
+// On-demand peer transfer of terrain voxel payloads. Terrain payloads are not
+// part of state sync (only the ContentHash metadata is), so a client that
+// needs a terrain it does not have cached fetches it from the DM here:
 //
-//   - Player needs terrain T -> sends `terrainReq` -> DM replies on `terrainData`.
-//   - DM is the authority and serves from its buffer / IndexedDB.
+//   - Player needs terrain T -> requests it from the DM -> DM responds with
+//     the payload it serves from its buffer / IndexedDB.
 //
-// Reliability vs. the (best-effort) image pattern comes from the caller:
-// TerrainStorageService.hydrateTerrain only resolves once the payload whose
-// ContentHash matches the canonical terrain is materialized, and the render /
-// validation paths gate on that. Trystero transparently chunks the (possibly
-// multi-megabyte) payload, so no manual chunking is needed here.
+// This rides on a single Trystero `kind: "request"` action: Trystero owns
+// request/response correlation, the per-request timeout, and chunking of the
+// (possibly multi-megabyte) payload, so no manual bookkeeping is needed here.
+// Reliability vs. best-effort comes from the caller: TerrainStorageService.
+// hydrateTerrain only resolves once the payload whose ContentHash matches the
+// canonical terrain is materialized, and the render / validation paths gate on
+// that.
 
-import type { Room } from "../domains/Room/Room";
+import type { Room, ActionRequest } from "../domains/Room/Room";
 import type { Campaign } from "../domains/Campaign/Campaign";
 import { TerrainStorageService, type TerrainPayload } from "./TerrainStorageService";
-
-interface TerrainRequestMessage {
-	terrainId: string;
-}
 
 const TERRAIN_REQUEST_TIMEOUT_MS = 30000;
 
@@ -28,23 +25,22 @@ export class TerrainTransferService {
 	private room: Room;
 	private isDM: boolean;
 	private getCampaign: () => Campaign | null;
+	private getDmPeerId: () => string | undefined;
 
-	private sendTerrainRequest!: (
-		data: TerrainRequestMessage,
-		targetPeers?: string | string[] | null
-	) => void;
-	private sendTerrainData!: (
-		data: TerrainPayload,
-		targetPeers: string | string[],
-		metadata: { terrainId: string }
-	) => void;
+	private requestTerrainData!: ActionRequest; // terrainId -> TerrainPayload
 
-	// In-flight player requests, deduped by terrainId.
+	// Dedup concurrent player requests for the same terrainId.
 	private pending = new Map<string, Promise<TerrainPayload | null>>();
 
-	constructor(room: Room, isDM: boolean, getCampaign: () => Campaign | null) {
+	constructor(
+		room: Room,
+		isDM: boolean,
+		getDmPeerId: () => string | undefined,
+		getCampaign: () => Campaign | null
+	) {
 		this.room = room;
 		this.isDM = isDM;
+		this.getDmPeerId = getDmPeerId;
 		this.getCampaign = getCampaign;
 		this.setupChannels();
 
@@ -57,68 +53,14 @@ export class TerrainTransferService {
 	}
 
 	private setupChannels(): void {
-		const [sendRequest, getRequest] = this.room.makeAction("terrainReq");
-		this.sendTerrainRequest = sendRequest as any;
-		getRequest((data, peerId) => {
-			if (!this.isDM) return;
-			void this.handleRequest(
-				(data as unknown as TerrainRequestMessage)?.terrainId,
-				peerId
-			);
+		const terrainFetch = this.room.makeAction<any, any>("terrainFetch", {
+			kind: "request",
+			onRequest: this.isDM
+				? (terrainId) => this.serveTerrain(terrainId as string)
+				: undefined,
 		});
-
-		const [sendData, getData] = this.room.makeAction("terrainData");
-		this.sendTerrainData = sendData as any;
-		getData((data, _peerId, metadata) => {
-			const terrainId = (metadata as { terrainId?: string })?.terrainId;
-			if (!terrainId) return;
-			this.handleData(terrainId, data as unknown as TerrainPayload);
-		});
+		this.requestTerrainData = terrainFetch.request;
 	}
-
-	/** DM: serve a requested terrain payload to a peer. */
-	private async handleRequest(
-		terrainId: string | undefined,
-		peerId: string
-	): Promise<void> {
-		if (!terrainId) return;
-		const campaign = this.getCampaign();
-		if (!campaign) return;
-		try {
-			const payload = await TerrainStorageService.getPayloadForServing(
-				campaign,
-				terrainId
-			);
-			if (!payload) {
-				console.warn(`[TerrainTransferService] No payload to serve: ${terrainId}`);
-				return;
-			}
-			this.sendTerrainData(payload, peerId, { terrainId });
-		} catch (error) {
-			console.error(
-				`[TerrainTransferService] Error serving terrain ${terrainId}:`,
-				error
-			);
-		}
-	}
-
-	/** Player: a requested payload arrived; resolve the pending request. */
-	private handleData(terrainId: string, payload: TerrainPayload): void {
-		const pending = this.pendingResolvers.get(terrainId);
-		if (!pending) return;
-		this.pendingResolvers.delete(terrainId);
-		this.pending.delete(terrainId);
-		clearTimeout(pending.timeout);
-		pending.resolve({
-			voxels: payload?.voxels ?? "",
-			contentHash: payload?.contentHash ?? "",
-		});
-	}
-
-	private pendingResolvers = new Map<
-		string,
-		{ resolve: (p: TerrainPayload | null) => void; timeout: ReturnType<typeof setTimeout> }
-	>();
 
 	/** Player: request a terrain payload from the DM (deduped per terrainId). */
 	private requestTerrain(
@@ -128,27 +70,58 @@ export class TerrainTransferService {
 		const existing = this.pending.get(terrainId);
 		if (existing) return existing;
 
-		const promise = new Promise<TerrainPayload | null>((resolve) => {
-			const timeout = setTimeout(() => {
-				this.pendingResolvers.delete(terrainId);
-				this.pending.delete(terrainId);
-				console.warn(`[TerrainTransferService] Timeout fetching terrain ${terrainId}`);
-				resolve(null);
-			}, TERRAIN_REQUEST_TIMEOUT_MS);
-			this.pendingResolvers.set(terrainId, { resolve, timeout });
-			// Broadcast to peers; the DM answers.
-			this.sendTerrainRequest({ terrainId });
-		});
-
+		const promise = this.fetchTerrain(terrainId);
 		this.pending.set(terrainId, promise);
+		promise.finally(() => this.pending.delete(terrainId));
 		return promise;
 	}
 
-	cleanup(): void {
-		for (const { timeout } of this.pendingResolvers.values()) {
-			clearTimeout(timeout);
+	private async fetchTerrain(terrainId: string): Promise<TerrainPayload | null> {
+		const dmPeerId = this.getDmPeerId();
+		if (!dmPeerId) {
+			console.warn(
+				`[TerrainTransferService] No DM peer to request terrain ${terrainId}`
+			);
+			return null;
 		}
-		this.pendingResolvers.clear();
+
+		try {
+			const payload = (await this.requestTerrainData(terrainId, {
+				target: dmPeerId,
+				timeoutMs: TERRAIN_REQUEST_TIMEOUT_MS,
+			})) as TerrainPayload | null;
+			return {
+				voxels: payload?.voxels ?? "",
+				contentHash: payload?.contentHash ?? "",
+			};
+		} catch (error) {
+			console.warn(
+				`[TerrainTransferService] Failed to fetch terrain ${terrainId}:`,
+				error
+			);
+			return null;
+		}
+	}
+
+	/** DM: serve a requested terrain payload. Throws if it cannot be served. */
+	private async serveTerrain(terrainId: string): Promise<TerrainPayload> {
+		const campaign = this.getCampaign();
+		if (!campaign) {
+			throw new Error("No active campaign to serve terrain from");
+		}
+		const payload = await TerrainStorageService.getPayloadForServing(
+			campaign,
+			terrainId
+		);
+		if (!payload) {
+			throw new Error(`No payload to serve for terrain ${terrainId}`);
+		}
+		return payload;
+	}
+
+	cleanup(): void {
+		// In-flight requests reject on their own when the room tears down
+		// (peer disconnect) or their timeout fires; just drop the dedup map.
 		this.pending.clear();
 		if (!this.isDM) {
 			TerrainStorageService.setNetworkProvider(null);

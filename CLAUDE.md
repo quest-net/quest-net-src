@@ -140,11 +140,11 @@ Specialized editors: `ImagePicker`, `ImageUpload`, `ImageGenerator` (AI image ge
 
 Trystero strategy: **Nostr** (root `trystero` package defaults to Nostr in 0.24+). App ID: `'quest-net'`. Room codes are max 32 characters; anything longer is treated as a DM GUID. Action name limit: **32 bytes** (increased from 12 in pre-0.23).
 
-Trystero channels: `actionReq`, `stateSync`, `imgReq`, `imgData`, `imgUpload`, `imgCreated`, `actorPose`, `userReq`, `userUpdate`.
+Trystero channels: `actionReq`, `stateSync`, `actorPose`, `userReq`, `userUpdate` (message actions), plus `imgFetch`, `imgUpload`, `terrainFetch` (`kind: "request"` request/response actions — the player's `request()` targets the DM's peerId, resolved via `ActionService.getDmPeerId()`, and the DM serves the response from its `onRequest` handler). Trystero owns request/response correlation, per-request timeouts, and binary chunking.
 
 Initial peer identity is exchanged via the `onPeerHandshake` callback (passed to `joinRoom` in `CampaignView`). Runtime user updates flow through `userUpdate`; missing metadata is repaired via `userReq`.
 
-`useRelayWatchdog` (DM-only) works around a Trystero/Nostr bug where relay REQ subscriptions are lost on WebSocket reconnect. It monitors relay sockets via `getRelaySockets()` and triggers a `leave()` + `joinRoom()` recovery cycle when a socket closes unexpectedly.
+Connection recovery has three layers. **`useAutoReconnect`** recycles the room (leave + rejoin) when *this* peer loses all of its connections (peer loss, browser sleep/wake) — gated on 0 peers. **`useRelayWatchdog`** (DM-only) forces a full leave + rejoin when a Nostr relay socket closes: Trystero 0.25.1 auto-resubscribes on a real reconnect but has no liveness check for silently-dead sockets, and a DM with players never hits 0 peers, so this watchdog is what keeps a long-lived DM room discoverable to new joiners. **Ping-failure eviction** in `ActionService` force-closes a peer's `RTCPeerConnection` after repeated ping timeouts, so Trystero reaps phantom peers (uncleanly-dropped connections that never fired a close event).
 
 See `src/DEVELOPMENT_NOTES.md` for full networking constraints and implementation details.
 

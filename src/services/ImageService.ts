@@ -1,380 +1,212 @@
 // services/ImageService.ts
 
 import { IndexedDBUtilities } from "../utils/IndexedDBUtilities";
-import { Room } from "../domains/Room/Room";
+import { Room, type ActionRequest } from "../domains/Room/Room";
 import { ImageActions } from "../domains/Image/ImageActions";
 import { Image } from "../domains/Image/Image";
 
+const IMAGE_REQUEST_TIMEOUT_MS = 30000;
+const MAX_IMAGE_BYTES = 1024 * 1024;
+
+interface ImageUploadMetadata {
+	name: string;
+	width: number;
+	height: number;
+	mimeType: string;
+	fileSize: number;
+	userId?: string;
+	cutout?: boolean;
+}
+
 /**
- * Manages image data transfer between peers
- * Handles caching and request deduplication
+ * Manages image binary transfer between peers.
+ *
+ * The DM is the image authority: it holds every blob in IndexedDB and serves
+ * them on demand. Two Trystero `kind: "request"` actions carry the traffic,
+ * each targeted at the DM's peerId:
+ *
+ *   - imgFetch:  player asks for an imageId, DM responds with the ArrayBuffer.
+ *   - imgUpload: player sends compressed bytes + metadata, DM stores them and
+ *                responds with the created Image record.
+ *
+ * Trystero owns request/response correlation, per-request timeouts, and
+ * binary chunking, so this service only adds local caching and dedup of
+ * concurrent fetches for the same image.
  */
 export class ImageService {
 	private room: Room;
 	private isDM: boolean;
 	private actionExecute: (actionKey: string, params: any) => void;
+	private getDmPeerId: () => string | undefined;
 
-	// Track pending requests to avoid duplicates
-	private pendingRequests = new Map<string, Promise<Blob>>();
+	// Dedup concurrent fetches for the same image (e.g. several components
+	// rendering the same portrait at once).
+	private pendingRequests = new Map<string, Promise<Blob | null>>();
 
-	// Track pending uploads for players
-	private pendingUploads = new Map<string, Promise<Image>>();
-
-	// Trystero action functions
-	private sendImageData!: (
-		data: ArrayBuffer,
-		peerId: string,
-		metadata: { imageId: string }
-	) => void;
-	private requestImageData!: (imageId: string) => void;
-	private sendImageUpload!: (
-		data: ArrayBuffer,
-		targetPeers: string | null,
-		metadata: {
-			name: string;
-			width: number;
-			height: number;
-			mimeType: string;
-			fileSize: number;
-			uploadId: string;
-			userId?: string;
-			cutout?: boolean;
-		}
-	) => void;
-	private sendImageCreated!: (
-		data: {
-			uploadId: string;
-			imageId: string;
-			name: string;
-			fileSize: number;
-			mimeType: string;
-			width: number;
-			height: number;
-			cutout?: boolean;
-		},
-		peerId: string
-	) => void;
+	private requestImage!: ActionRequest; // imageId -> ArrayBuffer
+	private requestUpload!: ActionRequest; // ArrayBuffer + metadata -> Image
 
 	constructor(
 		room: Room,
 		isDM: boolean,
+		getDmPeerId: () => string | undefined,
 		actionExecute: (actionKey: string, params: any) => void = () => {}
 	) {
 		this.room = room;
 		this.isDM = isDM;
+		this.getDmPeerId = getDmPeerId;
 		this.actionExecute = actionExecute;
 		this.setupChannels();
 	}
 
 	private setupChannels() {
-		// Channel for players requesting images from DM
-		const [sendRequest, getRequest] = this.room.makeAction("imgReq");
-		this.requestImageData = sendRequest;
+		// Download: player requests an image by id, DM serves the bytes.
+		const imgFetch = this.room.makeAction<any, any>("imgFetch", {
+			kind: "request",
+			onRequest: this.isDM
+				? (imageId) => this.serveImage(imageId as string)
+				: undefined,
+		});
+		this.requestImage = imgFetch.request;
 
-		// Channel for DM sending image data to players
-		const [sendData, getData] = this.room.makeAction("imgData");
-		this.sendImageData = sendData;
-
-		// Channel for players uploading images to DM
-		const [sendUpload, getUpload] = this.room.makeAction("imgUpload");
-		this.sendImageUpload = sendUpload as any;
-
-		// Channel for DM confirming image creation to player
-		const [sendCreated, getCreated] = this.room.makeAction("imgCreated");
-		this.sendImageCreated = sendCreated as any;
-
-		if (this.isDM) {
-			// DM listens for image requests
-			getRequest((data, peerId) => {
-				const imageId = data as string;
-				this.handleImageRequest(imageId, peerId);
-			});
-
-			// DM listens for player uploads
-			getUpload((data, peerId, metadata) => {
-				const arrayBuffer = data as ArrayBuffer;
-				const meta = metadata as any;
-				this.handlePlayerUpload(arrayBuffer, meta, meta.uploadId, peerId);
-			});
-		} else {
-			// Players listen for image data
-			getData((data, _peerId, metadata) => {
-				const arrayBuffer = data as ArrayBuffer;
-				const { imageId } = metadata as any;
-				this.handleImageData(arrayBuffer, imageId);
-			});
-
-			// Players listen for upload confirmations
-			getCreated((data, _peerId) => {
-				const meta = data as any;
-				this.handleUploadConfirmation(meta.uploadId, {
-					Id: meta.imageId,
-					Name: meta.name,
-					FileSize: meta.fileSize,
-					MimeType: meta.mimeType,
-					Width: meta.width,
-					Height: meta.height,
-					Cutout: meta.cutout || undefined,
-				});
-			});
-		}
+		// Upload: player sends bytes + metadata, DM stores and returns the Image.
+		const imgUpload = this.room.makeAction<any, any>("imgUpload", {
+			kind: "request",
+			onRequest: this.isDM
+				? (data, { metadata }) =>
+						this.storeUpload(
+							data as ArrayBuffer,
+							metadata as unknown as ImageUploadMetadata
+						)
+				: undefined,
+		});
+		this.requestUpload = imgUpload.request;
 	}
 
 	/**
-	 * Player uploads an image to the DM
+	 * Player uploads an image to the DM and resolves with the created Image.
 	 */
 	async uploadImage(file: File, name?: string, userId?: string): Promise<Image> {
 		if (this.isDM) {
 			throw new Error("DM should use ImageActions.create directly");
 		}
 
-		// Generate unique upload ID to track this upload
-		const uploadId = crypto.randomUUID();
+		const dmPeerId = this.getDmPeerId();
+		if (!dmPeerId) {
+			throw new Error("Cannot upload: not connected to the DM");
+		}
 
-		const promise = this.processAndUpload(
-			file,
-			name || file.name.replace(/\.[^/.]+$/, ""),
-			uploadId,
-			userId
-		);
-		this.pendingUploads.set(uploadId, promise);
+		const { blob, width, height, mimeType, cutout } =
+			await ImageActions.compressImage(file);
 
-		promise.finally(() => {
-			this.pendingUploads.delete(uploadId);
-		});
-
-		return promise;
-	}
-
-	/**
-	 * Process the image and send to DM
-	 */
-	private async processAndUpload(
-		file: File,
-		name: string,
-		uploadId: string,
-		userId?: string
-	): Promise<Image> {
-		return new Promise(async (resolve, reject) => {
-			try {
-				// Process the image using ImageActions helper
-				const { blob, width, height, mimeType, cutout } =
-					await ImageActions.compressImage(file);
-
-				// Verify size
-				if (blob.size > 1024 * 1024) {
-					throw new Error(
-						`Image is too large (${(blob.size / 1024 / 1024).toFixed(
-							2
-						)} MB). Maximum size is 1 MB.`
-					);
-				}
-
-				// Convert to ArrayBuffer
-				const arrayBuffer = await blob.arrayBuffer();
-
-				// Set up timeout
-				const timeout = setTimeout(() => {
-					reject(new Error(`Timeout waiting for upload confirmation`));
-				}, 30000);
-
-				// Store resolve/reject for confirmation handler
-				(this as any)[`_resolve_${uploadId}`] = (img: Image) => {
-					clearTimeout(timeout);
-					resolve(img);
-				};
-				(this as any)[`_reject_${uploadId}`] = (err: Error) => {
-					clearTimeout(timeout);
-					reject(err);
-				};
-
-				// Send to DM with metadata
-				this.sendImageUpload(arrayBuffer, null, {
-					name,
-					width,
-					height,
-					mimeType,
-					fileSize: blob.size,
-					uploadId,
-					userId,
-					cutout: cutout || undefined,
-				});
-
-			} catch (error) {
-				reject(error);
-			}
-		});
-	}
-
-	/**
-	 * DM handles player upload
-	 */
-	private async handlePlayerUpload(
-		data: ArrayBuffer,
-		metadata: {
-			name: string;
-			width: number;
-			height: number;
-			mimeType: string;
-			fileSize: number;
-			userId?: string;
-			cutout?: boolean;
-		},
-		uploadId: string,
-		peerId: string
-	): Promise<void> {
-		try {
-			// Convert to Blob
-			const blob = new Blob([data]);
-
-			// Create Image entry
-			const image: Image = {
-				Id: crypto.randomUUID(),
-				Name: metadata.name,
-				FileSize: metadata.fileSize,
-				MimeType: metadata.mimeType,
-				Width: metadata.width,
-				Height: metadata.height,
-				Cutout: metadata.cutout || undefined,
-				UploadedBy: metadata.userId,
-			};
-
-			// Store in IndexedDB
-			await IndexedDBUtilities.save(image.Id, blob);
-
-			this.actionExecute("image:create", { image });
-
-			// Send confirmation back to player
-			this.sendImageCreated(
-				{
-					uploadId,
-					imageId: image.Id,
-					name: image.Name,
-					fileSize: image.FileSize,
-					mimeType: image.MimeType,
-					width: image.Width,
-					height: image.Height,
-					cutout: image.Cutout,
-				},
-				peerId
+		if (blob.size > MAX_IMAGE_BYTES) {
+			throw new Error(
+				`Image is too large (${(blob.size / 1024 / 1024).toFixed(
+					2
+				)} MB). Maximum size is 1 MB.`
 			);
-
-		} catch (error) {
-			console.error(`[ImageService] Error handling player upload:`, error);
 		}
+
+		const arrayBuffer = await blob.arrayBuffer();
+
+		// request() resolves with the DM's created Image, or rejects on
+		// timeout / disconnect / handler error.
+		return (await this.requestUpload(arrayBuffer, {
+			target: dmPeerId,
+			timeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
+			metadata: {
+				name: name || file.name.replace(/\.[^/.]+$/, ""),
+				width,
+				height,
+				mimeType,
+				fileSize: blob.size,
+				userId,
+				cutout: cutout || undefined,
+			},
+		})) as Image;
 	}
 
 	/**
-	 * Player handles upload confirmation
+	 * DM stores an uploaded image and returns the created Image record. Throws
+	 * propagate back to the uploading player as a rejected request().
 	 */
-	private handleUploadConfirmation(uploadId: string, image: Image): void {
-		const resolve = (this as any)[`_resolve_${uploadId}`];
-		if (resolve) {
-			resolve(image);
-			delete (this as any)[`_resolve_${uploadId}`];
-			delete (this as any)[`_reject_${uploadId}`];
-		}
+	private async storeUpload(
+		data: ArrayBuffer,
+		metadata: ImageUploadMetadata
+	): Promise<Image> {
+		const image: Image = {
+			Id: crypto.randomUUID(),
+			Name: metadata.name,
+			FileSize: metadata.fileSize,
+			MimeType: metadata.mimeType,
+			Width: metadata.width,
+			Height: metadata.height,
+			Cutout: metadata.cutout || undefined,
+			UploadedBy: metadata.userId,
+		};
+
+		await IndexedDBUtilities.save(image.Id, new Blob([data]));
+		this.actionExecute("image:create", { image });
+		return image;
 	}
 
 	/**
-	 * Gets an image blob, either from cache or by requesting from DM
+	 * Gets an image blob from cache, or fetches it from the DM on demand.
 	 */
 	async getImage(imageId: string): Promise<Blob | null> {
-		// Check cache first
 		const cached = await IndexedDBUtilities.load(imageId);
 		if (cached) {
 			return cached.data as Blob;
 		}
 
-		// If we're the DM, image should be in cache
+		// The DM is the authority — if it's missing locally, no one has it.
 		if (this.isDM) {
 			console.warn(`[ImageService] DM missing image ${imageId} in IndexedDB`);
 			return null;
 		}
 
-		// Check if already requesting this image
-		if (this.pendingRequests.has(imageId)) {
-			return this.pendingRequests.get(imageId)!;
-		}
+		const existing = this.pendingRequests.get(imageId);
+		if (existing) return existing;
 
-		// Request from DM
-		const promise = this.requestFromDM(imageId);
+		const promise = this.fetchFromDM(imageId);
 		this.pendingRequests.set(imageId, promise);
-
-		promise.finally(() => {
-			this.pendingRequests.delete(imageId);
-		});
-
+		promise.finally(() => this.pendingRequests.delete(imageId));
 		return promise;
 	}
 
 	/**
-	 * Requests an image from the DM
+	 * Player fetches an image's bytes from the DM and caches them.
 	 */
-	private requestFromDM(imageId: string): Promise<Blob> {
-		return new Promise((resolve, reject) => {
-			// Set up one-time listener for this specific image.
-			// IMPORTANT: both the timeout AND the success path must clear
-			// the poller, otherwise a single timed-out request leaks a
-			// 10Hz IndexedDB read for the rest of the page's lifetime.
-			const timeout = setTimeout(() => {
-				clearInterval(checkCache);
-				reject(new Error(`Timeout waiting for image ${imageId}`));
-			}, 30000); // 30 second timeout
-
-			const checkCache = setInterval(async () => {
-				const cached = await IndexedDBUtilities.load(imageId);
-				if (cached) {
-					clearTimeout(timeout);
-					clearInterval(checkCache);
-					resolve(cached.data as Blob);
-				}
-			}, 100);
-
-			// Send request to DM
-			this.requestImageData(imageId);
-		});
-	}
-
-	/**
-	 * DM handles incoming image requests
-	 */
-	private async handleImageRequest(
-		imageId: string,
-		peerId: string
-	): Promise<void> {
-		try {
-			const cached = await IndexedDBUtilities.load(imageId);
-			if (!cached) {
-				console.warn(`[ImageService] DM doesn't have image ${imageId}`);
-				return;
-			}
-
-			const blob = cached.data as Blob;
-			const arrayBuffer = await blob.arrayBuffer();
-
-			// Send to requesting peer with metadata
-			this.sendImageData(arrayBuffer, peerId, { imageId });
-		} catch (error) {
-			console.error(`[ImageService] Error sending image ${imageId}:`, error);
+	private async fetchFromDM(imageId: string): Promise<Blob | null> {
+		const dmPeerId = this.getDmPeerId();
+		if (!dmPeerId) {
+			console.warn(`[ImageService] No DM peer to request image ${imageId} from`);
+			return null;
 		}
-	}
 
-	/**
-	 * Players handle incoming image data
-	 */
-	private async handleImageData(
-		data: ArrayBuffer,
-		imageId: string
-	): Promise<void> {
 		try {
-			// Convert ArrayBuffer to Blob
-			const blob = new Blob([data]);
-
-			// Store in IndexedDB
+			const arrayBuffer = (await this.requestImage(imageId, {
+				target: dmPeerId,
+				timeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
+			})) as ArrayBuffer;
+			const blob = new Blob([arrayBuffer]);
 			await IndexedDBUtilities.save(imageId, blob);
+			return blob;
 		} catch (error) {
-			console.error(`[ImageService] Error caching image ${imageId}:`, error);
+			console.warn(`[ImageService] Failed to fetch image ${imageId}:`, error);
+			return null;
 		}
+	}
+
+	/**
+	 * DM serves an image's bytes by id. Throws if absent so the requesting
+	 * player's request() rejects rather than hanging.
+	 */
+	private async serveImage(imageId: string): Promise<ArrayBuffer> {
+		const cached = await IndexedDBUtilities.load(imageId);
+		if (!cached) {
+			throw new Error(`Image ${imageId} not found`);
+		}
+		return (cached.data as Blob).arrayBuffer();
 	}
 }

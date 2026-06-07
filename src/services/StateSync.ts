@@ -1,7 +1,7 @@
 // services/StateSync.ts
 
 import { Campaign } from "../domains/Campaign/Campaign";
-import { Room } from "../domains/Room/Room";
+import { Room, type ActionSend } from "../domains/Room/Room";
 import { compare, applyPatch } from "fast-json-patch";
 import type { Operation } from "fast-json-patch";
 import { sanitizeCampaignForPlayers } from "./StateSyncSanitize";
@@ -22,11 +22,7 @@ export interface StateUpdate {
 
 export class StateSync {
 	private room: Room;
-	private sendState!: (
-		data: any,
-		targetPeers?: string | string[] | null,
-		metadata?: any
-	) => void;
+	private sendState!: ActionSend;
 	private onUpdateCallback?: (campaign: Campaign) => void;
 	private actionExecute: (actionKey: string, params: any) => void;
 	private sendQueue: Promise<void> = Promise.resolve();
@@ -58,19 +54,19 @@ export class StateSync {
 	}
 
 	/**
-	 * Sets up the Trystero channel for state updates
-	 * Note: Trystero has 12-byte limit for action names
+	 * Sets up the Trystero channel for state updates.
+	 * Note: Trystero allows up to 32 bytes for action names.
 	 */
 	private setupChannel() {
-		const [send, receive] = this.room.makeAction("stateSync");
+		const stateSync = this.room.makeAction<any>("stateSync");
 
-		this.sendState = send;
+		this.sendState = stateSync.send;
 
-		// Listen for incoming state updates
-		// Trystero's receive expects (data, peerId, metadata) but we only need data
-		receive((data: any, _peerId: string, metadata: any) => {
+		// Listen for incoming state updates. We only need the data and the
+		// transport metadata (compression flags) from the message context.
+		stateSync.onMessage = (data, { metadata }) => {
 			void this.handleIncomingStateTransport(data, metadata);
-		});
+		};
 	}
 
 	private triggerFullSyncRequest(): void {
@@ -179,7 +175,9 @@ export class StateSync {
 					deltaByteThreshold:
 						STATE_UPDATE_DELTA_COMPRESSION_BYTE_THRESHOLD,
 				});
-				this.sendState(transportUpdate.data, null, transportUpdate.metadata);
+				this.sendState(transportUpdate.data, {
+					metadata: transportUpdate.metadata,
+				});
 			});
 	}
 

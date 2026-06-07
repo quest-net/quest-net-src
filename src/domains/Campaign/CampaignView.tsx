@@ -82,16 +82,14 @@ export function CampaignView() {
 		onReconnect
 	);
 
-	// Watches Trystero's relay WebSockets for unexpected closes. When a relay
-	// socket closes and reconnects, Trystero does not re-send its REQ
-	// subscriptions, silently breaking new-peer discovery while leaving
-	// existing direct WebRTC channels healthy. See useRelayWatchdog.ts for the
-	// full explanation. DM-only: the DM is the peer whose signaling
-	// subscription matters for new joiners.
-	useRelayWatchdog(
-		isDMRoute && state.status === "ready",
-		onReconnect
-	);
+	// DM-only relay watchdog. Trystero 0.25.1 auto-resubscribes when a relay
+	// socket actually closes, but it has no liveness check for silently-dead
+	// sockets, and useAutoReconnect only fires at 0 peers — so a DM with
+	// players can quietly become unreachable to NEW joiners with no error.
+	// This forces a full leave()+joinRoom() recovery on relay socket close,
+	// which empirically keeps a long-lived DM room reliably joinable. See
+	// useRelayWatchdog.ts.
+	useRelayWatchdog(isDMRoute && state.status === "ready", onReconnect);
 
 	useEffect(() => {
 		// Validate identifier

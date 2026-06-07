@@ -41,43 +41,43 @@
   a hard error with the underlying message. After `ready`, peer-level join
   failures are treated as transient and `useAutoReconnect` handles them.
 
-### Known Trystero bug: REQ subscriptions lost on relay WebSocket reconnect
+### DM signaling recovery (`useRelayWatchdog`)
 
-**Symptom**: The DM can maintain existing player connections indefinitely but
-new players cannot join after some indeterminate time. DM page refresh fixes
-it. Players already in the room are completely unaffected.
+The DM's discoverability depends on its relay subscriptions staying live: new
+players announce over the relay, and the DM must be subscribed and announcing
+to see them and offer a connection. Existing direct WebRTC channels are
+unaffected when relay signaling degrades (they're peer-to-peer after ICE), so
+the DM can keep its current players while silently becoming unreachable to new
+joiners — **with no error anywhere**.
 
-**Root cause** (traced to `@trystero-p2p/nostr`): Trystero's Nostr strategy
-sends `REQ` subscription messages to each relay WebSocket exactly once, at
-`joinRoom()` time (`strategy.subscribe()` call). When a relay WebSocket closes
-and reconnects (via Trystero's own `socket.onclose → init()` handler), a fresh
-`WebSocket` is assigned to `client.socket` but the REQ messages are **never
-re-sent**. The relay gets a live connection with zero active subscriptions and
-delivers no signaling to the DM. Because existing `RTCPeerConnection` objects
-are fully peer-to-peer after ICE negotiation and never touch the relay again,
-all current players remain connected and functional.
+Trystero 0.25.1 reconnects relay sockets and re-sends `REQ` subscriptions
+automatically *when a socket actually closes*, with capped/jittered backoff.
+But it has **no liveness check**: `makeSocket` (in `@trystero-p2p/core`) only
+reacts to `socket.onclose`, and a silently-dead socket stays `readyState === 1`
+so sends are dropped with no error and no reconnect ever triggers. And
+`useAutoReconnect` only recycles at **0 peers**, which never happens while the
+DM still has players. So neither covers a DM whose signaling degrades
+mid-session.
 
-Trystero also has no WebSocket heartbeat or keepalive: it only attempts
-reconnect after `onclose` fires. If a NAT or firewall silently kills the idle
-TCP connection, `readyState` stays `1` (OPEN) but all sends are dropped
-silently. However, the subscription-loss-on-reconnect case above is the more
-common failure mode in practice.
+`useRelayWatchdog` (DM-only) is the backstop: it listens for relay socket close
+events via `getRelaySockets()` and, on one, forces a full `leave()` +
+`joinRoom()` recovery — rebuilding every relay client, subscription, and offer
+pool. This is the mechanism that keeps a long-lived DM room reliably joinable.
+It re-attaches to fresh sockets after each recovery via `actionServiceSwapVersion`.
 
-**Workaround** (`useRelayWatchdog`): Trystero exports `getRelaySockets()`,
-which returns the current `client.socket` for each relay URL at call time.
-`useRelayWatchdog` (DM-only) attaches `close` event listeners to these
-sockets. When a socket closes unexpectedly, a `leave()` + `joinRoom()` recovery
-is triggered after a short debounce (2 s). This re-establishes all relay
-clients and re-sends the REQ subscriptions. Existing players reconnect
-automatically via their own `useAutoReconnect` within ~10–20 s; the DM
-broadcasts full state on each `onPeerJoin` so they catch up immediately.
+### Phantom peer eviction (ping-failure based)
 
-A 15-second cooldown on recovery prevents the deliberate `leave()` call's own
-socket close events from triggering a second cycle.
+Trystero only drops a peer from `getPeers()` when its `RTCPeerConnection` fires
+a close event. If a peer dies uncleanly (tab killed, laptop sleep, NAT drop) the
+connection can silently die with no close event, leaving a **phantom peer** in
+`getPeers()` indefinitely. That keeps peer count > 0, which blocks
+`useAutoReconnect`'s peerless recovery and leaves stale presence in the UI.
 
-**Proper fix**: A Trystero PR that re-sends REQ subscriptions inside
-`makeSocket`'s `onclose → init()` handler would eliminate the need for this
-workaround entirely.
+`ActionService`'s per-peer ping loop guards this: each ping is raced against a
+timeout (a silently-dead data channel never rejects on its own), and after a few
+consecutive failures the peer's `RTCPeerConnection` is force-`close()`d. That
+makes Trystero notice the close and reap the peer (firing `onPeerLeave` →
+`forgetPeer`), so presence and peer count reflect reality.
 
 ## Image Handling
 

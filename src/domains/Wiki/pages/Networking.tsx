@@ -131,16 +131,22 @@ export const networkingPage: WikiPage = {
 									"DM to players. Carries full campaign snapshots or fast-json-patch deltas.",
 							},
 							{
-								name: "imgReq / imgData",
+								name: "imgFetch",
 								tone: "success",
 								detail:
-									"Player requests image binary from the DM, and the DM returns ArrayBuffer data with imageId metadata.",
+									"Request action: a player asks the DM for an imageId; the DM responds with the ArrayBuffer. Trystero handles correlation, timeout, and binary chunking.",
 							},
 							{
-								name: "imgUpload / imgCreated",
+								name: "imgUpload",
 								tone: "warning",
 								detail:
-									"Player uploads compressed image bytes to the DM, then receives the created Image metadata.",
+									"Request action: a player sends compressed bytes plus metadata; the DM stores them and responds with the created Image record.",
+							},
+							{
+								name: "terrainFetch",
+								tone: "success",
+								detail:
+									"Request action: a player asks the DM for a terrainId; the DM responds with the voxel payload served from IndexedDB.",
 							},
 							{
 								name: "actorPose",
@@ -268,8 +274,8 @@ export const networkingPage: WikiPage = {
 								body: (
 									<>
 										Image metadata lives in the campaign, but binary image blobs
-										live in IndexedDB. Players request missing blobs from the DM
-										with <WikiCode>imgReq</WikiCode>.
+										live in IndexedDB. Players fetch missing blobs from the DM
+										with the <WikiCode>imgFetch</WikiCode> request action.
 									</>
 								),
 							},
@@ -279,8 +285,8 @@ export const networkingPage: WikiPage = {
 								body: (
 									<>
 										Player uploads are compressed before transfer and must stay
-										under 1 MB. The DM stores the blob, creates metadata, then
-										confirms over <WikiCode>imgCreated</WikiCode>.
+										under 1 MB. The <WikiCode>imgUpload</WikiCode> request resolves
+										with the created Image record once the DM stores the blob.
 									</>
 								),
 							},
@@ -334,15 +340,23 @@ export const networkingPage: WikiPage = {
 								name: "Relay watchdog",
 								tone: "error",
 								detail:
-									"DM-only watchdog observes Nostr relay socket closes and forces a leave plus rejoin cycle when Trystero loses relay subscriptions.",
+									"DM-only. Forces a leave + rejoin when a Nostr relay socket closes, rebuilding subscriptions so new players can still discover the DM after relay churn.",
+							},
+							{
+								name: "Phantom eviction",
+								tone: "info",
+								detail:
+									"Repeated ping failures force-close a peer's RTCPeerConnection so Trystero reaps a silently-dead peer that never fired a close event.",
 							},
 						]}
 					/>
 					<WikiCallout tone="warning" title="Important distinction">
 						<p>
-							Existing WebRTC peer connections can keep working after a relay
-							subscription breaks. The relay watchdog exists because new joiners
-							need the DM's signaling subscription to still be alive.
+							Existing WebRTC peer connections keep working after relay signaling
+							degrades — they are fully peer-to-peer after ICE negotiation. The
+							relay watchdog exists because new joiners still need the DM's relay
+							subscription alive, and Trystero only auto-recovers a relay socket
+							that actually fires a close event.
 						</p>
 					</WikiCallout>
 				</div>
@@ -390,7 +404,7 @@ export const networkingPage: WikiPage = {
 		},
 	],
 	searchText:
-		"networking trystero webrtc nostr state sync delta patch full state action request user metadata relay room code dm authority actionReq stateSync imgReq imgData imgUpload imgCreated actorPose userUpdate userReq compression version mismatch optimistic secret mode handshake reconnect",
+		"networking trystero webrtc nostr state sync delta patch full state action request user metadata relay room code dm authority actionReq stateSync imgFetch imgUpload terrainFetch actorPose userUpdate userReq request response compression version mismatch optimistic secret mode handshake reconnect",
 };
 
 export default networkingPage;

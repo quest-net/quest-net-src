@@ -29,8 +29,8 @@ export type RoomCallbacks = JoinRoomCallbacks;
  * For connection info, use Room methods directly:
  *   - room.getPeers() → object with peer IDs as keys
  *   - Object.keys(room.getPeers()) → array of peer IDs
- *   - room.onPeerJoin(callback)
- *   - room.onPeerLeave(callback)
+ *   - room.onPeerJoin = callback
+ *   - room.onPeerLeave = callback
  */
 export const RoomActions = {
 	/**
@@ -55,7 +55,6 @@ export const RoomActions = {
 	 * @param room - The room to leave
 	 */
 	leave(room: Room): void {
-
 		try {
 			room.leave();
 		} catch (error) {

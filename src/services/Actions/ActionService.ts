@@ -6,7 +6,7 @@ import type { Campaign } from "../../domains/Campaign/Campaign";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { StateSync } from "../StateSync";
 import { ImageService } from "../ImageService";
-import { Room } from "../../domains/Room/Room";
+import { Room, type ActionSend } from "../../domains/Room/Room";
 import { triggerContextUpdate } from "../../domains/Context/ContextProvider";
 import { RoomActions } from "../../domains/Room/RoomActions";
 import { LogActions } from "../../domains/Log/LogActions";
@@ -17,6 +17,14 @@ import { TerrainTransferService } from "../TerrainTransferService";
 import { ActorPoseService } from "../ActorPoseService";
 
 const PING_INTERVAL_MS = 3000;
+// A ping that doesn't pong within this window counts as a failure. room.ping()
+// never times out on its own — a silently-dead data channel leaves it pending
+// forever — so this bound is what surfaces a dead connection. Kept under
+// PING_INTERVAL_MS so at most one ping is outstanding per tick.
+const PING_TIMEOUT_MS = 2500;
+// Consecutive ping failures before we treat the peer as gone and force-close
+// its connection (~3 ticks of silence).
+const MAX_PING_FAILURES = 3;
 const PEER_RECONCILE_INTERVAL_MS = 2000;
 
 export class ActionService {
@@ -29,10 +37,11 @@ export class ActionService {
 
 	private onFirstUpdateCallback?: () => void;
 
-	// Trystero channel functions
-	private sendActionRequest!: (data: any) => void;
-	private sendUserUpdate!: (data: any, peerId?: string) => void;
-	private sendUserRequest!: (data: any, peerId?: string) => void;
+	// Trystero channel send functions. Target a specific peer via the
+	// `{ target }` option; omit it to broadcast to every peer.
+	private sendActionRequest!: ActionSend;
+	private sendUserUpdate!: ActionSend;
+	private sendUserRequest!: ActionSend;
 
 	// Peer state is split into transport presence and app-level metadata.
 	// `connectedPeerIds` mirrors Trystero's active peer map. `peerUsers` is
@@ -41,6 +50,7 @@ export class ActionService {
 	public peerUsers: Map<string, User> = new Map();
 	public peerPings: Map<string, number> = new Map();
 	private pingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
+	private pingFailures: Map<string, number> = new Map();
 	private peerReconcileInterval?: ReturnType<typeof setInterval>;
 	private lastBroadcastUserJson = "";
 
@@ -56,6 +66,7 @@ export class ActionService {
 		this.imageService = new ImageService(
 			room,
 			context.User.Role === "dm",
+			() => this.getDmPeerId(),
 			this.execute.bind(this)
 		);
 		this.actorPoseService = new ActorPoseService(context, room, {
@@ -64,6 +75,7 @@ export class ActionService {
 		this.terrainTransferService = new TerrainTransferService(
 			room,
 			context.User.Role === "dm",
+			() => this.getDmPeerId(),
 			() => this.context.ActiveCampaign
 		);
 		this.setupChannels();
@@ -119,7 +131,7 @@ export class ActionService {
 		if (!this.sendUserUpdate) return;
 		const json = JSON.stringify(this.context.User);
 		if (peerId) {
-			this.sendUserUpdate(this.context.User, peerId);
+			this.sendUserUpdate(this.context.User, { target: peerId });
 			return;
 		}
 		if (json === this.lastBroadcastUserJson) return;
@@ -127,22 +139,36 @@ export class ActionService {
 		this.sendUserUpdate(this.context.User);
 	}
 
+	/**
+	 * Resolves the connected DM's peerId by scanning recorded peer Users.
+	 * Players target on-demand image and terrain requests at the DM (the sole
+	 * authority that serves them). Returns undefined until the DM's User
+	 * payload has been recorded via the handshake / userUpdate.
+	 */
+	getDmPeerId(): string | undefined {
+		for (const [peerId, user] of this.peerUsers) {
+			if (user.Role === "dm") return peerId;
+		}
+		return undefined;
+	}
+
 	private setupChannels() {
 		// Channel for action requests: Player → DM
-		// Note: Trystero 0.23+ allows up to 32 bytes per action name.
-		const [sendReq, receiveReq] = this.room.makeAction("actionReq");
-		this.sendActionRequest = sendReq;
+		// Note: Trystero allows up to 32 bytes per action name.
+		const actionReq = this.room.makeAction<any>("actionReq");
+		this.sendActionRequest = actionReq.send;
 
 		if (this.context.User.Role === "dm") {
 			// DM listens for action requests from players
-			receiveReq((data, peerId) => this.handlePlayerRequest(data, peerId));
+			actionReq.onMessage = (data, { peerId }) =>
+				this.handlePlayerRequest(data, peerId);
 		}
 
 		// Runtime user updates (e.g., character selection mid-session).
 		// Initial user exchange is handled by the joinRoom handshake.
-		const [sendUserUpdate, getUserUpdate] = this.room.makeAction("userUpdate");
-		this.sendUserUpdate = sendUserUpdate;
-		getUserUpdate((data, peerId) => {
+		const userUpdate = this.room.makeAction<any>("userUpdate");
+		this.sendUserUpdate = userUpdate.send;
+		userUpdate.onMessage = (data, { peerId }) => {
 			if (data && typeof data === "object") {
 				const didChangeUser = this.setPeerUser(peerId, data as unknown as User);
 				const didChangeConnection = this.isPeerActive(peerId)
@@ -154,13 +180,13 @@ export class ActionService {
 					triggerContextUpdate(undefined, { persist: false });
 				}
 			}
-		});
+		};
 
-		const [sendUserRequest, getUserRequest] = this.room.makeAction("userReq");
-		this.sendUserRequest = sendUserRequest;
-		getUserRequest((_data, peerId) => {
+		const userReq = this.room.makeAction<any>("userReq");
+		this.sendUserRequest = userReq.send;
+		userReq.onMessage = (_data, { peerId }) => {
 			this.broadcastSelf(peerId);
-		});
+		};
 	}
 
 	private setupStateSync() {
@@ -229,7 +255,7 @@ export class ActionService {
 	}
 
 	private setupPeerHandlers() {
-		this.room.onPeerJoin((peerId) => {
+		this.room.onPeerJoin = (peerId) => {
 			const didChangeConnection = this.addConnectedPeer(peerId);
 
 			if (this.context.User.Role === "dm") {
@@ -242,11 +268,11 @@ export class ActionService {
 				// Presence-only: re-render, but don't re-serialize the campaign.
 				triggerContextUpdate(undefined, { persist: false });
 			}
-		});
+		};
 
-		this.room.onPeerLeave((peerId) => {
+		this.room.onPeerLeave = (peerId) => {
 			this.forgetPeer(peerId);
-		});
+		};
 
 		this.peerReconcileInterval = setInterval(
 			() => this.reconcilePeerConnections(),
@@ -285,7 +311,7 @@ export class ActionService {
 
 	private requestPeerUser(peerId: string) {
 		if (!this.sendUserRequest) return;
-		this.sendUserRequest({ userId: this.context.User.Id }, peerId);
+		this.sendUserRequest({ userId: this.context.User.Id }, { target: peerId });
 	}
 
 	private reconcilePeerConnections() {
@@ -316,18 +342,73 @@ export class ActionService {
 
 	private startPinging(peerId: string) {
 		this.stopPinging(peerId);
+		let pinging = false;
 		const tick = async () => {
+			// Skip if a ping is still outstanding so failures are counted once
+			// per tick and we never stack pings on a slow/dead link.
+			if (pinging) return;
+			pinging = true;
 			try {
-				const ms = await this.room.ping(peerId);
+				const ms = await this.pingWithTimeout(peerId);
 				this.peerPings.set(peerId, ms);
+				this.pingFailures.delete(peerId);
 				// Presence-only: re-render, but don't re-serialize the campaign.
 				triggerContextUpdate(undefined, { persist: false });
 			} catch {
-				// Transient ping failures are expected on flaky links — ignore.
+				// Count consecutive failures; a sustained run means the
+				// connection is dead even if Trystero hasn't noticed.
+				const failures = (this.pingFailures.get(peerId) ?? 0) + 1;
+				this.pingFailures.set(peerId, failures);
+				if (failures >= MAX_PING_FAILURES) {
+					this.evictDeadPeer(peerId);
+				}
+			} finally {
+				pinging = false;
 			}
 		};
 		tick();
 		this.pingIntervals.set(peerId, setInterval(tick, PING_INTERVAL_MS));
+	}
+
+	/**
+	 * Pings a peer, rejecting if no pong arrives within PING_TIMEOUT_MS.
+	 * room.ping() stays pending forever on a silently-dead data channel, so we
+	 * bound it here to turn that silence into a detectable failure.
+	 */
+	private async pingWithTimeout(peerId: string): Promise<number> {
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const timeout = new Promise<number>((_, reject) => {
+			timer = setTimeout(
+				() => reject(new Error("ping timeout")),
+				PING_TIMEOUT_MS
+			);
+		});
+		try {
+			return await Promise.race([this.room.ping(peerId), timeout]);
+		} finally {
+			if (timer) clearTimeout(timer);
+		}
+	}
+
+	/**
+	 * Treats a peer that has stopped responding to pings as gone. Trystero only
+	 * drops a peer when its RTCPeerConnection fires a close event, which never
+	 * happens for a silently-dead connection (tab killed, sleep, NAT drop) — so
+	 * the peer would otherwise linger in getPeers() forever, keeping peer count
+	 * above 0 and blocking peerless reconnects. Force-closing the connection
+	 * makes Trystero notice and reap it (firing onPeerLeave -> forgetPeer).
+	 */
+	private evictDeadPeer(peerId: string): void {
+		console.warn(
+			`[ActionService] Peer ${peerId} unresponsive after ${MAX_PING_FAILURES} pings; closing its connection.`
+		);
+		try {
+			this.room.getPeers()[peerId]?.close();
+		} catch (error) {
+			console.error(`[ActionService] Error closing dead peer ${peerId}:`, error);
+		}
+		// Drop local state now in case the close event is slow or never fires.
+		this.forgetPeer(peerId);
 	}
 
 	private stopPinging(peerId: string) {
@@ -337,6 +418,7 @@ export class ActionService {
 			this.pingIntervals.delete(peerId);
 		}
 		this.peerPings.delete(peerId);
+		this.pingFailures.delete(peerId);
 	}
 
 	/**
@@ -590,6 +672,7 @@ export class ActionService {
 		this.terrainTransferService.cleanup();
 		this.pingIntervals.forEach(clearInterval);
 		this.pingIntervals.clear();
+		this.pingFailures.clear();
 		this.peerPings.clear();
 		this.peerUsers.clear();
 		this.connectedPeerIds.clear();

@@ -1,7 +1,7 @@
 import type { Campaign } from "../domains/Campaign/Campaign";
 import { CampaignActions } from "../domains/Campaign/CampaignActions";
 import type { Context } from "../domains/Context/Context";
-import type { Room } from "../domains/Room/Room";
+import type { Room, ActionSend } from "../domains/Room/Room";
 import type { User } from "../domains/User/User";
 
 const ACTOR_POSE_TIMEOUT_MS = 800;
@@ -26,7 +26,7 @@ interface ActorPoseServiceOptions {
 
 export class ActorPoseService {
 	private context: Context;
-	private sendActorPosePacket?: (data: ActorPosePacket) => void;
+	private sendActorPosePacket?: ActionSend;
 	private liveActorPoses: Map<string, LiveActorPose> = new Map();
 	private liveActorPoseListeners: Set<LiveActorPoseListener> = new Set();
 	private pruneInterval?: ReturnType<typeof setInterval>;
@@ -37,11 +37,11 @@ export class ActorPoseService {
 		private options: ActorPoseServiceOptions
 	) {
 		this.context = context;
-		const [sendActorPose, getActorPose] = room.makeAction("actorPose");
-		this.sendActorPosePacket = sendActorPose;
-		getActorPose((data, peerId) => {
+		const actorPose = room.makeAction<any>("actorPose");
+		this.sendActorPosePacket = actorPose.send;
+		actorPose.onMessage = (data, { peerId }) => {
 			this.handleActorPose(data, peerId);
-		});
+		};
 
 		this.pruneInterval = setInterval(
 			() => this.reconcileLiveActorPoses(),

@@ -150,9 +150,9 @@ export const terrainsAndVoxelsPage: WikiPage = {
 						<WikiCode>TerrainStorageService</WikiCode> backs a per-client
 						materialized buffer (<WikiCode>TerrainPayloadStore</WikiCode>) with
 						IndexedDB, and — for players — an on-demand peer fetch over the{" "}
-						<WikiCode>terrainReq</WikiCode>/<WikiCode>terrainData</WikiCode>{" "}
-						channels. A client materializes a terrain only when it needs to render
-						or validate against it.
+						<WikiCode>terrainFetch</WikiCode> request action. A client
+						materializes a terrain only when it needs to render or validate
+						against it.
 					</p>
 					<WikiDiagram title="Hydration lifecycle">
 						<div className="grid gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr]">
