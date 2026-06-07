@@ -604,43 +604,29 @@ export default function MapScene({
 	useEffect(() => {
 		const controller = controllerRef.current;
 		if (!sceneResources || !controller) return;
-		const container = containerRef.current;
-		if (!container) return;
 		if (!terrain || getVoxelCount(terrainVoxels) === 0) return;
 
-		const rig = controller.rig;
-		const controls = rig.controls;
-		const orthoCamera = rig.orthoCamera;
-		const perspCamera = rig.perspectiveCamera;
-
-		const W = terrain.Width;
-		const L = terrain.Length;
+		// The rig owns the orthographic framing math (shared with the terrain
+		// editor); we supply only the terrain extents and the map-specific pan-limit
+		// radius. Passing the surface height as the framing height keeps the orbit
+		// pivot at the terrain's vertical centre, and (since the map config's height
+		// multiplier is 0) leaves the frustum half-size unchanged. Reframe
+		// (reposition the camera) only on first framing so a synced content edit or a
+		// resize preserves the viewer's pan/zoom/rotation.
 		const maxSurfaceHeight = getMaxVoxelSurfaceHeight(terrain);
-		const terrainCenterY = (maxSurfaceHeight - 1) / 2;
-		const halfSize = (W + L) / Math.SQRT2 / 2 * THREE_D_MAP_CAMERA.FRAMING_MULTIPLIER;
-
-		// Let the rig know the terrain extents so freecam / perspective entry
-		// framing (and the view tween's world endpoint) is sized correctly.
-		controller.setTerrain({ width: W, length: L, height: maxSurfaceHeight });
-
-		const aspect = (container.clientWidth || 1) / (container.clientHeight || 1);
-		orthoCamera.left = -halfSize * aspect;
-		orthoCamera.right = halfSize * aspect;
-		orthoCamera.top = halfSize;
-		orthoCamera.bottom = -halfSize;
-		orthoCamera.updateProjectionMatrix();
-		perspCamera.aspect = aspect;
-		perspCamera.updateProjectionMatrix();
-
-		controls.cursor.set(0, terrainCenterY, 0);
-		controls.maxTargetRadius = getPanLimitRadius(W, L, maxSurfaceHeight);
+		const dims = {
+			width: terrain.Width,
+			length: terrain.Length,
+			height: maxSurfaceHeight,
+		};
+		const framingOptions = {
+			maxTargetRadius: getPanLimitRadius(terrain.Width, terrain.Length, maxSurfaceHeight),
+		};
 		if (!hasFramedTerrainRef.current) {
-			const camDist = halfSize * THREE_D_MAP_CAMERA.DISTANCE_MULTIPLIER;
-			orthoCamera.position.set(camDist, camDist, camDist);
-			controls.target.set(0, terrainCenterY, 0);
-			orthoCamera.updateProjectionMatrix();
-			controls.update();
+			controller.rig.frameOrtho(dims, framingOptions);
 			hasFramedTerrainRef.current = true;
+		} else {
+			controller.rig.updateOrthoExtents(dims, framingOptions);
 		}
 	}, [sceneResources, terrainSignature]);
 

@@ -26,6 +26,14 @@ export interface TerrainDims {
 	height: number;
 }
 
+export interface OrthoFramingOptions {
+	/** Orbit pivot / vertical centre. Defaults to a height-derived terrain centre. */
+	center?: THREE.Vector3;
+	/** Pan-limit radius (controls.maxTargetRadius). Defaults to the terrain
+	 *  footprint diagonal (min 8). */
+	maxTargetRadius?: number;
+}
+
 export interface CameraRigConfig {
 	ortho: {
 		near: number;
@@ -310,36 +318,63 @@ export class CameraRig {
 		this.updateProjections();
 	}
 
-	/** Reset the orthographic camera to its default isometric framing for the
-	 *  given terrain. Does not move the perspective camera. */
-	frameOrtho(terrain: TerrainDims, target?: THREE.Vector3): void {
-		this.setTerrain(terrain);
+	/** Orthographic frustum half-size for `terrain`, from the configured framing
+	 *  multipliers. Shared by the extents refresh and the full reframe. */
+	private orthoHalfSize(terrain: TerrainDims): number {
 		const f = this.config.ortho.framing;
-		const halfSize = Math.max(
+		return Math.max(
 			f.floor,
 			((terrain.width + terrain.length) / Math.SQRT2 / 2) * f.diagonalMultiplier,
 			terrain.height * f.heightMultiplier,
 		);
-		const aspect = this.viewportWidth / this.viewportHeight;
-		const dist = halfSize * this.config.ortho.distanceMultiplier;
-		const centerY = target ? target.y : Math.max(0, terrain.height / 2 - 0.5);
+	}
 
+	/** Default orbit pivot for `terrain`: centred horizontally, raised to roughly
+	 *  half the terrain's height. */
+	private defaultOrthoCenter(terrain: TerrainDims): THREE.Vector3 {
+		return new THREE.Vector3(0, Math.max(0, terrain.height / 2 - 0.5), 0);
+	}
+
+	/** Refresh the orthographic frustum extents, orbit cursor, and pan-limit radius
+	 *  for `terrain` WITHOUT moving the camera. Use on a terrain content edit or a
+	 *  resize so the viewer's current pan/zoom/rotation is preserved. */
+	updateOrthoExtents(terrain: TerrainDims, options: OrthoFramingOptions = {}): void {
+		this.setTerrain(terrain);
+		const halfSize = this.orthoHalfSize(terrain);
+		const aspect = this.viewportWidth / this.viewportHeight;
 		const cam = this.orthoCamera;
 		cam.left = -halfSize * aspect;
 		cam.right = halfSize * aspect;
 		cam.top = halfSize;
 		cam.bottom = -halfSize;
+		cam.updateProjectionMatrix();
+
+		const center = options.center ?? this.defaultOrthoCenter(terrain);
+		this.controls.cursor.copy(center);
+		this.controls.maxTargetRadius =
+			options.maxTargetRadius ??
+			Math.max(
+				8,
+				Math.sqrt(terrain.width * terrain.width + terrain.length * terrain.length),
+			);
+	}
+
+	/** Reset the orthographic camera to its default isometric framing for `terrain`:
+	 *  the extents/cursor/pan-limit from updateOrthoExtents, plus the camera
+	 *  position, orbit target, and zoom (a full view reset). Does not move the
+	 *  perspective camera. */
+	frameOrtho(terrain: TerrainDims, options: OrthoFramingOptions = {}): void {
+		this.updateOrthoExtents(terrain, options);
+		const halfSize = this.orthoHalfSize(terrain);
+		const dist = halfSize * this.config.ortho.distanceMultiplier;
+		const center = options.center ?? this.defaultOrthoCenter(terrain);
+
+		const cam = this.orthoCamera;
 		cam.position.set(dist, dist, dist);
 		cam.zoom = 1;
 		cam.updateProjectionMatrix();
 
-		const tgt = target ?? new THREE.Vector3(0, centerY, 0);
-		this.controls.target.copy(tgt);
-		this.controls.cursor.copy(tgt);
-		this.controls.maxTargetRadius = Math.max(
-			8,
-			Math.sqrt(terrain.width * terrain.width + terrain.length * terrain.length),
-		);
+		this.controls.target.copy(center);
 		this.controls.update();
 	}
 

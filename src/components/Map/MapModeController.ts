@@ -247,7 +247,7 @@ export class MapModeController implements MapSceneController {
 			this.activate(this.firstPersonCamera);
 			return;
 		}
-		const startPose = this.worldPerspectivePose();
+		const startPose = this.currentWorldPose();
 		applyPose(this.transitionCamera, startPose);
 		this.activate(this.transitionCamera);
 		this.tween = { kind: "to-fp", startPose, startTime: performance.now() };
@@ -264,7 +264,7 @@ export class MapModeController implements MapSceneController {
 			return;
 		}
 		const startPose = capturePose(this.firstPersonCamera);
-		const endPose = this.worldPerspectivePose();
+		const endPose = this.worldDestinationPose();
 		applyPose(this.transitionCamera, startPose);
 		this.activate(this.transitionCamera);
 		this.tween = {
@@ -296,11 +296,55 @@ export class MapModeController implements MapSceneController {
 		}
 	}
 
-	private worldPerspectivePose(): CameraPose {
-		// A perspective viewpoint that visually matches the isometric framing,
-		// used as the world-side endpoint so the tween never has to morph an
-		// orthographic projection into a perspective one.
+	/** Perspective pose matching what the world view is showing on screen RIGHT NOW.
+	 *  Used as the START of the enter-FP tween so it begins exactly where the world
+	 *  camera sits -- with the user's current zoom/pan/orbit -- instead of jumping to
+	 *  a recomputed default framing on the first frame. */
+	private currentWorldPose(): CameraPose {
+		if (this.rig.mode === "ortho") {
+			return this.matchedOrthoPose();
+		}
+		// Perspective/freecam: the active world camera already IS a perspective
+		// camera, so the tween can start from it verbatim.
+		return capturePose(this.rig.perspectiveCamera);
+	}
+
+	/** Perspective pose the world view will settle into after the enter-world tween
+	 *  completes and the rig re-applies the world preference. Used as the END of the
+	 *  leave-FP tween so it lands exactly where the world camera comes to rest. */
+	private worldDestinationPose(): CameraPose {
+		if (this._worldPreference === "ortho") {
+			// setMode("ortho") preserves the orthographic framing across the FP
+			// excursion, so the destination is the matched perspective of that view.
+			return this.matchedOrthoPose();
+		}
+		// Perspective/freecam re-entry reframes to the standard entry framing, so the
+		// tween must end there to avoid a snap when the rig takes over.
 		return capturePose(this.rig.perspectiveEntryCamera());
+	}
+
+	/** A perspective viewpoint that frames the same content as the CURRENT
+	 *  orthographic view: same view direction, positioned so the perspective
+	 *  frustum's vertical extent at the orbit target equals the ortho frustum's
+	 *  extent at its present zoom. Tweening to/from this avoids a jump because it
+	 *  tracks the user's live zoom/pan/orbit rather than a recomputed default. */
+	private matchedOrthoPose(): CameraPose {
+		const ortho = this.rig.orthoCamera;
+		const persp = this.rig.perspectiveCamera;
+		const target = this.rig.controls.target;
+
+		// On-screen vertical half-extent of the ortho frustum at the current zoom.
+		const halfExtent = ortho.top / (ortho.zoom || 1);
+		const dist = halfExtent / Math.tan(THREE.MathUtils.degToRad(persp.fov) / 2);
+
+		const dir = new THREE.Vector3().subVectors(ortho.position, target);
+		if (dir.lengthSq() === 0) dir.set(1, 1, 1);
+		dir.normalize();
+
+		const position = new THREE.Vector3().copy(target).addScaledVector(dir, dist);
+		const lookMatrix = new THREE.Matrix4().lookAt(position, target, persp.up);
+		const quaternion = new THREE.Quaternion().setFromRotationMatrix(lookMatrix);
+		return { position, quaternion, fov: persp.fov };
 	}
 
 	private activate(camera: THREE.Camera): void {
