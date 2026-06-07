@@ -30,13 +30,29 @@ export function ActorPicker({
     const context = useQuestContext();
     const campaign = CampaignActions.getActiveCampaign(context);
 
+    // Players may only interact with actors on the terrain their selected
+    // character currently occupies; the DM can target any actor anywhere.
+    const playerTerrainId = useMemo(() => {
+        if (context.User.Role !== "player") return null;
+        const selectedId = context.User.SelectedCharacters[campaign.RoomCode];
+        if (!selectedId) return null;
+        const selected = campaign.GameState.Characters.find(
+            (c) => c.Id === selectedId
+        );
+        return selected?.Position.terrainId ?? null;
+    }, [context.User, campaign.RoomCode, campaign.GameState.Characters]);
+
     // Prepare data
     const actorTypes = useMemo(() => {
+        const onPlayerTerrain = (actor: Actor) =>
+            playerTerrainId === null ||
+            actor.Position.terrainId === playerTerrainId;
+
         const characters = campaign.GameState.Characters.filter(
-            (c) => c.Id !== excludeActorId
+            (c) => c.Id !== excludeActorId && onPlayerTerrain(c)
         );
         const entities = campaign.GameState.Entities.filter(
-            (e) => e.Id !== excludeActorId
+            (e) => e.Id !== excludeActorId && onPlayerTerrain(e)
         );
 
         const types: ObjectTypeConfig<Actor | { Id: string; Name: string }>[] = [
@@ -64,7 +80,7 @@ export function ActorPicker({
         }
 
         return types;
-    }, [campaign.GameState, campaign.Settings.SharedInventories, excludeActorId, includeSharedInventories]);
+    }, [campaign.GameState, campaign.Settings.SharedInventories, excludeActorId, includeSharedInventories, playerTerrainId]);
 
     const handleConfirm = (selectedIds: string[], _objectType: string, count: number) => {
         if (selectedIds.length > 0) {
