@@ -18,6 +18,7 @@ import { ActionService } from "../../services/Actions/ActionService";
 import { isGUID } from "../../utils/UrlParser";
 import { DMView } from "./DMView";
 import { PlayerView } from "./PlayerView";
+import { CampaignConnectionScreen } from "./CampaignConnectionScreen";
 import type { User } from "../User/User";
 import { UserActions } from "../User/UserActions";
 
@@ -26,7 +27,22 @@ type ViewStatus = "loading" | "ready" | "waiting-for-dm" | "error";
 interface CampaignViewState {
 	status: ViewStatus;
 	errorMessage?: string;
+	// When true, this error is a transient "couldn't reach the DM yet" state
+	// rather than a hard failure (bad room code, missing payload, etc.).
+	// useAutoReconnect stays enabled for it so the room keeps recycling, and a
+	// late first state update still flips us to "ready" (see onFirstUpdate).
+	retryable?: boolean;
 }
+
+// Player join tuning. This deadline must exceed Trystero's ICE-gathering
+// ceiling (15s in @trystero-p2p/core peer.mjs) so a healthy-but-slow first
+// connection isn't killed mid-handshake. It is a *soft* deadline: when it
+// fires we drop to a retryable error, useAutoReconnect keeps recycling the
+// room, and a late first state update recovers us to "ready". The DM's own
+// recovery cadences (30s peerless reconnect, up to 60s relay backoff) are all
+// longer than any single attempt, so retrying — not a longer one-shot wait —
+// is what actually gets a player in.
+const PLAYER_JOIN_TIMEOUT_MS = 20000;
 
 export function CampaignView() {
 	const { identifier } = useParams<{ identifier: string }>();
@@ -69,7 +85,17 @@ export function CampaignView() {
 
 	useAutoReconnect(
 		{
-			enabled: state.status === "ready", // Only auto-reconnect when we're supposed to be connected
+			// Reconnect not just when connected ("ready"), but also while a
+			// player is still waiting for the DM and after a *retryable* join
+			// timeout. Previously this was gated on "ready" alone, which meant
+			// a first-time joiner's connection machinery was switched off during
+			// exactly the window it was needed: a single ~15s shot, then a
+			// dead-end error with no retry. Now the room keeps recycling (the
+			// player's peerless cadence) until the DM becomes reachable.
+			enabled:
+				state.status === "ready" ||
+				state.status === "waiting-for-dm" ||
+				(state.status === "error" && !!state.retryable),
 			// Trystero 0.22+ pauses relay reconnects when the browser is offline
 			// and resumes when it comes back, so the previous 5s/3s tuning was
 			// over-aggressive. Loosen to give the library time to recover before
@@ -107,6 +133,7 @@ export function CampaignView() {
 		let room: ReturnType<typeof RoomActions.join> | null = null;
 		let service: ActionService | null = null;
 		let isSubscribed = true; // For handling async state updates after unmount
+		let joinTimeout: ReturnType<typeof setTimeout> | null = null;
 
 		async function initialize() {
 			try {
@@ -265,38 +292,36 @@ export function CampaignView() {
 				if (!isDM && !context.ActiveCampaign) {
 					setState({ status: "waiting-for-dm" });
 
-					// This promise resolves when the onFirstUpdate callback is called
-					const firstUpdatePromise = new Promise<void>((resolve) => {
-						service?.onFirstUpdate(() => {
-							if (isSubscribed) {
-								resolve();
-							}
-						});
+					// The first state broadcast from the DM flips us to "ready".
+					// This is a *latching* recovery: it fires whenever the update
+					// lands, including after the soft timeout below has already
+					// dropped us to a retryable error. Previously the timeout and
+					// success were raced once, so a state update arriving even a
+					// moment after the deadline could never recover the view.
+					service?.onFirstUpdate(() => {
+						if (isSubscribed) {
+							setState({ status: "ready" });
+						}
 					});
 
-					// This promise rejects after a timeout
-					const timeoutPromise = new Promise<void>(
-						(_, reject) =>
-							setTimeout(() => {
-								if (isSubscribed) {
-									reject(new Error("Timeout waiting for DM."));
-								}
-							}, 15000) // 15-second timeout
-					);
-
-					// Race the two promises
-					Promise.race([firstUpdatePromise, timeoutPromise])
-						.then(() => {
-							setState({ status: "ready" });
-						})
-						.catch((error) => {
-							console.error("[CampaignView]", error);
-							setState({
-								status: "error",
-								errorMessage:
-									"Could not connect to the DM. Please verify the room code and try again.",
-							});
-						});
+					// Soft, retryable deadline. On expiry we surface feedback but
+					// stay recoverable: useAutoReconnect keeps recycling the room
+					// (it's enabled for the retryable-error state above) and the
+					// onFirstUpdate latch above promotes us to "ready" the instant
+					// the DM is reachable.
+					joinTimeout = setTimeout(() => {
+						if (!isSubscribed) return;
+						setState((cur) =>
+							cur.status === "waiting-for-dm"
+								? {
+										status: "error",
+										retryable: true,
+										errorMessage:
+											"Still trying to reach the DM. Make sure the room code is correct and the DM is online — we'll keep retrying automatically.",
+									}
+								: cur
+						);
+					}, PLAYER_JOIN_TIMEOUT_MS);
 				} else {
 					// Campaign exists, ready to render
 					setState({
@@ -323,6 +348,11 @@ export function CampaignView() {
 		return () => {
 			isSubscribed = false;
 
+			if (joinTimeout) {
+				clearTimeout(joinTimeout);
+				joinTimeout = null;
+			}
+
 			// service.cleanup() calls RoomActions.leave() internally —
 			// don't call it here too or Trystero's leave logic runs twice.
 			if (service) {
@@ -348,15 +378,30 @@ export function CampaignView() {
 	// =====================================================================
 
 	if (state.status === "loading") {
+		// `identifier` is a private GUID for the DM, so only pass it as a
+		// shareable room code for players.
 		return (
-			<div className="p-8 text-center">
-				<h2>Connecting to campaign...</h2>
-				<p>Establishing connection</p>
-			</div>
+			<CampaignConnectionScreen
+				phase="connecting"
+				roomCode={isDMRoute ? undefined : identifier}
+			/>
 		);
 	}
 
 	if (state.status === "error") {
+		// Retryable errors aren't dead ends: the room keeps recycling in the
+		// background and a first state update will promote us to "ready". Show
+		// a "still trying" affordance rather than a hard failure.
+		if (state.retryable) {
+			return (
+				<CampaignConnectionScreen
+					phase="retrying"
+					roomCode={identifier}
+					message={state.errorMessage}
+				/>
+			);
+		}
+
 		return (
 			<div className="p-8 text-center">
 				<h2 className="text-error font-bold text-2xl mb-4">Error</h2>
@@ -372,21 +417,7 @@ export function CampaignView() {
 	}
 
 	if (state.status === "waiting-for-dm") {
-		return (
-			<div className="p-8 text-center">
-				<h2>Waiting for DM...</h2>
-				<p className="mb-4">
-					Connected to room. Waiting for the DM to start the session.
-				</p>
-				<div className="spin">⏳</div>
-				<button
-					onClick={() => navigate("/campaigns")}
-					className="btn btn-neutral"
-				>
-					Leave Room
-				</button>
-			</div>
-		);
+		return <CampaignConnectionScreen phase="waiting" roomCode={identifier} />;
 	}
 
 	// State is 'ready' with a campaign
