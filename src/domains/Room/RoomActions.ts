@@ -1,10 +1,34 @@
 // domains/Room/RoomActions.ts
 
 import { joinRoom } from "trystero";
-import type { JoinRoomCallbacks } from "trystero";
+import type { JoinRoomCallbacks, TurnServerConfig } from "trystero";
 import type { Room } from "./Room";
 
 const APP_ID = "quest-net";
+
+const METERED_RELAY = "standard.relay.metered.ca";
+const TURN_USERNAME = import.meta.env.VITE_TURN_USERNAME as string | undefined;
+const TURN_CREDENTIAL = import.meta.env.VITE_TURN_CREDENTIAL as
+	| string
+	| undefined;
+
+function buildTurnConfig(): TurnServerConfig[] | undefined {
+	if (!TURN_USERNAME || !TURN_CREDENTIAL) return undefined;
+
+	const username = TURN_USERNAME;
+	const credential = TURN_CREDENTIAL;
+
+	return [
+		{ urls: "stun:stun.relay.metered.ca:80" },
+		{ urls: `turn:${METERED_RELAY}:80`, username, credential },
+		{ urls: `turn:${METERED_RELAY}:80?transport=tcp`, username, credential },
+		{ urls: `turn:${METERED_RELAY}:443`, username, credential },
+		{ urls: `turns:${METERED_RELAY}:443?transport=tcp`, username, credential },
+	];
+}
+
+// Built once at module load; the env values are inlined at build time.
+const TURN_CONFIG = buildTurnConfig();
 
 /**
  * Optional callbacks passed to `joinRoom` (Trystero 0.23+).
@@ -46,7 +70,15 @@ export const RoomActions = {
 			roomCode = "ROOMCODE";
 		}
 
-		return joinRoom({ appId: APP_ID }, roomCode, callbacks);
+		// `turnConfig` is APPENDED to Trystero's default STUN list (it does not
+		// replace it), so direct ICE still works and TURN is only a fallback.
+		return joinRoom(
+			TURN_CONFIG
+				? { appId: APP_ID, turnConfig: TURN_CONFIG }
+				: { appId: APP_ID },
+			roomCode,
+			callbacks
+		);
 	},
 
 	/**
