@@ -5,6 +5,7 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogEntry } from "./LogEntry";
 import { LogActions } from "./LogActions";
+import { DM_MENTION_ID } from "./MentionUtils";
 
 interface Alert {
 	id: string;
@@ -61,18 +62,36 @@ export function LogAlerts() {
 	const selectedCharacterId =
 		context.User.SelectedCharacters[campaign.RoomCode];
 
+	// True when this entry @mentions the current viewer (their selected
+	// character, or the DM via the "DM" sentinel).
+	const isMentionForMe = (entry: LogEntry): boolean => {
+		if (!entry.MentionedActorIds || entry.MentionedActorIds.length === 0)
+			return false;
+		if (selectedCharacterId && entry.MentionedActorIds.includes(selectedCharacterId))
+			return true;
+		if (userRole === "dm" && entry.MentionedActorIds.includes(DM_MENTION_ID))
+			return true;
+		return false;
+	};
+
 	useEffect(() => {
 		const now = Date.now();
 
 		// Get chronologically sorted log
 		const chronologicalLog = LogActions.getChronologicalLog(campaign);
 
-		// Find new important/critical logs that are recent enough and visible
+		// Surface important/critical logs, plus any chat message that @mentions
+		// the current viewer regardless of its level.
 		const newAlerts = chronologicalLog.filter((entry) => {
 			const levelOk = entry.Level === "important" || entry.Level === "critical";
 			const fresh = now - entry.Timestamp < MAX_ALERT_AGE;
 			const canSee = LogActions.canUserSeeEntry(entry, userRole);
-			return levelOk && fresh && !processedIds.has(entry.Id) && canSee;
+			return (
+				(levelOk || isMentionForMe(entry)) &&
+				fresh &&
+				!processedIds.has(entry.Id) &&
+				canSee
+			);
 		});
 
 		if (newAlerts.length === 0) return;
@@ -123,6 +142,17 @@ export function LogAlerts() {
 		return rosterChar?.CritMessage || "CRITICAL!";
 	};
 
+	// Display name of whoever sent a chat message (character name, or "DM").
+	const getSenderName = (entry: LogEntry): string => {
+		if (entry.ActorId) {
+			const character =
+				campaign.GameState.Characters.find((c) => c.Id === entry.ActorId) ||
+				campaign.CharacterRoster.find((c) => c.Id === entry.ActorId);
+			return character?.Name || "Player";
+		}
+		return "DM";
+	};
+
 	if (alerts.length === 0) return null;
 
 	return (
@@ -132,13 +162,16 @@ export function LogAlerts() {
 				const isDice = isDiceRoll(alert.entry);
 				const isCrit = isCritRoll(alert.entry);
 				const isFumble = isFumbleRoll(alert.entry);
+				const isMention = isMentionForMe(alert.entry);
 
 				// Get custom crit message if applicable
 				const critMessage = isCrit ? getCritMessage(alert.entry) : "CRITICAL!";
 
 				// Choose icon based on roll type
 				let icon = "icon-[mdi--information]";
-				if (isCrit) {
+				if (isMention) {
+					icon = "icon-[mdi--at]";
+				} else if (isCrit) {
 					icon = "icon-[game-icons--trophy]";
 				} else if (isFumble) {
 					icon = "icon-[game-icons--broken-skull]";
@@ -150,7 +183,9 @@ export function LogAlerts() {
 				let alertClass = "alert-info";
 				let animationClass = "animate-slide-in";
 
-				if (isCrit) {
+				if (isMention) {
+					alertClass = "alert-warning";
+				} else if (isCrit) {
 					alertClass = "alert-success";
 					animationClass = "animate-bounce";
 				} else if (isFumble) {
@@ -174,6 +209,7 @@ export function LogAlerts() {
 								}`}>
 								{isCrit && `🎉 ${critMessage} `}
 								{isFumble && "💀 "}
+								{isMention && `💬 ${getSenderName(alert.entry)}: `}
 								{alert.entry.Action}
 							</h3>
 							{alert.entry.Details && (

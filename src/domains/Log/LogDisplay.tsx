@@ -13,6 +13,7 @@ import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogEntry, LogCategory } from "./LogEntry";
 import { LogActions } from "./LogActions";
+import { getMentionTargets, parseMentions } from "./MentionUtils";
 
 // ============================================================================
 // CATEGORY PALETTE
@@ -102,6 +103,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 
 	const logEndRef = useRef<HTMLDivElement>(null);
 	const logContainerRef = useRef<HTMLDivElement>(null);
+	const messageInputRef = useRef<HTMLInputElement>(null);
 
 	// `isNearBottom` lives in a ref so the auto-scroll effect doesn't refire
 	// on its own state change — only on actual new content.
@@ -118,6 +120,12 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	const userRole = context.User.Role;
 	const selectedCharacterId =
 		context.User.SelectedCharacters[campaign.RoomCode];
+
+	// Mentionable targets (active party + DM), recomputed when the party changes.
+	const mentionTargets = useMemo(
+		() => getMentionTargets(campaign),
+		[campaign.GameState.Characters]
+	);
 
 	// --- Filters (persisted) -------------------------------------------------
 	const [hiddenCategories, setHiddenCategories] = useState<Set<LogCategory>>(
@@ -258,15 +266,29 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 			actorId = context.User.SelectedCharacters[campaign.RoomCode];
 		}
 
+		const trimmed = message.trim();
+		const { mentionedActorIds } = parseMentions(trimmed, mentionTargets);
+
 		actionService.execute("log:create", {
-			action: message.trim(),
+			action: trimmed,
 			category: "chat",
 			level: "info",
 			visibility: ["all"],
 			actorId,
+			mentionedActorIds:
+				mentionedActorIds.length > 0 ? mentionedActorIds : undefined,
 		});
 
 		setMessage("");
+	};
+
+	// Clicking a sender's name in the feed drops "@Name " into the input.
+	const insertMention = (name: string) => {
+		setMessage((prev) => {
+			const sep = prev.length === 0 || /\s$/.test(prev) ? "" : " ";
+			return `${prev}${sep}@${name} `;
+		});
+		messageInputRef.current?.focus();
 	};
 
 	const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -285,6 +307,44 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 		}
 		if (entry.Category === "dice" || entry.Category === "chat") return "DM";
 		return "System";
+	};
+
+	// Lowercased mentionable names, for deciding whether a sender label is
+	// clickable (a character name or "DM" — not "Player"/"System").
+	const mentionNameSet = useMemo(
+		() => new Set(mentionTargets.map((t) => t.name.toLowerCase())),
+		[mentionTargets]
+	);
+
+	// Render a chat message with its @mentions highlighted; the chip for a
+	// mention that targets the current viewer is filled rather than tinted.
+	const renderMessageBody = (entry: LogEntry): React.ReactNode => {
+		if (entry.Category !== "chat") return entry.Action;
+		const { matches } = parseMentions(entry.Action, mentionTargets);
+		if (matches.length === 0) return entry.Action;
+
+		const nodes: React.ReactNode[] = [];
+		let cursor = 0;
+		matches.forEach((m, idx) => {
+			if (m.start > cursor) nodes.push(entry.Action.slice(cursor, m.start));
+			const mentionsMe =
+				m.id === selectedCharacterId ||
+				(userRole === "dm" && m.id === "DM");
+			nodes.push(
+				<span
+					key={`mention-${idx}`}
+					className={`font-semibold rounded px-1 ${mentionsMe
+						? "bg-primary text-primary-content"
+						: "text-primary"
+						}`}
+				>
+					{entry.Action.slice(m.start, m.end)}
+				</span>
+			);
+			cursor = m.end;
+		});
+		if (cursor < entry.Action.length) nodes.push(entry.Action.slice(cursor));
+		return nodes;
 	};
 
 	const availableCategories: LogCategory[] =
@@ -424,14 +484,26 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 										: undefined
 								}
 							>
-								<span
-									className="font-bold shrink-0 min-w-[6ch] truncate"
-									style={{ color: fg }}
-								>
-									[{label}]
-								</span>
-								<span className="break-words text-base-content">
-									{entry.Action}
+								{mentionNameSet.has(label.toLowerCase()) ? (
+									<button
+										type="button"
+										onClick={() => insertMention(label)}
+										className="font-bold shrink-0 min-w-[6ch] truncate text-left hover:underline cursor-pointer"
+										style={{ color: fg }}
+										title={`Mention ${label}`}
+									>
+										[{label}]
+									</button>
+								) : (
+									<span
+										className="font-bold shrink-0 min-w-[6ch] truncate"
+										style={{ color: fg }}
+									>
+										[{label}]
+									</span>
+								)}
+								<span className="wrap-break-word text-base-content">
+									{renderMessageBody(entry)}
 								</span>
 							</div>
 						);
@@ -458,6 +530,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 			{/* Message input */}
 			<div className="flex gap-2 mt-4">
 				<input
+					ref={messageInputRef}
 					type="text"
 					placeholder="Type a message..."
 					className="input input-sm flex-1 font-mono"

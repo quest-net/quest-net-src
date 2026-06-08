@@ -11,6 +11,7 @@ export interface LogEntry {
 	Visibility: LogVisibility[];
 	ActorId?: string; // Who performed the action
 	TargetId?: string; // Who/what was affected
+	MentionedActorIds?: string[]; // Character IDs @mentioned in a chat message; "DM" sentinel for the DM
 }
 
 export type LogCategory =

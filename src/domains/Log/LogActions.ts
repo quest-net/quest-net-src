@@ -23,6 +23,7 @@ export const LogActions = {
 			visibility?: LogVisibility[];
 			actorId?: string;
 			targetId?: string;
+			mentionedActorIds?: string[];
 		},
 		context: Context
 	): void {
@@ -40,6 +41,10 @@ export const LogActions = {
 			Visibility: params.visibility ?? ["all"],
 			ActorId: params.actorId,
 			TargetId: params.targetId,
+			MentionedActorIds:
+				params.mentionedActorIds && params.mentionedActorIds.length > 0
+					? params.mentionedActorIds
+					: undefined,
 		};
 
 		// Initialize LogHead if missing (migration safety)
