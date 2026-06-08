@@ -97,17 +97,8 @@ body {
 	font-display: swap;
 }
 
-@font-face {
-	font-family: 'Texturina';
-	src: url('./fonts/Texturina-VariableFont_opsz,wght.ttf') format('truetype');
-	font-weight: normal;
-	font-style: normal;
-	font-display: swap;
-}
-
 @theme {
 --font-qyore: 'Qyore', sans-serif;
---font-texturina: 'Texturina', sans-serif;
 }
 
 @keyframes slide-in {
