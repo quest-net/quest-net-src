@@ -102,6 +102,12 @@ function UnifiedInspector({
 		actor.Description || ""
 	);
 	const [localMoveSpeed, setLocalMoveSpeed] = useState(actor.MoveSpeed);
+	const [localColor, setLocalColor] = useState(
+		actor.Color ??
+			(kind === "character"
+				? ACTOR_DEFAULT_COLORS.CHARACTER
+				: ACTOR_DEFAULT_COLORS.ENTITY)
+	);
 	const [localAttributes, setLocalAttributes] = useState<
 		Map<string, string>
 	>(
@@ -116,6 +122,7 @@ function UnifiedInspector({
 	const nameTimer = useRef<NodeJS.Timeout | null>(null);
 	const descTimer = useRef<NodeJS.Timeout | null>(null);
 	const moveSpeedTimer = useRef<NodeJS.Timeout | null>(null);
+	const colorTimer = useRef<NodeJS.Timeout | null>(null);
 	const attrTimer = useRef<NodeJS.Timeout | null>(null);
 
 	// Sync local state when actor changes
@@ -123,6 +130,12 @@ function UnifiedInspector({
 		setLocalName(actor.Name);
 		setLocalDescription(actor.Description || "");
 		setLocalMoveSpeed(actor.MoveSpeed);
+		setLocalColor(
+			actor.Color ??
+				(kind === "character"
+					? ACTOR_DEFAULT_COLORS.CHARACTER
+					: ACTOR_DEFAULT_COLORS.ENTITY)
+		);
 		setLocalAttributes(new Map(actor.Attributes.map((attr) => [attr.Id, attr.Value])));
 		setActiveTab("info"); // Reset to info tab when actor changes
 	}, [actor.Id]);
@@ -164,6 +177,15 @@ function UnifiedInspector({
 		if (moveSpeedTimer.current) clearTimeout(moveSpeedTimer.current);
 		moveSpeedTimer.current = setTimeout(() => {
 			handleFieldChange("MoveSpeed", clamped);
+		}, 500);
+	};
+
+	const handleColorChange = (value: string) => {
+		setLocalColor(value);
+
+		if (colorTimer.current) clearTimeout(colorTimer.current);
+		colorTimer.current = setTimeout(() => {
+			handleFieldChange("Color", value);
 		}, 500);
 	};
 
@@ -706,13 +728,8 @@ function ActorInfoTab({
 						<span className="font-medium">Color</span>
 						<input
 							type="color"
-							value={
-								actor.Color ??
-								(kind === "character"
-									? ACTOR_DEFAULT_COLORS.CHARACTER
-									: ACTOR_DEFAULT_COLORS.ENTITY)
-							}
-							onChange={(e) => handleFieldChange("Color", e.target.value)}
+							value={localColor}
+							onChange={(e) => handleColorChange(e.target.value)}
 							className="input input-bordered input-sm h-9 w-44 p-1"
 							disabled={!actionService}
 						/>

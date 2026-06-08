@@ -39,6 +39,7 @@ export function CharacterSheet() {
 	const [localName, setLocalName] = useState("");
 	const [localDescription, setLocalDescription] = useState("");
 	const [localCritMessage, setLocalCritMessage] = useState("");
+	const [localColor, setLocalColor] = useState(ACTOR_DEFAULT_COLORS.CHARACTER);
 	const [localAttributes, setLocalAttributes] = useState<Map<string, string>>(
 		new Map()
 	);
@@ -47,6 +48,7 @@ export function CharacterSheet() {
 	const nameTimer = useRef<NodeJS.Timeout | null>(null);
 	const descTimer = useRef<NodeJS.Timeout | null>(null);
 	const critTimer = useRef<NodeJS.Timeout | null>(null);
+	const colorTimer = useRef<NodeJS.Timeout | null>(null);
 	const attrTimer = useRef<NodeJS.Timeout | null>(null);
 
 	// Initialize local state when character loads
@@ -55,6 +57,7 @@ export function CharacterSheet() {
 			setLocalName(character.Name);
 			setLocalDescription(character.Description || "");
 			setLocalCritMessage(character.CritMessage || "");
+			setLocalColor(character.Color ?? ACTOR_DEFAULT_COLORS.CHARACTER);
 			setLocalAttributes(
 				new Map(character.Attributes.map((attr) => [attr.Id, attr.Value]))
 			);
@@ -103,6 +106,15 @@ export function CharacterSheet() {
 		if (critTimer.current) clearTimeout(critTimer.current);
 		critTimer.current = setTimeout(() => {
 			handleFieldChange("CritMessage", truncated || undefined);
+		}, 500);
+	};
+
+	const handleColorChange = (value: string) => {
+		setLocalColor(value);
+
+		if (colorTimer.current) clearTimeout(colorTimer.current);
+		colorTimer.current = setTimeout(() => {
+			handleFieldChange("Color", value);
 		}, 500);
 	};
 
@@ -264,8 +276,8 @@ export function CharacterSheet() {
 					</label>
 					<input
 						type="color"
-						value={character.Color ?? ACTOR_DEFAULT_COLORS.CHARACTER}
-						onChange={(e) => handleFieldChange("Color", e.target.value)}
+						value={localColor}
+						onChange={(e) => handleColorChange(e.target.value)}
 						className="input input-bordered h-10 p-1"
 					/>
 				</div>
