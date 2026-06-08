@@ -730,14 +730,16 @@ function ActorInfoTab({
 			)}
 
 			{/* Attributes */}
-			<AttributesSection
-				slots={actor.Attributes}
-				definitions={campaign.Settings.AttributeDefinitions ?? []}
-				localValues={localAttributes}
-				onChange={handleAttributeChange}
-				readOnly={!isDM}
-				onRoll={requestRoll}
-			/>
+			<div className="pt-4 border-t border-base-300">
+				<AttributesSection
+					slots={actor.Attributes}
+					definitions={campaign.Settings.AttributeDefinitions ?? []}
+					localValues={localAttributes}
+					onChange={handleAttributeChange}
+					readOnly={!isDM}
+					onRoll={requestRoll}
+				/>
+			</div>
 		</div>
 	);
 }

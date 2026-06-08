@@ -272,13 +272,15 @@ export function CharacterSheet() {
 			</div>
 
 			{/* Attributes */}
-			<AttributesSection
-				slots={character.Attributes}
-				definitions={campaign.Settings.AttributeDefinitions ?? []}
-				localValues={localAttributes}
-				onChange={handleAttributeChange}
-				onRoll={requestRoll}
-			/>
+			<div className="pt-4 border-t border-base-300">
+				<AttributesSection
+					slots={character.Attributes}
+					definitions={campaign.Settings.AttributeDefinitions ?? []}
+					localValues={localAttributes}
+					onChange={handleAttributeChange}
+					onRoll={requestRoll}
+				/>
+			</div>
 
 			{/* Critical Success Message - Last and smaller */}
 			<div className="pt-4 border-t border-base-300">
