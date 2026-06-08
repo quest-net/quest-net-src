@@ -1,0 +1,186 @@
+/* domains/Log/CritSplash.css
+ *
+ * Full-screen Persona-5-style critical cut-in. Layout/visuals only; all motion
+ * is driven imperatively by GSAP in CritSplash.tsx. Colors flow from CSS custom
+ * properties set per-trigger:
+ *   --crit-accent  the rolling actor's token color (washes the backdrop)
+ *   --crit-ink     headline / chip fill   (forced light: white)
+ *   --crit-stroke  outline + drop shadow  (forced dark: black)
+ *   --crit-skew    backdrop skew angle
+ */
+
+.crit-splash {
+	position: fixed;
+	inset: 0;
+	overflow: hidden;
+	pointer-events: none; /* never blocks the game underneath */
+	z-index: 200; /* above LogAlerts toasts (z-50) */
+	visibility: hidden;
+
+	--crit-accent: #38468a;
+	--crit-ink: #ffffff;
+	--crit-stroke: #000000;
+	--crit-skew: -15deg;
+}
+
+.crit-splash .crit-scrim {
+	position: absolute;
+	inset: 0;
+	background: rgba(8, 8, 10, 0.78);
+}
+
+.crit-splash .crit-flash {
+	position: absolute;
+	inset: 0;
+	background: #fff;
+	opacity: 0;
+}
+
+/* full accent wash + soft diagonal — the token color fills the screen */
+.crit-splash .crit-band {
+	position: absolute;
+	inset: -20%;
+	background: linear-gradient(
+		calc(90deg + var(--crit-skew)),
+		color-mix(in srgb, var(--crit-accent) 92%, #000) 0%,
+		color-mix(in srgb, var(--crit-accent) 58%, #000) 55%,
+		color-mix(in srgb, var(--crit-accent) 88%, #000) 100%
+	);
+	transform: skewY(var(--crit-skew));
+	opacity: 0.9;
+}
+
+/* scattered four-point star field (the app's ✦ brand motif). background-image is
+   set in JS so the star color follows the ink. Two parallax layers. */
+.crit-splash .crit-stars {
+	position: absolute;
+	inset: -40%;
+	background-repeat: repeat;
+	opacity: 0;
+}
+.crit-splash .crit-stars.far {
+	background-size: 330px 330px;
+}
+.crit-splash .crit-stars.near {
+	background-size: 560px 560px;
+}
+
+.crit-splash .crit-halftone {
+	position: absolute;
+	inset: 0;
+	background-image: radial-gradient(circle, rgba(0, 0, 0, 0.4) 1px, transparent 1.6px);
+	background-size: 7px 7px;
+	mix-blend-mode: overlay;
+	opacity: 0.4;
+}
+
+.crit-splash .crit-vignette {
+	position: absolute;
+	inset: 0;
+	background: radial-gradient(circle at 50% 50%, transparent 35%, rgba(0, 0, 0, 0.5) 100%);
+}
+
+/* portrait that flies in from the left while dollying (scaling) up */
+.crit-splash .crit-portrait-wrap {
+	position: absolute;
+	left: 3%;
+	bottom: 0;
+	height: 86%;
+	display: flex;
+	align-items: flex-end;
+	transform-origin: left bottom;
+}
+.crit-splash .crit-portrait {
+	height: 100%;
+	width: auto;
+	object-fit: contain;
+	filter: drop-shadow(8px 0 0 var(--crit-stroke)) drop-shadow(-5px 0 0 var(--crit-ink))
+		drop-shadow(0 18px 30px rgba(0, 0, 0, 0.6)) contrast(1.05) saturate(1.05);
+}
+/* Very tall images (taller than 3:4) are clamped to a 3:4 box and cover-cropped
+   from the top, so the bottom is trimmed instead of the standee shrinking thin. */
+.crit-splash .crit-portrait.crop-tall {
+	aspect-ratio: 3 / 4;
+	width: auto;
+	object-fit: cover;
+	object-position: top center;
+}
+
+/* ---- text "lanes" ---- */
+.crit-splash .crit-msg-layer {
+	position: absolute;
+	inset: 0;
+}
+.crit-splash .crit-track {
+	position: absolute;
+	left: 0;
+	width: 100%;
+	will-change: transform;
+}
+.crit-splash .crit-track.msg {
+	top: 50%;
+	transform: translateY(-50%);
+}
+.crit-splash .crit-track.name {
+	top: 74%;
+}
+
+.crit-splash .crit-message,
+.crit-splash .crit-name {
+	display: inline-block;
+	font-family: Georgia, "Times New Roman", serif;
+	will-change: transform;
+}
+.crit-splash .crit-message {
+	font-size: clamp(34px, 6.5vw, 110px);
+	line-height: 1.04;
+	font-weight: 700;
+	text-transform: uppercase;
+	color: var(--crit-ink);
+	white-space: pre-line; /* honor newlines + wrap long lines */
+	text-align: center;
+	-webkit-text-stroke: 3px var(--crit-stroke);
+	text-shadow: 6px 6px 0 var(--crit-stroke), 0 0 34px rgba(0, 0, 0, 0.45);
+}
+/* giant roll-value number that slams in on the impact beat. Sits centered and
+   BEHIND the portrait + text (earlier in DOM), with inverted ink (dark fill,
+   light outline) so it reads as a backdrop stamp under the bright headline. */
+.crit-splash .crit-stamp {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.crit-splash .crit-stamp-num {
+	font-family: var(--crit-font);
+	font-size: clamp(240px, 42vw, 640px);
+	font-weight: 700;
+	line-height: 0.9;
+	color: var(--crit-stroke); /* inverted: dark fill */
+	-webkit-text-stroke: 5px var(--crit-ink); /* inverted: light outline */
+	text-shadow: 8px 8px 0 var(--crit-ink), 0 0 50px rgba(0, 0, 0, 0.5);
+	transform-origin: center;
+	will-change: transform;
+}
+
+/* the actor-name highlight chip */
+.crit-splash .crit-name {
+	white-space: nowrap;
+	font-size: clamp(18px, 2.4vw, 36px);
+	font-weight: 700;
+	letter-spacing: 2px;
+	color: var(--crit-stroke);
+	background: var(--crit-ink);
+	padding: 4px 18px;
+	box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.4);
+}
+
+/* Accessibility: users who ask for less motion get a quiet static card instead
+   of the violent crash/scroll. The component reads this query too (to skip the
+   shake) but the CSS guard keeps things calm even if JS timing drifts. */
+@media (prefers-reduced-motion: reduce) {
+	.crit-splash .crit-stars {
+		display: none;
+	}
+}

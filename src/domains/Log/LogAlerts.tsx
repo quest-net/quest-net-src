@@ -6,6 +6,7 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogEntry } from "./LogEntry";
 import { LogActions } from "./LogActions";
 import { DM_MENTION_ID } from "./MentionUtils";
+import { isDiceRoll, isCritRoll, isFumbleRoll } from "../../utils/DiceUtils";
 
 interface Alert {
 	id: string;
@@ -14,44 +15,6 @@ interface Alert {
 
 const ALERT_DURATION = 5000; // 5 seconds
 const MAX_ALERT_AGE = 10000; // Only show alerts for logs created in the last 10 seconds
-
-// Helper functions to detect crits and fumbles from dice roll logs
-const isDiceRoll = (entry: LogEntry): boolean => entry.Category === "dice";
-
-const isCritRoll = (entry: LogEntry): boolean => {
-	if (!isDiceRoll(entry)) return false;
-
-	const action = entry.Action || "";
-	const details = entry.Details || "";
-
-	// Check if it's a d20 or d100 roll
-	const isD20 = /d20(?!\d)/i.test(action) || /d20(?!\d)/i.test(details);
-	const isD100 = /d100/i.test(action) || /d100/i.test(details);
-
-	if (!isD20 && !isD100) return false;
-
-	// Check breakdown for max values (kept dice)
-	// Matches patterns like [20], =20 for d20 or [100], =100 for d100
-	if (isD20 && /(?:\[20\]|=20)(?!\d)/.test(details)) return true;
-	if (isD100 && /(?:\[100\]|=100)/.test(details)) return true;
-
-	return false;
-};
-
-const isFumbleRoll = (entry: LogEntry): boolean => {
-	if (!isDiceRoll(entry)) return false;
-
-	const action = entry.Action || "";
-	const details = entry.Details || "";
-
-	// Only d20 or d100 can fumble
-	const isD20OrD100 = /d(?:20|100)(?!\d)/i.test(action);
-	if (!isD20OrD100) return false;
-
-	// Check breakdown for minimum value (kept dice)
-	// Matches patterns like [1], =1
-	return /(?:\[1\]|=1)(?!\d)/.test(details);
-};
 
 export function LogAlerts() {
 	const context = useQuestContext();
@@ -86,8 +49,10 @@ export function LogAlerts() {
 			const levelOk = entry.Level === "important" || entry.Level === "critical";
 			const fresh = now - entry.Timestamp < MAX_ALERT_AGE;
 			const canSee = LogActions.canUserSeeEntry(entry, userRole);
+			// Crits are now shown via the full-screen CritSplash, not a toast.
 			return (
 				(levelOk || isMentionForMe(entry)) &&
+				!isCritRoll(entry) &&
 				fresh &&
 				!processedIds.has(entry.Id) &&
 				canSee

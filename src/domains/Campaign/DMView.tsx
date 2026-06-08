@@ -12,6 +12,7 @@ import { TerrainIndex } from "../Terrain/Index";
 import { ImageIndex } from "../Image/Index";
 import { Main } from "../Main/Main";
 import { LogAlerts } from "../Log/LogAlerts";
+import { CritSplash } from "../Log/CritSplash";
 import { PeerStatus } from "../Room/PeerStatus";
 import { usePeerTracking } from "../../hooks/usePeerTracking";
 import { AppSettingsDisplay } from "../AppSetting/AppSettingsDisplay";
@@ -147,6 +148,7 @@ export function DMView() {
 				</div>
 				{/* Log Alerts */}
 				<LogAlerts />
+				<CritSplash />
 			</div>
 		</AudioStateProvider>
 	);

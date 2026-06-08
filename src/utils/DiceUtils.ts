@@ -1,5 +1,7 @@
 // utils/DiceUtils.ts
 
+import type { LogEntry } from "../domains/Log/LogEntry";
+
 const MAX_DICE_PER_GROUP = 20;  // Max dice in a single group (e.g., 100d20)
 const MAX_TOTAL_DICE = 20;       // Max total dice across all groups
 const MAX_DIE_SIDES = 1000;       // Max sides on a die
@@ -373,3 +375,58 @@ export function makeRollLogText(result: DiceRollResult): string {
 	const lo = result.stats.lowestDie ?? "-";
 	return `Rolled ${result.formula}: ${result.total} [highest: ${hi} | lowest: ${lo}]`;
   }
+
+/*** Crit / fumble detection (from dice-roll log entries) ***/
+
+export const isDiceRoll = (entry: LogEntry): boolean => entry.Category === "dice";
+
+/** Natural max on a kept d20/d100 (e.g. [20]/=20 or [100]/=100 in the breakdown). */
+export const isCritRoll = (entry: LogEntry): boolean => {
+	if (!isDiceRoll(entry)) return false;
+
+	const action = entry.Action || "";
+	const details = entry.Details || "";
+
+	const isD20 = /d20(?!\d)/i.test(action) || /d20(?!\d)/i.test(details);
+	const isD100 = /d100/i.test(action) || /d100/i.test(details);
+
+	if (!isD20 && !isD100) return false;
+
+	if (isD20 && /(?:\[20\]|=20)(?!\d)/.test(details)) return true;
+	if (isD100 && /(?:\[100\]|=100)/.test(details)) return true;
+
+	return false;
+};
+
+/** Natural 1 on a kept d20/d100 (e.g. [1]/=1 in the breakdown). */
+export const isFumbleRoll = (entry: LogEntry): boolean => {
+	if (!isDiceRoll(entry)) return false;
+
+	const action = entry.Action || "";
+	const details = entry.Details || "";
+
+	const isD20OrD100 = /d(?:20|100)(?!\d)/i.test(action);
+	if (!isD20OrD100) return false;
+
+	return /(?:\[1\]|=1)(?!\d)/.test(details);
+};
+
+/**
+ * The natural value that made an entry a crit: 100 for a kept d100=100, 20 for a
+ * kept d20=20, or null if it isn't a crit. (The natural die — not the total — so
+ * a 1d20+5 crit still reports 20.)
+ */
+export const getCritRollValue = (entry: LogEntry): 20 | 100 | null => {
+	if (!isDiceRoll(entry)) return null;
+
+	const action = entry.Action || "";
+	const details = entry.Details || "";
+
+	const isD100 = /d100/i.test(action) || /d100/i.test(details);
+	if (isD100 && /(?:\[100\]|=100)/.test(details)) return 100;
+
+	const isD20 = /d20(?!\d)/i.test(action) || /d20(?!\d)/i.test(details);
+	if (isD20 && /(?:\[20\]|=20)(?!\d)/.test(details)) return 20;
+
+	return null;
+};

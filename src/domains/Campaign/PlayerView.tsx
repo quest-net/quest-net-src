@@ -8,6 +8,7 @@ import {
 } from "../Context/ContextProvider";
 import { UserActions } from "../User/UserActions";
 import { LogAlerts } from "../Log/LogAlerts";
+import { CritSplash } from "../Log/CritSplash";
 import { PeerStatus } from "../Room/PeerStatus";
 import { CharacterSelect } from "../Character/CharacterSelect";
 import { usePeerTracking } from "../../hooks/usePeerTracking";
@@ -101,6 +102,7 @@ export function PlayerView() {
 
 				{/* Log Alerts */}
 				<LogAlerts />
+				<CritSplash />
 			</div>
 		</AudioStateProvider>
 	);
