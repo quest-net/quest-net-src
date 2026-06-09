@@ -29,7 +29,6 @@ import {
 import { buildActorTokenDescriptors } from "./actorTokenDescriptors";
 import {
 	createActorTokenTexture,
-	createSelectionOutlineTexture,
 	getActorTokenWorldSize,
 	type ActorTokenPickBounds,
 } from "./actorTokenTexture";
@@ -97,9 +96,8 @@ interface OpacityHandle {
 }
 
 interface SelectionHandles {
-	// Cutout actors render frameless and have no overlay; selection is
+	// Tokens render frameless, so there is no selection overlay; selection is
 	// signalled purely via base/halo color flips.
-	overlay?: THREE.Mesh;
 	colors: ColorHandle[];
 	haloOpacities: OpacityHandle[];
 }
@@ -117,7 +115,6 @@ interface ActorVisualHandles {
 	shadow: THREE.Mesh;
 	supportGroup: THREE.Group;
 	standee: THREE.Mesh;
-	selectionOverlay?: THREE.Mesh;
 	pickMesh: THREE.Mesh;
 	supportMode: "grounded" | "airborne";
 	actor: ActorTokenDescriptor;
@@ -224,7 +221,7 @@ function createActorVisualSignature(
 		actor.name,
 		actor.color,
 		actor.imageId ?? "",
-		actor.cutout ? "cutout" : "framed",
+		actor.cutout ? "cutout" : "opaque",
 		actor.size,
 		isDM ? "dm" : "player",
 		performanceMode ? "perf" : "hi-res",
@@ -260,9 +257,6 @@ function getActorAccentHex(actor: ActorTokenDescriptor): number {
 }
 
 function applySelection(handles: SelectionHandles, selected: boolean) {
-	if (handles.overlay) {
-		handles.overlay.visible = selected;
-	}
 	for (const color of handles.colors) {
 		color.material.color.setHex(selected ? ACTOR_TOKEN_COLORS.SELECTED_RING : color.defaultHex);
 	}
@@ -358,7 +352,6 @@ function applyXRayToObject(object: THREE.Object3D | undefined, enabled: boolean)
 function applyActorXRay(visual: ActorVisualHandles, enabled: boolean): void {
 	applyXRayToObject(visual.supportGroup, enabled);
 	applyXRayToObject(visual.standee, enabled);
-	applyXRayToObject(visual.selectionOverlay, enabled);
 }
 
 function calculateShadowParams(heightDelta: number): {
@@ -517,30 +510,6 @@ function createStandeeMesh(
 	mesh.position.y = bottomOffset + height / 2;
 	mesh.renderOrder = ACTOR_TOKEN_RENDER_ORDER.NORMAL;
 	setActorUserData(mesh, actor);
-	mesh.onBeforeRender = () => faceCameraAroundY(mesh, resources.camera, actorGroup);
-	return mesh;
-}
-
-function createSelectionOverlayMesh(
-	texture: THREE.Texture,
-	actor: ActorTokenDescriptor,
-	resources: ThreeDSceneResources,
-	actorGroup: THREE.Group,
-	bottomOffset: number
-): THREE.Mesh {
-	const { width, height } = getActorTokenWorldSize(actor.size, actor.cutout);
-	const geometry = new THREE.PlaneGeometry(width, height);
-	const material = new THREE.MeshBasicMaterial({
-		map: texture,
-		transparent: true,
-		depthTest: true,
-		depthWrite: false,
-		side: THREE.DoubleSide,
-	});
-	const mesh = new THREE.Mesh(geometry, material);
-	mesh.position.y = bottomOffset + height / 2;
-	mesh.renderOrder = ACTOR_TOKEN_RENDER_ORDER.SELECTION;
-	mesh.visible = false;
 	mesh.onBeforeRender = () => faceCameraAroundY(mesh, resources.camera, actorGroup);
 	return mesh;
 }
@@ -836,7 +805,6 @@ function refreshSupportVisual(
 		visual.supportMode = supportMode;
 		visual.group.add(visual.supportGroup);
 		nextHandles = {
-			overlay: visual.selectionOverlay,
 			colors: support.colors,
 			haloOpacities: support.haloOpacities,
 		};
@@ -844,7 +812,6 @@ function refreshSupportVisual(
 
 	const bottomOffset = getStandeeBottomOffset(actor, airborne);
 	setPlaneBottomOffset(visual.standee, actor, bottomOffset);
-	setPlaneBottomOffset(visual.selectionOverlay, actor, bottomOffset);
 	setPlaneBottomOffset(visual.pickMesh, actor, bottomOffset);
 	setActorUserData(visual.group, actor);
 	setActorUserData(visual.standee, actor);
@@ -945,7 +912,6 @@ export function ThreeDActorLayer({
 	const visualHandlesRef = useRef<Map<string, ActorVisualHandles>>(new Map());
 	const layerGroupRef = useRef<THREE.Group | null>(null);
 	const shadowTextureRef = useRef<THREE.Texture | null>(null);
-	const selectionTextureRef = useRef<THREE.Texture | null>(null);
 	const tokenBuildVersionsRef = useRef<Map<string, number>>(new Map());
 	const pendingVisualBuildsRef = useRef<Map<string, number>>(new Map());
 	const dragStateRef = useRef<ActorDragState | null>(null);
@@ -1151,8 +1117,7 @@ export function ThreeDActorLayer({
 		if (pendingVisualBuildsRef.current.has(actorKey)) return;
 		const layerGroup = layerGroupRef.current;
 		const shadowTexture = shadowTextureRef.current;
-		const selectionTexture = selectionTextureRef.current;
-		if (!layerGroup || !shadowTexture || !selectionTexture) return;
+		if (!layerGroup || !shadowTexture) return;
 
 		const buildVersion = bumpTokenBuildVersion(actorKey);
 		pendingVisualBuildsRef.current.set(actorKey, buildVersion);
@@ -1175,8 +1140,7 @@ export function ThreeDActorLayer({
 			latestSignature !== visualSignature ||
 			visualHandlesRef.current.has(actorKey) ||
 			layerGroupRef.current !== layerGroup ||
-			shadowTextureRef.current !== shadowTexture ||
-			selectionTextureRef.current !== selectionTexture
+			shadowTextureRef.current !== shadowTexture
 		) {
 			texture.dispose();
 			return;
@@ -1202,15 +1166,6 @@ export function ThreeDActorLayer({
 			actorGroup,
 			standeeBottomOffset
 		);
-		const selectionOverlay = latestActor.cutout
-			? null
-			: createSelectionOverlayMesh(
-					selectionTexture,
-					latestActor,
-					resources,
-					actorGroup,
-					standeeBottomOffset
-			  );
 		const pickMesh = createPickMesh(
 			latestActor,
 			texture,
@@ -1220,14 +1175,10 @@ export function ThreeDActorLayer({
 		);
 
 		actorGroup.add(shadow, support.group, standee, pickMesh);
-		if (selectionOverlay) {
-			actorGroup.add(selectionOverlay);
-		}
 		layerGroup.add(actorGroup);
 		resources.actorPickTargets.push(pickMesh);
 
 		const handles: SelectionHandles = {
-			overlay: selectionOverlay ?? undefined,
 			colors: support.colors,
 			haloOpacities: support.haloOpacities,
 		};
@@ -1239,7 +1190,6 @@ export function ThreeDActorLayer({
 			shadow,
 			supportGroup: support.group,
 			standee,
-			selectionOverlay: selectionOverlay ?? undefined,
 			pickMesh,
 			supportMode,
 			actor: latestActor,
@@ -1283,10 +1233,8 @@ export function ThreeDActorLayer({
 		resources.actorPickTargets.length = 0;
 		const raycaster = new THREE.Raycaster();
 		const shadowTexture = createShadowTexture();
-		const selectionTexture = createSelectionOutlineTexture();
 		layerGroupRef.current = group;
 		shadowTextureRef.current = shadowTexture;
-		selectionTextureRef.current = selectionTexture;
 		const handlesByKey = selectionHandlesRef.current;
 		const actorGroupsByKey = actorGroupsRef.current;
 		const targetPositionsByKey = targetPositionsRef.current;
@@ -1676,13 +1624,11 @@ export function ThreeDActorLayer({
 			targetPositionsByKey.clear();
 			visualHandlesByKey.clear();
 			shadowTextureRef.current = null;
-			selectionTextureRef.current = null;
 			layerGroupRef.current = null;
 			resources.actorPickTargets.length = 0;
 			moveAnimationsRef.current.clear();
 			pendingVisualBuildsRef.current.clear();
 			shadowTexture.dispose();
-			selectionTexture.dispose();
 		};
 		// Intentionally NOT including imageService, onActorClick, or
 		// selectedActor: those flow through refs so a reconnect or selection
@@ -1691,7 +1637,7 @@ export function ThreeDActorLayer({
 	}, [resources]);
 
 	useEffect(() => {
-		if (!layerGroupRef.current || !shadowTextureRef.current || !selectionTextureRef.current) {
+		if (!layerGroupRef.current || !shadowTextureRef.current) {
 			return;
 		}
 

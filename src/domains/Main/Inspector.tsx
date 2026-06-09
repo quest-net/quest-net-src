@@ -363,6 +363,7 @@ function UnifiedInspector({
 							localName={localName}
 							localDescription={localDescription}
 							localMoveSpeed={localMoveSpeed}
+							localColor={localColor}
 							localAttributes={localAttributes}
 							playersSeeEntityHealth={playersSeeEntityHealth}
 							editingMaxStats={editingMaxStats}
@@ -370,6 +371,7 @@ function UnifiedInspector({
 							handleNameChange={handleNameChange}
 							handleDescriptionChange={handleDescriptionChange}
 							handleMoveSpeedChange={handleMoveSpeedChange}
+							handleColorChange={handleColorChange}
 							handleAttributeChange={handleAttributeChange}
 							handleFieldChange={handleFieldChange}
 							handleStatChange={handleStatChange}
@@ -449,6 +451,7 @@ interface ActorInfoTabProps {
 	localName: string;
 	localDescription: string;
 	localMoveSpeed: number;
+	localColor: string;
 	localAttributes: Map<string, string>;
 	playersSeeEntityHealth: boolean;
 	editingMaxStats: boolean;
@@ -456,6 +459,7 @@ interface ActorInfoTabProps {
 	handleNameChange: (value: string) => void;
 	handleDescriptionChange: (value: string) => void;
 	handleMoveSpeedChange: (value: number) => void;
+	handleColorChange: (value: string) => void;
 	handleAttributeChange: (id: string, value: string) => void;
 	handleFieldChange: (field: keyof Actor, value: any) => void;
 	handleStatChange: (statId: string, field: "Current" | "Max", value: number) => void;
@@ -476,6 +480,7 @@ function ActorInfoTab({
 	localName,
 	localDescription,
 	localMoveSpeed,
+	localColor,
 	localAttributes,
 	playersSeeEntityHealth,
 	editingMaxStats,
@@ -483,6 +488,7 @@ function ActorInfoTab({
 	handleNameChange,
 	handleDescriptionChange,
 	handleMoveSpeedChange,
+	handleColorChange,
 	handleAttributeChange,
 	handleFieldChange,
 	handleStatChange,

@@ -45,6 +45,10 @@ export function AppSettingEdit() {
     AppSettingActions.getPerformanceMode(context)
   );
 
+  const [critSplashEnabled, setCritSplashEnabled] = useState<boolean>(
+    AppSettingActions.getCritSplashEnabled(context)
+  );
+
   // --- Image generation settings ---
   const [imageService, setImageService] = useState<string>(
     AppSettingActions.getImageService(context)
@@ -95,6 +99,10 @@ export function AppSettingEdit() {
       context
     );
     AppSettingActions.setPerformanceMode({ enabled: performanceMode }, context);
+    AppSettingActions.setCritSplashEnabled(
+      { enabled: critSplashEnabled },
+      context
+    );
 
     // Image service selection
     AppSettingActions.setImageService({ providerId: imageService }, context);
@@ -267,6 +275,22 @@ export function AppSettingEdit() {
                   Uses lower renderer quality and simplified voxel terrain for
                   older laptops. Refresh after changing this from the quick
                   settings menu.
+                </p>
+              </div>
+
+              <div className="form-control">
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-primary"
+                    checked={critSplashEnabled}
+                    onChange={(e) => setCritSplashEnabled(e.target.checked)}
+                  />
+                  <span className="label-text">Crit splash animation</span>
+                </label>
+                <p className="text-xs opacity-70">
+                  Plays a full-screen cut-in when an actor rolls a natural crit.
+                  When off, crits show as a normal log alert instead.
                 </p>
               </div>
             </div>

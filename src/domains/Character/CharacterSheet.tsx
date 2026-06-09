@@ -39,7 +39,9 @@ export function CharacterSheet() {
 	const [localName, setLocalName] = useState("");
 	const [localDescription, setLocalDescription] = useState("");
 	const [localCritMessage, setLocalCritMessage] = useState("");
-	const [localColor, setLocalColor] = useState(ACTOR_DEFAULT_COLORS.CHARACTER);
+	const [localColor, setLocalColor] = useState<string>(
+		ACTOR_DEFAULT_COLORS.CHARACTER
+	);
 	const [localAttributes, setLocalAttributes] = useState<Map<string, string>>(
 		new Map()
 	);

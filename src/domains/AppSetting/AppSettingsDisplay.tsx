@@ -20,6 +20,9 @@ export function AppSettingsDisplay() {
 		AppSettingActions.getPerformanceMode(context)
 	);
 	const [performanceModeChanged, setPerformanceModeChanged] = useState(false);
+	const [critSplashEnabled, setCritSplashEnabled] = useState(
+		AppSettingActions.getCritSplashEnabled(context)
+	);
 	const windowRef = useRef<HTMLDivElement>(null);
 	const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -29,6 +32,7 @@ export function AppSettingsDisplay() {
 			AppSettingActions.getPreserveFlyingHeightOnTileMove(context)
 		);
 		setPerformanceMode(AppSettingActions.getPerformanceMode(context));
+		setCritSplashEnabled(AppSettingActions.getCritSplashEnabled(context));
 	}, [context]);
 
 	useEffect(() => {
@@ -91,6 +95,12 @@ export function AppSettingsDisplay() {
 		setPerformanceMode(enabled);
 		setPerformanceModeChanged(true);
 		AppSettingActions.setPerformanceMode({ enabled }, context);
+		triggerContextUpdate();
+	};
+
+	const handleCritSplashChange = (enabled: boolean) => {
+		setCritSplashEnabled(enabled);
+		AppSettingActions.setCritSplashEnabled({ enabled }, context);
 		triggerContextUpdate();
 	};
 
@@ -183,6 +193,22 @@ export function AppSettingsDisplay() {
 									handlePreserveFlyingHeightChange(event.target.checked)
 								}
 								aria-label="Keep flying height"
+							/>
+						</div>
+
+						<div className="flex items-center justify-between gap-4">
+							<div className="flex items-center gap-2">
+								<span className="icon-[game-icons--trophy] w-5 h-5 opacity-70" />
+								<span className="font-medium">Crit Splash</span>
+							</div>
+							<input
+								type="checkbox"
+								className="toggle toggle-primary toggle-sm"
+								checked={critSplashEnabled}
+								onChange={(event) =>
+									handleCritSplashChange(event.target.checked)
+								}
+								aria-label="Crit splash animation"
 							/>
 						</div>
 

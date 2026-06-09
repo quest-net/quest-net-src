@@ -7,6 +7,7 @@ import { LogEntry } from "./LogEntry";
 import { LogActions } from "./LogActions";
 import { DM_MENTION_ID } from "./MentionUtils";
 import { isDiceRoll, isCritRoll, isFumbleRoll } from "../../utils/DiceUtils";
+import { AppSettingActions } from "../AppSetting/AppSettingActions";
 
 interface Alert {
 	id: string;
@@ -24,6 +25,9 @@ export function LogAlerts() {
 	const userRole = context.User.Role;
 	const selectedCharacterId =
 		context.User.SelectedCharacters[campaign.RoomCode];
+	// When the full-screen crit splash is disabled, crits fall back to ordinary
+	// log alert toasts instead of being suppressed here.
+	const critSplashEnabled = AppSettingActions.getCritSplashEnabled(context);
 
 	// True when this entry @mentions the current viewer (their selected
 	// character, or the DM via the "DM" sentinel).
@@ -49,10 +53,11 @@ export function LogAlerts() {
 			const levelOk = entry.Level === "important" || entry.Level === "critical";
 			const fresh = now - entry.Timestamp < MAX_ALERT_AGE;
 			const canSee = LogActions.canUserSeeEntry(entry, userRole);
-			// Crits are now shown via the full-screen CritSplash, not a toast.
+			// Crits are normally shown via the full-screen CritSplash, not a toast;
+			// when that splash is disabled they fall back to a regular alert here.
 			return (
 				(levelOk || isMentionForMe(entry)) &&
-				!isCritRoll(entry) &&
+				(!isCritRoll(entry) || !critSplashEnabled) &&
 				fresh &&
 				!processedIds.has(entry.Id) &&
 				canSee
@@ -84,6 +89,7 @@ export function LogAlerts() {
 		userRole,
 		selectedCharacterId,
 		campaign.RoomCode,
+		critSplashEnabled,
 	]);
 
 	const dismissAlert = (id: string) => {
@@ -172,8 +178,8 @@ export function LogAlerts() {
 							<h3 className={`font-semibold text-sm leading-tight ${isCrit ? "text-success-content" : ""
 								} ${isFumble ? "text-error-content" : ""
 								}`}>
-								{isCrit && `🎉 ${critMessage} `}
-								{isFumble && "💀 "}
+								{isCrit && `${critMessage} `}
+								{isFumble && ""}
 								{isMention && `💬 ${getSenderName(alert.entry)}: `}
 								{alert.entry.Action}
 							</h3>

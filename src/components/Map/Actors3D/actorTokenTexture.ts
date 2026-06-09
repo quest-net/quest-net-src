@@ -49,20 +49,6 @@ function px(baseValue: number, size: number): number {
 	return baseValue * (size / ACTOR_TOKEN_TEXTURE.BASE_SIZE);
 }
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-	ctx.beginPath();
-	ctx.moveTo(x + r, y);
-	ctx.lineTo(x + w - r, y);
-	ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-	ctx.lineTo(x + w, y + h - r);
-	ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-	ctx.lineTo(x + r, y + h);
-	ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-	ctx.lineTo(x, y + r);
-	ctx.quadraticCurveTo(x, y, x + r, y);
-	ctx.closePath();
-}
-
 async function loadImageElement(blob: Blob): Promise<HTMLImageElement> {
 	const objectUrl = URL.createObjectURL(blob);
 	const image = new Image();
@@ -79,23 +65,11 @@ async function loadImageElement(blob: Blob): Promise<HTMLImageElement> {
 	}
 }
 
-function drawImageCover(ctx: CanvasRenderingContext2D, image: HTMLImageElement, size: number) {
-	const scale = Math.max(
-		size / image.width,
-		size / image.height
-	);
-	const width = image.width * scale;
-	const height = image.height * scale;
-	const x = (size - width) / 2;
-	const y = (size - height) / 2;
-	ctx.drawImage(image, x, y, width, height);
-}
-
 /**
  * Fits the full image inside the square texture, preserving aspect ratio,
- * with transparent padding on the short axis. Used for cutout tokens so a
- * tall character image is fully visible (no cropping) and any transparent
- * margins of the source image render through cleanly.
+ * with transparent padding on the short axis. Used for every token so a
+ * non-square character image is fully visible (no cropping) and any
+ * transparent margins of the source image render through cleanly.
  */
 function drawImageContain(ctx: CanvasRenderingContext2D, image: HTMLImageElement, size: number) {
 	const scale = Math.min(
@@ -259,73 +233,6 @@ function drawPlaceholderToken(
 	ctx.shadowOffsetY = 0;
 }
 
-function strokeTokenFrame(
-	ctx: CanvasRenderingContext2D,
-	color: string,
-	baseLineWidth: number,
-	size: number
-) {
-	const lineWidth = px(baseLineWidth, size);
-	const cornerRadius = px(ACTOR_TOKEN_TEXTURE.OUTER_CORNER_RADIUS, size);
-	ctx.lineWidth = lineWidth;
-	ctx.strokeStyle = color;
-	// Stroke is centered on its path: the path sits `lineWidth/2` inside the
-	// canvas edge, and the *outer* edge of the stroke lands on the canvas edge.
-	// Subtracting the same inset from the path's corner radius keeps that outer
-	// edge aligned with OUTER_CORNER_RADIUS regardless of stroke width.
-	const inset = lineWidth / 2;
-	roundRect(
-		ctx,
-		inset,
-		inset,
-		size - lineWidth,
-		size - lineWidth,
-		cornerRadius - inset
-	);
-	ctx.stroke();
-}
-
-function drawDefaultTokenFrame(ctx: CanvasRenderingContext2D, size: number) {
-	strokeTokenFrame(
-		ctx,
-		ACTOR_TOKEN_TEXTURE.DEFAULT_OUTLINE_COLOR,
-		ACTOR_TOKEN_TEXTURE.DEFAULT_OUTLINE_LINE_WIDTH,
-		size
-	);
-}
-
-/**
- * Builds a transparent texture containing only the selection outline. Apply
- * it to a plane the same size as the standee, hidden by default, and toggle
- * `visible` when selection changes -- avoids redrawing the actor's portrait
- * texture every time selection flips.
- */
-export function createSelectionOutlineTexture(): THREE.Texture {
-	// Shared by every actor's overlay plane, so it stays at BASE_SIZE: it is a
-	// single solid-color frame stroke (no portrait detail), and the overlay
-	// quad is the same world size as the standee regardless of token
-	// resolution, so its UVs map identically.
-	const size = ACTOR_TOKEN_TEXTURE.BASE_SIZE;
-	const canvas = document.createElement("canvas");
-	canvas.width = size;
-	canvas.height = size;
-
-	const ctx = canvas.getContext("2d");
-	if (!ctx) {
-		throw new Error("Unable to create actor selection outline canvas");
-	}
-
-	ctx.clearRect(0, 0, size, size);
-	strokeTokenFrame(
-		ctx,
-		ACTOR_TOKEN_TEXTURE.SELECTED_OUTLINE_COLOR,
-		ACTOR_TOKEN_TEXTURE.SELECTED_OUTLINE_LINE_WIDTH,
-		size
-	);
-
-	return createTextureFromCanvas(canvas);
-}
-
 function createTextureFromCanvas(canvas: HTMLCanvasElement): THREE.CanvasTexture {
 	const texture = new THREE.CanvasTexture(canvas);
 	texture.colorSpace = THREE.SRGBColorSpace;
@@ -396,37 +303,26 @@ export async function createActorTokenTexture(
 
 	ctx.clearRect(0, 0, size, size);
 
-	// Cutout tokens (transparent images) get a different treatment: no
-	// rounded clip, no frame stroke, and the image is fitted-to-contain so
-	// its transparent margins show through. Cutout only applies when an
-	// actual image loads -- the placeholder fallback always uses the framed
-	// path so unloaded actors still have a recognizable token.
-	if (actor.cutout && image) {
+	// Every token with a loaded image renders the same way: frameless, with the
+	// full image fitted inside the square texture (preserving aspect ratio) so
+	// the transparent margins -- whether from a cutout PNG or the letterboxing
+	// of a non-square portrait -- render through cleanly. No rounded clip or
+	// frame stroke, so cutout and normal tokens look consistent.
+	if (image) {
 		drawImageContain(ctx, image, size);
 		const texture = createTextureFromCanvas(canvas);
-		texture.userData.actorPickBounds = getAlphaPickBounds(ctx, size);
+		// Alpha-derived pick bounds only matter for true cutouts -- the layer's
+		// precise pick filter is gated on actor.cutout. Opaque portraits keep
+		// the generous full-quad pick, so skip the full-canvas alpha scan.
+		if (actor.cutout) {
+			texture.userData.actorPickBounds = getAlphaPickBounds(ctx, size);
+		}
 		return texture;
 	}
 
-	ctx.save();
-	roundRect(
-		ctx,
-		0,
-		0,
-		size,
-		size,
-		px(ACTOR_TOKEN_TEXTURE.OUTER_CORNER_RADIUS, size)
-	);
-	ctx.clip();
-
-	if (image) {
-		drawImageCover(ctx, image, size);
-	} else {
-		drawPlaceholderToken(ctx, actor, size);
-	}
-
-	ctx.restore();
-	drawDefaultTokenFrame(ctx, size);
-
+	// No image: a flat gradient placeholder carrying the actor's name so an
+	// unloaded or imageless actor still reads as a token. Frameless too, to
+	// stay consistent with the image path.
+	drawPlaceholderToken(ctx, actor, size);
 	return createTextureFromCanvas(canvas);
 }

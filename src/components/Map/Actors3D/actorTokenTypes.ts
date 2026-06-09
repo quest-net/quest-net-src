@@ -13,10 +13,12 @@ export interface ActorTokenDescriptor {
 	position: Position;
 	moveSpeed: number;
 	size: ActorSize;
-	// True when the underlying Image has Cutout=true. Cutout tokens render
-	// frameless with the image fitted-to-contain inside the square texture
-	// (transparency shows through), and the selection overlay is suppressed
-	// so a frame doesn't appear around a transparent figure.
+	// True when the underlying Image has Cutout=true. All tokens now render
+	// frameless with the image fitted-to-contain inside the square texture, so
+	// this flag no longer changes the look. It still tunes the non-visual
+	// behaviour real transparency benefits from: alpha-derived pick bounds
+	// (precise hit-testing against the figure) and the slightly larger standee
+	// size / tighter base gap a free-standing cutout figure wants.
 	cutout: boolean;
 	// Drives the height-drag interaction: only fliers can change altitude
 	// by dragging the selected token.

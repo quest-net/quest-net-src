@@ -8,22 +8,17 @@ export const ACTOR_TOKEN_DESCRIPTOR_DEFAULTS = {
 } as const;
 
 export const ACTOR_TOKEN_TEXTURE = {
-	// Reference resolution. Every pixel-valued constant in this and the
-	// ACTOR_TOKEN_PLACEHOLDER block (corner radius, outline widths, font sizes,
-	// shadow offsets) is calibrated to BASE_SIZE. Renderers draw at a runtime
-	// resolution and scale these by (renderSize / BASE_SIZE), so a token looks
-	// identical regardless of the canvas resolution it was rasterized at.
+	// Reference resolution. Every pixel-valued constant in the
+	// ACTOR_TOKEN_PLACEHOLDER block (font sizes, shadow offsets) is calibrated to
+	// BASE_SIZE. Renderers draw at a runtime resolution and scale these by
+	// (renderSize / BASE_SIZE), so a token looks identical regardless of the
+	// canvas resolution it was rasterized at.
 	BASE_SIZE: 512,
 	// Higher resolution used for character tokens when performance mode is off.
 	// Characters carry the player-facing portraits that get inspected up close,
 	// so the extra detail is worth the GPU memory (~4x the texture footprint).
 	// Entities always render at BASE_SIZE -- see resolveActorTokenResolution.
 	CHARACTER_HIGH_RES_SIZE: 1024,
-	OUTER_CORNER_RADIUS: 56,
-	SELECTED_OUTLINE_COLOR: "#2563eb",
-	SELECTED_OUTLINE_LINE_WIDTH: 14,
-	DEFAULT_OUTLINE_COLOR: "#1f2937",
-	DEFAULT_OUTLINE_LINE_WIDTH: 8,
 	TEXT_FILL: "#ffffff",
 } as const;
 
@@ -74,7 +69,6 @@ export const ACTOR_TOKEN_WORLD_SIZE = {
 export const ACTOR_TOKEN_RENDER_ORDER = {
 	SHADOW: 99,
 	NORMAL: 101,
-	SELECTION: 101.5,
 	PICK: 102,
 	X_RAY: 110,
 } as const;
@@ -84,10 +78,10 @@ export const ACTOR_TOKEN_RENDER_ORDER = {
 // stops its march at the scene depth buffer -- correctly occlude against the
 // figure instead of marching past it to the terrain behind. depthWrite on a
 // transparent plane would otherwise punch a full square hole, so the alpha test
-// discards the transparent margins/corners: only fragments at/above this cutoff
-// (the figure body for cutouts, the framed interior otherwise) write depth and
-// colour. Kept mid-range so the silhouette stays close to the visible (still
-// alpha-blended) edge without writing depth for the faint anti-aliased fringe.
+// discards the transparent margins: only fragments at/above this cutoff (the
+// fitted-to-contain image body) write depth and colour. Kept mid-range so the
+// silhouette stays close to the visible (still alpha-blended) edge without
+// writing depth for the faint anti-aliased fringe.
 export const ACTOR_TOKEN_STANDEE_ALPHA_TEST = 0.5;
 
 export const ACTOR_TOKEN_PLACEMENT = {

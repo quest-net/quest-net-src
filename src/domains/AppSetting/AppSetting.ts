@@ -4,6 +4,8 @@ export interface AppSettings {
   sfxVolume?: number; // 0-1. Sound effects volume (stickers, etc.), separate from music
   preserveFlyingHeightOnTileMove?: boolean;
   performanceMode?: boolean;
+  /** When false, natural crits show as normal log alerts instead of the full-screen splash. Defaults to enabled. */
+  critSplashEnabled?: boolean;
   imagePromptTemplate?: string;
 
   /** The selected image generation provider ID (e.g. "google-gemini-flash") */

@@ -35,6 +35,7 @@ export const AppSettingActions = {
       volume: 100,
       preserveFlyingHeightOnTileMove: false,
       performanceMode: false,
+      critSplashEnabled: true,
     };
   },
 
@@ -95,6 +96,19 @@ export const AppSettingActions = {
 
   getPerformanceMode(context: Context): boolean {
     return context.AppSettings.performanceMode === "true";
+  },
+
+  setCritSplashEnabled(
+    params: { enabled: boolean },
+    context: Context
+  ): void {
+    context.AppSettings.critSplashEnabled = params.enabled ? "true" : "false";
+    ContextActions.save(context);
+  },
+
+  /** Defaults to enabled when the setting has never been set. */
+  getCritSplashEnabled(context: Context): boolean {
+    return context.AppSettings.critSplashEnabled !== "false";
   },
 
   // ---------------------------------------------------------------------------
@@ -194,6 +208,7 @@ export const AppSettingActions = {
       preserveFlyingHeightOnTileMove:
         this.getPreserveFlyingHeightOnTileMove(context),
       performanceMode: this.getPerformanceMode(context),
+      critSplashEnabled: this.getCritSplashEnabled(context),
       imagePromptTemplate: this.getImagePromptTemplate(context),
       imageService: this.getImageService(context),
       imageApiKeys: getJson<Record<string, string>>(context, "imageApiKeys"),

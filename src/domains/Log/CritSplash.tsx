@@ -24,6 +24,7 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogActions } from "./LogActions";
 import { LogEntry } from "./LogEntry";
 import { isCritRoll, getCritRollValue } from "../../utils/DiceUtils";
+import { AppSettingActions } from "../AppSetting/AppSettingActions";
 import { loadImageBlob } from "../Image/ImageLoading";
 import { Campaign } from "../Campaign/Campaign";
 import "./CritSplash.css";
@@ -262,6 +263,7 @@ export function CritSplash() {
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const userRole = context.User.Role;
 	const isDM = userRole === "dm";
+	const splashEnabled = AppSettingActions.getCritSplashEnabled(context);
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const processedRef = useRef<Set<string>>(new Set());
@@ -281,10 +283,13 @@ export function CritSplash() {
 				LogActions.canUserSeeEntry(e, userRole)
 		);
 		if (fresh.length === 0) return;
+		// Always mark as processed so toggling the splash on later doesn't replay
+		// these crits; when disabled, LogAlerts surfaces them as toasts instead.
 		fresh.forEach((e) => processedRef.current.add(e.Id));
+		if (!splashEnabled) return;
 		setQueue((q) => [...q, ...fresh.map((e) => toCritEvent(e, campaign))]);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [campaign.Log, campaign.LogHead, campaign.Log.length, userRole]);
+	}, [campaign.Log, campaign.LogHead, campaign.Log.length, userRole, splashEnabled]);
 
 	// dequeue when idle
 	useEffect(() => {
