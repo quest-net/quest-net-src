@@ -129,6 +129,16 @@ export interface VisibilitySettings {
 	playersSeeDMRolls: boolean;
 	playersSeePeerRolls: boolean;
 	playersSeeEntityHealth: boolean;
+	/**
+	 * The following gate what a player sees when inspecting an ENTITY (NPCs/
+	 * enemies). They do not affect the DM, nor characters. UI-only gates: the
+	 * data is still synced, just not rendered. Treated as visible when undefined
+	 * (so existing campaigns are unaffected).
+	 */
+	playersSeeEntityDescriptions?: boolean;
+	playersSeeEntityAttributes?: boolean;
+	/** Whether a player sees an entity's per-turn action counts (action bubbles). */
+	playersSeeEntityActions?: boolean;
 }
 
 export interface CalendarSettings {
@@ -143,6 +153,14 @@ export interface CalendarSettings {
 	dayNames: string[];
 	/** Names for months (length should equal monthsPerYear). */
 	monthNames: string[];
+
+	/**
+	 * Display-only switch for the in-world calendar. When false, the date/year/
+	 * week readout is hidden everywhere (the Calendar tab keeps its rest controls
+	 * and the day-tracking math still runs in the background). Treated as enabled
+	 * when undefined.
+	 */
+	enabled?: boolean;
 
 	/** Human labels (can be empty to "hide" the concept in UI). */
 	weekLabel?: string;   // e.g., "week", "tenday"

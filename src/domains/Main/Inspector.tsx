@@ -499,6 +499,19 @@ function ActorInfoTab({
 	actionService,
 }: ActorInfoTabProps) {
 	const { requestRoll } = useDiceRoller();
+
+	// Player-facing visibility gates apply only when a player inspects an entity
+	// (NPC/enemy). DMs, and characters, are never gated. Undefined settings are
+	// treated as visible so existing campaigns are unaffected.
+	const vis = campaign.Settings.VisibilitySettings;
+	const gateEntity = !isDM && kind === "entity";
+	const showEntityDescription =
+		!gateEntity || vis.playersSeeEntityDescriptions !== false;
+	const showEntityAttributes =
+		!gateEntity || vis.playersSeeEntityAttributes !== false;
+	const showEntityActions =
+		!gateEntity || vis.playersSeeEntityActions !== false;
+
 	return (
 		<div className="space-y-3">
 			{/* Name with optional Despawn/Give buttons for DM */}
@@ -659,7 +672,7 @@ function ActorInfoTab({
 				</div>
 			)}
 			{/* Actions */}
-			{actor.Actions && actor.Actions.length > 0 && (
+			{actor.Actions && actor.Actions.length > 0 && showEntityActions && (
 				<div className="pt-2">
 					<ActionBubbles
 						actions={resolveActions(
@@ -681,7 +694,7 @@ function ActorInfoTab({
 					placeholder="Description..."
 				/>
 			) : (
-				actor.Description && (
+				actor.Description && showEntityDescription && (
 					<p className="text-sm opacity-80">{actor.Description}</p>
 				)
 			)}
@@ -753,16 +766,18 @@ function ActorInfoTab({
 			)}
 
 			{/* Attributes */}
-			<div className="pt-4 border-t border-base-300">
-				<AttributesSection
-					slots={actor.Attributes}
-					definitions={campaign.Settings.AttributeDefinitions ?? []}
-					localValues={localAttributes}
-					onChange={handleAttributeChange}
-					readOnly={!isDM}
-					onRoll={requestRoll}
-				/>
-			</div>
+			{showEntityAttributes && (
+				<div className="pt-4 border-t border-base-300">
+					<AttributesSection
+						slots={actor.Attributes}
+						definitions={campaign.Settings.AttributeDefinitions ?? []}
+						localValues={localAttributes}
+						onChange={handleAttributeChange}
+						readOnly={!isDM}
+						onRoll={requestRoll}
+					/>
+				</div>
+			)}
 		</div>
 	);
 }

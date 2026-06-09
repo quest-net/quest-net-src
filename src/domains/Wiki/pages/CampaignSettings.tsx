@@ -266,6 +266,21 @@ const campaignSettingsPage: WikiPageDefinition = {
 								tone: "accent",
 								body: "When on, players can see the current and maximum health of enemies and other entities on the map.",
 							},
+							{
+								title: "Players see entity descriptions",
+								tone: "primary",
+								body: "When on, players can read an entity's description text in the inspector. Off hides it from players (the DM always sees it).",
+							},
+							{
+								title: "Players see entity attributes",
+								tone: "secondary",
+								body: "When on, players can see an entity's attributes in the inspector. Off hides the attributes section from players.",
+							},
+							{
+								title: "Players see entity actions",
+								tone: "accent",
+								body: "When on, players can see an entity's per-turn action counts (the action bubbles). Off hides them from players.",
+							},
 						]}
 					/>
 				</div>
@@ -281,6 +296,12 @@ const campaignSettingsPage: WikiPageDefinition = {
 						Quest-Net includes an in-world calendar for tracking the passage of
 						time in your campaign. Every field here is optional — leave counts at
 						0 or labels blank to hide concepts your world doesn't use.
+					</p>
+					<p>
+						If your table doesn't track dates, turn off{" "}
+						<strong>Show calendar date to everyone</strong> to hide the date
+						readout entirely. The Calendar tab keeps its short/long rest
+						controls and the day count still advances in the background.
 					</p>
 					<WikiFieldGrid
 						items={[

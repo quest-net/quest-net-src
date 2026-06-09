@@ -346,6 +346,57 @@ function CampaignSettingForm({
 							className="toggle toggle-primary"
 						/>
 					</FormField>
+
+					<FormField label="Players can see entity descriptions">
+						<input
+							type="checkbox"
+							checked={
+								data.VisibilitySettings.playersSeeEntityDescriptions !== false
+							}
+							onChange={(e) =>
+								handleSettingChange(
+									"VisibilitySettings",
+									"playersSeeEntityDescriptions",
+									e.target.checked
+								)
+							}
+							className="toggle toggle-primary"
+						/>
+					</FormField>
+
+					<FormField label="Players can see entity attributes">
+						<input
+							type="checkbox"
+							checked={
+								data.VisibilitySettings.playersSeeEntityAttributes !== false
+							}
+							onChange={(e) =>
+								handleSettingChange(
+									"VisibilitySettings",
+									"playersSeeEntityAttributes",
+									e.target.checked
+								)
+							}
+							className="toggle toggle-primary"
+						/>
+					</FormField>
+
+					<FormField label="Players can see entity actions">
+						<input
+							type="checkbox"
+							checked={
+								data.VisibilitySettings.playersSeeEntityActions !== false
+							}
+							onChange={(e) =>
+								handleSettingChange(
+									"VisibilitySettings",
+									"playersSeeEntityActions",
+									e.target.checked
+								)
+							}
+							className="toggle toggle-primary"
+						/>
+					</FormField>
 				</FormGrid>
 			</FormSection>
 			{/* Calendar Settings */}
@@ -353,6 +404,20 @@ function CampaignSettingForm({
 				title="Calendar Settings"
 				description="Customize your world's calendar (days, weeks, months, labels, names)."
 			>
+				<FormField label="Show calendar date to everyone">
+					<input
+						type="checkbox"
+						checked={data.CalendarSettings.enabled !== false}
+						onChange={(e) =>
+							handleSettingChange(
+								"CalendarSettings",
+								"enabled",
+								e.target.checked
+							)
+						}
+						className="toggle toggle-primary"
+					/>
+				</FormField>
 				<CalendarConfigEditor
 					value={data.CalendarSettings}
 					onChange={(CalendarSettings) => updateSettings({ CalendarSettings })}

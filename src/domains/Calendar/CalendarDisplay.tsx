@@ -22,6 +22,9 @@ export default function CalendarDisplay() {
   const isInteractive = isDM && !!actionService;
 
   const cfg: CalendarSettings = CalendarActions.getConfig(context);
+  // Display-only switch: when disabled, hide the date readout but keep the rest
+  // controls (the day-tracking math still runs in the background).
+  const calendarEnabled = cfg.enabled !== false;
   const absolute = campaign.GameState.CalendarDay ?? 0;
 
   const { parts, monthName, dayName } = useMemo(
@@ -107,6 +110,8 @@ export default function CalendarDisplay() {
 
   return (
     <div className="text-center space-y-2 h-full place-content-center" ref={anchorRef}>
+      {calendarEnabled && (
+        <>
       {/* Title line */}
       <div className="text-2xl font-semibold tracking-wide">
         {showWeeks && (
@@ -167,6 +172,8 @@ export default function CalendarDisplay() {
         <div className="text-md">
           {weekLabel} {parts.weekOfMonth}
         </div>
+      )}
+        </>
       )}
       {/* Rest Buttons (DM only) */}
       {isInteractive && (
