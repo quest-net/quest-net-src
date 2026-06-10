@@ -176,6 +176,7 @@ export default function TerrainDisplay({
 	const isInteractive = isDM && !!actionService && !!activeTerrain;
 	const name = activeTerrain?.Name ?? "Unknown Terrain";
 	const isLoaded = TerrainStorageService.isHydrated(activeTerrain);
+	const showStatusLine = isDM || !isLoaded;
 
 	const [showAdvanced, setShowAdvanced] = useState(false);
 	const [draftLighting, setDraftLighting] =
@@ -408,14 +409,18 @@ export default function TerrainDisplay({
 						<div className="text-xl font-semibold leading-tight">
 							Currently in <span className="font-bold">{name}</span>
 						</div>
-						<div className="mt-1 flex flex-wrap items-center justify-center gap-2 text-xs uppercase tracking-wide opacity-70">
-							<span>
-								{activePreset
-									? `${activePreset.Name} environment`
-									: "Custom environment"}
-							</span>
-							{!isLoaded && <span>Loading terrain data...</span>}
-						</div>
+						{showStatusLine && (
+							<div className="mt-1 flex flex-wrap items-center justify-center gap-2 text-xs uppercase tracking-wide opacity-70">
+								{isDM && (
+									<span>
+										{activePreset
+											? `${activePreset.Name} environment`
+											: "Custom environment"}
+									</span>
+								)}
+								{!isLoaded && <span>Loading terrain data...</span>}
+							</div>
+						)}
 						<div className="mx-auto mt-1 h-1 w-full max-w-md bg-linear-to-r from-transparent via-primary to-transparent" />
 					</div>
 				)}
