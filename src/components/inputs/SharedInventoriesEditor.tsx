@@ -100,11 +100,10 @@ export function SharedInventoriesEditor({
                         ))}
                         {inventories.length === 0 && (
                             <tr>
-                                <td
-                                    colSpan={readOnly ? 3 : 4}
-                                    className="text-center italic text-base-content/60 py-4"
-                                >
-                                    No shared inventories defined.
+                                <td colSpan={readOnly ? 3 : 4}>
+                                    <EmptyState compact>
+                                        No shared inventories defined.
+                                    </EmptyState>
                                 </td>
                             </tr>
                         )}

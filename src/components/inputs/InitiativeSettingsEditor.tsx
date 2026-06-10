@@ -171,7 +171,7 @@ export function InitiativeSettingsEditor({
 						</ToggleButton>
 					))}
 				</div>
-				<div className="text-xs opacity-60">
+				<div className="text-xs opacity-70">
 					{mode === "party"
 						? "Party and enemies alternate. Each side acts as its own round, with initiative ordering applied within the side."
 						: "All actors share each round. Initiative ordering applies across party and enemies together."}
@@ -239,7 +239,7 @@ export function InitiativeSettingsEditor({
 				Add tiebreaker
 			</button>
 
-			<div className="text-xs opacity-60">
+			<div className="text-xs opacity-70">
 				Highest value goes first. If two members tie on every source, they share an
 				order number — pick between them however you like.
 			</div>

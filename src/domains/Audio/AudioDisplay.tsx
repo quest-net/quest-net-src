@@ -201,7 +201,7 @@ export function AudioDisplay() {
 				<>
 					<div className="flex items-center gap-2">
 						<label className="input input-bordered input-sm flex items-center gap-2 flex-1">
-							<span className="icon-[mdi--magnify] w-4 h-4 opacity-60" />
+							<span className="icon-[mdi--magnify] w-4 h-4 opacity-70" />
 							<input
 								ref={searchInputRef}
 								type="text"
@@ -239,7 +239,7 @@ export function AudioDisplay() {
 											)}
 											<span className="flex-1 truncate">{result.name}</span>
 											{result.kind === "playlist" && (
-												<span className="text-xs opacity-50 shrink-0">
+												<span className="text-xs opacity-70 shrink-0">
 													{result.trackCount}
 												</span>
 											)}
@@ -261,7 +261,7 @@ export function AudioDisplay() {
 							<h3 className="font-semibold text-lg truncate">
 								{currentAudio?.Name || "Unknown Track"}
 							</h3>
-							<p className="text-sm opacity-60">
+							<p className="text-sm opacity-70">
 								{isPlaylist
 									? `Playlist (${currentTrackIndex + 1}/${
 											currentAudios.length
@@ -293,7 +293,7 @@ export function AudioDisplay() {
 					{/* Volume Control */}
 					<div className="space-y-2">
 						<div className="flex items-center gap-3">
-							<span className="icon-[mdi--volume-low] w-5 h-5 opacity-60" />
+							<span className="icon-[mdi--volume-low] w-5 h-5 opacity-70" />
 							<input
 								type="range"
 								min="0"
@@ -302,7 +302,7 @@ export function AudioDisplay() {
 								onChange={(e) => handleVolumeChange(Number(e.target.value))}
 								className="range range-primary flex-1"
 							/>
-							<span className="icon-[mdi--volume-high] w-5 h-5 opacity-60" />
+							<span className="icon-[mdi--volume-high] w-5 h-5 opacity-70" />
 						</div>
 					</div>
 				</>
@@ -314,7 +314,7 @@ export function AudioDisplay() {
 							<span className="icon-[mdi--music-off] w-8 h-8" />
 						</div>
 						<h3 className="font-semibold mb-1">No Music Playing</h3>
-						<p className="text-sm opacity-60">
+						<p className="text-sm opacity-70">
 							It's awfully silent right now...
 						</p>
 					</div>
@@ -322,7 +322,7 @@ export function AudioDisplay() {
 					{/* Volume Control */}
 					<div className="space-y-2 mt-4">
 						<div className="flex items-center gap-3">
-							<span className="icon-[mdi--volume-low] w-5 h-5 opacity-60" />
+							<span className="icon-[mdi--volume-low] w-5 h-5 opacity-70" />
 							<input
 								type="range"
 								min="0"
@@ -331,7 +331,7 @@ export function AudioDisplay() {
 								onChange={(e) => handleVolumeChange(Number(e.target.value))}
 								className="range range-primary flex-1"
 							/>
-							<span className="icon-[mdi--volume-high] w-5 h-5 opacity-60" />
+							<span className="icon-[mdi--volume-high] w-5 h-5 opacity-70" />
 						</div>
 					</div>
 				</>

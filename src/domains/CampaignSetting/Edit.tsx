@@ -567,7 +567,7 @@ function TerrainEnvironmentPresetsEditor({
 
 	if (environmentPresets.length === 0) {
 		return (
-			<div className="rounded-md border border-base-300 bg-base-200/40 px-3 py-2 text-sm text-base-content/60">
+			<div className="rounded-md border border-base-300 bg-base-200/40 px-3 py-2 text-sm opacity-70">
 				No environment presets saved
 			</div>
 		);
@@ -584,7 +584,7 @@ function TerrainEnvironmentPresetsEditor({
 					>
 						<div className="min-w-0 flex-1">
 							<div className="truncate font-medium">{preset.Name}</div>
-							<div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-base-content/60">
+							<div className="mt-1 flex flex-wrap items-center gap-3 text-xs opacity-70">
 								<span className="inline-flex items-center gap-1">
 									<EnvironmentPresetSwatch color={preset.Lighting.Color} />
 									Light
@@ -625,7 +625,7 @@ function TerrainEnvironmentPresetsEditor({
 function EnvironmentPresetSwatch({ color }: { color?: string }) {
 	return (
 		<span
-			className="h-4 w-4 shrink-0 rounded-full border border-base-content/20"
+			className="h-4 w-4 shrink-0 rounded-full border border-base-300"
 			style={{
 				background: color
 					? color

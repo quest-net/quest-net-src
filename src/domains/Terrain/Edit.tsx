@@ -426,7 +426,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 						<div className="md:col-span-2 flex flex-col">
 							<label className="text-sm font-medium mb-1">
 								Width
-								<span className="text-xs text-base-content/60 ml-1">
+								<span className="text-xs opacity-70 ml-1">
 									(1-{MAX_VOXEL_TERRAIN_WIDTH})
 								</span>
 							</label>
@@ -447,7 +447,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 						<div className="md:col-span-2 flex flex-col">
 							<label className="text-sm font-medium mb-1">
 								Length
-								<span className="text-xs text-base-content/60 ml-1">
+								<span className="text-xs opacity-70 ml-1">
 									(1-{MAX_VOXEL_TERRAIN_LENGTH})
 								</span>
 							</label>
@@ -468,7 +468,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 						<div className="md:col-span-2 flex flex-col">
 							<label className="text-sm font-medium mb-1">
 								Max Height
-								<span className="text-xs text-base-content/60 ml-1">
+								<span className="text-xs opacity-70 ml-1">
 									(1-{MAX_VOXEL_TERRAIN_HEIGHT})
 								</span>
 							</label>

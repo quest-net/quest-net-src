@@ -22,6 +22,7 @@ import {
 } from "./ActorPanelHelpers";
 import { Character } from "../Character/Character";
 import { isItemEntity } from "../Item/ItemDropUtils";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 interface PartyProps {
 	onInspectActor: () => void;
@@ -155,9 +156,9 @@ export function Party({ onInspectActor }: PartyProps) {
 							: `Initiative ${order}`
 				}
 				className={`absolute top-0 left-0 w-7 h-7 rounded-tl-md rounded-br-md flex items-center justify-center text-sm font-bold z-10 ${isDone
-					? "bg-base-300 text-base-content/40 line-through"
+					? "bg-base-300 opacity-70 line-through"
 					: "bg-primary text-primary-content"
-					} ${canToggle ? "cursor-pointer hover:opacity-80" : "cursor-default"}`}
+					} ${canToggle ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
 			>
 				{order}
 			</button>
@@ -166,10 +167,10 @@ export function Party({ onInspectActor }: PartyProps) {
 
 	if (characters.length === 0) {
 		return (
-			<div className="text-center py-12">
-				<p className="text-xl mb-2">No characters spawned</p>
-				<p className="text-base-content/60">How are you even here?</p>
-			</div>
+			<EmptyState>
+				<div className="text-base font-medium">No characters spawned</div>
+				<div className="mt-1">How are you even here?</div>
+			</EmptyState>
 		);
 	}
 

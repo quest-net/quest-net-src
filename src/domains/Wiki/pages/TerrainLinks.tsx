@@ -47,14 +47,14 @@ export const terrainLinksPage: WikiPage = {
 								Pick a tile on one map and a tile on another (or the same) map to
 								connect the two ends.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Decorate" tone="success">
 								Place a cosmetic stamp — a door, archway, trapdoor, or cave mouth —
 								at each end so players can see where the link is.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Travel" tone="accent">

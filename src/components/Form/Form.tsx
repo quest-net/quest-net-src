@@ -16,6 +16,7 @@ import { createPortal } from "react-dom";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { canPerformAction } from "../../services/Actions/ActionRegistry";
 import { setFormDirty, clearFormDirty } from "../../utils/formDirtyRegistry";
+import { FloatingActionButton } from "../ui/FloatingActionButton";
 
 // ============================================================================
 // CONTEXT
@@ -335,43 +336,41 @@ export function FormWrapper<T extends Record<string, any>>({
 
 			<FloatingActionBar show={showFloating}>
 				{canDelete && (
-					<button
+					<FloatingActionButton
 						onClick={handleDelete}
-						className="btn btn-circle btn-error shadow-lg opacity-60 transition-opacity hover:opacity-100 tooltip tooltip-left"
+						variant="error"
 						disabled={isDeleteCooldown}
 						data-tip={isDeleteConfirm ? "Click again to delete" : "Delete"}
 						aria-label={isDeleteConfirm ? "Click again to delete" : "Delete"}
 					>
 						<span className="icon-[mdi--trash-can] h-5 w-5" />
-					</button>
+					</FloatingActionButton>
 				)}
 				{mode === "edit" && !!onClone && (
-					<button
+					<FloatingActionButton
 						onClick={handleClone}
-						className="btn btn-circle btn-neutral shadow-lg opacity-60 transition-opacity hover:opacity-100 tooltip tooltip-left"
 						data-tip="Clone"
 						aria-label="Clone"
 					>
 						<span className="icon-[mdi--content-copy] h-5 w-5" />
-					</button>
+					</FloatingActionButton>
 				)}
-				<button
+				<FloatingActionButton
 					onClick={onClose}
-					className="btn btn-circle btn-neutral shadow-lg opacity-60 transition-opacity hover:opacity-100 tooltip tooltip-left"
 					data-tip={readOnly ? "Close" : "Cancel"}
 					aria-label={readOnly ? "Close" : "Cancel"}
 				>
 					<span className="icon-[mdi--close] h-5 w-5" />
-				</button>
+				</FloatingActionButton>
 				{!readOnly && (
-					<button
+					<FloatingActionButton
 						onClick={handleSave}
-						className="btn btn-circle btn-primary shadow-lg opacity-60 transition-opacity hover:opacity-100 tooltip tooltip-left"
+						variant="primary"
 						data-tip={mode === "create" ? "Create" : "Save Changes"}
 						aria-label={mode === "create" ? "Create" : "Save Changes"}
 					>
 						<span className="icon-[mdi--content-save] h-5 w-5" />
-					</button>
+					</FloatingActionButton>
 				)}
 			</FloatingActionBar>
 		</FormContext.Provider>
@@ -503,7 +502,7 @@ export function FormField({ label, hint, children, span = 1 }: FormFieldProps) {
 			<label className="shrink-0 min-w-[200px] font-medium">
 				{label}
 				{hint && (
-					<span className="text-sm text-base-content/60 ml-2">{hint}</span>
+					<span className="text-sm opacity-70 ml-2">{hint}</span>
 				)}
 			</label>
 			<div className="flex-1">{childWithReadOnly}</div>

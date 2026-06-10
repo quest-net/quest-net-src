@@ -126,7 +126,7 @@ export default function CalendarDisplay() {
             {dayName ?? `Day ${parts.day}`}
           </button>
         )}
-        {showWeeks ? <span className="opacity-60">, </span> : <span className="opacity-60">The </span>}
+        {showWeeks ? <span className="opacity-70">, </span> : <span className="opacity-70">The </span>}
         <button
           type="button"
           className={tokenClass(open === "day")}

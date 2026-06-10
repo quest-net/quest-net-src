@@ -211,7 +211,7 @@ export function ImageGenerator({
               <span className="icon-[mdi--magic-staff] w-5 h-5 text-primary" />
               AI Image Generator
             </h3>
-            <p className="text-xs opacity-50">{provider.displayName}</p>
+            <p className="text-xs opacity-70">{provider.displayName}</p>
           </div>
           <button
             type="button"

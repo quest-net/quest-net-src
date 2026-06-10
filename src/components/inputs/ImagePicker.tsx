@@ -288,8 +288,8 @@ export function ImagePicker({
 					relative w-full h-48 bg-base-200 rounded-lg overflow-hidden 
 					flex items-center justify-center
 					${!readOnly ? "cursor-pointer" : ""}
-					transition-opacity
-					${!readOnly && isHovered ? "opacity-70" : "opacity-100"}
+					transition-all
+					${!readOnly && isHovered ? "brightness-90" : ""}
 				`}
 			>
 				{value ? (
@@ -301,7 +301,7 @@ export function ImagePicker({
 				) : (
 					<>
 						<span
-							className={`icon-[mdi--image-off] w-24 h-24 opacity-30 transition-opacity ${isHovered && !readOnly ? "opacity-0" : "opacity-30"
+							className={`icon-[mdi--image-off] w-24 h-24 opacity-70 ${isHovered && !readOnly ? "invisible" : ""
 								}`}
 						/>
 						{isHovered && !readOnly && (

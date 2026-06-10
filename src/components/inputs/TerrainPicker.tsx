@@ -170,7 +170,7 @@ export function TerrainPicker({
 														terrain.PreviewColor ?? "var(--color-base-200)",
 												}}
 											>
-												<span className="icon-[mdi--terrain] w-12 h-12 text-base-content/50" />
+												<span className="icon-[mdi--terrain] w-12 h-12 opacity-70" />
 											</div>
 										</figure>
 										<div className="card-body p-2 gap-1">

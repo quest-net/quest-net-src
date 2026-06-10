@@ -480,7 +480,7 @@ export function CampaignIndex() {
 													)}
 												</div>
 
-												<div className="text-xs opacity-60 mt-2">
+												<div className="text-xs opacity-70 mt-2">
 													Last activity: {info.LastActivity > info.CreatedAt
 														? new Date(info.LastActivity).toLocaleString()
 														: "Never"}

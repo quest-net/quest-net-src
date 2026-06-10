@@ -148,19 +148,19 @@ const combatPage: WikiPageDefinition = {
 							<WikiDiagramNode title="Round 1 — Party" tone="primary">
 								Party members act. Enemies wait.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Round 2 — Enemies" tone="error">
 								Enemies act. Party waits.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Round 3 — Party" tone="primary">
 								Initiative flips back.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="..." tone="neutral">

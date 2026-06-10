@@ -306,7 +306,7 @@ export function CharacterSheet() {
 					placeholder="Critical success message (optional)"
 					maxLength={50}
 				/>
-				<p className="text-xs opacity-50 mt-1">
+				<p className="text-xs opacity-70 mt-1">
 					Displays when you roll a critical success
 				</p>
 			</div>

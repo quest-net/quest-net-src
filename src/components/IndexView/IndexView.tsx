@@ -352,7 +352,7 @@ export function IndexView({
 						<div>
 							<h2 className="text-2xl font-bold">{title}</h2>
 							{description && (
-								<p className="text-base-content/60">{description}</p>
+								<p className="opacity-70">{description}</p>
 							)}
 						</div>
 
@@ -390,7 +390,7 @@ export function IndexView({
 								<span className="text-sm font-medium">
 									{selectedItemIds.size} selected
 									{selectedItemIds.size > 0 && totalPages > 1 && (
-										<span className="text-xs opacity-60 ml-1">
+										<span className="text-xs opacity-70 ml-1">
 											(across all pages)
 										</span>
 									)}
@@ -706,7 +706,7 @@ function FolderCard({ folder, onClick }: FolderCardProps) {
 			<div className="card-body p-4">
 				<h3 className="card-title text-center justify-center">{folder.name}</h3>
 				<div className="min-h-10 flex items-center justify-center">
-					<p className="text-sm text-center text-base-content/60">Folder</p>
+					<p className="text-sm text-center opacity-70">Folder</p>
 				</div>
 			</div>
 		</div>
@@ -779,7 +779,7 @@ function ItemCard({
 								style={item.iconColor ? { color: item.iconColor } : undefined}
 							/>
 						) : (
-							<span className="icon-[mdi--help-circle-outline] w-12 h-12 opacity-30"></span>
+							<span className="icon-[mdi--help-circle-outline] w-12 h-12 opacity-70"></span>
 						)}
 					</div>
 				</figure>

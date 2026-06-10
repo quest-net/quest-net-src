@@ -79,7 +79,7 @@ export function StickerPicker() {
     return (
         <div className="relative" ref={popoverRef}>
             <button
-                className={`btn btn-square btn-lg shadow-lg text-xl ${timeLeft > 0 || isDisabled ? "btn-disabled opacity-50" : "btn-accent"
+                className={`btn btn-square btn-lg shadow-lg text-xl ${timeLeft > 0 || isDisabled ? "btn-disabled opacity-70" : "btn-accent"
                     }`}
                 onClick={toggleOpen}
                 title={isDisabled ? (isPlayer ? "Select a character first" : "Impersonate an actor first") : timeLeft > 0 ? `Wait ${timeLeft}s` : "Send Sticker"}

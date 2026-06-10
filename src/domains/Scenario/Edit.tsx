@@ -9,6 +9,7 @@ import {
     FormGrid,
 } from "../../components/Form/Form";
 import { TagEditor } from "../../components/inputs/TagEditor";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 interface ScenarioEditProps {
     scenario?: Scenario;
@@ -23,9 +24,9 @@ export function ScenarioEdit({ scenario, initialTags, onClose }: ScenarioEditPro
     // This form is for editing existing scenarios only
     if (!scenario) {
         return (
-            <div className="text-center py-12">
-                <p className="text-error">Scenarios are created via "Capture Current State"</p>
-            </div>
+            <EmptyState className="text-error">
+                Scenarios are created via "Capture Current State"
+            </EmptyState>
         );
     }
 

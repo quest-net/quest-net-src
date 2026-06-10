@@ -20,7 +20,7 @@ export function WikiArticleRail({ visiblePage }: WikiArticleRailProps) {
 						<span className="icon-[mdi--format-list-bulleted-square] h-5 w-5" />
 						Article Map
 					</div>
-					<div className="mt-1 text-xs text-neutral-content/70">
+					<div className="mt-1 text-xs text-neutral-content opacity-70">
 						Jump through the current page
 					</div>
 				</div>
@@ -45,7 +45,7 @@ export function WikiArticleRail({ visiblePage }: WikiArticleRailProps) {
 											(section.level ?? 0) > 0 ? "h-1.5 w-1.5" : "h-2 w-2"
 										}`}
 									/>
-									<span className="font-mono text-xs opacity-50">
+									<span className="font-mono text-xs opacity-70">
 										{String(index + 1).padStart(2, "0")}
 									</span>
 									<span>{section.title}</span>
@@ -63,7 +63,7 @@ export function WikiArticleRail({ visiblePage }: WikiArticleRailProps) {
 				</h2>
 				<div className="space-y-3 text-sm">
 					<div>
-						<div className="mb-1 text-xs font-semibold uppercase opacity-50">
+						<div className="mb-1 text-xs font-semibold uppercase opacity-70">
 							Route
 						</div>
 						<code className="block rounded-md bg-base-200 px-3 py-2 font-mono text-xs">
@@ -71,7 +71,7 @@ export function WikiArticleRail({ visiblePage }: WikiArticleRailProps) {
 						</code>
 					</div>
 					<div>
-						<div className="mb-1 text-xs font-semibold uppercase opacity-50">
+						<div className="mb-1 text-xs font-semibold uppercase opacity-70">
 							Keywords
 						</div>
 						<div className="flex flex-wrap gap-2">

@@ -184,7 +184,7 @@ export function LogAlerts() {
 								{alert.entry.Action}
 							</h3>
 							{alert.entry.Details && (
-								<div className={`text-xs opacity-80 leading-tight mt-0.5 ${isCrit ? "text-success-content" : ""
+								<div className={`text-xs opacity-70 leading-tight mt-0.5 ${isCrit ? "text-success-content" : ""
 									} ${isFumble ? "text-error-content" : ""
 									}`}>
 									{alert.entry.Details}

@@ -77,7 +77,7 @@ export function ActionBubbles({ actions, onChange, readonly }: ActionBubblesProp
 		<div className="flex items-center gap-2 flex-wrap">
 			{localActions.map((action, index) => (
 				<div key={action.Id} className="flex items-center gap-2">
-					{index > 0 && <span className="text-base-content/30">|</span>}
+					{index > 0 && <span className="opacity-70">|</span>}
 					<ActionRow
 						action={action}
 						onSpend={() => handleSpend(action.Id)}

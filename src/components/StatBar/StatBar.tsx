@@ -190,7 +190,7 @@ export function StatBar({
 			{/* Max Value Control (only visible when editingMax) */}
 			{editingMax && (
 				<div className="flex items-center gap-1 justify-start">
-					<span className="text-xs opacity-60">Max:</span>
+					<span className="text-xs opacity-70">Max:</span>
 					<button
 						className="btn btn-xs btn-ghost"
 						onClick={() => handleMaxChange(localMax - 1)}

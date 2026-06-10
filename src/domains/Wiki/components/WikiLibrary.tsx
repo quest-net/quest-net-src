@@ -16,7 +16,7 @@ export function WikiLibrary({ groupedPages, visiblePage }: WikiLibraryProps) {
 						<span className="icon-[mdi--bookshelf] h-5 w-5" />
 						Library
 					</div>
-					<div className="mt-1 text-xs opacity-75">Grouped by workflow</div>
+					<div className="mt-1 text-xs opacity-70">Grouped by workflow</div>
 				</div>
 				<div className="max-h-[calc(100vh-12rem)] overflow-y-auto p-3">
 					{groupedPages.map((group) => {

@@ -11,6 +11,8 @@ interface EmptyStateProps {
 	icon?: string;
 	/** Dashed-border box variant for empty grid/list areas. */
 	bordered?: boolean;
+	/** Tighter padding for embedded table/editor empty rows. */
+	compact?: boolean;
 	className?: string;
 	children: ReactNode;
 }
@@ -18,6 +20,7 @@ interface EmptyStateProps {
 export function EmptyState({
 	icon,
 	bordered,
+	compact,
 	className,
 	children,
 }: EmptyStateProps) {
@@ -26,7 +29,9 @@ export function EmptyState({
 			className={`text-center text-sm opacity-70 ${
 				bordered
 					? "border-2 border-dashed border-base-300 rounded-lg py-12"
-					: "py-8"
+					: compact
+						? "py-2"
+						: "py-8"
 			} ${className ?? ""}`}
 		>
 			{icon && <span className={`${icon} w-12 h-12 inline-block mb-2`} />}

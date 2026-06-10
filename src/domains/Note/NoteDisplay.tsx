@@ -195,7 +195,7 @@ export function NoteDisplay() {
 
 				{/* Footer */}
 				<div className="mt-4 pt-3 border-t text-center">
-					<p className="text-xs italic opacity-40">
+					<p className="text-xs italic opacity-70">
 						What is remembered lives
 					</p>
 				</div>
@@ -238,12 +238,12 @@ export function NoteDisplay() {
 							<span className="icon-[mdi--close] w-4 h-4"></span>
 						</button>
 					) : (
-						<span className="absolute right-2 top-1/2 -translate-y-1/2 icon-[mdi--magnify] w-4 h-4 opacity-40 pointer-events-none"></span>
+						<span className="absolute right-2 top-1/2 -translate-y-1/2 icon-[mdi--magnify] w-4 h-4 opacity-70 pointer-events-none"></span>
 					)}
 				</div>
 
 				{searchQuery && (
-					<p className="text-xs opacity-60">
+					<p className="text-xs opacity-70">
 						Found {filteredNotes.length} note{filteredNotes.length !== 1 ? "s" : ""}
 					</p>
 				)}
@@ -252,17 +252,14 @@ export function NoteDisplay() {
 			{/* Notes List */}
 			<div className="flex-1 overflow-y-auto space-y-2">
 				{filteredNotes.length === 0 ? (
-					<div className="text-center py-12">
-						<div className="text-6xl mb-4">📝</div>
-						<p className="text-lg opacity-60 mb-2">
+					<EmptyState icon="icon-[mdi--note-edit-outline]">
+						<div className="text-base font-medium">
 							{searchQuery ? "No notes found" : "No notes yet"}
-						</p>
+						</div>
 						{!searchQuery && (
-							<p className="text-sm opacity-50">
-								Click "New Entry" to begin
-							</p>
+							<div className="mt-1">Click "New Entry" to begin</div>
 						)}
-					</div>
+					</EmptyState>
 				) : (
 					filteredNotes
 						.slice()
@@ -270,7 +267,7 @@ export function NoteDisplay() {
 						.map((note) => (
 							<div
 								key={note.Id}
-								className="card bg-base-200 border border-base-300 hover:border-base-content/20 transition-colors cursor-pointer"
+								className="card bg-base-200 border border-base-300 hover:border-base-300 transition-colors cursor-pointer"
 								onClick={() => handleOpenNote(note)}
 							>
 								<div className="card-body p-3">
@@ -278,7 +275,7 @@ export function NoteDisplay() {
 										<h3 className="font-semibold text-base flex-1">
 											{note.title}
 										</h3>
-										<span className="text-xs opacity-50 shrink-0">
+										<span className="text-xs opacity-70 shrink-0">
 											{formatDate(note.lastUpdated)}
 										</span>
 									</div>
@@ -295,7 +292,7 @@ export function NoteDisplay() {
 
 			{/* Footer */}
 			<div className="mt-4 pt-3 border-t text-center">
-				<p className="text-xs italic opacity-40">
+				<p className="text-xs italic opacity-70">
 					Quest-Net
 				</p>
 			</div>

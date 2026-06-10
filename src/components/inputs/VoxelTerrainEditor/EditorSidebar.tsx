@@ -89,7 +89,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
 		<>
 			<div>
 				<div className="text-sm font-semibold mb-2">Info</div>
-				<div className="space-y-1 text-xs text-base-content/75">
+				<div className="space-y-1 text-xs opacity-70">
 					<div className="flex justify-between gap-3">
 						<span>Count</span>
 						<span className="font-medium text-base-content">
@@ -104,7 +104,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
 					<div className="text-sm font-semibold mb-2">Selection</div>
 					<div className="space-y-2 text-xs">
 						{selectionSummary && (
-							<div className="flex justify-between gap-3 text-base-content/75">
+							<div className="flex justify-between gap-3 opacity-70">
 								<span>Selected</span>
 								<span className="font-medium text-base-content">
 									{selectionSummary.spaceCount.toLocaleString()}
@@ -112,7 +112,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
 							</div>
 						)}
 						{selection?.kind === "mask" && (
-							<div className="flex items-center justify-between gap-3 text-base-content/75">
+							<div className="flex items-center justify-between gap-3 opacity-70">
 								<span>Color</span>
 								<span className="flex items-center gap-2 font-medium text-base-content">
 									<span
@@ -124,7 +124,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
 							</div>
 						)}
 						{tool === "colorSelect" && selection?.kind !== "mask" && (
-							<div className="flex items-center justify-between gap-3 text-base-content/75">
+							<div className="flex items-center justify-between gap-3 opacity-70">
 								<span>Color</span>
 								<span className="flex items-center gap-2 font-medium text-base-content">
 									<span
@@ -170,7 +170,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
 				<div className="flex flex-col gap-2">
 					{MATERIAL_SWATCH_GROUPS.map((group) => (
 						<div key={group.category}>
-							<div className="text-xs text-base-content/60 mb-1">{group.label}</div>
+							<div className="text-xs opacity-70 mb-1">{group.label}</div>
 							<div className="flex flex-row flex-wrap gap-1">
 								{group.swatches.map((swatch) => (
 									<button
@@ -210,7 +210,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
 				<div className="text-sm font-semibold mb-2">
 					Links
 					{linkCount > 0 && (
-						<span className="ml-1 text-xs font-normal text-base-content/60">
+						<span className="ml-1 text-xs font-normal opacity-70">
 							({linkCount})
 						</span>
 					)}

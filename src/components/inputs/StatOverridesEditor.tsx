@@ -169,7 +169,7 @@ export function StatOverridesEditor({
 						Reset
 					</button>
 				)}
-				<span className="text-xs opacity-60">
+				<span className="text-xs opacity-70">
 					Effective: {effectiveRegen ?? "none"}
 				</span>
 			</div>
@@ -195,7 +195,7 @@ export function StatOverridesEditor({
 						</optgroup>
 					)}
 				</select>
-				<span className="text-xs opacity-60">
+				<span className="text-xs opacity-70">
 					Effective: {renderEffectiveOverflow()}
 				</span>
 			</div>
@@ -205,12 +205,12 @@ export function StatOverridesEditor({
 				<div className="flex items-center gap-2 mb-1">
 					<span className="font-medium opacity-70">Restore Rules</span>
 					{!isRestoreOverridden && template.RestoreRule && (
-						<span className="text-xs opacity-60 italic">
+						<span className="text-xs opacity-70 italic">
 							(inheriting from campaign default)
 						</span>
 					)}
 					{!isRestoreOverridden && !template.RestoreRule && (
-						<span className="text-xs opacity-60 italic">
+						<span className="text-xs opacity-70 italic">
 							(no default — set below to override)
 						</span>
 					)}

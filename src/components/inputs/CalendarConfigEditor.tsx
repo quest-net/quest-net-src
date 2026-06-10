@@ -2,6 +2,7 @@
 import { useMemo } from "react";
 import { CalendarSettings } from "../../domains/CampaignSetting/CampaignSetting";
 import { useFormReadOnly } from "../Form/Form";
+import { EmptyState } from "../ui/EmptyState";
 
 interface CalendarConfigEditorProps {
 	value: CalendarSettings| undefined;
@@ -175,10 +176,10 @@ export function CalendarConfigEditor({
 			</div>
 
 			{/* Day names (conditional) */}
-			<div className={`space-y-2 ${showWeeks ? "" : "opacity-60"}`}>
+			<div className={`space-y-2 ${showWeeks ? "" : "opacity-70"}`}>
 				<div className="flex items-center justify-between">
 					<h4 className="font-semibold">Day Names ({cfg.daysPerWeek})</h4>
-					{!showWeeks && <span className="text-xs opacity-60">Weeks disabled</span>}
+					{!showWeeks && <span className="text-xs opacity-70">Weeks disabled</span>}
 				</div>
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
 					{(showWeeks ? cfg.dayNames : []).map((name, i) => (
@@ -197,7 +198,7 @@ export function CalendarConfigEditor({
 						/>
 					))}
 					{showWeeks && cfg.dayNames.length === 0 && (
-						<div className="text-sm opacity-60">No day names configured.</div>
+						<EmptyState compact>No day names configured.</EmptyState>
 					)}
 				</div>
 			</div>

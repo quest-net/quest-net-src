@@ -55,7 +55,7 @@ export function WikiHalftone() {
 	return (
 		<svg
 			aria-hidden="true"
-			className="pointer-events-none absolute inset-0 h-full w-full text-neutral-content opacity-20 mix-blend-normal"
+			className="pointer-events-none absolute inset-0 h-full w-full text-neutral-content mix-blend-normal"
 			preserveAspectRatio="xMidYMid slice"
 			viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
 		>
@@ -66,6 +66,7 @@ export function WikiHalftone() {
 					cy={dot.cy}
 					r={dot.r}
 					fill="currentColor"
+					fillOpacity={0.2}
 				/>
 			))}
 		</svg>

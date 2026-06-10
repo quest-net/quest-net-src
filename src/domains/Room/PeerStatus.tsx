@@ -72,22 +72,22 @@ export function PeerStatus({ connectionStatus, peers, selfPeer, totalInRoom }: P
 								<span className="badge badge-xs badge-neutral shrink-0">You</span>
 							)}
 						</div>
-						<p className="text-xs opacity-60 truncate font-mono">
+						<p className="text-xs opacity-70 truncate font-mono">
 							{peer.peerId}
 						</p>
 					</div>
 					<div className="ml-2 text-right">
 						{isSelf ? (
-							<p className="text-xs opacity-40">—</p>
+							<p className="text-xs opacity-70">—</p>
 						) : peer.ping !== null ? (
 							<>
 								<p className="text-sm font-mono font-bold">
 									{peer.ping}ms
 								</p>
-								<p className="text-xs opacity-60">ping</p>
+								<p className="text-xs opacity-70">ping</p>
 							</>
 						) : (
-							<p className="text-xs opacity-60">measuring...</p>
+							<p className="text-xs opacity-70">measuring...</p>
 						)}
 					</div>
 				</div>
@@ -95,25 +95,25 @@ export function PeerStatus({ connectionStatus, peers, selfPeer, totalInRoom }: P
 				{/* Character / Role display */}
 				<div className="mt-2 pt-2 border-t border-base-300">
 					{!peer.user ? (
-						<div className="flex items-center gap-2 opacity-50">
+						<div className="flex items-center gap-2 opacity-70">
 							<span className="icon-[mdi--account-question] w-4 h-4"></span>
 							<span className="text-sm italic">Loading peer details</span>
 						</div>
 					) : isHost ? (
 						<div className="flex items-center gap-2">
-							<span className="icon-[mdi--shield-crown] w-4 h-4 opacity-60"></span>
+							<span className="icon-[mdi--shield-crown] w-4 h-4 opacity-70"></span>
 							<span className="text-sm font-semibold">Host</span>
 						</div>
 					) : characterName ? (
 						<div className="flex items-center gap-2">
-							<span className="icon-[mdi--account] w-4 h-4 opacity-60"></span>
+							<span className="icon-[mdi--account] w-4 h-4 opacity-70"></span>
 							<span className="text-sm">
 								Playing as:{" "}
 								<span className="font-semibold">{characterName}</span>
 							</span>
 						</div>
 					) : (
-						<div className="flex items-center gap-2 opacity-50">
+						<div className="flex items-center gap-2 opacity-70">
 							<span className="icon-[mdi--account-off] w-4 h-4"></span>
 							<span className="text-sm italic">No character selected</span>
 						</div>
@@ -128,7 +128,7 @@ export function PeerStatus({ connectionStatus, peers, selfPeer, totalInRoom }: P
 			<button
 				ref={badgeRef}
 				onClick={() => setIsOpen(!isOpen)}
-				className={`badge badge-lg ${getBadgeColorClass()} gap-2 cursor-pointer hover:opacity-80 transition-opacity`}
+				className={`badge badge-lg ${getBadgeColorClass()} gap-2 cursor-pointer transition-all hover:brightness-95`}
 				aria-label="Peer connection status"
 			>
 				{connectionStatus === "online" ? (
@@ -161,7 +161,7 @@ export function PeerStatus({ connectionStatus, peers, selfPeer, totalInRoom }: P
 						</div>
 
 						{peers.length === 0 && (
-							<p className="text-center text-sm opacity-50 mt-3">
+							<p className="text-center text-sm opacity-70 mt-3">
 								No other peers connected
 							</p>
 						)}

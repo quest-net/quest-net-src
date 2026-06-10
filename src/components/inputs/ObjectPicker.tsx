@@ -212,7 +212,7 @@ export function ObjectPicker({
 														alt={item.Name}
 													/>
 												) : (
-													<span className="icon-[mdi--package-variant] w-12 h-12 opacity-30" />
+													<span className="icon-[mdi--package-variant] w-12 h-12 opacity-70" />
 												)}
 											</div>
 										</figure>

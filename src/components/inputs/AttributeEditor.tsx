@@ -4,6 +4,7 @@ import { AttributeSlot } from "../../domains/Actor/Actor";
 import { AttributeDefinition } from "../../domains/CampaignSetting/CampaignSetting";
 import { resolveAttributes } from "../../utils/ActorResolvers";
 import { useFormReadOnly } from "../Form/Form";
+import { EmptyState } from "../ui/EmptyState";
 
 interface AttributeEditorProps {
 	slots: AttributeSlot[];
@@ -43,9 +44,9 @@ export function AttributeEditor({
 
 	if (definitions.length === 0) {
 		return (
-			<div className="text-center italic text-base-content/60 py-4">
+			<EmptyState compact>
 				No attributes defined. Add attribute definitions in Campaign Settings.
-			</div>
+			</EmptyState>
 		);
 	}
 

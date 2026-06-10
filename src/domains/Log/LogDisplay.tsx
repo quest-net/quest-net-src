@@ -396,7 +396,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 							<span className="icon-[mdi--close] w-4 h-4"></span>
 						</button>
 					) : (
-						<span className="absolute right-2 top-1/2 -translate-y-1/2 icon-[mdi--magnify] w-4 h-4 opacity-40 pointer-events-none"></span>
+						<span className="absolute right-2 top-1/2 -translate-y-1/2 icon-[mdi--magnify] w-4 h-4 opacity-70 pointer-events-none"></span>
 					)}
 				</div>
 
@@ -413,7 +413,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 
 			{/* Search results info */}
 			{searchQuery && (
-				<p className="text-xs opacity-60 mb-3 -mt-2">
+				<p className="text-xs opacity-70 mb-3 -mt-2">
 					Found {searchFilteredLog.length} message
 					{searchFilteredLog.length !== 1 ? "s" : ""}
 				</p>
@@ -421,7 +421,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 
 			{/* Collapsible filter pills — colored by category, theme-aware. */}
 			{showFilters && (
-				<div className="flex flex-wrap gap-2 mb-4 p-2 bg-base-100 rounded-lg border border-base-content/10">
+				<div className="flex flex-wrap gap-2 mb-4 p-2 bg-base-100 rounded-lg border border-base-300">
 					{availableCategories.map((cat) => {
 						const hidden = hiddenCategories.has(cat);
 						const fg = palette[cat];
@@ -429,7 +429,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 							<button
 								key={cat}
 								onClick={() => toggleCategory(cat)}
-								className={`badge badge-sm cursor-pointer transition-all border ${hidden ? "opacity-40" : ""
+								className={`badge badge-sm cursor-pointer transition-all border ${hidden ? "opacity-70" : ""
 									}`}
 								style={{
 									color: fg,
@@ -452,10 +452,10 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 				onScroll={handleScroll}
 				role="log"
 				aria-live="polite"
-				className="flex-1 overflow-y-auto bg-base-200 text-base-content rounded-lg p-3 space-y-1 font-mono text-sm relative border border-base-content/10"
+				className="flex-1 overflow-y-auto bg-base-200 text-base-content rounded-lg p-3 space-y-1 font-mono text-sm relative border border-base-300"
 			>
 				{hasMoreMessages && (
-					<div className="text-center py-2 opacity-60 text-xs sticky top-0 bg-base-200 z-10">
+					<div className="text-center py-2 opacity-70 text-xs sticky top-0 bg-base-200 z-10">
 						<button
 							onClick={() => setMessagesToShow((prev) => prev + MESSAGES_PER_LOAD)}
 							className="btn btn-ghost btn-xs"

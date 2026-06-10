@@ -84,13 +84,13 @@ export const terrainsAndVoxelsPage: WikiPage = {
 							<WikiDiagramNode title="Tactical tile" tone="primary">
 								Actors, movement, and map dimensions use familiar table units.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Voxel subcells" tone="secondary">
 								Resolution splits each tactical unit into smaller editable cubes.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Encoded SVO" tone="accent">
@@ -160,7 +160,7 @@ export const terrainsAndVoxelsPage: WikiPage = {
 								Canonical metadata + <WikiCode>ContentHash</WikiCode>; no payload
 								materialized on this client.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Hydrate" tone="accent">
@@ -168,7 +168,7 @@ export const terrainsAndVoxelsPage: WikiPage = {
 								IndexedDB store when its hash matches, else fetched from the DM,
 								into the per-client buffer.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Materialized terrain" tone="success">
@@ -230,13 +230,13 @@ export const terrainsAndVoxelsPage: WikiPage = {
 							<WikiDiagramNode title="Encoded terrain" tone="primary">
 								Saved <WikiCode>Voxels</WikiCode> payload.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="EditGrid" tone="accent">
 								Flat indexed grid with occupancy and palette bytes.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Materialized terrain" tone="success">
@@ -446,14 +446,14 @@ export const terrainsAndVoxelsPage: WikiPage = {
 							<WikiDiagramNode title="Decoded voxels" tone="primary">
 								Voxel positions and palette indices.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Face pass" tone="accent">
 								Cull hidden faces, bucket by material, and greedy-merge compatible
 								faces.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Buffers" tone="success">

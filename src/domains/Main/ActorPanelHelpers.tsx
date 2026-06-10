@@ -78,14 +78,14 @@ export function AggregateStatsSummary({
 				>
 					<h2 className="font-bold text-lg">{title}</h2>
 					<span
-						className={`icon-[mdi--chevron-down] h-5 w-5 opacity-60 transition-transform duration-200 ${
+						className={`icon-[mdi--chevron-down] h-5 w-5 opacity-70 transition-transform duration-200 ${
 							expanded ? "rotate-180" : ""
 						}`}
 					/>
 				</button>
 				{expanded &&
 					(stats.length === 0 ? (
-						<div className="text-sm opacity-60 mt-3">No stats to summarize.</div>
+						<div className="text-sm opacity-70 mt-3">No stats to summarize.</div>
 					) : (
 						<div className="space-y-3 mt-3">
 							{stats.map((stat) => (

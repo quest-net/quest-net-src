@@ -81,7 +81,7 @@ export function ImageDisplay({ imageId, alt, ...props }: ImageDisplayProps) {
 				}`}
 				style={props.style}
 			>
-				<span className="icon-[mdi--image-off] w-8 h-8 opacity-30"></span>
+				<span className="icon-[mdi--image-off] w-8 h-8 opacity-70"></span>
 			</div>
 		);
 	}
@@ -110,7 +110,7 @@ export function ImageDisplay({ imageId, alt, ...props }: ImageDisplayProps) {
 				style={props.style}
 				title={error}
 			>
-				<span className="icon-[mdi--image-broken] w-8 h-8 opacity-30"></span>
+				<span className="icon-[mdi--image-broken] w-8 h-8 opacity-70"></span>
 			</div>
 		);
 	}

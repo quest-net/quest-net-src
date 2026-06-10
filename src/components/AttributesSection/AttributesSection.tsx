@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AttributeSlot } from "../../domains/Actor/Actor";
 import { AttributeDefinition } from "../../domains/CampaignSetting/CampaignSetting";
 import { resolveAttributes } from "../../utils/ActorResolvers";
+import { EmptyState } from "../ui/EmptyState";
 
 interface AttributesSectionProps {
 	slots: AttributeSlot[];
@@ -86,9 +87,7 @@ export function AttributesSection({
 				</label>
 			</div>
 			{visibleAttributes.length === 0 ? (
-				<div className="text-xs italic opacity-60 text-center py-1">
-					No attributes set.
-				</div>
+				<EmptyState compact>No attributes set.</EmptyState>
 			) : (
 				<div className="grid grid-cols-2 gap-x-3 gap-y-2">
 					{visibleAttributes.map((attr) => {
@@ -107,7 +106,7 @@ export function AttributesSection({
 									type="button"
 									onClick={() => onRoll!(rollFormula)}
 									title={`Roll ${attr.Name} (${rollFormula})`}
-									className="font-medium w-20 shrink-0 truncate text-left cursor-pointer underline decoration-dotted decoration-base-content/30 underline-offset-2 transition-colors hover:text-primary hover:decoration-primary"
+									className="font-medium w-20 shrink-0 truncate text-left cursor-pointer underline decoration-dotted decoration-base-300 underline-offset-2 transition-colors hover:text-primary hover:decoration-primary"
 								>
 									{attr.Name}
 								</button>
@@ -119,7 +118,7 @@ export function AttributesSection({
 							{effectiveReadOnly ? (
 								<div className="opacity-70 flex-1 text-right truncate">
 									{attr.Value || (
-										<span className="italic opacity-60">unset</span>
+										<span className="italic opacity-70">unset</span>
 									)}
 								</div>
 							) : (

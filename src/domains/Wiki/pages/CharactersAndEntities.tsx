@@ -132,14 +132,14 @@ const charactersAndEntitiesPage: WikiPageDefinition = {
 							<WikiDiagramNode title="Roster" tone="primary">
 								Character is off the map. Edits here persist normally.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								&#8644;
 							</div>
 							<WikiDiagramNode title="Field" tone="success">
 								Character is on the map inside GameState. All stats, position,
 								and status changes are live.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								&#8644;
 							</div>
 							<WikiDiagramNode title="Roster (returned)" tone="primary">
@@ -152,14 +152,14 @@ const charactersAndEntitiesPage: WikiPageDefinition = {
 							<WikiDiagramNode title="Template catalog" tone="secondary">
 								Template stays here permanently.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								&#8594;
 							</div>
 							<WikiDiagramNode title="Clone on field" tone="success">
 								A new instance with a new ID. State is independent of the
 								template and of other instances.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								&#8594;
 							</div>
 							<WikiDiagramNode title="Deleted" tone="error">

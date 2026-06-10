@@ -36,14 +36,14 @@ export const terrainsPage: WikiPage = {
 								Create rooms, cliffs, paths, platforms, obstacles, and scenic
 								details in the terrain editor.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Organize" tone="primary">
 								Name terrains clearly and use tags or folders to group dungeons,
 								towns, encounters, and reusable stamps.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Run" tone="accent">
@@ -133,14 +133,14 @@ export const terrainsPage: WikiPage = {
 							<WikiDiagramNode title="Top fields" tone="primary">
 								Name, width, length, height, and detail level.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Canvas and toolbar" tone="accent">
 								Tools, brush size, tile/voxel brush, stamps, undo, redo, import,
 								and edit/preview mode.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Right panel" tone="success">
@@ -617,13 +617,13 @@ export const terrainsPage: WikiPage = {
 								Create a terrain shaped like a staircase, tree, campfire, wall
 								section, ruined pillar, trap, bridge, or room feature.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Tag it" tone="primary">
 								Put it in the stamps folder using the terrain tag path for stamps.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Insert it" tone="accent">

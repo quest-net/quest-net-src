@@ -10,6 +10,7 @@ import { ItemSlotDisplay } from "../Item/ItemSlotDisplay";
 import { ActorPicker } from "../../components/inputs/ActorPicker";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 import { resolveStats } from "../../utils/ActorResolvers";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 interface SharedInventoryDisplayProps {
     inventory: SharedInventory;
@@ -115,7 +116,7 @@ export function SharedInventoryDisplay({
                                         return (
                                             <div
                                                 key={stat.Id}
-                                                className="flex items-center gap-2 p-2 border border-dashed border-base-300 rounded opacity-60"
+                                                className="flex items-center gap-2 p-2 border border-dashed border-base-300 rounded opacity-70"
                                             >
                                                 <div
                                                     className="w-3 h-3 rounded-full shrink-0"
@@ -156,9 +157,9 @@ export function SharedInventoryDisplay({
                                     );
                                 })}
                                 {!hasAnySet && !showUnsetStats && (
-                                    <div className="text-center italic opacity-50 text-xs py-2">
+                                    <EmptyState compact>
                                         No pools currently tracked.
-                                    </div>
+                                    </EmptyState>
                                 )}
                             </div>
                         </div>
@@ -174,9 +175,7 @@ export function SharedInventoryDisplay({
                     </div>
 
                     {inventory.Inventory.length === 0 ? (
-                        <div className="text-center py-4 opacity-50 italic text-sm">
-                            Empty
-                        </div>
+                        <EmptyState compact>Empty</EmptyState>
                     ) : (
                         <div className="space-y-2">
                             {inventory.Inventory.map((slot, index) => {
@@ -199,9 +198,9 @@ export function SharedInventoryDisplay({
                                             setDrawerOpen(true);
                                         }}
                                     >
-                                        <span className="icon-[mdi--package-variant] w-4 h-4 opacity-60" />
+                                        <span className="icon-[mdi--package-variant] w-4 h-4 opacity-70" />
                                         <span className="flex-1 text-left text-sm">{template.Name}</span>
-                                        {usesText && <span className="text-xs opacity-50">{usesText}</span>}
+                                        {usesText && <span className="text-xs opacity-70">{usesText}</span>}
                                     </button>
                                 );
                             })}

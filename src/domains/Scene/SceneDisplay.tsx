@@ -268,14 +268,14 @@ export function SceneDisplay({
   if (mode === "fixed") {
     const maxVw = isHovered ? 50 : 40;
     const maxVh = isHovered ? 65 : 45;
-    const opacityClass = isHovered ? "opacity-100" : "opacity-80";
+    const emphasisClass = isHovered ? "brightness-100" : "brightness-90";
     const focusMaxWidthPercent = 35;
     const focusMaxHeightPercent = 50;
 
     return (
       <div
         ref={fixedRef}
-        className={`absolute ${topClass} right-14 lg:right-2 z-20 ${opacityClass} transition-opacity duration-300 ease-in-out`}
+        className={`absolute ${topClass} right-14 lg:right-2 z-20 ${emphasisClass} transition-all duration-300 ease-in-out`}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >

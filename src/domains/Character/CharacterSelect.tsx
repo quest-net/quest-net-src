@@ -11,6 +11,7 @@ import { UserActions } from "../User/UserActions";
 import { Character } from "./Character";
 import { CharacterEdit } from "./Edit";
 import { ImageDisplay } from "../Image/ImageDisplay";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 interface CharacterSelectProps {
 	peers: PeerInfo[];
@@ -72,7 +73,7 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 				<div className="max-w-6xl mx-auto">
 					<div className="text-center mb-8">
 						<h1 className="text-3xl font-bold mb-2">Select Your Character</h1>
-						<p className="text-base-content/60">
+						<p className="opacity-70">
 							Choose a character to play in this campaign
 						</p>
 					</div>
@@ -86,14 +87,13 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 					</div>
 
 					{availableCharacters.length === 0 ? (
-						<div className="text-center py-12">
-							<div className="text-6xl mb-4">🎭</div>
-							<p className="text-xl mb-2">No characters available</p>
-							<p className="text-base-content/60">
+						<EmptyState icon="icon-[mdi--drama-masks]">
+							<div className="text-base font-medium">No characters available</div>
+							<div className="mt-1">
 								All spawned characters are currently taken by other players.
 								Create a new character to get started!
-							</p>
-						</div>
+							</div>
+						</EmptyState>
 					) : (
 						<div className="flex flex-wrap gap-4 justify-center">
 							{availableCharacters.map((character) => (
@@ -112,7 +112,7 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 													alt={character.Name}
 												/>
 											) : (
-												<span className="icon-[mdi--account] w-24 h-24 opacity-30"></span>
+												<span className="icon-[mdi--account] w-24 h-24 opacity-70"></span>
 											)}
 										</div>
 									</figure>

@@ -54,7 +54,7 @@ export function UserMenu({
 	return (
 		<div className="card bg-base-100 shadow-lg border border-base-300 w-64">
 			{title && (
-				<div className="px-3 pt-2 text-xs font-semibold opacity-60">{title}</div>
+				<div className="px-3 pt-2 text-xs font-semibold opacity-70">{title}</div>
 			)}
 			{users.length > 6 && (
 				<div className="px-2 pt-2">
@@ -70,7 +70,7 @@ export function UserMenu({
 			<ul className="menu w-full p-2 flex-nowrap max-h-64 overflow-y-auto">
 				{filtered.length === 0 ? (
 					<li className="menu-disabled">
-						<span className="text-sm opacity-60">{emptyText}</span>
+						<span className="text-sm opacity-70">{emptyText}</span>
 					</li>
 				) : (
 					filtered.map((user) => (
@@ -85,7 +85,7 @@ export function UserMenu({
 								<div className="flex flex-col min-w-0 flex-1">
 									<span className="truncate">{user.Name}</span>
 									{user.Description && (
-										<span className="text-xs opacity-60 truncate">
+										<span className="text-xs opacity-70 truncate">
 											{user.Description}
 										</span>
 									)}

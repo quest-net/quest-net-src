@@ -64,7 +64,7 @@ export function CampaignConnectionScreen({
 
 				<div className="max-w-md space-y-2">
 					<h2 className="text-2xl font-bold">{copy.title}</h2>
-					<p className="text-base-content/70">{message ?? copy.body}</p>
+					<p className="opacity-70">{message ?? copy.body}</p>
 				</div>
 
 				{roomCode && (

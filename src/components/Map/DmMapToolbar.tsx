@@ -40,7 +40,7 @@ const TAB_BASE =
 	"inline-flex h-10 w-36 items-center gap-1.5 px-3 text-sm font-medium whitespace-nowrap transition-colors";
 const TAB_ACTIVE = "bg-primary border-base-300 text-primary-content shadow-sm";
 const TAB_INACTIVE =
-	"border-base-300 bg-base-100 text-base-content/80 hover:bg-base-200 hover:text-base-content";
+	"border-base-300 bg-base-100 text-base-content hover:bg-base-200";
 
 interface DmMapToolbarProps {
 	campaign: Campaign;
@@ -58,7 +58,7 @@ function TabInner({ name }: { name: string }) {
 	return (
 		<>
 			<span className="icon-[mdi--terrain] h-4 w-4 shrink-0 opacity-70" />
-			<span className="min-w-0 flex-1 truncate text-left">{name}</span>
+			<span className="min-w-0 flex-1 truncate text-left opacity-70">{name}</span>
 		</>
 	);
 }
@@ -353,14 +353,14 @@ export function DmMapToolbar({
 										type="button"
 										className={`inline-flex h-10 items-center border-r border-base-300 px-1.5 transition-colors ${
 											active
-												? "bg-primary text-primary-content/70 hover:text-primary-content"
-												: "bg-base-100 text-base-content/40 hover:bg-base-200 hover:text-base-content"
+												? "bg-primary text-primary-content hover:brightness-110"
+												: "bg-base-100 text-base-content hover:bg-base-200 hover:brightness-110"
 										}`}
 										onClick={() => clearViewedTerrain(terrain.Id)}
 										aria-label={`Remove ${terrain.Name} from recent terrains`}
 										title="Remove from recent terrains"
 									>
-										<span className="icon-[mdi--close] h-3.5 w-3.5" />
+										<span className="icon-[mdi--close] h-3.5 w-3.5 opacity-70" />
 									</button>
 								)}
 							</div>

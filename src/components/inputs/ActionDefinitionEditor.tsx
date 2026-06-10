@@ -2,6 +2,7 @@
 
 import { ActionDefinition } from "../../domains/CampaignSetting/CampaignSetting";
 import { useFormReadOnly } from "../../components/Form/Form";
+import { EmptyState } from "../ui/EmptyState";
 
 interface ActionDefinitionEditorProps {
 	actions: ActionDefinition[];
@@ -104,11 +105,8 @@ export function ActionDefinitionEditor({
 						))}
 						{actions.length === 0 && (
 							<tr>
-								<td
-									colSpan={readOnly ? 3 : 4}
-									className="text-center italic text-base-content/60"
-								>
-									No actions defined.
+								<td colSpan={readOnly ? 3 : 4}>
+									<EmptyState compact>No actions defined.</EmptyState>
 								</td>
 							</tr>
 						)}

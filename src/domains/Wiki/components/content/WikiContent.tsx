@@ -173,7 +173,7 @@ export function WikiFieldGrid({
 						className={`rounded-lg border border-base-300 bg-base-200/60 p-4 border-l-4 ${borderLeftToneClass[tone]}`}
 					>
 						<div className="mb-1 font-mono text-sm font-black">{item.name}</div>
-						<div className="text-sm leading-6 opacity-85">{item.detail}</div>
+						<div className="text-sm leading-6 opacity-70">{item.detail}</div>
 					</div>
 				);
 			})}
@@ -205,7 +205,7 @@ export function WikiFlowStep({
 			</div>
 			<div>
 				<div className="font-black">{title}</div>
-				<div className="mt-1 text-sm leading-6 opacity-85">{children}</div>
+				<div className="mt-1 text-sm leading-6 opacity-70">{children}</div>
 			</div>
 		</div>
 	);

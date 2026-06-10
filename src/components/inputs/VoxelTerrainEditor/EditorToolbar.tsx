@@ -294,7 +294,7 @@ export function EditorToolbar(props: EditorToolbarProps) {
 																<span className="loading loading-spinner loading-xs" />
 															)}
 															<span className="truncate">{source.Name}</span>
-															<span className="ml-auto text-xs opacity-60 whitespace-nowrap">
+															<span className="ml-auto text-xs opacity-70 whitespace-nowrap">
 																{source.Width}×{source.Height}×{source.Length}
 															</span>
 														</button>
@@ -466,7 +466,7 @@ function ShortcutsHelpDropdown({ modKeyLabel }: { modKeyLabel: string }) {
 									<td className="opacity-70 py-0.5">Undo</td>
 									<td className="text-right whitespace-nowrap">
 										<kbd className="kbd kbd-sm">{modKeyLabel}</kbd>
-										<span className="mx-1 opacity-50">+</span>
+										<span className="mx-1 opacity-70">+</span>
 										<kbd className="kbd kbd-sm">Z</kbd>
 									</td>
 								</tr>
@@ -474,7 +474,7 @@ function ShortcutsHelpDropdown({ modKeyLabel }: { modKeyLabel: string }) {
 									<td className="opacity-70 py-0.5">Redo</td>
 									<td className="text-right whitespace-nowrap">
 										<kbd className="kbd kbd-sm">{modKeyLabel}</kbd>
-										<span className="mx-1 opacity-50">+</span>
+										<span className="mx-1 opacity-70">+</span>
 										<kbd className="kbd kbd-sm">Y</kbd>
 									</td>
 								</tr>
@@ -543,7 +543,7 @@ function ShortcutsHelpDropdown({ modKeyLabel }: { modKeyLabel: string }) {
 									<td className="opacity-70 py-0.5">Up / Down</td>
 									<td className="text-right whitespace-nowrap">
 										<kbd className="kbd kbd-sm">Space</kbd>
-										<span className="mx-1 opacity-50">/</span>
+										<span className="mx-1 opacity-70">/</span>
 										<kbd className="kbd kbd-sm">Shift</kbd>
 									</td>
 								</tr>
@@ -560,7 +560,7 @@ function ShortcutsHelpDropdown({ modKeyLabel }: { modKeyLabel: string }) {
 
 					<section className="break-inside-avoid text-xs leading-relaxed">
 						<div className="font-semibold mb-1">Mid-stroke modifier</div>
-						<div className="opacity-80">
+						<div className="opacity-70">
 							While dragging a stroke, hold{" "}
 							<kbd className="kbd kbd-xs">Shift</kbd> to break out of the
 							locked plane and paint across faces.

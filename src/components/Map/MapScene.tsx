@@ -777,7 +777,7 @@ export default function MapScene({
 							{linkFocus.destinationName
 								? `To ${linkFocus.destinationName}`
 								: "Terrain link"}
-							<span className="opacity-60">
+							<span className="opacity-70">
 								- click to {linkFocus.locked ? "unlock" : "lock"}
 							</span>
 						</span>
@@ -788,7 +788,7 @@ export default function MapScene({
 								? `To ${linkFocus.destinationName}`
 								: "Terrain link"}
 							{linkFocus.usable && (
-								<span className="opacity-60">- click to enter</span>
+								<span className="opacity-70">- click to enter</span>
 							)}
 						</span>
 					)}
@@ -814,7 +814,7 @@ export default function MapScene({
 					<div className="flex max-w-lg flex-col items-center gap-3 text-center">
 						<span className="icon-[mdi--alert-circle] h-12 w-12 text-error" />
 						<span className="text-lg font-semibold">Terrain rendering failed</span>
-						<span className="text-sm opacity-80">{terrainGeometryError}</span>
+						<span className="text-sm opacity-70">{terrainGeometryError}</span>
 						<div className="flex gap-2">
 							<button className="btn btn-primary btn-sm" onClick={retryTerrainGeometry}>
 								Retry

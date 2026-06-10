@@ -4,6 +4,7 @@ import { SharedInventory, StatDefinition } from "../../domains/CampaignSetting/C
 import { useFormReadOnly } from "../Form/Form";
 import { RestoreRuleEditor } from "./RestoreRuleEditor";
 import { Modal } from "../ui/Modal";
+import { EmptyState } from "../ui/EmptyState";
 
 interface StatDefinitionsEditorProps {
 	stats: StatDefinition[];
@@ -194,11 +195,8 @@ export function StatDefinitionsEditor({
 						})}
 						{stats.length === 0 && (
 							<tr>
-								<td
-									colSpan={readOnly ? 6 : 7}
-									className="text-center italic text-base-content/60"
-								>
-									No stats defined.
+								<td colSpan={readOnly ? 6 : 7}>
+									<EmptyState compact>No stats defined.</EmptyState>
 								</td>
 							</tr>
 						)}

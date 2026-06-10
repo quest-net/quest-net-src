@@ -64,7 +64,7 @@ export function CameraModeDropdown({
 				aria-label="Camera mode"
 			>
 				<span className={`${CAMERA_MODE_ICONS[value]} w-5 h-5`} />
-				<span className="icon-[mdi--chevron-down] w-3 h-3 opacity-60" />
+				<span className="icon-[mdi--chevron-down] w-3 h-3 opacity-70" />
 			</button>
 			<ul
 				tabIndex={0}

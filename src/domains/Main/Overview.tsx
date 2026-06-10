@@ -27,6 +27,7 @@ import {
 } from "./ActorPanelHelpers";
 import { isItemEntity } from "../Item/ItemDropUtils";
 import { ToggleButton } from "../../components/ui/ToggleButton";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 type OverviewFilter = "all" | "party" | "npcs" | "items";
 type TerrainScope = "viewed" | "global";
@@ -321,9 +322,9 @@ export function Overview({ onInspectActor }: OverviewProps) {
 				onClick={() => handleBadgeClick(entry)}
 				title={isDone ? "Turn done - click to undo" : "Click to mark turn done"}
 				className={`absolute top-0 left-0 w-7 h-7 rounded-tl-md rounded-br-md flex items-center justify-center text-sm font-bold z-10 ${isDone
-					? "bg-base-300 text-base-content/40 line-through"
+					? "bg-base-300 opacity-70 line-through"
 					: "bg-primary text-primary-content"
-					} cursor-pointer hover:opacity-80`}
+					} cursor-pointer hover:brightness-95`}
 			>
 				{order}
 			</button>
@@ -366,7 +367,7 @@ export function Overview({ onInspectActor }: OverviewProps) {
 
 			<div className="flex items-center gap-2">
 				<label className="input input-sm input-bordered flex flex-1 items-center gap-2">
-					<span className="icon-[mdi--magnify] h-4 w-4 opacity-60" />
+					<span className="icon-[mdi--magnify] h-4 w-4 opacity-70" />
 					<input
 						type="text"
 						className="grow"
@@ -377,7 +378,7 @@ export function Overview({ onInspectActor }: OverviewProps) {
 					{search && (
 						<button
 							type="button"
-							className="icon-[mdi--close] h-4 w-4 opacity-60 hover:opacity-100"
+							className="icon-[mdi--close] h-4 w-4 opacity-70 hover:brightness-110"
 							onClick={() => setSearch("")}
 							aria-label="Clear search"
 						/>
@@ -453,9 +454,7 @@ export function Overview({ onInspectActor }: OverviewProps) {
 			/>
 
 			{visibleEntries.length === 0 ? (
-				<div className="text-center py-12 text-base-content/60">
-					No actors match this filter.
-				</div>
+				<EmptyState>No actors match this filter.</EmptyState>
 			) : (
 				<div className="space-y-2">
 					{visibleEntries.map((entry) => (

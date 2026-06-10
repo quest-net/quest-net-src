@@ -106,7 +106,7 @@ function getPresetIcon(presetId: string): string {
 function EnvironmentSwatch({ color }: { color?: string }) {
 	return (
 		<span
-			className="h-4 w-4 shrink-0 rounded-full border border-base-content/20"
+			className="h-4 w-4 shrink-0 rounded-full border border-base-300"
 			style={{
 				background: color
 					? color
@@ -141,7 +141,7 @@ function EnvironmentSlider({
 		<label className="block min-w-0">
 			<div className="mb-1 flex items-center justify-between gap-2">
 				<span className="label-text text-xs font-medium">{label}</span>
-				<span className="text-xs tabular-nums text-base-content/70">
+				<span className="text-xs tabular-nums opacity-70">
 					{display}
 				</span>
 			</div>
@@ -408,7 +408,7 @@ export default function TerrainDisplay({
 						<div className="text-xl font-semibold leading-tight">
 							Currently in <span className="font-bold">{name}</span>
 						</div>
-						<div className="mt-1 flex flex-wrap items-center justify-center gap-2 text-xs uppercase tracking-wide text-base-content/60">
+						<div className="mt-1 flex flex-wrap items-center justify-center gap-2 text-xs uppercase tracking-wide opacity-70">
 							<span>
 								{activePreset
 									? `${activePreset.Name} environment`
@@ -430,7 +430,7 @@ export default function TerrainDisplay({
 									</span>
 									<input
 										type="color"
-										className="h-8 w-12 cursor-pointer rounded border border-base-300 bg-base-100 p-1 disabled:cursor-not-allowed disabled:opacity-50"
+										className="h-8 w-12 cursor-pointer rounded border border-base-300 bg-base-100 p-1 disabled:cursor-not-allowed disabled:brightness-75"
 										value={currentLighting.Color}
 										onChange={(e) =>
 											updateLighting({ Color: e.target.value })
@@ -455,7 +455,7 @@ export default function TerrainDisplay({
 										</button>
 										<input
 											type="color"
-											className="h-8 w-12 cursor-pointer rounded border border-base-300 bg-base-100 p-1 disabled:cursor-not-allowed disabled:opacity-50"
+											className="h-8 w-12 cursor-pointer rounded border border-base-300 bg-base-100 p-1 disabled:cursor-not-allowed disabled:brightness-75"
 											value={backgroundColor}
 											onChange={(e) =>
 												updateBackground({ Color: e.target.value })
@@ -549,7 +549,7 @@ export default function TerrainDisplay({
 				) : isDM ? (
 					<div className="flex flex-wrap justify-center gap-2">
 						{environmentPresets.length === 0 && (
-							<div className="text-sm text-base-content/60">
+							<div className="text-sm opacity-70">
 								No environment presets saved
 							</div>
 						)}

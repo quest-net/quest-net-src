@@ -115,10 +115,10 @@ export function CollectionView({
 				<div>
 					<div className="flex items-center gap-2">
 						<h2 className="text-2xl font-bold">{title}</h2>
-						<span className="text-base-content/60">• {countText}</span>
+						<span className="opacity-70">• {countText}</span>
 					</div>
 					{description && (
-						<p className="text-base-content/60">{description}</p>
+						<p className="opacity-70">{description}</p>
 					)}
 				</div>
 
@@ -258,7 +258,7 @@ function CollectionCard({ item }: CollectionCardProps) {
 							style={item.iconColor ? { color: item.iconColor } : undefined}
 						/>
 					) : (
-						<span className="icon-[mdi--help-circle-outline] w-12 h-12 opacity-30"></span>
+						<span className="icon-[mdi--help-circle-outline] w-12 h-12 opacity-70"></span>
 					)}
 				</div>
 			</figure>
@@ -276,7 +276,7 @@ function CollectionCard({ item }: CollectionCardProps) {
 				{/* Description - fixed height with ellipsis */}
 				<div className="min-h-10">
 					{item.description && (
-						<p className="text-sm text-center line-clamp-2 opacity-60">
+						<p className="text-sm text-center line-clamp-2 opacity-70">
 							{item.description}
 						</p>
 					)}
@@ -355,7 +355,7 @@ function CollectionRow({ item }: CollectionRowProps) {
 							style={item.iconColor ? { color: item.iconColor } : undefined}
 						/>
 					) : (
-						<span className="icon-[mdi--help-circle-outline] w-8 h-8 opacity-30"></span>
+						<span className="icon-[mdi--help-circle-outline] w-8 h-8 opacity-70"></span>
 					)}
 				</div>
 
@@ -377,7 +377,7 @@ function CollectionRow({ item }: CollectionRowProps) {
 					)}
 
 					{item.description && (
-						<p className="text-sm opacity-60 line-clamp-2">
+						<p className="text-sm opacity-70 line-clamp-2">
 							{item.description}
 						</p>
 					)}

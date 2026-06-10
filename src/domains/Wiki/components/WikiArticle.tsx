@@ -35,7 +35,7 @@ export function WikiArticle({ pageExists, visiblePage }: WikiArticleProps) {
 							</div>
 							<div className="min-w-0">
 								<h1 className="text-4xl font-black">{visiblePage.title}</h1>
-								<p className="mt-3 max-w-4xl text-lg opacity-75">
+								<p className="mt-3 max-w-4xl text-lg opacity-70">
 									{visiblePage.summary}
 								</p>
 							</div>
@@ -52,7 +52,7 @@ export function WikiArticle({ pageExists, visiblePage }: WikiArticleProps) {
 					<>
 						<div className="badge badge-error mb-3">Missing Page</div>
 						<h1 className="text-4xl font-black">Wiki Page Not Found</h1>
-						<p className="mt-3 max-w-3xl text-base opacity-75">
+						<p className="mt-3 max-w-3xl text-base opacity-70">
 							The requested wiki page does not exist yet. Use search or the page
 							list to choose an available topic.
 						</p>
@@ -72,7 +72,7 @@ export function WikiArticle({ pageExists, visiblePage }: WikiArticleProps) {
 						} ${categoryStyle.sectionClass}`}
 					>
 						<div className="mb-3 flex items-center gap-3">
-							<span className="font-mono text-sm font-bold opacity-50">
+							<span className="font-mono text-sm font-bold opacity-70">
 								{String(index + 1).padStart(2, "0")}
 							</span>
 							<h2
@@ -83,7 +83,7 @@ export function WikiArticle({ pageExists, visiblePage }: WikiArticleProps) {
 								{section.title}
 							</h2>
 						</div>
-						<div className="max-w-4xl text-base leading-8 opacity-90 [&_code]:rounded [&_code]:bg-base-content [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm [&_code]:font-semibold [&_code]:text-base-100">
+						<div className="max-w-4xl text-base leading-8 opacity-70 [&_code]:rounded [&_code]:bg-base-content [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm [&_code]:font-semibold [&_code]:text-base-100">
 							{section.body}
 						</div>
 					</section>

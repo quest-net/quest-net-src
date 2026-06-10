@@ -40,7 +40,7 @@ export function WikiSearchResults({
 
 			{results.length === 0 ? (
 				<div className="rounded-lg border border-dashed border-base-300 bg-base-200 p-6 text-center">
-					<span className="icon-[mdi--file-search-outline] mx-auto mb-2 h-8 w-8 opacity-50" />
+					<span className="icon-[mdi--file-search-outline] mx-auto mb-2 h-8 w-8 opacity-70" />
 					<p className="font-semibold">No matching wiki pages yet.</p>
 					<p className="text-sm opacity-70">
 						Try a broader term or choose a different category.
@@ -70,7 +70,7 @@ export function WikiSearchResults({
 										<h3 className="font-bold group-hover:text-primary">
 											{result.title}
 										</h3>
-										<p className="mt-1 text-sm opacity-75">{result.summary}</p>
+										<p className="mt-1 text-sm opacity-70">{result.summary}</p>
 									</div>
 								</div>
 							</Link>

@@ -62,7 +62,7 @@ export function TagEditor({
 					</div>
 				))}
 				{tags.length === 0 && (
-					<span className="italic text-base-content/60">No tags added.</span>
+					<span className="italic opacity-70">No tags added.</span>
 				)}
 			</div>
 

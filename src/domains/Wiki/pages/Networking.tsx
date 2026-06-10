@@ -39,14 +39,14 @@ export const networkingPage: WikiPage = {
 								Private URL uses the campaign GUID. The DM still joins the public
 								room with <WikiCode>Campaign.RoomCode</WikiCode>.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Trystero room" tone="accent">
 								Peers meet through Nostr signaling, then communicate through
 								Trystero actions.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								&lt;-
 							</div>
 							<WikiDiagramNode title="Player route" tone="secondary">
@@ -188,14 +188,14 @@ export const networkingPage: WikiPage = {
 								Runs the action optimistically with{" "}
 								<WikiCode>Context.IsOptimistic</WikiCode> set.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="DM handler" tone="primary">
 								Receives <WikiCode>actionReq</WikiCode>, impersonates the
 								requesting player, and runs domain validation.
 							</WikiDiagramNode>
-							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-60">
+							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Authoritative sync" tone="success">

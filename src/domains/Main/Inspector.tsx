@@ -696,7 +696,7 @@ function ActorInfoTab({
 				/>
 			) : (
 				actor.Description && showEntityDescription && (
-					<p className="text-sm opacity-80">{actor.Description}</p>
+					<p className="text-sm opacity-70">{actor.Description}</p>
 				)
 			)}
 
@@ -757,7 +757,7 @@ function ActorInfoTab({
 				</div>
 			) : (
 				// Player: Compact readonly display
-				<div className="text-md opacity-60 text-center">
+				<div className="text-md opacity-70 text-center">
 					<div>
 						Position: ({actor.Position.x}, {actor.Position.y},{" "}
 						{actor.Position.h}) •{" Size: "}

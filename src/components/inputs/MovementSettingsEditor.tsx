@@ -183,7 +183,7 @@ export function MovementSettingsEditor({
 							</tbody>
 						</table>
 					</div>
-					<div className="text-xs opacity-60 mt-2">
+					<div className="text-xs opacity-70 mt-2">
 						💡 Horizontal movement always costs 1. These are the additional movement points required to climb each height difference.
 					</div>
 				</div>

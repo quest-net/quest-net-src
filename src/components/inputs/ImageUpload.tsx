@@ -379,7 +379,7 @@ export function ImageUpload({
 					transition-colors cursor-pointer m-0
 					${compact ? "p-4 min-h-[110px]" : "p-8 min-h-[200px]"}
 					${dragOver ? "border-primary bg-primary/10" : "border-base-300"}
-					${readOnly ? "opacity-50 cursor-not-allowed" : "hover:border-primary"}
+					${readOnly ? "opacity-70 cursor-not-allowed" : "hover:border-primary"}
 					${
 					uploadState === "processing" || uploadState === "uploading"
 						? "cursor-wait"
@@ -391,7 +391,7 @@ export function ImageUpload({
 				{uploadState === "idle" && fileStatuses.length === 0 && (
 					<>
 						<span
-							className={`icon-[mdi--cloud-upload] mb-2 opacity-50 ${
+							className={`icon-[mdi--cloud-upload] mb-2 opacity-70 ${
 								compact ? "w-8 h-8" : "w-12 h-12"
 							}`}
 						></span>

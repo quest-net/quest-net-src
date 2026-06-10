@@ -1,6 +1,7 @@
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import type { ActionCost } from "../../domains/CampaignSetting/CampaignSetting";
+import { EmptyState } from "../ui/EmptyState";
 
 interface ActionCostEditorProps {
 	value?: ActionCost;
@@ -37,9 +38,9 @@ export function ActionCostEditor({ value, onChange }: ActionCostEditorProps) {
 
 	if (campaign.Settings.ActionDefinitions.length === 0) {
 		return (
-			<div className="text-sm opacity-60 italic">
+			<EmptyState compact>
 				No actions defined in campaign settings. Add actions before setting costs.
-			</div>
+			</EmptyState>
 		);
 	}
 

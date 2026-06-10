@@ -42,7 +42,7 @@ export function WikiHero({
 					<h1 className="max-w-4xl text-4xl font-black sm:text-5xl">
 						{WIKI_HERO_TITLE}
 					</h1>
-					<p className="mt-4 max-w-3xl text-lg text-neutral-content/75">
+					<p className="mt-4 max-w-3xl text-lg text-neutral-content opacity-70">
 						{WIKI_HERO_BODY}
 					</p>
 
@@ -107,7 +107,7 @@ export function WikiHero({
 								<span className="icon-[mdi--history] h-5 w-5 text-primary" />
 								Recently Visited
 							</div>
-							<div className="mt-1 text-xs opacity-65">
+							<div className="mt-1 text-xs opacity-70">
 								Your last wiki trails on this device
 							</div>
 						</div>

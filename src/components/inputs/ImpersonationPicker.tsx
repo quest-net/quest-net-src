@@ -60,7 +60,7 @@ export function ImpersonationPicker() {
 				>
 					{allSpawnedActors.length === 0 && (
 						<li className="disabled">
-							<span className="opacity-50">No actors spawned</span>
+							<span className="opacity-70">No actors spawned</span>
 						</li>
 					)}
 					{allSpawnedActors.map((actor) => (

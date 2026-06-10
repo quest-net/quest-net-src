@@ -826,7 +826,7 @@ export function DiceRoller() {
 						<div className="relative min-h-40 bg-base-300 rounded-xl p-4 overflow-hidden flex flex-col">
 							{/* Dice grid */}
 							{previewDice.length === 0 ? (
-								<div className="flex items-center justify-center h-32 text-sm opacity-50">
+								<div className="flex items-center justify-center h-32 text-sm opacity-70">
 									<div className="text-center">
 										<span className="icon-[mdi--dice-multiple-outline] w-8 h-8 mx-auto mb-2" />
 										<p>Build your roll above</p>
@@ -843,7 +843,7 @@ export function DiceRoller() {
 											<div
 												key={d.id}
 												className={`relative transition-all duration-300 ${d.spinning ? "animate-pulse" : ""
-													} ${!d.kept ? "opacity-40 grayscale" : ""}`}
+													} ${!d.kept ? "opacity-70 grayscale" : ""}`}
 												title={`${d.kept ? "Kept" : "Dropped"} - d${d.sides}: ${d.finalValue
 													}`}
 												>
@@ -905,7 +905,7 @@ export function DiceRoller() {
 								className={`bg-linear-to-br from-primary to-primary/80 rounded-xl p-3 shadow-lg ${result ? "scale-105" : ""
 									} transition-transform`}
 							>
-								<div className="text-xs text-primary-content opacity-80 font-medium">
+								<div className="text-xs text-primary-content opacity-70 font-medium">
 									TOTAL
 								</div>
 								<div className="text-3xl font-bold text-primary-content">

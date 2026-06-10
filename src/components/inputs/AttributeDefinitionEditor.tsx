@@ -2,6 +2,7 @@
 
 import { AttributeDefinition } from "../../domains/CampaignSetting/CampaignSetting";
 import { useFormReadOnly } from "../Form/Form";
+import { EmptyState } from "../ui/EmptyState";
 
 interface AttributeDefinitionEditorProps {
 	attributes: AttributeDefinition[];
@@ -38,9 +39,7 @@ export function AttributeDefinitionEditor({
 	return (
 		<div className="space-y-4">
 			{attributes.length === 0 ? (
-				<div className="text-center italic text-base-content/60 py-2">
-					No attributes defined.
-				</div>
+				<EmptyState compact>No attributes defined.</EmptyState>
 			) : (
 				<div className="grid grid-cols-2 gap-x-6 gap-y-2">
 					{attributes.map((attribute) => (

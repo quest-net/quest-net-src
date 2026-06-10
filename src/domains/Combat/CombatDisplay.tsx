@@ -143,7 +143,7 @@ export function CombatDisplay() {
 						</div>
 					)}
 					{showActiveBanner && activeActorNames.length === 0 && (
-						<div className="text-sm opacity-60">
+						<div className="text-sm opacity-70">
 							{isIndividualMode
 								? "All actors have acted this round."
 								: combatState.initiativeSide === "enemies"
@@ -247,7 +247,7 @@ export function CombatDisplay() {
 						</div>
 					)}
 					{showActiveBanner && activeActorNames.length === 0 && (
-						<div className="text-sm opacity-60">
+						<div className="text-sm opacity-70">
 							{isIndividualMode
 								? "All actors have acted this round."
 								: combatState.initiativeSide === "enemies"

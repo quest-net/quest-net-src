@@ -17,6 +17,7 @@ import {
 	UNASSIGNED_OWNER_ID,
 	PickableUser,
 } from "../../components/inputs/UserPicker";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 export function ImageIndex() {
 	const context = useQuestContext();
@@ -146,11 +147,7 @@ export function ImageIndex() {
 						: null;
 
 					if (!image) {
-						return (
-							<div className="text-center py-12">
-								<p>Image not found</p>
-							</div>
-						);
+						return <EmptyState>Image not found</EmptyState>;
 					}
 
 					return (

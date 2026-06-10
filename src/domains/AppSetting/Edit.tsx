@@ -9,6 +9,7 @@ import {
 import { useIsOffscreen, FloatingActionBar } from "../../components/Form/Form";
 import { AppSettingActions } from "./AppSettingActions";
 import { ToggleButton } from "../../components/ui/ToggleButton";
+import { FloatingActionButton } from "../../components/ui/FloatingActionButton";
 import {
   PROVIDER_REGISTRY,
   DEFAULT_PROVIDER_ID,
@@ -297,7 +298,7 @@ export function AppSettingEdit() {
           <section className="card bg-base-100 shadow-lg border border-base-300">
             <div className="card-body space-y-4">
               <h2 className="card-title">AI Image Generation</h2>
-              <p className="text-sm opacity-80">
+              <p className="text-sm opacity-70">
                 Generate images directly inside Quest-Net using your own API
                 key. Keys are stored locally in your browser and are never
                 shared with other players.
@@ -442,17 +443,16 @@ export function AppSettingEdit() {
       </div>
 
       <FloatingActionBar show={footerOffscreen}>
-        <button
-          className="btn btn-circle btn-neutral shadow-lg opacity-60 transition-opacity hover:opacity-100 tooltip tooltip-left"
+        <FloatingActionButton
           onClick={handleCancel}
           data-tip="Cancel"
           aria-label="Cancel"
         >
           <span className="icon-[mdi--close] h-5 w-5" />
-        </button>
-        <button
-          className="btn btn-circle btn-primary shadow-lg opacity-60 transition-opacity hover:opacity-100 tooltip tooltip-left"
+        </FloatingActionButton>
+        <FloatingActionButton
           onClick={handleSave}
+          variant="primary"
           disabled={isSaving}
           data-tip="Save Settings"
           aria-label="Save Settings"
@@ -462,7 +462,7 @@ export function AppSettingEdit() {
           ) : (
             <span className="icon-[mdi--content-save] h-5 w-5" />
           )}
-        </button>
+        </FloatingActionButton>
       </FloatingActionBar>
     </div>
   );

@@ -58,7 +58,7 @@ export function PreviewSettingsPanel({
 					<label className="block">
 						<div className="mb-1 flex items-center justify-between gap-3">
 							<span className="label-text">Intensity</span>
-							<span className="text-xs tabular-nums text-base-content/70">
+							<span className="text-xs tabular-nums opacity-70">
 								{lighting.Intensity.toFixed(2)}
 							</span>
 						</div>
@@ -84,7 +84,7 @@ export function PreviewSettingsPanel({
 					<label className="block">
 						<div className="mb-1 flex items-center justify-between gap-3">
 							<span className="label-text">Rotation</span>
-							<span className="text-xs tabular-nums text-base-content/70">
+							<span className="text-xs tabular-nums opacity-70">
 								{Math.round(lighting.Rotation)} deg
 							</span>
 						</div>
@@ -110,7 +110,7 @@ export function PreviewSettingsPanel({
 					<label className="block">
 						<div className="mb-1 flex items-center justify-between gap-3">
 							<span className="label-text">Elevation</span>
-							<span className="text-xs tabular-nums text-base-content/70">
+							<span className="text-xs tabular-nums opacity-70">
 								{Math.round(lighting.Elevation)} deg
 							</span>
 						</div>
@@ -157,7 +157,7 @@ export function PreviewSettingsPanel({
 					</label>
 					<input
 						type="color"
-						className="h-10 w-full cursor-pointer rounded border border-base-300 bg-base-100 p-1 disabled:cursor-not-allowed disabled:opacity-50"
+						className="h-10 w-full cursor-pointer rounded border border-base-300 bg-base-100 p-1 disabled:cursor-not-allowed disabled:brightness-75"
 						value={backgroundColor}
 						onChange={(e) => onBackgroundChange({ Color: e.target.value })}
 						disabled={readOnly || !background.Color}

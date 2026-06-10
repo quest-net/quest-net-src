@@ -82,25 +82,25 @@ export function FirstPersonHud({
 							<kbd className="kbd kbd-xs text-neutral">A</kbd>
 							<kbd className="kbd kbd-xs text-neutral">S</kbd>
 							<kbd className="kbd kbd-xs text-neutral">D</kbd>
-							<span className="opacity-80">move</span>
+							<span className="opacity-70">move</span>
 						</span>
-						<span className="opacity-50">·</span>
+						<span className="opacity-70">·</span>
 						{canFly ? (
 							<>
 								<span className="flex items-center gap-1">
 									<kbd className="kbd kbd-xs text-neutral">Space</kbd>
-									<span className="opacity-80">up</span>
+									<span className="opacity-70">up</span>
 								</span>
-								<span className="opacity-50">·</span>
+								<span className="opacity-70">·</span>
 								<span className="flex items-center gap-1">
 									<kbd className="kbd kbd-xs text-neutral">Shift</kbd>
-									<span className="opacity-80">down</span>
+									<span className="opacity-70">down</span>
 								</span>
 							</>
 						) : (
 							<span className="flex items-center gap-1">
 								<kbd className="kbd kbd-xs text-neutral">Space</kbd>
-								<span className="opacity-80">jump</span>
+								<span className="opacity-70">jump</span>
 							</span>
 						)}
 					</div>

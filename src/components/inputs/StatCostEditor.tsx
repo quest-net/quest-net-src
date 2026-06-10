@@ -3,6 +3,7 @@
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import type { StatCost } from "../../domains/CampaignSetting/CampaignSetting";
+import { EmptyState } from "../ui/EmptyState";
 
 interface StatCostEditorProps {
 	value?: StatCost;
@@ -42,9 +43,9 @@ export function StatCostEditor({ value, onChange }: StatCostEditorProps) {
 	// No stats defined in campaign settings
 	if (campaign.Settings.StatDefinitions.length === 0) {
 		return (
-			<div className="text-sm opacity-60 italic">
+			<EmptyState compact>
 				No stats defined in campaign settings. Add stats before setting costs.
-			</div>
+			</EmptyState>
 		);
 	}
 
