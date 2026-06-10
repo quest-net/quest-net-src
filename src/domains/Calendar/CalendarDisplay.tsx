@@ -7,6 +7,7 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CalendarActions, resolveNames, ordinal } from "./CalendarActions";
 import type { CalendarSettings } from "../CampaignSetting/CampaignSetting";
+import { ToggleButton } from "../../components/ui/ToggleButton";
 
 /**
  * Clean, centered display. Looks the same for DM & players.
@@ -222,13 +223,14 @@ export default function CalendarDisplay() {
           {open === "dow" && showWeeks && (
             <div className="flex flex-wrap justify-center gap-2">
               {cfg.dayNames.map((dn, i) => (
-                <button
+                <ToggleButton
                   key={i}
-                  className={`btn btn-sm ${parts.dayOfWeekIndex === i ? "btn-primary" : "btn-outline"}`}
+                  active={parts.dayOfWeekIndex === i}
+                  className="btn-sm"
                   onClick={() => jumpToDayOfWeek(i)}
                 >
                   {dn?.trim() ? dn : `Day ${i + 1}`}
-                </button>
+                </ToggleButton>
               ))}
             </div>
           )}
@@ -251,13 +253,14 @@ export default function CalendarDisplay() {
           {open === "month" && !monthsUnset && (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {cfg.monthNames.map((m, i) => (
-                <button
+                <ToggleButton
                   key={i}
-                  className={`btn btn-sm ${parts.month === i + 1 ? "btn-primary" : "btn-outline"}`}
+                  active={parts.month === i + 1}
+                  className="btn-sm"
                   onClick={() => setDate({ month: i + 1 })}
                 >
                   {m?.trim() ? m : `Month ${i + 1}`}
-                </button>
+                </ToggleButton>
               ))}
             </div>
           )}

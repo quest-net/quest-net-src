@@ -8,6 +8,12 @@ import { formatRestoreRule } from "../CampaignSetting/CampaignSettingActions";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { ActorPicker } from "../../components/inputs/ActorPicker";
+import { DetailDrawer } from "../../components/ui/DetailDrawer";
+import { SectionCard } from "../../components/ui/SectionCard";
+import { PropertyRow } from "../../components/ui/PropertyRow";
+import { ImageThumb } from "../../components/ui/ImageThumb";
+import { ConfirmButton } from "../../components/ui/ConfirmButton";
+import { CostWarning } from "../../components/ui/CostWarning";
 import { Actor, InventorySlot, EquipmentSlot } from "../Actor/Actor";
 import {
 	formatActionCost,
@@ -35,7 +41,6 @@ export function ItemSlotDisplay({
 	const { actionService } = useActionService();
 	const campaign = CampaignActions.getActiveCampaign(context);
 
-	const [discardClickCount, setDiscardClickCount] = useState(0);
 	const [localUsesLeft, setLocalUsesLeft] = useState(slot.UsesLeft ?? 1);
 	const [isTransferPickerOpen, setIsTransferPickerOpen] = useState(false);
 	const hasUnsavedChanges = useRef(false);
@@ -50,7 +55,6 @@ export function ItemSlotDisplay({
 
 	// Reset state when drawer closes or slot changes
 	useEffect(() => {
-		setDiscardClickCount(0);
 		setLocalUsesLeft(slot.UsesLeft ?? item?.MaxUses ?? 1);
 		setIsTransferPickerOpen(false);
 		hasUnsavedChanges.current = false;
@@ -68,16 +72,6 @@ export function ItemSlotDisplay({
 			}
 		};
 	}, [localUsesLeft, actionService, actor.Id, slot.Id, slot.UsesLeft]);
-
-	// Auto-reset discard after 2 seconds
-	useEffect(() => {
-		if (discardClickCount > 0) {
-			const timer = setTimeout(() => {
-				setDiscardClickCount(0);
-			}, 2000);
-			return () => clearTimeout(timer);
-		}
-	}, [discardClickCount]);
 
 	if (!item) {
 		return null;
@@ -113,23 +107,18 @@ export function ItemSlotDisplay({
 	const handleDiscard = () => {
 		if (!actionService) return;
 
-		if (discardClickCount === 0) {
-			setDiscardClickCount(1);
+		if (mode === "shared-inventory") {
+			actionService.execute("sharedInventory:discardItem", {
+				inventoryId: actor.Id,
+				itemId: slot.Id,
+			});
 		} else {
-			// Second click - execute discard
-			if (mode === "shared-inventory") {
-				actionService.execute("sharedInventory:discardItem", {
-					inventoryId: actor.Id,
-					itemId: slot.Id,
-				});
-			} else {
-				actionService.execute("item:discard", {
-					actorId: actor.Id,
-					itemId: slot.Id,
-				});
-			}
-			onClose();
+			actionService.execute("item:discard", {
+				actorId: actor.Id,
+				itemId: slot.Id,
+			});
 		}
+		onClose();
 	};
 
 	const handleDrop = () => {
@@ -229,251 +218,194 @@ export function ItemSlotDisplay({
 
 	return (
 		<>
-			<div className="drawer drawer-start z-50">
-				<input
-					type="checkbox"
-					className="drawer-toggle"
-					checked={isOpen}
-					onChange={() => { }}
-				/>
+			<DetailDrawer isOpen={isOpen} onClose={onClose} title={item.Name}>
+				{/* Top Row: Image + Actions */}
+				<div className="flex gap-6">
+					{/* Image */}
+					<div className="w-64 shrink-0">
+						{imageEditable ? (
+							<ImagePicker
+								value={item.Image}
+								onChange={handleImageChange}
+							/>
+						) : (
+							<ImageThumb className="w-full aspect-square">
+								<ImageDisplay
+									imageId={item.Image}
+									className="w-full h-full object-cover"
+									alt={item.Name}
+								/>
+							</ImageThumb>
+						)}
+					</div>
 
-				<div className="drawer-side">
-					<label
-						className="drawer-overlay"
-						onClick={onClose}
-						aria-label="Close drawer"
-					></label>
+					{/* Actions */}
+					<div className="flex-1 space-y-3">
+						<h3 className="font-semibold text-sm opacity-70">Actions</h3>
 
-					<div className="bg-base-200 min-h-full w-full max-w-3xl p-6 overflow-y-auto">
-						{/* Header with close button */}
-						<div className="flex justify-between items-center mb-6">
-							<h2 className="text-3xl font-bold">{item.Name}</h2>
+						{/* Use Button - hidden for shared inventories */}
+						{mode !== "shared-inventory" && (
 							<button
-								onClick={onClose}
-								className="btn btn-sm btn-circle btn-ghost"
-								aria-label="Close"
+								onClick={handleUse}
+								disabled={!canUse || !actionService}
+								className="btn btn-primary w-full justify-start"
 							>
-								<span className="icon-[mdi--close] w-5 h-5" />
+								<span className="icon-[mdi--play] w-5 h-5" />
+								Use
 							</button>
-						</div>
-
-						{/* Top Row: Image + Actions */}
-						<div className="flex gap-6 mb-6">
-							{/* Image */}
-							<div className="w-64 shrink-0">
-								{imageEditable ? (
-									<ImagePicker
-										value={item.Image}
-										onChange={handleImageChange}
-									/>
-								) : (
-									<div className="w-full aspect-square bg-base-300 rounded-lg overflow-hidden flex items-center justify-center">
-										<ImageDisplay
-											imageId={item.Image}
-											className="w-full h-full object-cover"
-											alt={item.Name}
-										/>
-									</div>
-								)}
-							</div>
-
-							{/* Actions */}
-							<div className="flex-1 space-y-3">
-								<h3 className="font-semibold text-sm opacity-70 mb-4">Actions</h3>
-
-								{/* Use Button - hidden for shared inventories */}
-								{mode !== "shared-inventory" && (
-									<button
-										onClick={handleUse}
-										disabled={!canUse || !actionService}
-										className="btn btn-primary w-full justify-start"
-									>
-										<span className="icon-[mdi--play] w-5 h-5" />
-										Use
-									</button>
-								)}
-
-								{/* Stat Cost Warning */}
-								{mode !== "shared-inventory" && item.StatCost && !statAvailability.hasEnough && (
-									<div className="alert alert-warning text-sm py-2">
-										<span className="icon-[mdi--alert] w-4 h-4" />
-										<span>
-											Not enough {statAvailability.name ?? "stat"} ({statAvailability.current} / {item.StatCost.amount})
-											<br />
-											<span className="text-xs opacity-70">
-												Item will still activate but cost will be reduced
-											</span>
-										</span>
-									</div>
-								)}
-
-								{/* Action Cost Warning */}
-								{mode !== "shared-inventory" && item.ActionCost && !actionAvailability.hasEnough && (
-									<div className="alert alert-warning text-sm py-2">
-										<span className="icon-[mdi--alert] w-4 h-4" />
-										<span>
-											Not enough {actionAvailability.name ?? "action"} ({actionAvailability.current} / {item.ActionCost.amount})
-											<br />
-											<span className="text-xs opacity-70">
-												Item will still activate but cost will be reduced
-											</span>
-										</span>
-									</div>
-								)}
-
-								{/* Equip/Unequip Button */}
-								{mode === "inventory" && item.IsEquippable && (
-									<button
-										onClick={handleEquip}
-										disabled={!actionService}
-										className="btn btn-secondary w-full justify-start"
-									>
-										<span className="icon-[mdi--sword] w-5 h-5" />
-										Equip
-									</button>
-								)}
-
-								{mode === "equipment" && (
-									<button
-										onClick={handleUnequip}
-										disabled={!actionService}
-										className="btn btn-secondary w-full justify-start"
-									>
-										<span className="icon-[mdi--arrow-left] w-5 h-5" />
-										Unequip
-									</button>
-								)}
-
-								{/* Transfer Button */}
-								<button
-									onClick={handleTransferClick}
-									disabled={!actionService}
-									className="btn btn-accent w-full justify-start"
-								>
-									<span className="icon-[mdi--swap-horizontal] w-5 h-5" />
-									Transfer
-								</button>
-
-								{/* Uses Adjuster - Only show if uses are limited */}
-								{slot.UsesLeft !== undefined && mode !== "shared-inventory" && (
-									<div className="card bg-base-100 border-2 border-base-300 p-4">
-										<h4 className="font-semibold text-sm mb-3">Adjust Uses</h4>
-
-										<div className="flex gap-2 items-center">
-											<input
-												type="number"
-												value={localUsesLeft}
-												onChange={(e) => handleUsesChange(Number(e.target.value) || 0)}
-												onBlur={handleUsesBlur}
-												className="input input-bordered input-sm flex-1"
-												min={0}
-												max={item.MaxUses ?? 999}
-												placeholder="Uses"
-											/>
-											<span className="text-sm opacity-70">uses</span>
-										</div>
-									</div>
-								)}
-
-								{/* Divider */}
-								<div className="divider my-2"></div>
-
-								{/* Drop Button - only for spawned actors with a map position */}
-								{isSpawned && mode !== "shared-inventory" && (
-									<button
-										onClick={handleDrop}
-										disabled={!actionService}
-										className="btn w-full justify-start btn-ghost"
-									>
-										<span className="icon-[mdi--arrow-down-circle] w-5 h-5" />
-										Drop
-									</button>
-								)}
-
-								{/* Discard Button */}
-								<button
-									onClick={handleDiscard}
-									disabled={!actionService}
-									className={`btn w-full justify-start ${discardClickCount > 0 ? "btn-error" : "btn-ghost"
-										}`}
-								>
-									<span className="icon-[mdi--delete] w-5 h-5" />
-									{discardClickCount > 0 ? "Confirm?" : "Discard"}
-								</button>
-							</div>
-						</div>
-
-						{/* Description - Full Width */}
-						{item.Description && (
-							<div className="card bg-base-100 border-2 border-base-300 mb-6">
-								<div className="card-body p-4">
-									<h3 className="card-title text-sm mb-2">Description</h3>
-									<p className="text-sm whitespace-pre-wrap leading-relaxed">
-										{item.Description}
-									</p>
-								</div>
-							</div>
 						)}
 
-						{/* Properties - Full Width */}
-						<div className="card bg-base-100 border-2 border-base-300">
-							<div className="card-body p-4 space-y-3">
-								<h3 className="card-title text-sm">Properties</h3>
+						{/* Cost Warnings */}
+						{mode !== "shared-inventory" && item.StatCost && !statAvailability.hasEnough && (
+							<CostWarning
+								kind="Item"
+								name={statAvailability.name ?? "stat"}
+								current={statAvailability.current}
+								required={item.StatCost.amount}
+							/>
+						)}
 
-								{/* Stat Cost */}
-								<div className="flex justify-between items-center py-2 border-b border-base-300">
-									<span className="font-semibold">Stat Cost</span>
-									<span className={item.StatCost ? "font-bold" : ""}>
-										{statCostText}
-									</span>
+						{mode !== "shared-inventory" && item.ActionCost && !actionAvailability.hasEnough && (
+							<CostWarning
+								kind="Item"
+								name={actionAvailability.name ?? "action"}
+								current={actionAvailability.current}
+								required={item.ActionCost.amount}
+							/>
+						)}
+
+						{/* Equip/Unequip Button */}
+						{mode === "inventory" && item.IsEquippable && (
+							<button
+								onClick={handleEquip}
+								disabled={!actionService}
+								className="btn btn-secondary w-full justify-start"
+							>
+								<span className="icon-[mdi--sword] w-5 h-5" />
+								Equip
+							</button>
+						)}
+
+						{mode === "equipment" && (
+							<button
+								onClick={handleUnequip}
+								disabled={!actionService}
+								className="btn btn-secondary w-full justify-start"
+							>
+								<span className="icon-[mdi--arrow-left] w-5 h-5" />
+								Unequip
+							</button>
+						)}
+
+						{/* Transfer Button */}
+						<button
+							onClick={handleTransferClick}
+							disabled={!actionService}
+							className="btn btn-accent w-full justify-start"
+						>
+							<span className="icon-[mdi--swap-horizontal] w-5 h-5" />
+							Transfer
+						</button>
+
+						{/* Uses Adjuster - Only show if uses are limited */}
+						{slot.UsesLeft !== undefined && mode !== "shared-inventory" && (
+							<SectionCard title="Adjust Uses">
+								<div className="flex gap-2 items-center">
+									<input
+										type="number"
+										value={localUsesLeft}
+										onChange={(e) => handleUsesChange(Number(e.target.value) || 0)}
+										onBlur={handleUsesBlur}
+										className="input input-bordered input-sm flex-1"
+										min={0}
+										max={item.MaxUses ?? 999}
+										placeholder="Uses"
+									/>
+									<span className="text-sm opacity-70">uses</span>
 								</div>
+							</SectionCard>
+						)}
 
-								{/* Action Cost */}
-								<div className="flex justify-between items-center py-2 border-b border-base-300">
-									<span className="font-semibold">Action Cost</span>
-									<span className={item.ActionCost ? "font-bold" : ""}>
-										{actionCostText}
-									</span>
-								</div>
+						{/* Divider */}
+						<div className="divider my-2"></div>
 
-								{/* Uses */}
-								<div className="flex justify-between items-center py-2 border-b border-base-300">
-									<span className="font-semibold">Uses</span>
-									<span>{usesText}</span>
-								</div>
+						{/* Drop Button - only for spawned actors with a map position */}
+						{isSpawned && mode !== "shared-inventory" && (
+							<button
+								onClick={handleDrop}
+								disabled={!actionService}
+								className="btn w-full justify-start btn-ghost"
+							>
+								<span className="icon-[mdi--arrow-down-circle] w-5 h-5" />
+								Drop
+							</button>
+						)}
 
-								{/* Equippable */}
-								<div className="flex justify-between items-center py-2 border-b border-base-300">
-									<span className="font-semibold">Equippable</span>
-									<span>{item.IsEquippable ? "Yes" : "No"}</span>
-								</div>
-
-								{/* Dice Roll */}
-								{item.DiceRoll && item.DiceRoll.trim() !== "" && (
-									<div className="flex justify-between items-center py-2 border-b border-base-300">
-										<span className="font-semibold">Dice Roll</span>
-										<span className="font-mono">{item.DiceRoll}</span>
-									</div>
-								)}
-
-								{/* Restore Rules */}
-								{restoreLines.length > 0 && (
-									<div className="py-2">
-										<span className="font-semibold block mb-2">
-											Restore Rules
-										</span>
-										<ul className="text-sm list-disc list-inside space-y-1">
-											{restoreLines.map((line, index) => (
-												<li key={index}>{line}</li>
-											))}
-										</ul>
-									</div>
-								)}
-							</div>
-						</div>
+						{/* Discard Button */}
+						<ConfirmButton
+							key={slot.Id}
+							onConfirm={handleDiscard}
+							disabled={!actionService}
+							icon="icon-[mdi--delete]"
+							className="w-full justify-start"
+						>
+							Discard
+						</ConfirmButton>
 					</div>
 				</div>
-			</div>
+
+				{/* Description - Full Width */}
+				{item.Description && (
+					<SectionCard title="Description">
+						<p className="text-sm whitespace-pre-wrap leading-relaxed">
+							{item.Description}
+						</p>
+					</SectionCard>
+				)}
+
+				{/* Properties - Full Width */}
+				<SectionCard title="Properties">
+					<PropertyRow
+						label="Stat Cost"
+						valueClassName={item.StatCost ? "font-bold" : undefined}
+					>
+						{statCostText}
+					</PropertyRow>
+
+					<PropertyRow
+						label="Action Cost"
+						valueClassName={item.ActionCost ? "font-bold" : undefined}
+					>
+						{actionCostText}
+					</PropertyRow>
+
+					<PropertyRow label="Uses">{usesText}</PropertyRow>
+
+					<PropertyRow label="Equippable">
+						{item.IsEquippable ? "Yes" : "No"}
+					</PropertyRow>
+
+					{item.DiceRoll && item.DiceRoll.trim() !== "" && (
+						<PropertyRow label="Dice Roll" valueClassName="font-mono">
+							{item.DiceRoll}
+						</PropertyRow>
+					)}
+
+					{/* Restore Rules */}
+					{restoreLines.length > 0 && (
+						<div className="py-2">
+							<span className="font-semibold block mb-2">
+								Restore Rules
+							</span>
+							<ul className="text-sm list-disc list-inside space-y-1">
+								{restoreLines.map((line, index) => (
+									<li key={index}>{line}</li>
+								))}
+							</ul>
+						</div>
+					)}
+				</SectionCard>
+			</DetailDrawer>
 
 			{/* Actor Picker Modal */}
 			<ActorPicker

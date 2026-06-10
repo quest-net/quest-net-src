@@ -4,6 +4,7 @@ import {
 	useQuestContext,
 } from "../Context/ContextProvider";
 import { AppSettingActions } from "./AppSettingActions";
+import { ToggleButton } from "../../components/ui/ToggleButton";
 
 export function AppSettingsDisplay() {
 	const context = useQuestContext();
@@ -139,26 +140,22 @@ export function AppSettingsDisplay() {
 						<div className="space-y-2">
 							<label className="font-medium">Theme</label>
 							<div className="join w-full">
-								<button
-									type="button"
-									className={`btn btn-sm join-item flex-1 ${
-										theme === "light" ? "btn-active btn-primary" : ""
-									}`}
+								<ToggleButton
+									active={theme === "light"}
+									className="btn-sm join-item flex-1"
 									onClick={() => handleThemeChange("light")}
 								>
 									<span className="icon-[mdi--white-balance-sunny] w-4 h-4" />
 									Light
-								</button>
-								<button
-									type="button"
-									className={`btn btn-sm join-item flex-1 ${
-										theme === "dark" ? "btn-active btn-primary" : ""
-									}`}
+								</ToggleButton>
+								<ToggleButton
+									active={theme === "dark"}
+									className="btn-sm join-item flex-1"
 									onClick={() => handleThemeChange("dark")}
 								>
 									<span className="icon-[mdi--weather-night] w-4 h-4" />
 									Dark
-								</button>
+								</ToggleButton>
 							</div>
 						</div>
 

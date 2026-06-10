@@ -8,6 +8,7 @@ import {
 } from "../Context/ContextProvider";
 import { useIsOffscreen, FloatingActionBar } from "../../components/Form/Form";
 import { AppSettingActions } from "./AppSettingActions";
+import { ToggleButton } from "../../components/ui/ToggleButton";
 import {
   PROVIDER_REGISTRY,
   DEFAULT_PROVIDER_ID,
@@ -165,26 +166,22 @@ export function AppSettingEdit() {
               <div className="flex flex-col gap-2">
                 <label className="font-medium">Theme</label>
                 <div className="join">
-                  <button
-                    type="button"
-                    className={`btn btn-sm join-item ${
-                      theme === "light" ? "btn-active btn-primary" : ""
-                    }`}
+                  <ToggleButton
+                    active={theme === "light"}
+                    className="btn-sm join-item"
                     onClick={() => setTheme("light")}
                   >
                     <span className="icon-[mdi--white-balance-sunny] w-4 h-4 mr-1" />
                     Light
-                  </button>
-                  <button
-                    type="button"
-                    className={`btn btn-sm join-item ${
-                      theme === "dark" ? "btn-active btn-primary" : ""
-                    }`}
+                  </ToggleButton>
+                  <ToggleButton
+                    active={theme === "dark"}
+                    className="btn-sm join-item"
                     onClick={() => setTheme("dark")}
                   >
                     <span className="icon-[mdi--weather-night] w-4 h-4 mr-1" />
                     Dark
-                  </button>
+                  </ToggleButton>
                 </div>
                 <p className="text-xs opacity-70">
                   Theme support isn&apos;t fully wired into the UI yet, but you

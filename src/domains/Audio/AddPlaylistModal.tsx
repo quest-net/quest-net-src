@@ -1,6 +1,7 @@
 // domains/Audio/AddPlaylistModal.tsx
 
 import { useState } from "react";
+import { Modal } from "../../components/ui/Modal";
 
 interface AddPlaylistModalProps {
 	isOpen: boolean;
@@ -66,10 +67,39 @@ export function AddPlaylistModal({
 	if (!isOpen) return null;
 
 	return (
-		<dialog className="modal modal-open">
-			<div className="modal-box max-w-2xl">
-				<h3 className="font-bold text-lg mb-4">Import YouTube Playlist</h3>
-
+		<Modal
+			title="Import YouTube Playlist"
+			onClose={isImporting ? undefined : handleClose}
+			size="lg"
+			actions={
+				<>
+					<button
+						onClick={handleClose}
+						className="btn btn-ghost"
+						disabled={isImporting}
+					>
+						Cancel
+					</button>
+					<button
+						onClick={handleImport}
+						className="btn btn-primary"
+						disabled={isImporting || !importUrl.trim()}
+					>
+						{isImporting ? (
+							<>
+								<span className="loading loading-spinner loading-sm"></span>
+								Importing...
+							</>
+						) : (
+							<>
+								<span className="icon-[mdi--download] w-5 h-5 mr-1" />
+								Import
+							</>
+						)}
+					</button>
+				</>
+			}
+		>
 				{/* Instructions */}
 				<div className="alert alert-warning mb-4">
 					<span className="icon-[mdi--information-outline] w-5 h-5 shrink-0" />
@@ -125,41 +155,12 @@ export function AddPlaylistModal({
 						<span className="loading loading-spinner loading-md"></span>
 						<div>
 							<p className="font-semibold">Importing playlist...</p>
-							<p className="opacity-60">
+							<p className="opacity-70">
 								This may take a moment for large playlists
 							</p>
 						</div>
 					</div>
 				)}
-
-				{/* Actions */}
-				<div className="modal-action">
-					<button
-						onClick={handleClose}
-						className="btn btn-ghost"
-						disabled={isImporting}
-					>
-						Cancel
-					</button>
-					<button
-						onClick={handleImport}
-						className="btn btn-primary"
-						disabled={isImporting || !importUrl.trim()}
-					>
-						{isImporting ? (
-							<>
-								<span className="loading loading-spinner loading-sm"></span>
-								Importing...
-							</>
-						) : (
-							<>
-								<span className="icon-[mdi--download] w-5 h-5 mr-1" />
-								Import
-							</>
-						)}
-					</button>
-				</div>
-			</div>
-		</dialog>
+		</Modal>
 	);
 }

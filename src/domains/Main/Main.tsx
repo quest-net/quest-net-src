@@ -32,6 +32,7 @@ import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { findFirstPersonActor } from "../../components/Map/FirstPerson/actor";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { CameraModeDropdown } from "../../components/Map/CameraModeDropdown";
+import { ToggleButton } from "../../components/ui/ToggleButton";
 
 type TopTab = "music" | "calendar" | "terrain" | "combat";
 type MapViewMode = "world" | "first-person";
@@ -52,6 +53,21 @@ type DMBottomTab =
 	| "log"
 	| "overview"
 	| "shared-inventories";
+
+interface SidebarTabButtonProps {
+	active: boolean;
+	onClick: () => void;
+	title: string;
+	icon: string;
+}
+
+function SidebarTabButton({ active, onClick, title, icon }: SidebarTabButtonProps) {
+	return (
+		<ToggleButton active={active} onClick={onClick} title={title} className="btn-square">
+			<span className={`${icon} w-6 h-6`} />
+		</ToggleButton>
+	);
+}
 
 export function Main({ active = true }: { active?: boolean } = {}) {
 	const context = useQuestContext();
@@ -451,159 +467,129 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 							{isDM ? (
 								// DM Tabs
 								<>
-									<button
-										className={`btn btn-square ${activeBottomTab === "inspector" ? "btn-neutral" : ""
-											}`}
+									<SidebarTabButton
+										active={activeBottomTab === "inspector"}
 										onClick={() => handleBottomTabChange("inspector")}
 										title="Inspector"
-									>
-										<span className="icon-[mdi--magnify] w-6 h-6" />
-									</button>
-									<button
-										className={`btn btn-square ${activeBottomTab === "scene" ? "btn-neutral" : ""
-											}`}
+										icon="icon-[mdi--magnify]"
+									/>
+									<SidebarTabButton
+										active={activeBottomTab === "scene"}
 										onClick={() => handleBottomTabChange("scene")}
 										title="Scene"
-									>
-										<span className="icon-[mdi--image] w-6 h-6" />
-									</button>
-									<button
-										className={`btn btn-square ${activeBottomTab === "log" ? "btn-neutral" : ""
-											}`}
+										icon="icon-[mdi--image]"
+									/>
+									<SidebarTabButton
+										active={activeBottomTab === "log"}
 										onClick={() => handleBottomTabChange("log")}
 										title="Log"
-									>
-										<span className="icon-[mdi--message-text] w-6 h-6" />
-									</button>
-									<button
-										className={`btn btn-square ${activeBottomTab === "overview" ? "btn-neutral" : ""
-											}`}
+										icon="icon-[mdi--message-text]"
+									/>
+									<SidebarTabButton
+										active={activeBottomTab === "overview"}
 										onClick={() => handleBottomTabChange("overview")}
 										title="Overview"
-									>
-										<span className="icon-[mdi--account-multiple] w-6 h-6" />
-									</button>
+										icon="icon-[mdi--account-multiple]"
+									/>
 									{hasSharedInventories && (
-										<button
-											className={`btn btn-square ${activeBottomTab === "shared-inventories" ? "btn-neutral" : ""
-												}`}
+										<SidebarTabButton
+											active={activeBottomTab === "shared-inventories"}
 											onClick={() => handleBottomTabChange("shared-inventories")}
 											title="Shared Inventories"
-										>
-											<span className="icon-[mdi--treasure-chest] w-6 h-6" />
-										</button>
+											icon="icon-[mdi--treasure-chest]"
+										/>
 									)}
 								</>
 							) : (
 								// Player Tabs
 								<>
-									<button
-										className={`btn btn-square ${activeBottomTab === "character" ? "btn-neutral" : ""
-											}`}
+									<SidebarTabButton
+										active={activeBottomTab === "character"}
 										onClick={() => handleBottomTabChange("character")}
 										title={
 											selectedCharacter
 												? `${selectedCharacter.Name}'s info`
 												: "Character"
 										}
-									>
-										<span className="icon-[mdi--account] w-6 h-6" />
-									</button>
+										icon="icon-[mdi--account]"
+									/>
 									<div className={showEquipmentIndicator ? "indicator" : ""}>
 										{showEquipmentIndicator && (
 											<span className="indicator-item status status-info"></span>
 										)}
-										<button
-											className={`btn btn-square ${activeBottomTab === "equipment" ? "btn-neutral" : ""
-												}`}
+										<SidebarTabButton
+											active={activeBottomTab === "equipment"}
 											onClick={() => handleBottomTabChange("equipment")}
 											title="Equipment"
-										>
-											<span className="icon-[mdi--sword] w-6 h-6" />
-										</button>
+											icon="icon-[mdi--sword]"
+										/>
 									</div>
 									<div className={showInventoryIndicator ? "indicator" : ""}>
 										{showInventoryIndicator && (
 											<span className="indicator-item status status-info"></span>
 										)}
-										<button
-											className={`btn btn-square ${activeBottomTab === "inventory" ? "btn-neutral" : ""
-												}`}
+										<SidebarTabButton
+											active={activeBottomTab === "inventory"}
 											onClick={() => handleBottomTabChange("inventory")}
 											title="Inventory"
-										>
-											<span className="icon-[mdi--sack] w-6 h-6" />
-										</button>
+											icon="icon-[mdi--sack]"
+										/>
 									</div>
 
 									<div className={showSkillsIndicator ? "indicator" : ""}>
 										{showSkillsIndicator && (
 											<span className="indicator-item status status-info"></span>
 										)}
-										<button
-											className={`btn btn-square ${activeBottomTab === "skills" ? "btn-neutral" : ""
-												}`}
+										<SidebarTabButton
+											active={activeBottomTab === "skills"}
 											onClick={() => handleBottomTabChange("skills")}
 											title="Skills"
-										>
-											<span className="icon-[mdi--star] w-6 h-6" />
-										</button>
+											icon="icon-[mdi--star]"
+										/>
 									</div>
 									<div className={showStatusIndicator ? "indicator" : ""}>
 										{showStatusIndicator && (
 											<span className="indicator-item status status-info"></span>
 										)}
-										<button
-											className={`btn btn-square ${activeBottomTab === "statuses" ? "btn-neutral" : ""
-												}`}
+										<SidebarTabButton
+											active={activeBottomTab === "statuses"}
 											onClick={() => handleBottomTabChange("statuses")}
 											title="Statuses"
-										>
-											<span className="icon-[mdi--heart-pulse] w-6 h-6" />
-										</button>
+											icon="icon-[mdi--heart-pulse]"
+										/>
 									</div>
-									<button
-										className={`btn btn-square ${activeBottomTab === "party" ? "btn-neutral" : ""
-											}`}
+									<SidebarTabButton
+										active={activeBottomTab === "party"}
 										onClick={() => handleBottomTabChange("party")}
 										title="Party"
-									>
-										<span className="icon-[mdi--account-group] w-6 h-6" />
-									</button>
+										icon="icon-[mdi--account-group]"
+									/>
 									{hasSharedInventories && (
-										<button
-											className={`btn btn-square ${activeBottomTab === "shared-inventories" ? "btn-neutral" : ""
-												}`}
+										<SidebarTabButton
+											active={activeBottomTab === "shared-inventories"}
 											onClick={() => handleBottomTabChange("shared-inventories")}
 											title="Shared Inventories"
-										>
-											<span className="icon-[mdi--treasure-chest] w-6 h-6" />
-										</button>
+											icon="icon-[mdi--treasure-chest]"
+										/>
 									)}
-									<button
-										className={`btn btn-square ${activeBottomTab === "inspector" ? "btn-neutral" : ""
-											}`}
+									<SidebarTabButton
+										active={activeBottomTab === "inspector"}
 										onClick={() => handleBottomTabChange("inspector")}
 										title="Inspector"
-									>
-										<span className="icon-[mdi--magnify] w-6 h-6" />
-									</button>
-									<button
-										className={`btn btn-square ${activeBottomTab === "log" ? "btn-neutral" : ""
-											}`}
+										icon="icon-[mdi--magnify]"
+									/>
+									<SidebarTabButton
+										active={activeBottomTab === "log"}
 										onClick={() => handleBottomTabChange("log")}
 										title="Log"
-									>
-										<span className="icon-[mdi--message-text] w-6 h-6" />
-									</button>
-									<button
-										className={`btn btn-square ${activeBottomTab === "notes" ? "btn-neutral" : ""
-											}`}
+										icon="icon-[mdi--message-text]"
+									/>
+									<SidebarTabButton
+										active={activeBottomTab === "notes"}
 										onClick={() => handleBottomTabChange("notes")}
 										title="Notes"
-									>
-										<span className="icon-[mdi--notebook] w-6 h-6" />
-									</button>
+										icon="icon-[mdi--notebook]"
+									/>
 								</>
 							)}
 						</div>

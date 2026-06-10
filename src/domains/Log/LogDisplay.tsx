@@ -14,6 +14,7 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { LogEntry, LogCategory } from "./LogEntry";
 import { LogActions } from "./LogActions";
 import { getMentionTargets, parseMentions } from "./MentionUtils";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 // ============================================================================
 // CATEGORY PALETTE
@@ -466,9 +467,9 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 				)}
 
 				{displayedLog.length === 0 ? (
-					<p className="text-center opacity-50">
+					<EmptyState>
 						{searchQuery ? "No messages match your search" : "No log entries"}
-					</p>
+					</EmptyState>
 				) : (
 					displayedLog.map((entry) => {
 						const fg = palette[entry.Category];

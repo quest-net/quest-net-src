@@ -5,6 +5,8 @@ import { useFormReadOnly } from "../Form/Form";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { RestoreRuleEditor } from "./RestoreRuleEditor";
+import { Modal } from "../ui/Modal";
+import { EmptyState } from "../ui/EmptyState";
 
 interface SharedInventoriesEditorProps {
     inventories: SharedInventory[];
@@ -120,11 +122,19 @@ export function SharedInventoriesEditor({
 
             {/* Modal for editing Stats of a specific Shared Inventory */}
             {editingInventory && (
-                <dialog open className="modal modal-open">
-                    <div className="modal-box w-11/12 max-w-5xl">
-                        <h3 className="font-bold text-lg mb-4">
-                            {editingInventory.Name} Stats
-                        </h3>
+                <Modal
+                    title={`${editingInventory.Name} Stats`}
+                    onClose={() => setEditingInventoryId(null)}
+                    size="xl"
+                    actions={
+                        <button
+                            onClick={() => setEditingInventoryId(null)}
+                            className="btn btn-primary"
+                        >
+                            Done
+                        </button>
+                    }
+                >
                         <div className="space-y-2 max-h-[32rem] overflow-y-auto p-2">
                             {globalStats.map(gStat => {
                                 const trackedStat = editingInventory.Stats.find(s => s.Id === gStat.Id);
@@ -283,7 +293,7 @@ export function SharedInventoriesEditor({
                                                             Reset
                                                         </button>
                                                     )}
-                                                    <span className="text-xs opacity-60">
+                                                    <span className="text-xs opacity-70">
                                                         Effective: {effectiveRegen ?? "none"}
                                                     </span>
                                                 </div>
@@ -291,7 +301,7 @@ export function SharedInventoriesEditor({
                                                     <p className="text-sm font-medium mb-1 opacity-70">
                                                         Restore Rules
                                                         {trackedStat.RestoreRule === undefined && gStat.RestoreRule && (
-                                                            <span className="ml-2 text-xs opacity-60 italic">
+                                                            <span className="ml-2 text-xs opacity-70 italic">
                                                                 (inheriting from campaign default)
                                                             </span>
                                                         )}
@@ -333,24 +343,12 @@ export function SharedInventoriesEditor({
                                 );
                             })}
                             {globalStats.length === 0 && (
-                                <div className="text-center italic opacity-60 p-4">
+                                <EmptyState>
                                     No global stats defined in campaign settings.
-                                </div>
+                                </EmptyState>
                             )}
                         </div>
-                        <div className="modal-action">
-                            <button
-                                onClick={() => setEditingInventoryId(null)}
-                                className="btn btn-primary"
-                            >
-                                Done
-                            </button>
-                        </div>
-                    </div>
-                    <form method="dialog" className="modal-backdrop">
-                        <button onClick={() => setEditingInventoryId(null)}>close</button>
-                    </form>
-                </dialog>
+                </Modal>
             )}
         </div>
     );

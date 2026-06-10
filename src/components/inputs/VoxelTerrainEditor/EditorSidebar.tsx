@@ -10,6 +10,7 @@ import {
 	TERRAIN_PALETTE_ROWS,
 } from "../../../utils/terrain/palette/TerrainPaletteUtils";
 import { groupSpecialMaterialSwatches } from "../../Map/Terrain/materials";
+import { ToggleButton } from "../../ui/ToggleButton";
 import {
 	terrainPaletteIndexToVoxelColor,
 } from "../../../utils/terrain/editor/VoxelTerrainEditorUtils";
@@ -253,9 +254,11 @@ export function EditorSidebar(props: EditorSidebarProps) {
 												{link.destinationName}
 											</div>
 										</div>
-										<button
-											type="button"
-											className={`btn btn-xs btn-square ${link.locked ? "btn-neutral" : "btn-ghost"}`}
+										<ToggleButton
+											active={link.locked}
+											kind="independent"
+											quiet
+											className="btn-xs btn-square"
 											onClick={(event) => {
 												event.stopPropagation();
 												onToggleLinkLocked?.(link.linkId, !link.locked);
@@ -265,7 +268,7 @@ export function EditorSidebar(props: EditorSidebarProps) {
 											aria-label={link.locked ? "Unlock link" : "Lock link"}
 										>
 											<span className={`${link.locked ? "icon-[mdi--lock]" : "icon-[mdi--lock-open-variant]"} w-4 h-4`} />
-										</button>
+										</ToggleButton>
 										<button
 											type="button"
 											className="btn btn-xs btn-square btn-ghost text-error"

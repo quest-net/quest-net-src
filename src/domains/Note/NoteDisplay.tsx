@@ -5,6 +5,7 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { Note } from "./Note";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 export function NoteDisplay() {
 	const context = useQuestContext();
@@ -36,11 +37,7 @@ export function NoteDisplay() {
 	}, [pendingDeleteId]);
 
 	if (!character) {
-		return (
-			<div className="text-center text-sm opacity-60 py-8">
-				No character selected
-			</div>
-		);
+		return <EmptyState>No character selected</EmptyState>;
 	}
 
 	const notes = character.Notes || [];

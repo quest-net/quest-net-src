@@ -2,6 +2,8 @@
 
 import { useState, useMemo } from "react";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
+import { Modal } from "../ui/Modal";
+import { EmptyState } from "../ui/EmptyState";
 
 // Generic interface for pickable objects
 export interface PickableObject {
@@ -139,19 +141,7 @@ export function ObjectPicker({
 	if (!isOpen) return null;
 
 	return (
-		<div className="modal modal-open">
-			<div className="modal-box max-w-5xl max-h-[90vh] flex flex-col">
-				{/* Header */}
-				<div className="flex justify-between items-center mb-4">
-					<h3 className="font-bold text-lg">{title}</h3>
-					<button
-						onClick={handleCancel}
-						className="btn btn-sm btn-circle btn-ghost"
-					>
-						✕
-					</button>
-				</div>
-
+		<Modal title={title} onClose={handleCancel} size="xl" fullHeight>
 				{/* Type Tabs */}
 				{types.length > 1 && (
 					<div className="tabs tabs-boxed mb-4">
@@ -191,14 +181,11 @@ export function ObjectPicker({
 				{/* Object Grid */}
 				<div className="flex-1 overflow-y-auto p-2">
 					{paginatedItems.length === 0 ? (
-						<div className="text-center py-12 border-2 border-dashed border-base-300 rounded-lg">
-							<span className="icon-[mdi--package-variant] w-12 h-12 opacity-30 inline-block mb-2" />
-							<p className="text-sm">
-								{searchQuery
-									? `No ${currentType.label.toLowerCase()} match your search`
-									: `No ${currentType.label.toLowerCase()} available`}
-							</p>
-						</div>
+						<EmptyState bordered icon="icon-[mdi--package-variant]">
+							{searchQuery
+								? `No ${currentType.label.toLowerCase()} match your search`
+								: `No ${currentType.label.toLowerCase()} available`}
+						</EmptyState>
 					) : (
 						<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
 							{paginatedItems.map((item: PickableObject) => {
@@ -319,8 +306,6 @@ export function ObjectPicker({
 						</button>
 					</div>
 				</div>
-			</div>
-			<div className="modal-backdrop" onClick={handleCancel} />
-		</div>
+		</Modal>
 	);
 }

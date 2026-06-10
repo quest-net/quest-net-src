@@ -12,6 +12,8 @@ import PixelBlast from "../../components/PixelBlast/PixelBlast";
 import { useThemeColors } from "../../utils/ThemeUtils";
 import { isGUID, isReservedRouteKeyword } from "../../utils/UrlParser";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { Modal } from "../../components/ui/Modal";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 export function CampaignIndex() {
 	const context = useQuestContext();
@@ -436,10 +438,10 @@ export function CampaignIndex() {
 
 							<div className="min-h-0 flex-1 overflow-y-auto space-y-4 pr-1">
 								{context.Campaigns.length === 0 ? (
-									<div className="text-center py-12 opacity-60">
+									<EmptyState>
 										<div className="text-4xl mb-4">🎲</div>
 										<p>No campaigns yet. Create one to get started!</p>
-									</div>
+									</EmptyState>
 								) : (
 									// Most-recent activity first so the campaign you were
 									// just playing surfaces at the top.
@@ -535,10 +537,23 @@ export function CampaignIndex() {
 			</div>
 
 	{editingCampaignId && (
-				<div className="modal modal-open">
-					<div className="modal-box">
-						<h3 className="font-bold text-lg mb-4">Edit Room Code</h3>
-						
+				<Modal
+					title="Edit Room Code"
+					onClose={handleCancelEdit}
+					actions={
+						<>
+							<button onClick={handleCancelEdit} className="btn btn-neutral">
+								Cancel
+							</button>
+							<button
+								onClick={() => handleSaveRoomCode(editingCampaignId)}
+								className="btn btn-primary"
+							>
+								Save Room Code
+							</button>
+						</>
+					}
+				>
 						<div className="form-control">
 							<label className="label">
 								<span className="label-text font-semibold">Room Code</span>
@@ -565,21 +580,7 @@ export function CampaignIndex() {
 								</span>
 							</label>
 						</div>
-
-						<div className="modal-action">
-							<button onClick={handleCancelEdit} className="btn btn-neutral">
-								Cancel
-							</button>
-							<button 
-								onClick={() => handleSaveRoomCode(editingCampaignId)} 
-								className="btn btn-primary"
-							>
-								Save Room Code
-							</button>
-						</div>
-					</div>
-					<div className="modal-backdrop" onClick={handleCancelEdit}></div>
-				</div>
+				</Modal>
 			)}
 		</div>
 	);

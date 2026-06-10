@@ -7,6 +7,7 @@ import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
+import { ToggleButton } from "../ui/ToggleButton";
 import {
 	addDieToFormula,
 	isValidDiceFormula,
@@ -783,17 +784,19 @@ export function DiceRoller() {
 								/>
 
 								<div className="tooltip" data-tip="Auto-roll after 1s">
-									<button
-										className={`btn btn-sm btn-square transition-all ${autoRoll ? "btn-accent shadow-lg" : "btn-ghost"
-											}`}
+									<ToggleButton
+										active={autoRoll}
+										kind="independent"
+										quiet
+										className="btn-sm btn-square"
 										onClick={() => persistAutoRoll(!autoRoll)}
 										aria-label="Toggle autoroll"
 									>
 										<span
-											className={`icon-[mdi--autorenew] w-5 h-5 ${autoRoll ? "" : "opacity-40"
+											className={`icon-[mdi--autorenew] w-5 h-5 ${autoRoll ? "" : "opacity-70"
 												}`}
 										/>
-									</button>
+									</ToggleButton>
 								</div>
 
 								<button

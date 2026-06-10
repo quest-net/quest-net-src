@@ -73,7 +73,7 @@ export function WikiHero({
 								type="button"
 								onClick={() => onCategoryFilterChange("All")}
 								className={`btn btn-sm ${
-									categoryFilter === "All" ? "btn-neutral" : "btn-outline"
+									categoryFilter === "All" ? "btn-neutral" : ""
 								}`}
 							>
 								All
@@ -88,7 +88,7 @@ export function WikiHero({
 										className={`btn btn-sm gap-2 ${
 											categoryFilter === group.category
 												? style.buttonClass
-												: "btn-outline"
+												: ""
 										}`}
 									>
 										<span className={`${style.icon} h-4 w-4`} />

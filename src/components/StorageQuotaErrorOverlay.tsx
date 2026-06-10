@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { onStorageQuotaExceeded } from "../utils/LocalStorageUtilities";
+import { Modal } from "./ui/Modal";
 
 const DEVELOPER_EMAIL = "samy.guimez@gmail.com";
 
@@ -30,15 +31,27 @@ export function StorageQuotaErrorOverlay() {
 
 	if (!visible) return null;
 
+	// No onClose: the dialog must be dismissed through the explicit button so
+	// the user actually reads it.
 	return (
-		<dialog className="modal modal-open">
-			<div className="modal-box max-w-lg">
-				<h3 className="font-bold text-lg flex items-center gap-2 text-error">
+		<Modal
+			title={
+				<span className="flex items-center gap-2 text-error">
 					<span className="icon-[mdi--database-alert] w-6 h-6 shrink-0" />
 					Storage limit reached
-				</h3>
-
-				<div className="py-4 space-y-3 text-sm">
+				</span>
+			}
+			actions={
+				<button
+					type="button"
+					onClick={() => setVisible(false)}
+					className="btn btn-primary"
+				>
+					Dismiss
+				</button>
+			}
+		>
+			<div className="space-y-3 text-sm">
 					<p>
 						This campaign has grown too large to be saved in your browser's
 						local storage. Your most recent changes could not be saved.
@@ -60,19 +73,7 @@ export function StorageQuotaErrorOverlay() {
 							{DEVELOPER_EMAIL}
 						</a>
 					</div>
-				</div>
-
-				<div className="modal-action">
-					<button
-						type="button"
-						onClick={() => setVisible(false)}
-						className="btn btn-primary"
-					>
-						Dismiss
-					</button>
-				</div>
 			</div>
-			<div className="modal-backdrop bg-black/50" />
-		</dialog>
+		</Modal>
 	);
 }

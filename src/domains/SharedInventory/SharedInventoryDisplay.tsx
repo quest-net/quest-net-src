@@ -8,6 +8,7 @@ import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { StatBar } from "../../components/StatBar/StatBar";
 import { ItemSlotDisplay } from "../Item/ItemSlotDisplay";
 import { ActorPicker } from "../../components/inputs/ActorPicker";
+import { ToggleButton } from "../../components/ui/ToggleButton";
 import { resolveStats } from "../../utils/ActorResolvers";
 
 interface SharedInventoryDisplayProps {
@@ -73,8 +74,11 @@ export function SharedInventoryDisplay({
                                 </h3>
                                 <div className="flex items-center gap-1">
                                     {context.User.Role === "dm" && unsetCount > 0 && (
-                                        <button
-                                            className={`btn btn-xs ${showUnsetStats ? "btn-primary" : "btn-ghost"}`}
+                                        <ToggleButton
+                                            active={showUnsetStats}
+                                            kind="independent"
+                                            quiet
+                                            className="btn-xs"
                                             onClick={() => setShowUnsetStats(!showUnsetStats)}
                                             title={
                                                 showUnsetStats
@@ -84,17 +88,19 @@ export function SharedInventoryDisplay({
                                         >
                                             <span className="icon-[mdi--eye-outline] w-4 h-4" />
                                             <span className="ml-1 text-xs">{unsetCount} unset</span>
-                                        </button>
+                                        </ToggleButton>
                                     )}
                                     {context.User.Role === "dm" && (
-                                        <button
-                                            className={`btn btn-xs btn-circle ${editingMaxStats ? "btn-primary" : "btn-ghost"
-                                                }`}
+                                        <ToggleButton
+                                            active={editingMaxStats}
+                                            kind="independent"
+                                            quiet
+                                            className="btn-xs btn-circle"
                                             onClick={() => setEditingMaxStats(!editingMaxStats)}
                                             title={editingMaxStats ? "Hide max stat controls" : "Edit max stats"}
                                         >
                                             <span className="icon-[mdi--cog] w-4 h-4" />
-                                        </button>
+                                        </ToggleButton>
                                     )}
                                 </div>
                             </div>

@@ -18,6 +18,7 @@ import type {
 	EditGranularityType,
 } from "./editorTypes";
 import { CameraModeDropdown } from "../../Map/CameraModeDropdown";
+import { ToggleButton } from "../../ui/ToggleButton";
 import {
 	MAX_BRUSH_SIZE,
 	MIN_BRUSH_SIZE,
@@ -130,7 +131,7 @@ export function EditorToolbar(props: EditorToolbarProps) {
 			return `${base} btn-primary hover:bg-error hover:border-error hover:text-error-content`;
 		}
 		if (isSelectButton && tool === buttonId) return `${base} btn-primary`;
-		return `${base} ${tool === buttonId ? "btn-neutral" : "btn-outline"}`;
+		return `${base} ${tool === buttonId ? "btn-neutral" : ""}`;
 	};
 
 	return (
@@ -176,7 +177,7 @@ export function EditorToolbar(props: EditorToolbarProps) {
 				<div className="join">
 					<button
 						type="button"
-						className="btn btn-square btn-sm join-item btn-outline"
+						className="btn btn-square btn-sm join-item"
 						onClick={onSmoothSelection}
 						disabled={readOnly || !canSmoothSelection}
 						title="Smooth selection surface (click again to smooth more)"
@@ -186,7 +187,7 @@ export function EditorToolbar(props: EditorToolbarProps) {
 					</button>
 					<button
 						type="button"
-						className="btn btn-square btn-sm join-item btn-outline"
+						className="btn btn-square btn-sm join-item"
 						onClick={onFillSelection}
 						disabled={readOnly || !canFillSelection}
 						title="Fill selection (L)"
@@ -200,24 +201,24 @@ export function EditorToolbar(props: EditorToolbarProps) {
 
 				{/* Brush controls: granularity + size */}
 				<div className="join">
-					<button
-						type="button"
-						className={`btn btn-square btn-sm join-item ${granularity === "tactical" ? "btn-primary" : "btn-outline"}`}
+					<ToggleButton
+						active={granularity === "tactical"}
 						onClick={() => onGranularityChange("tactical")}
+						className="btn-square btn-sm join-item"
 						title="Tile Brush (1)"
 						aria-label="Tile brush"
 					>
 						<span className="icon-[mdi--grid-large] w-5 h-5" />
-					</button>
-					<button
-						type="button"
-						className={`btn btn-square btn-sm join-item ${granularity === "voxel" ? "btn-primary" : "btn-outline"}`}
+					</ToggleButton>
+					<ToggleButton
+						active={granularity === "voxel"}
 						onClick={() => onGranularityChange("voxel")}
+						className="btn-square btn-sm join-item"
 						title="Voxel Brush (2)"
 						aria-label="Voxel brush"
 					>
 						<span className="icon-[mdi--grid] w-5 h-5" />
-					</button>
+					</ToggleButton>
 				</div>
 
 				<div className="flex items-center gap-2">
@@ -264,7 +265,7 @@ export function EditorToolbar(props: EditorToolbarProps) {
 								<div
 									tabIndex={0}
 									role="button"
-									className="btn btn-square btn-sm btn-outline"
+									className="btn btn-square btn-sm"
 									title="Insert a stamp terrain (R rotate, M mirror, Esc stop)"
 									aria-label="Insert stamp"
 								>
@@ -331,7 +332,7 @@ export function EditorToolbar(props: EditorToolbarProps) {
 						) : (
 							<button
 								type="button"
-								className="btn btn-square btn-sm btn-outline"
+								className="btn btn-square btn-sm"
 								onClick={() => onToolClick("link")}
 								disabled={!canPlaceLinks}
 								title={
@@ -353,7 +354,7 @@ export function EditorToolbar(props: EditorToolbarProps) {
 				<div className="join">
 					<button
 						type="button"
-						className="btn btn-square btn-sm join-item btn-outline"
+						className="btn btn-square btn-sm join-item"
 						onClick={onUndo}
 						disabled={undoDepth === 0 || readOnly}
 						title={`Undo (${modKeyLabel}+Z)`}
@@ -363,7 +364,7 @@ export function EditorToolbar(props: EditorToolbarProps) {
 					</button>
 					<button
 						type="button"
-						className="btn btn-square btn-sm join-item btn-outline"
+						className="btn btn-square btn-sm join-item"
 						onClick={onRedo}
 						disabled={redoDepth === 0 || readOnly}
 						title={`Redo (${modKeyLabel}+Shift+Z or ${modKeyLabel}+Y)`}
@@ -381,7 +382,7 @@ export function EditorToolbar(props: EditorToolbarProps) {
 					<>
 						<button
 							type="button"
-							className="btn btn-sm btn-outline"
+							className="btn btn-sm"
 							onClick={() => fileRef.current?.click()}
 							title="Import a MagicaVoxel .vox file"
 						>
@@ -410,20 +411,20 @@ export function EditorToolbar(props: EditorToolbarProps) {
 					/>
 				)}
 				<div className="join">
-					<button
-						type="button"
-						className={`btn btn-sm join-item ${activeView === "edit" ? "btn-neutral" : "btn-outline"}`}
+					<ToggleButton
+						active={activeView === "edit"}
 						onClick={onShowEdit}
+						className="btn-sm join-item"
 					>
 						Edit
-					</button>
-					<button
-						type="button"
-						className={`btn btn-sm join-item ${activeView === "preview" ? "btn-neutral" : "btn-outline"}`}
+					</ToggleButton>
+					<ToggleButton
+						active={activeView === "preview"}
 						onClick={onShowPreview}
+						className="btn-sm join-item"
 					>
 						Preview
-					</button>
+					</ToggleButton>
 				</div>
 			</div>
 		</div>
@@ -436,7 +437,7 @@ function ShortcutsHelpDropdown({ modKeyLabel }: { modKeyLabel: string }) {
 			<div
 				tabIndex={0}
 				role="button"
-				className="btn btn-square btn-sm btn-outline"
+				className="btn btn-square btn-sm"
 				title="Keyboard shortcuts"
 				aria-label="Keyboard shortcuts"
 			>

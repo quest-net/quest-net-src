@@ -1,6 +1,7 @@
 // components/inputs/InitiativeSettingsEditor.tsx
 
 import { useFormReadOnly } from "../Form/Form";
+import { ToggleButton } from "../ui/ToggleButton";
 import {
 	InitiativeMode,
 	InitiativeSettings,
@@ -159,17 +160,15 @@ export function InitiativeSettingsEditor({
 							{ value: "individual", label: "Individual-based" },
 						] as { value: InitiativeMode; label: string }[]
 					).map((opt) => (
-						<button
+						<ToggleButton
 							key={opt.value}
-							type="button"
+							active={mode === opt.value}
 							onClick={() => updateMode(opt.value)}
 							disabled={modeDisabled}
-							className={`btn btn-sm join-item ${
-								mode === opt.value ? "btn-primary" : "btn-outline"
-							}`}
+							className="btn-sm join-item"
 						>
 							{opt.label}
-						</button>
+						</ToggleButton>
 					))}
 				</div>
 				<div className="text-xs opacity-60">

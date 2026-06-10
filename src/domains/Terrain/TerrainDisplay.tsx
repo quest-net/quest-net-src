@@ -6,6 +6,7 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { getCampaignTerrainEnvironmentPresets } from "../CampaignSetting/CampaignSetting";
+import { ToggleButton } from "../../components/ui/ToggleButton";
 import {
 	DEFAULT_VOXEL_TERRAIN_BACKGROUND_COLOR,
 	DEFAULT_VOXEL_TERRAIN_LIGHTING,
@@ -555,15 +556,12 @@ export default function TerrainDisplay({
 						{environmentPresets.map((preset) => {
 							const active = activePreset?.Id === preset.Id;
 							return (
-								<button
+								<ToggleButton
 									key={preset.Id}
-									type="button"
-									className={`btn btn-sm min-w-28 gap-2 ${
-										active ? "btn-primary" : "btn-outline"
-									}`}
+									active={active}
+									className="btn-sm min-w-28 gap-2"
 									onClick={() => applyPreset(preset)}
 									disabled={!isInteractive}
-									aria-pressed={active}
 									title={`${preset.Name} environment`}
 								>
 									<span
@@ -571,7 +569,7 @@ export default function TerrainDisplay({
 									/>
 									<span>{preset.Name}</span>
 									<EnvironmentSwatch color={preset.Background.Color} />
-								</button>
+								</ToggleButton>
 							);
 						})}
 					</div>

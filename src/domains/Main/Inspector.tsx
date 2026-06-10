@@ -24,6 +24,8 @@ import {
 	resolveActions,
 } from "../../utils/ActorResolvers";
 import { EntityActionBar } from "./EntityActionBar";
+import { ToggleButton } from "../../components/ui/ToggleButton";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 type InspectorTab = "info" | "inventory" | "equipment" | "skills" | "statuses";
 
@@ -37,11 +39,7 @@ export function Inspector() {
 	const isDM = context.User.Role === "dm";
 
 	if (!selectedActor) {
-		return (
-			<div className="text-center text-sm opacity-60">
-				Select an actor on the map to inspect
-			</div>
-		);
+		return <EmptyState>Select an actor on the map to inspect</EmptyState>;
 	}
 
 	// Find the full actor data
@@ -588,13 +586,16 @@ function ActorInfoTab({
 				// DM: Interactive StatBars for all actors (characters and entities)
 				<div className="space-y-2">
 					<div className="flex items-center justify-end">
-						<button
-							className={`btn btn-xs btn-circle ${editingMaxStats ? "btn-primary" : "btn-ghost"}`}
+						<ToggleButton
+							active={editingMaxStats}
+							kind="independent"
+							quiet
+							className="btn-xs btn-circle"
 							onClick={() => setEditingMaxStats(!editingMaxStats)}
 							title={editingMaxStats ? "Hide max stat controls" : "Edit max stats"}
 						>
 							<span className="icon-[mdi--cog] w-3.5 h-3.5" />
-						</button>
+						</ToggleButton>
 					</div>
 					<div className="space-y-3">
 						{resolveStats(

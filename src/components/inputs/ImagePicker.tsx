@@ -1,12 +1,13 @@
 // components/inputs/ImagePicker.tsx
 
 import { useState } from "react";
-import { createPortal } from "react-dom";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
 import { ImageUpload } from "./ImageUpload";
 import { ImageGenerator } from "./ImageGenerator";
+import { Modal } from "../ui/Modal";
+import { EmptyState } from "../ui/EmptyState";
 
 interface ImagePickerProps {
 	value?: string;
@@ -110,20 +111,8 @@ export function ImagePicker({
 
 	// Create the modal content
 	const modalContent = isOpen ? (
-		<div className="modal modal-open">
-			<div className="modal-box max-w-5xl max-h-[90vh] flex flex-col">
-				{/* Header */}
-				<div className="flex justify-between items-center mb-2">
-					<h3 className="font-bold text-lg">Select Image</h3>
-					<button
-						onClick={handleCancel}
-						className="btn btn-sm btn-circle btn-ghost"
-					>
-						✕
-					</button>
-				</div>
-
-				{/* Upload Section */}
+		<Modal title="Select Image" onClose={handleCancel} size="xl" fullHeight>
+			{/* Upload Section */}
 				{!showUpload ? (
 					<button
 						onClick={() => setShowUpload(true)}
@@ -181,14 +170,11 @@ export function ImagePicker({
 				{/* Image Grid */}
 				<div className="flex-1 overflow-y-auto p-2">
 					{filteredImages.length === 0 ? (
-						<div className="text-center py-12 border-2 border-dashed border-base-300 rounded-lg">
-							<span className="icon-[mdi--image-off] w-12 h-12 opacity-30 inline-block mb-2"></span>
-							<p className="text-sm">
-								{searchQuery
-									? "No images match your search"
-									: "No images available"}
-							</p>
-						</div>
+						<EmptyState bordered icon="icon-[mdi--image-off]">
+							{searchQuery
+								? "No images match your search"
+								: "No images available"}
+						</EmptyState>
 					) : (
 						<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
 							{pageItems.map((image) => (
@@ -288,9 +274,7 @@ export function ImagePicker({
 						</button>
 					</div>
 				</div>
-			</div>
-			<div className="modal-backdrop" onClick={handleCancel}></div>
-		</div>
+		</Modal>
 	) : null;
 
 	return (
@@ -332,8 +316,8 @@ export function ImagePicker({
 				)}
 			</div>
 
-			{/* Render modal via Portal */}
-			{modalContent && createPortal(modalContent, document.body)}
+			{/* Modal portals itself to <body> */}
+			{modalContent}
 		</div>
 	);
 }

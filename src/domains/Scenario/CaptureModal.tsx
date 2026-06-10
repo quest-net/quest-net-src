@@ -9,12 +9,12 @@
 // second Enter captures.
 
 import { useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { buildCapturePlacements } from "./ScenarioActions";
 import { countPlacements } from "./Scenario";
+import { Modal } from "../../components/ui/Modal";
 
 interface CaptureModalProps {
 	isOpen: boolean;
@@ -118,17 +118,36 @@ export function CaptureModal({ isOpen, onClose }: CaptureModalProps) {
 
 	const nothingToCapture = placements.length === 0;
 
-	// Portal to <body>: the map toolbar uses backdrop-blur (a backdrop-filter),
-	// which would otherwise become the containing block for the modal's fixed
-	// positioning and trap it inside the toolbar.
-	return createPortal(
-		<dialog className="modal modal-open">
-			<div className="modal-box max-w-lg">
-				<h3 className="font-bold text-lg flex items-center gap-2">
+	return (
+		<Modal
+			title={
+				<>
 					<span className="icon-[mdi--camera] w-5 h-5" />
 					Capture Scenario
-				</h3>
-				<p className="text-sm opacity-70 mt-1">
+				</>
+			}
+			onClose={handleClose}
+			actions={
+				<>
+					<button onClick={handleClose} className="btn btn-ghost">
+						Cancel
+					</button>
+					<button
+						onClick={handleCapture}
+						disabled={!name.trim()}
+						className={`btn ${existing ? "btn-warning" : "btn-primary"}`}
+					>
+						<span
+							className={`w-5 h-5 ${
+								existing ? "icon-[mdi--refresh]" : "icon-[mdi--content-save]"
+							}`}
+						/>
+						{existing ? "Overwrite" : "Capture"}
+					</button>
+				</>
+			}
+		>
+				<p className="text-sm opacity-70">
 					Saves the party's positions plus the entities, items, scene, and
 					audio around them. Terrains the party isn't on are left untouched.
 				</p>
@@ -164,7 +183,7 @@ export function CaptureModal({ isOpen, onClose }: CaptureModalProps) {
 							<span className="icon-[mdi--terrain] w-4 h-4 opacity-70 mt-0.5" />
 							<span>
 								Reset on load:{" "}
-								<span className="opacity-80">
+								<span className="opacity-70">
 									{partyTerrainNames.join(", ")}
 								</span>
 							</span>
@@ -193,7 +212,7 @@ export function CaptureModal({ isOpen, onClose }: CaptureModalProps) {
 								className="pointer-events-none absolute inset-0 flex items-center px-4 text-base whitespace-pre overflow-hidden"
 							>
 								<span className="invisible">{name}</span>
-								<span className="opacity-40">
+								<span className="opacity-70">
 									{ghostSuffix}
 									{OVERWRITE_HINT}
 								</span>
@@ -211,7 +230,7 @@ export function CaptureModal({ isOpen, onClose }: CaptureModalProps) {
 						/>
 					</div>
 					{suggestion && (
-						<span className="text-xs opacity-60 mt-1">
+						<span className="text-xs opacity-70 mt-1">
 							Press Enter or Tab to complete "{suggestion.Name}".
 						</span>
 					)}
@@ -224,28 +243,6 @@ export function CaptureModal({ isOpen, onClose }: CaptureModalProps) {
 					)}
 				</div>
 
-				<div className="modal-action">
-					<button onClick={handleClose} className="btn btn-ghost">
-						Cancel
-					</button>
-					<button
-						onClick={handleCapture}
-						disabled={!name.trim()}
-						className={`btn ${existing ? "btn-warning" : "btn-primary"}`}
-					>
-						<span
-							className={`w-5 h-5 ${
-								existing ? "icon-[mdi--refresh]" : "icon-[mdi--content-save]"
-							}`}
-						/>
-						{existing ? "Overwrite" : "Capture"}
-					</button>
-				</div>
-			</div>
-			<form method="dialog" className="modal-backdrop">
-				<button onClick={handleClose}>close</button>
-			</form>
-		</dialog>,
-		document.body
+		</Modal>
 	);
 }

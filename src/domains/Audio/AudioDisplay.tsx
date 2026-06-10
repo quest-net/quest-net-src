@@ -9,6 +9,7 @@ import { isDmAccess } from "../../utils/UrlParser";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { extractPathTags } from "../../utils/FolderUtils";
 import { useAudioState } from "./AudioContext";
+import { EmptyState } from "../../components/ui/EmptyState";
 
 type SearchResult =
 	| { kind: "playlist"; key: string; name: string; trackCount: number }
@@ -222,9 +223,7 @@ export function AudioDisplay() {
 
 					<div className="max-h-64 overflow-y-auto -mx-1">
 						{searchResults.length === 0 ? (
-							<div className="text-center py-6 opacity-60 text-sm">
-								No matches found
-							</div>
+							<EmptyState>No matches found</EmptyState>
 						) : (
 							<ul className="menu menu-sm p-0 [&_li>*]:rounded-md">
 								{searchResults.map((result) => (

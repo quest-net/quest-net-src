@@ -26,6 +26,7 @@ import {
 	isInteractiveCardTarget,
 } from "./ActorPanelHelpers";
 import { isItemEntity } from "../Item/ItemDropUtils";
+import { ToggleButton } from "../../components/ui/ToggleButton";
 
 type OverviewFilter = "all" | "party" | "npcs" | "items";
 type TerrainScope = "viewed" | "global";
@@ -334,23 +335,23 @@ export function Overview({ onInspectActor }: OverviewProps) {
 			<div className="flex flex-wrap items-center gap-2">
 				<div className="join">
 					{(["all", "party", "npcs", "items"] as OverviewFilter[]).map((value) => (
-						<button
+						<ToggleButton
 							key={value}
-							type="button"
+							active={filter === value}
 							onClick={() => setActiveFilter(value)}
-							className={`btn btn-sm join-item ${filter === value ? "btn-primary" : "btn-outline"}`}
+							className="btn-sm join-item"
 						>
 							{getFilterLabel(value)}
-						</button>
+						</ToggleButton>
 					))}
 				</div>
 				<div className="join">
 					{(["viewed", "global"] as TerrainScope[]).map((value) => (
-						<button
+						<ToggleButton
 							key={value}
-							type="button"
+							active={terrainScope === value}
 							onClick={() => setActiveTerrainScope(value)}
-							className={`btn btn-sm join-item ${terrainScope === value ? "btn-primary" : "btn-outline"}`}
+							className="btn-sm join-item"
 							title={
 								value === "viewed"
 									? "Show actors on the terrain you are viewing"
@@ -358,7 +359,7 @@ export function Overview({ onInspectActor }: OverviewProps) {
 							}
 						>
 							{value === "viewed" ? "Here" : "Global"}
-						</button>
+						</ToggleButton>
 					))}
 				</div>
 			</div>

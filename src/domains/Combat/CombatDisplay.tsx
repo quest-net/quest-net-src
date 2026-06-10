@@ -11,6 +11,7 @@ import {
 } from "../../utils/InitiativeUtils";
 import { InitiativeSettingsEditor } from "../../components/inputs/InitiativeSettingsEditor";
 import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
+import { Modal } from "../../components/ui/Modal";
 import { isItemEntity } from "../Item/ItemDropUtils";
 
 export function CombatDisplay() {
@@ -292,36 +293,32 @@ export function CombatDisplay() {
 			{/* Initiative settings modal -- same data as the global Settings page,
 			    just a faster entry point during combat. */}
 			{showInitiativeModal && (
-				<div className="modal modal-open">
-					<div className="modal-box">
-						<h3 className="font-bold text-lg mb-2">Initiative Settings</h3>
-						<p className="text-sm opacity-70 mb-4">
-							Changes apply immediately and stay saved in Campaign Settings.
-						</p>
-						<InitiativeSettingsEditor
-							value={campaign.Settings.InitiativeSettings}
-							statDefinitions={campaign.Settings.StatDefinitions}
-							attributeDefinitions={
-								campaign.Settings.AttributeDefinitions ?? []
-							}
-							onChange={handleSaveInitiative}
-							readOnly={!isInteractive}
-							lockMode={combatState.isActive}
-						/>
-						<div className="modal-action">
-							<button
-								className="btn"
-								onClick={() => setShowInitiativeModal(false)}
-							>
-								Done
-							</button>
-						</div>
-					</div>
-					<div
-						className="modal-backdrop"
-						onClick={() => setShowInitiativeModal(false)}
+				<Modal
+					title="Initiative Settings"
+					onClose={() => setShowInitiativeModal(false)}
+					actions={
+						<button
+							className="btn"
+							onClick={() => setShowInitiativeModal(false)}
+						>
+							Done
+						</button>
+					}
+				>
+					<p className="text-sm opacity-70 mb-4">
+						Changes apply immediately and stay saved in Campaign Settings.
+					</p>
+					<InitiativeSettingsEditor
+						value={campaign.Settings.InitiativeSettings}
+						statDefinitions={campaign.Settings.StatDefinitions}
+						attributeDefinitions={
+							campaign.Settings.AttributeDefinitions ?? []
+						}
+						onChange={handleSaveInitiative}
+						readOnly={!isInteractive}
+						lockMode={combatState.isActive}
 					/>
-				</div>
+				</Modal>
 			)}
 		</div>
 	);

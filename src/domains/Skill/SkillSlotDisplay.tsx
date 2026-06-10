@@ -7,6 +7,12 @@ import { CampaignActions } from "../Campaign/CampaignActions";
 import { formatRestoreRule } from "../CampaignSetting/CampaignSettingActions";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
+import { DetailDrawer } from "../../components/ui/DetailDrawer";
+import { SectionCard } from "../../components/ui/SectionCard";
+import { PropertyRow } from "../../components/ui/PropertyRow";
+import { ImageThumb } from "../../components/ui/ImageThumb";
+import { ConfirmButton } from "../../components/ui/ConfirmButton";
+import { CostWarning } from "../../components/ui/CostWarning";
 import { Actor, SkillSlot } from "../Actor/Actor";
 import {
 	formatActionCost,
@@ -32,7 +38,6 @@ export function SkillSlotDisplay({
 	const { actionService } = useActionService();
 	const campaign = CampaignActions.getActiveCampaign(context);
 
-	const [discardClickCount, setDiscardClickCount] = useState(0);
 	const [localUsesLeft, setLocalUsesLeft] = useState(slot.UsesLeft ?? 1);
 	const hasUnsavedChanges = useRef(false);
 
@@ -41,7 +46,6 @@ export function SkillSlotDisplay({
 
 	// Reset state when drawer closes or slot changes
 	useEffect(() => {
-		setDiscardClickCount(0);
 		setLocalUsesLeft(slot.UsesLeft ?? skill?.MaxUses ?? 1);
 		hasUnsavedChanges.current = false;
 	}, [isOpen, slot.Id, slot.UsesLeft, skill?.MaxUses]);
@@ -59,16 +63,6 @@ export function SkillSlotDisplay({
 		};
 	}, [localUsesLeft, actionService, actor.Id, slot.Id, slot.UsesLeft]);
 
-	// Auto-reset discard after 2 seconds
-	useEffect(() => {
-		if (discardClickCount > 0) {
-			const timer = setTimeout(() => {
-				setDiscardClickCount(0);
-			}, 2000);
-			return () => clearTimeout(timer);
-		}
-	}, [discardClickCount]);
-
 	if (!skill) {
 		return null;
 	}
@@ -85,16 +79,11 @@ export function SkillSlotDisplay({
 	const handleDiscard = () => {
 		if (!actionService) return;
 
-		if (discardClickCount === 0) {
-			setDiscardClickCount(1);
-		} else {
-			// Second click - execute discard
-			actionService.execute("skill:discard", {
-				actorId: actor.Id,
-				skillId: slot.Id,
-			});
-			onClose();
-		}
+		actionService.execute("skill:discard", {
+			actorId: actor.Id,
+			skillId: slot.Id,
+		});
+		onClose();
 	};
 
 	const handleUsesBlur = () => {
@@ -154,198 +143,142 @@ export function SkillSlotDisplay({
 	const imageEditable = !skill.Image;
 
 	return (
-		<div className="drawer drawer-start z-50">
-			<input
-				type="checkbox"
-				className="drawer-toggle"
-				checked={isOpen}
-				onChange={() => {}}
-			/>
+		<DetailDrawer isOpen={isOpen} onClose={onClose} title={skill.Name}>
+			{/* Top Row: Image + Actions */}
+			<div className="flex gap-6">
+				{/* Image */}
+				<div className="w-64 shrink-0">
+					{imageEditable ? (
+						<ImagePicker
+							value={skill.Image}
+							onChange={handleImageChange}
+						/>
+					) : (
+						<ImageThumb className="w-full aspect-square">
+							<ImageDisplay
+								imageId={skill.Image}
+								className="w-full h-full object-cover"
+								alt={skill.Name}
+							/>
+						</ImageThumb>
+					)}
+				</div>
 
-			<div className="drawer-side">
-				<label
-					className="drawer-overlay"
-					onClick={onClose}
-					aria-label="Close drawer"
-				></label>
+				{/* Actions */}
+				<div className="flex-1 space-y-3">
+					<h3 className="font-semibold text-sm opacity-70">Actions</h3>
 
-				<div className="bg-base-200 min-h-full w-full max-w-3xl p-6 overflow-y-auto">
-					{/* Header with close button */}
-					<div className="flex justify-between items-center mb-6">
-						<h2 className="text-3xl font-bold">{skill.Name}</h2>
-						<button
-							onClick={onClose}
-							className="btn btn-sm btn-circle btn-ghost"
-							aria-label="Close"
-						>
-							<span className="icon-[mdi--close] w-5 h-5" />
-						</button>
-					</div>
+					{/* Use Button */}
+					<button
+						onClick={handleUse}
+						disabled={!canUse || !actionService}
+						className="btn btn-primary w-full justify-start"
+					>
+						<span className="icon-[mdi--play] w-5 h-5" />
+						Use
+					</button>
 
-					{/* Top Row: Image + Actions */}
-					<div className="flex gap-6 mb-6">
-						{/* Image */}
-						<div className="w-64 shrink-0">
-							{imageEditable ? (
-								<ImagePicker
-									value={skill.Image}
-									onChange={handleImageChange}
-								/>
-							) : (
-								<div className="w-full aspect-square bg-base-300 rounded-lg overflow-hidden flex items-center justify-center">
-									<ImageDisplay
-										imageId={skill.Image}
-										className="w-full h-full object-cover"
-										alt={skill.Name}
-									/>
-								</div>
-							)}
-						</div>
-
-						{/* Actions */}
-						<div className="flex-1 space-y-3">
-							<h3 className="font-semibold text-sm opacity-70 mb-4">Actions</h3>
-
-							{/* Use Button */}
-							<button
-								onClick={handleUse}
-								disabled={!canUse || !actionService}
-								className="btn btn-primary w-full justify-start"
-							>
-								<span className="icon-[mdi--play] w-5 h-5" />
-								Use
-							</button>
-
-							{/* Stat Cost Warning */}
-							{skill.StatCost && !statAvailability.hasEnough && (
-								<div className="alert alert-warning text-sm py-2">
-									<span className="icon-[mdi--alert] w-4 h-4" />
-									<span>
-										Not enough {statAvailability.name ?? "stat"} ({statAvailability.current} / {skill.StatCost.amount})
-										<br />
-										<span className="text-xs opacity-70">
-											Skill will still activate but cost will be reduced
-										</span>
-									</span>
-								</div>
-							)}
-
-							{/* Action Cost Warning */}
-							{skill.ActionCost && !actionAvailability.hasEnough && (
-								<div className="alert alert-warning text-sm py-2">
-									<span className="icon-[mdi--alert] w-4 h-4" />
-									<span>
-										Not enough {actionAvailability.name ?? "action"} ({actionAvailability.current} / {skill.ActionCost.amount})
-										<br />
-										<span className="text-xs opacity-70">
-											Skill will still activate but cost will be reduced
-										</span>
-									</span>
-								</div>
-							)}
-
-							{/* Uses Adjuster - Only show if uses are limited */}
-							{slot.UsesLeft !== undefined && (
-								<div className="card bg-base-100 border-2 border-base-300 p-4">
-									<h4 className="font-semibold text-sm mb-3">Adjust Uses</h4>
-									
-									<div className="flex gap-2 items-center">
-										<input
-											type="number"
-											value={localUsesLeft}
-											onChange={(e) => handleUsesChange(Number(e.target.value) || 0)}
-											onBlur={handleUsesBlur}
-											className="input input-bordered input-sm flex-1"
-											min={0}
-											max={skill.MaxUses ?? 999}
-											placeholder="Uses"
-										/>
-										<span className="text-sm opacity-70">uses</span>
-									</div>
-								</div>
-							)}
-
-							{/* Divider */}
-							<div className="divider my-2"></div>
-
-							{/* Discard Button */}
-							<button
-								onClick={handleDiscard}
-								disabled={!actionService}
-								className={`btn w-full justify-start ${
-									discardClickCount > 0 ? "btn-error" : "btn-ghost"
-								}`}
-							>
-								<span className="icon-[mdi--delete] w-5 h-5" />
-								{discardClickCount > 0 ? "Confirm?" : "Discard"}
-							</button>
-						</div>
-					</div>
-
-					{/* Description - Full Width */}
-					{skill.Description && (
-						<div className="card bg-base-100 border-2 border-base-300 mb-6">
-							<div className="card-body p-4">
-								<h3 className="card-title text-sm mb-2">Description</h3>
-								<p className="text-sm whitespace-pre-wrap leading-relaxed">
-									{skill.Description}
-								</p>
-							</div>
-						</div>
+					{/* Cost Warnings */}
+					{skill.StatCost && !statAvailability.hasEnough && (
+						<CostWarning
+							kind="Skill"
+							name={statAvailability.name ?? "stat"}
+							current={statAvailability.current}
+							required={skill.StatCost.amount}
+						/>
 					)}
 
-					{/* Properties - Full Width */}
-					<div className="card bg-base-100 border-2 border-base-300">
-						<div className="card-body p-4 space-y-3">
-							<h3 className="card-title text-sm">Properties</h3>
+					{skill.ActionCost && !actionAvailability.hasEnough && (
+						<CostWarning
+							kind="Skill"
+							name={actionAvailability.name ?? "action"}
+							current={actionAvailability.current}
+							required={skill.ActionCost.amount}
+						/>
+					)}
 
-							{/* Stat Cost */}
-							<div className="flex justify-between items-center py-2 border-b border-base-300">
-								<span className="font-semibold">Stat Cost</span>
-								<span className={skill.StatCost ? "font-bold" : ""}>
-									{statCostText}
-								</span>
+					{/* Uses Adjuster - Only show if uses are limited */}
+					{slot.UsesLeft !== undefined && (
+						<SectionCard title="Adjust Uses">
+							<div className="flex gap-2 items-center">
+								<input
+									type="number"
+									value={localUsesLeft}
+									onChange={(e) => handleUsesChange(Number(e.target.value) || 0)}
+									onBlur={handleUsesBlur}
+									className="input input-bordered input-sm flex-1"
+									min={0}
+									max={skill.MaxUses ?? 999}
+									placeholder="Uses"
+								/>
+								<span className="text-sm opacity-70">uses</span>
 							</div>
+						</SectionCard>
+					)}
 
-							{/* Action Cost */}
-							<div className="flex justify-between items-center py-2 border-b border-base-300">
-								<span className="font-semibold">Action Cost</span>
-								<span className={skill.ActionCost ? "font-bold" : ""}>
-									{actionCostText}
-								</span>
-							</div>
+					{/* Divider */}
+					<div className="divider my-2"></div>
 
-							{/* Uses */}
-							<div className="flex justify-between items-center py-2 border-b border-base-300">
-								<span className="font-semibold">Uses</span>
-								<span>{usesText}</span>
-							</div>
-
-							{/* Dice Roll */}
-							{skill.DiceRoll && skill.DiceRoll.trim() !== "" && (
-								<div className="flex justify-between items-center py-2 border-b border-base-300">
-									<span className="font-semibold">Dice Roll</span>
-									<span className="font-mono">{skill.DiceRoll}</span>
-								</div>
-							)}
-
-							{/* Restore Rules */}
-							{restoreLines.length > 0 && (
-								<div className="py-2">
-									<span className="font-semibold block mb-2">
-										Restore Rules
-									</span>
-									<ul className="text-sm list-disc list-inside space-y-1">
-										{restoreLines.map((line, index) => (
-											<li key={index}>{line}</li>
-										))}
-									</ul>
-								</div>
-							)}
-						</div>
-					</div>
+					{/* Discard Button */}
+					<ConfirmButton
+						key={slot.Id}
+						onConfirm={handleDiscard}
+						disabled={!actionService}
+						icon="icon-[mdi--delete]"
+						className="w-full justify-start"
+					>
+						Discard
+					</ConfirmButton>
 				</div>
 			</div>
-		</div>
+
+			{/* Description - Full Width */}
+			{skill.Description && (
+				<SectionCard title="Description">
+					<p className="text-sm whitespace-pre-wrap leading-relaxed">
+						{skill.Description}
+					</p>
+				</SectionCard>
+			)}
+
+			{/* Properties - Full Width */}
+			<SectionCard title="Properties">
+				<PropertyRow
+					label="Stat Cost"
+					valueClassName={skill.StatCost ? "font-bold" : undefined}
+				>
+					{statCostText}
+				</PropertyRow>
+
+				<PropertyRow
+					label="Action Cost"
+					valueClassName={skill.ActionCost ? "font-bold" : undefined}
+				>
+					{actionCostText}
+				</PropertyRow>
+
+				<PropertyRow label="Uses">{usesText}</PropertyRow>
+
+				{skill.DiceRoll && skill.DiceRoll.trim() !== "" && (
+					<PropertyRow label="Dice Roll" valueClassName="font-mono">
+						{skill.DiceRoll}
+					</PropertyRow>
+				)}
+
+				{/* Restore Rules */}
+				{restoreLines.length > 0 && (
+					<div className="py-2">
+						<span className="font-semibold block mb-2">
+							Restore Rules
+						</span>
+						<ul className="text-sm list-disc list-inside space-y-1">
+							{restoreLines.map((line, index) => (
+								<li key={index}>{line}</li>
+							))}
+						</ul>
+					</div>
+				)}
+			</SectionCard>
+		</DetailDrawer>
 	);
 }

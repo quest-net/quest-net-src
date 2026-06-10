@@ -3,6 +3,7 @@
 import { useState, ReactNode, useEffect } from "react";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
+import { EmptyState } from "../ui/EmptyState";
 import {
 	getFoldersAtPath,
 	getItemsAtPath,
@@ -592,17 +593,10 @@ export function IndexView({
 
 					{/* Items or Empty State */}
 					{combinedEntries.length === 0 ? (
-						<div className="text-center py-12 border-2 border-dashed border-base-300 rounded-lg">
-							<span className="icon-[mdi--help-circle-outline] w-16 h-16 opacity-30 inline-block mb-4"></span>
-							<p className="text-xl mb-2">
-								{searchQuery ? "No items match your search" : emptyMessage}
-							</p>
-							{searchQuery && (
-								<p className="text-base-content/60">
-									Try a different search term
-								</p>
-							)}
-						</div>
+						<EmptyState bordered icon="icon-[mdi--help-circle-outline]">
+							<p>{searchQuery ? "No items match your search" : emptyMessage}</p>
+							{searchQuery && <p>Try a different search term</p>}
+						</EmptyState>
 					) : (
 						<>
 							<div className="flex flex-wrap gap-4 justify-between">

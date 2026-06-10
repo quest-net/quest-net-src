@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
+import { ToggleButton } from "../ui/ToggleButton";
+import { EmptyState } from "../ui/EmptyState";
 
 // ============================================================================
 // TYPES
@@ -134,20 +136,24 @@ export function CollectionView({
 
 					{!isMobile && (
 						<>
-							<button
+							<ToggleButton
+								active={viewMode === "grid"}
+								quiet
 								onClick={() => setViewMode("grid")}
-								className={`btn btn-sm ${viewMode === "grid" ? "btn-primary" : "btn-ghost"}`}
+								className="btn-sm"
 								title="Grid view"
 							>
 								<span className="icon-[mdi--grid] w-5 h-5" />
-							</button>
-							<button
+							</ToggleButton>
+							<ToggleButton
+								active={viewMode === "list"}
+								quiet
 								onClick={() => setViewMode("list")}
-								className={`btn btn-sm ${viewMode === "list" ? "btn-primary" : "btn-ghost"}`}
+								className="btn-sm"
 								title="List view"
 							>
 								<span className="icon-[mdi--view-list] w-5 h-5" />
-							</button>
+							</ToggleButton>
 						</>
 					)}
 				</div>
@@ -176,15 +182,10 @@ export function CollectionView({
 
 			{/* Content */}
 			{filteredItems.length === 0 ? (
-				<div className="text-center py-12 border-2 border-dashed border-base-300 rounded-lg">
-					<span className="icon-[mdi--help-circle-outline] w-16 h-16 opacity-30 inline-block mb-4"></span>
-					<p className="text-xl mb-2">
-						{searchQuery ? "No items match your search" : emptyMessage}
-					</p>
-					{searchQuery && (
-						<p className="text-base-content/60">Try a different search term</p>
-					)}
-				</div>
+				<EmptyState bordered icon="icon-[mdi--help-circle-outline]">
+					<p>{searchQuery ? "No items match your search" : emptyMessage}</p>
+					{searchQuery && <p>Try a different search term</p>}
+				</EmptyState>
 			) : effectiveViewMode === "grid" ? (
 				<div className="flex flex-wrap gap-4 justify-between">
 					{filteredItems.map((item) => (

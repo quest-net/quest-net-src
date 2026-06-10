@@ -3,6 +3,7 @@ import { useState } from "react";
 import { SharedInventory, StatDefinition } from "../../domains/CampaignSetting/CampaignSetting";
 import { useFormReadOnly } from "../Form/Form";
 import { RestoreRuleEditor } from "./RestoreRuleEditor";
+import { Modal } from "../ui/Modal";
 
 interface StatDefinitionsEditorProps {
 	stats: StatDefinition[];
@@ -216,31 +217,26 @@ export function StatDefinitionsEditor({
 
 			{/* Modal for editing RestoreRule */}
 			{editingStat && (
-				<dialog open className="modal modal-open">
-					<div className="modal-box">
-						<h3 className="font-bold text-lg mb-4">
-							Restore Rules for {editingStat.Name}
-						</h3>
-						<RestoreRuleEditor
-							value={editingStat.RestoreRule}
-							onChange={(rule) => {
-								handleChange(editingStat.Id, { RestoreRule: rule });
-							}}
-							readOnly={readOnly}
-						/>
-						<div className="modal-action">
-							<button
-								onClick={() => setEditingStatId(null)}
-								className="btn btn-primary"
-							>
-								Done
-							</button>
-						</div>
-					</div>
-					<form method="dialog" className="modal-backdrop">
-						<button onClick={() => setEditingStatId(null)}>close</button>
-					</form>
-				</dialog>
+				<Modal
+					title={`Restore Rules for ${editingStat.Name}`}
+					onClose={() => setEditingStatId(null)}
+					actions={
+						<button
+							onClick={() => setEditingStatId(null)}
+							className="btn btn-primary"
+						>
+							Done
+						</button>
+					}
+				>
+					<RestoreRuleEditor
+						value={editingStat.RestoreRule}
+						onChange={(rule) => {
+							handleChange(editingStat.Id, { RestoreRule: rule });
+						}}
+						readOnly={readOnly}
+					/>
+				</Modal>
 			)}
 		</div>
 	);

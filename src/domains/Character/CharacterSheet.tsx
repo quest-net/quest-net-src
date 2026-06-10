@@ -11,6 +11,8 @@ import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
 import { ActorPicker } from "../../components/inputs/ActorPicker";
 import { AttributesSection } from "../../components/AttributesSection/AttributesSection";
 import { useDiceRoller } from "../../components/Dice/DiceRollerContext";
+import { ToggleButton } from "../../components/ui/ToggleButton";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { ACTOR_DEFAULT_COLORS } from "../Actor/Actor";
 import {
 	ResolvedAction,
@@ -67,11 +69,7 @@ export function CharacterSheet() {
 	}, [character?.Id]);
 
 	if (!character) {
-		return (
-			<div className="text-center text-sm opacity-60">
-				No character selected
-			</div>
-		);
+		return <EmptyState>No character selected</EmptyState>;
 	}
 
 	const handleFieldChange = (field: keyof Character, value: any) => {
@@ -200,14 +198,16 @@ export function CharacterSheet() {
 			<div className="space-y-2">
 				<div className="flex items-center justify-between">
 					<div></div>
-					<button
-						className={`btn btn-sm btn-circle ${editingMaxStats ? "btn-primary" : "btn-ghost"
-							}`}
+					<ToggleButton
+						active={editingMaxStats}
+						kind="independent"
+						quiet
+						className="btn-sm btn-circle"
 						onClick={() => setEditingMaxStats(!editingMaxStats)}
 						title={editingMaxStats ? "Hide max stat controls" : "Edit max stats"}
 					>
 						<span className="icon-[mdi--cog] w-4 h-4" />
-					</button>
+					</ToggleButton>
 				</div>
 
 				<div className="space-y-3">
