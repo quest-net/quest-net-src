@@ -331,22 +331,34 @@ export default function MapScene({
 		}
 		return ids;
 	}, [campaign]);
-	const terrainSignature = useMemo(() => createTerrainSignature(terrain), [terrain]);
+	// DM terrain edits mutate the canonical terrain object in place before the
+	// VoxelTerrains array is shallow-cloned. Derive primitive keys so this
+	// persistent scene notices ContentHash/shape changes even when object identity
+	// is unchanged. Keep the full voxel string inside createTerrainSignature so
+	// the geometry/index caches still use the precise value-equal revision.
+	const terrainShapeKey = terrain
+		? [
+			terrain.Id,
+			terrain.Width,
+			terrain.Length,
+			terrain.Height,
+			terrain.Resolution ?? 1,
+		].join(":")
+		: "";
+	const terrainContentKey = terrain
+		? `${terrainShapeKey}:${terrain.ContentHash ?? ""}`
+		: "";
+	const terrainSignature = useMemo(
+		() => createTerrainSignature(terrain),
+		[terrain, terrainContentKey]
+	);
 	// Identity that determines camera FRAMING: which terrain and its extents,
 	// deliberately excluding voxel content. The framing reset must fire on a
 	// terrain switch or resize but NOT on a content edit, otherwise every voxel
 	// change (e.g. a synced DM edit) would snap the viewer's rotation/pan back to
 	// the default isometric pose. (Zoom is on orthoCamera.zoom, which the reset
 	// never touches, which is why only rotation/pan were resetting.)
-	const terrainFramingKey = useMemo(
-		() =>
-			terrain
-				? `${terrain.Id}:${terrain.Width}:${terrain.Length}:${terrain.Height}:${
-						terrain.Resolution ?? 1
-				  }`
-				: "",
-		[terrain]
-	);
+	const terrainFramingKey = terrainShapeKey;
 	const terrainVoxels = useMemo(
 		() => (terrain ? resolveTerrainVoxels(terrain) : ""),
 		// terrainSignature is the value-equal identity for the voxel terrain.
