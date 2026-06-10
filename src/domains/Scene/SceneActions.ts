@@ -16,11 +16,14 @@ export const SceneActions = {
 		// Find image name for logging
 		const image = campaign.Images.find((img) => img.Id === params.imageId);
 		const imageName = image ? image.Name : params.imageId;
+		const details = params.imageId
+			? `Environment set to: ${imageName}`
+			: "Environment cleared";
 
 		LogActions.create(
 			{
 				action: "Scene environment updated",
-				details: `Environment set to: ${imageName}`,
+				details,
 				category: "system",
 				level: "info",
 				visibility: ["all"],
@@ -40,11 +43,14 @@ export const SceneActions = {
 		// Find image name for logging
 		const image = campaign.Images.find((img) => img.Id === params.imageId);
 		const imageName = image ? image.Name : params.imageId;
+		const details = params.imageId
+			? `Focus set to: ${imageName}`
+			: "Focus cleared";
 
 		LogActions.create(
 			{
 				action: "Scene focus updated",
-				details: `Focus set to: ${imageName}`,
+				details,
 				category: "system",
 				level: "info",
 				visibility: ["all"],

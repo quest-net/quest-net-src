@@ -280,14 +280,17 @@ export function ImagePicker({
 	return (
 		<div className="space-y-2 min-w-48">
 			{/* Clickable Image Container */}
-			<div
+			<button
+				type="button"
 				onClick={handleOpen}
 				onMouseEnter={() => setIsHovered(true)}
 				onMouseLeave={() => setIsHovered(false)}
+				disabled={readOnly}
+				aria-label={value ? "Change selected image" : "Choose image"}
 				className={`
 					relative w-full h-48 bg-base-200 rounded-lg overflow-hidden 
-					flex items-center justify-center
-					${!readOnly ? "cursor-pointer" : ""}
+					flex appearance-none items-center justify-center border-0 p-0 text-inherit
+					${!readOnly ? "cursor-pointer" : "cursor-default"}
 					transition-all
 					${!readOnly && isHovered ? "brightness-90" : ""}
 				`}
@@ -314,7 +317,7 @@ export function ImagePicker({
 						)}
 					</>
 				)}
-			</div>
+			</button>
 
 			{/* Modal portals itself to <body> */}
 			{modalContent}
