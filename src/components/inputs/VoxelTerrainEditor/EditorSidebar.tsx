@@ -5,11 +5,7 @@
 // tweaking and smoothing now live on the map (drag gizmo) and in the toolbar.
 
 import type { EditorTool } from "./editorTypes";
-import {
-	TERRAIN_PALETTE,
-	TERRAIN_PALETTE_ROWS,
-} from "../../../utils/terrain/palette/TerrainPaletteUtils";
-import { groupSpecialMaterialSwatches } from "../../Map/Terrain/materials";
+import { TerrainColorPicker } from "./TerrainColorPicker";
 import { ToggleButton } from "../../ui/ToggleButton";
 import {
 	terrainPaletteIndexToVoxelColor,
@@ -18,9 +14,6 @@ import type {
 	TerrainSelection,
 	VoxelSelectionBounds,
 } from "../../../utils/terrain/editor/VoxelTerrainSelectionUtils";
-
-// Derived once from the static material registry; grouping never changes at runtime.
-const MATERIAL_SWATCH_GROUPS = groupSpecialMaterialSwatches();
 
 interface SelectionSummary {
 	bounds: VoxelSelectionBounds | null;
@@ -145,49 +138,10 @@ export function EditorSidebar(props: EditorSidebarProps) {
 				</div>
 			)}
 
-			<div>
-				<div className="text-sm font-semibold mb-2">Color</div>
-				<div
-					className="grid"
-					style={{ gridTemplateColumns: `repeat(${TERRAIN_PALETTE_ROWS}, 1fr)` }}
-				>
-					{TERRAIN_PALETTE.map((color, idx) => (
-						<button
-							key={idx}
-							type="button"
-							className={`aspect-square${selectedColorIndex === idx ? " ring-2 ring-base-content ring-inset" : ""}`}
-							style={{ backgroundColor: color }}
-							onClick={() => onChooseColorIndex(idx)}
-							title={`Color ${idx}`}
-							aria-label={`Color ${idx}`}
-						/>
-					))}
-				</div>
-			</div>
-
-			<div>
-				<div className="text-sm font-semibold mb-2">Materials</div>
-				<div className="flex flex-col gap-2">
-					{MATERIAL_SWATCH_GROUPS.map((group) => (
-						<div key={group.category}>
-							<div className="text-xs opacity-70 mb-1">{group.label}</div>
-							<div className="flex flex-row flex-wrap gap-1">
-								{group.swatches.map((swatch) => (
-									<button
-										key={swatch.index}
-										type="button"
-										className={`w-6 h-6${selectedColorIndex === swatch.index ? " ring-2 ring-base-content ring-inset" : ""}`}
-										style={{ backgroundColor: swatch.color }}
-										onClick={() => onChooseColorIndex(swatch.index)}
-										title={swatch.label}
-										aria-label={swatch.label}
-									/>
-								))}
-							</div>
-						</div>
-					))}
-				</div>
-			</div>
+			<TerrainColorPicker
+				value={selectedColorIndex}
+				onChange={onChooseColorIndex}
+			/>
 
 			{actors && actors.length > 0 && (
 				<div>

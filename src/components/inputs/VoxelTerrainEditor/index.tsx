@@ -26,6 +26,7 @@ import {
 	type VoxelTerrain,
 	type VoxelTerrainBackground,
 	type VoxelTerrainLighting,
+	type VoxelTerrainSurroundings,
 } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { useFormContext } from "../../Form/Form";
 import MapScene from "../../Map/MapScene";
@@ -499,6 +500,13 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const updateBackground = (updates: VoxelTerrainBackground) => {
 			if (readOnly) return;
 			const nextTerrain = { ...terrain, Background: updates };
+			emitTerrainUpdate(nextTerrain);
+			if (activeViewRef.current === "preview") refreshPreviewTerrain();
+		};
+
+		const updateSurroundings = (next: VoxelTerrainSurroundings | undefined) => {
+			if (readOnly) return;
+			const nextTerrain = { ...terrain, Surroundings: next };
 			emitTerrainUpdate(nextTerrain);
 			if (activeViewRef.current === "preview") refreshPreviewTerrain();
 		};
@@ -2041,9 +2049,12 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 								<PreviewSettingsPanel
 									lighting={lighting}
 									background={background}
+									surroundings={terrain.Surroundings}
+									maxSurroundingsHeight={terrain.Height}
 									readOnly={readOnly}
 									onLightingChange={updateLighting}
 									onBackgroundChange={updateBackground}
+									onSurroundingsChange={updateSurroundings}
 								/>
 							) : (
 								<EditorSidebar

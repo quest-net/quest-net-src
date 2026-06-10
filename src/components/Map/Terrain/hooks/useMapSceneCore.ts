@@ -227,6 +227,7 @@ export function useMapSceneCore(
 			linkPickTargets: [],
 			dragState: { active: false },
 			setFogVolume: postProcessing.setFogVolume,
+			setDepthOfFieldFocus: postProcessing.setDepthOfFieldFocus,
 		};
 
 		// Pre-warm: compile every registered shader variant before exposing the

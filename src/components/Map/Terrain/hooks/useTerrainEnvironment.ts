@@ -6,6 +6,7 @@ import { resolveTerrainVoxels } from "../../../../utils/terrain/data/terrainPayl
 import { getMaxVoxelSurfaceHeight } from "../../../../utils/terrain/data/VoxelTerrainUtils";
 import type { ThreeDSceneResources } from "../../Actors3D/actorTokenTypes";
 import { getShadowCameraBounds } from "../../shadowCameraBounds";
+import { THREE_D_MAP_DOF } from "../../threeDMapConstants";
 import {
 	applyVoxelTerrainBackground,
 	applyVoxelTerrainDirectionalLight,
@@ -66,6 +67,18 @@ export function useTerrainEnvironment(
 		dirLight.shadow.camera.far = shadowCamera.far;
 		dirLight.shadow.camera.updateProjectionMatrix();
 		resources.requestShadowUpdate();
+
+		// Aim the depth-of-field distance blur: keep the terrain center in focus
+		// with a sharp band covering the whole playable footprint, so only the
+		// far surroundings (and anything else in the distance) blur.
+		resources.setDepthOfFieldFocus?.(
+			new THREE.Vector3(0, terrainCenterY, 0),
+			Math.max(
+				THREE_D_MAP_DOF.MIN_FOCUS_RANGE,
+				Math.max(terrain.Width, terrain.Length, maxSurfaceHeight) *
+					THREE_D_MAP_DOF.FOCUS_RANGE_MULTIPLIER
+			)
+		);
 	}, [
 		resources,
 		terrain,

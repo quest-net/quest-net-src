@@ -49,6 +49,18 @@ export const THREE_D_MAP_SHADOW = {
 	NORMAL_BIAS: 0.01,
 } as const;
 
+export const THREE_D_SURROUNDINGS = {
+	// Outer half-extent of the decorative surroundings ring, as a multiple of
+	// the terrain's larger horizontal dimension.
+	EXTENT_MULTIPLIER: 8,
+	// Minimum outer half-extent in world units, so tiny terrains still get a
+	// horizon-filling plane.
+	MIN_EXTENT: 96,
+	// Outward offset of the skirt so it never z-fights the terrain's side faces
+	// at the footprint boundary.
+	SKIRT_EPSILON: 0.002,
+} as const;
+
 export const THREE_D_MAP_CONTROLS = {
 	DAMPING_FACTOR: 0.05,
 	MIN_ZOOM: 0.2,
@@ -87,6 +99,23 @@ export const THREE_D_MAP_BLOOM = {
 	PERFORMANCE_RADIUS: 0.25,
 	PERFORMANCE_LEVELS: 2,
 	PERFORMANCE_MULTISAMPLING: 0,
+} as const;
+
+export const THREE_D_MAP_DOF = {
+	// World-space half-width of the sharp band around the focus point (the
+	// terrain center). Blur ramps up linearly beyond it. The actual range is
+	// max(MIN_FOCUS_RANGE, largest terrain dimension * FOCUS_RANGE_MULTIPLIER)
+	// so the playable area always stays in focus and only the distance blurs.
+	FOCUS_RANGE_MULTIPLIER: 1.5,
+	MIN_FOCUS_RANGE: 48,
+	// Bokeh blur kernel scale; raise for a stronger distance blur.
+	BOKEH_SCALE: 2.0,
+	// CoC/bokeh buffers render at this fraction of full resolution.
+	RESOLUTION_SCALE: 0.75,
+	// Focus range used before the scene supplies real terrain extents. Huge on
+	// purpose: it keeps the circle of confusion ~0 everywhere so an unfocused
+	// scene (no terrain yet) renders sharp instead of fully blurred.
+	UNFOCUSED_RANGE: 1e6,
 } as const;
 
 export const THREE_D_MOVEMENT_HIGHLIGHT = {

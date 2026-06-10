@@ -52,6 +52,13 @@ export interface ThreeDSceneResources {
 	 */
 	setFogVolume?: (volume: FogVolumeTexture | null) => void;
 	/**
+	 * Aims the depth-of-field distance blur: keeps `target` (world space) in
+	 * focus, sharp within `range` world units, blurring beyond. Set by the scene
+	 * that owns the post-processing pipeline; called by the terrain environment
+	 * hook whenever terrain extents change. No-op in performance mode.
+	 */
+	setDepthOfFieldFocus?: (target: THREE.Vector3, range: number) => void;
+	/**
 	 * Mutable list of actor pick meshes shared with the actor layer.
 	 * Other layers (e.g. movement) may raycast against this to suppress
 	 * tile interactions when the cursor is on top of an actor token.

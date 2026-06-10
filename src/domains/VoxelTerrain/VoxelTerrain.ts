@@ -28,6 +28,16 @@ export interface VoxelTerrainBackground {
 }
 
 /**
+ * Decorative flat plane extending outward from the terrain's footprint.
+ * Purely visual -- no hitbox, no movement/raycast participation. Absent on the
+ * terrain means disabled (same convention as Background.Color).
+ */
+export interface VoxelTerrainSurroundings {
+	Height: number;     // tactical units above the terrain base (0..Height)
+	ColorIndex: number; // terrain palette index (0-255); 240+ picks a special material
+}
+
+/**
  * The maximum height (in tactical units) the movement cost system accounts for.
  * Matches MAX_VOXEL_TERRAIN_HEIGHT in VoxelTerrainEditorUtils. Used for
  * height-cost formula validation and UI previews.
@@ -43,6 +53,12 @@ export const DEFAULT_VOXEL_TERRAIN_LIGHTING: VoxelTerrainLighting = {
 
 export const DEFAULT_VOXEL_TERRAIN_BACKGROUND: VoxelTerrainBackground = {};
 export const DEFAULT_VOXEL_TERRAIN_BACKGROUND_COLOR = "#0f172a";
+
+// Starting values when the DM first enables surroundings: grass at terrain base.
+export const DEFAULT_VOXEL_TERRAIN_SURROUNDINGS: VoxelTerrainSurroundings = {
+	Height: 0,
+	ColorIndex: 242,
+};
 
 export const VOXEL_TERRAIN_ENVIRONMENT_PRESET_IDS = [
 	"neutral",
@@ -171,6 +187,11 @@ export interface VoxelTerrain {
 	VoxelCount?: number;
 	Lighting: VoxelTerrainLighting;
 	Background: VoxelTerrainBackground;
+	/**
+	 * Decorative surroundings plane config; absent = disabled. Deliberately NOT
+	 * part of environment presets -- applying a preset leaves this untouched.
+	 */
+	Surroundings?: VoxelTerrainSurroundings;
 	PreviewColor?: string;
 	Tags?: string[];
 }

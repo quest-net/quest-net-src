@@ -60,6 +60,7 @@ import {
 } from './Terrain/hooks/useVoxelTerrainGeometryWorker';
 import { useTerrainMeshes } from './Terrain/hooks/useTerrainMeshes';
 import { useTerrainEnvironment } from './Terrain/hooks/useTerrainEnvironment';
+import { useSurroundingsPlane } from './Terrain/hooks/useSurroundingsPlane';
 import {
 	useMapSceneCore,
 	type MapSceneController,
@@ -674,6 +675,9 @@ export default function MapScene({
 
 	// Background + directional-light/shadow-bounds.
 	useTerrainEnvironment(sceneResources, terrain, terrainSignature, directionalLightRef);
+
+	// Decorative surroundings plane (no-op unless configured on the terrain).
+	useSurroundingsPlane(sceneResources, terrain, performanceMode);
 
 	// Signal ready immediately when the scene is up but there is no terrain to
 	// build, so the loading screen doesn't get stuck.
