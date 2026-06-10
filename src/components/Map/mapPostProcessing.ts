@@ -98,7 +98,7 @@ export function createThreeDMapPostProcessing(
 	// camera's near/far slab, which differs between the ortho world camera and
 	// the perspective/first-person cameras. Track the range in world units so
 	// setCamera can re-apply it after every swap.
-	let dofFocusRange = THREE_D_MAP_DOF.UNFOCUSED_RANGE;
+	let dofFocusRange: number = THREE_D_MAP_DOF.UNFOCUSED_RANGE;
 
 	const effectPass = new EffectPass(
 		camera,
