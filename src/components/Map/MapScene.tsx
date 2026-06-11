@@ -675,7 +675,14 @@ export default function MapScene({
 	useTerrainEnvironment(sceneResources, terrain, terrainSignature, directionalLightRef);
 
 	// Decorative surroundings plane (no-op unless configured on the terrain).
-	useSurroundingsPlane(sceneResources, terrain, performanceMode);
+	// The occupancy snapshot drives the interior fill over open voxel columns;
+	// until the first build lands it falls back to the plain outer ring.
+	useSurroundingsPlane(
+		sceneResources,
+		terrain,
+		terrainGeometry?.occupancy ?? null,
+		performanceMode
+	);
 
 	// Signal ready immediately when the scene is up but there is no terrain to
 	// build, so the loading screen doesn't get stuck.
