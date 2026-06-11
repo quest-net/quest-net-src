@@ -4,7 +4,7 @@ import type { Position } from "../../../domains/Actor/Actor";
 import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import type { LiveActorPose } from "../../../services/ActorPoseService";
+import { useActionService } from "../../../services/Actions/ActionServiceProvider";
 import {
 	getMaxVoxelSurfaceHeight,
 } from "../../../utils/terrain/data/VoxelTerrainUtils";
@@ -42,7 +42,16 @@ import {
 import { raycastTerrainDDA } from "../Movement3D/movement3DHelpers";
 import { disposeObject3D, setRaycasterFromPointer } from "../mapSceneUtils";
 
-const ACTOR_LIVE_POSE_FOLLOW_MS = 90;
+// Live-pose tokens chase their latest target with exponential smoothing in the
+// rAF tick instead of restarting a fixed-duration ease per packet. The pose
+// stream shares a reliable ORDERED data channel with other Trystero traffic, so
+// packet loss / large sends deliver poses in bursts -- a continuous chase
+// absorbs bursts where per-packet ease restarts stuttered. 14/s gives a ~70ms
+// time constant, comfortably responsive against the ~80ms send interval.
+const ACTOR_LIVE_POSE_SMOOTHING = 14;
+const ACTOR_LIVE_POSE_SNAP_DISTANCE_SQ = 0.000001;
+// Clamp follower dt so a long-throttled tab doesn't teleport tokens on resume.
+const ACTOR_LIVE_POSE_MAX_DT_S = 0.1;
 
 interface ThreeDActorLayerProps {
 	resources: ThreeDSceneResources;
@@ -61,7 +70,6 @@ interface ThreeDActorLayerProps {
 	imageService?: {
 		getImage(imageId: string): Promise<Blob | null>;
 	} | null;
-	liveActorPoses?: ReadonlyMap<string, LiveActorPose>;
 	onActorClick: (actor: SelectedActor) => void;
 	onActorSelect: (actor: SelectedActor) => void;
 	/**
@@ -880,7 +888,6 @@ export function ThreeDActorLayer({
 	performanceMode,
 	xRayActors = false,
 	imageService,
-	liveActorPoses,
 	onActorClick,
 	onActorSelect,
 	canControlActor,
@@ -902,7 +909,12 @@ export function ThreeDActorLayer({
 	const xRayActorsRef = useRef(xRayActors);
 	const terrainRef = useRef(terrain);
 	const terrainIndexRef = useRef(terrainIndex);
-	const liveActorPosesRef = useRef(liveActorPoses);
+	// Live-pose follow targets, keyed by actorKey. Fed imperatively by the
+	// ActorPoseService subscription below (NOT React props/state -- a 12.5Hz
+	// pose stream per mover must not re-render the map tree) and consumed by
+	// the rAF tick, which exponentially chases each target.
+	const livePoseTargetsRef = useRef<Map<string, THREE.Vector3>>(new Map());
+	const lastFollowTickRef = useRef(0);
 	const selectionHandlesRef = useRef<Map<string, SelectionHandles>>(new Map());
 	const actorGroupsRef = useRef<Map<string, THREE.Group>>(new Map());
 	const targetPositionsRef = useRef<Map<string, THREE.Vector3>>(new Map());
@@ -919,6 +931,7 @@ export function ThreeDActorLayer({
 	const descriptorsByKeyRef = useRef<Map<string, ActorTokenDescriptor>>(
 		createDescriptorMap(characters, entities, cutoutImageIds)
 	);
+	const { actionService } = useActionService();
 
 	descriptorsByKeyRef.current = createDescriptorMap(
 		characters,
@@ -969,10 +982,6 @@ export function ThreeDActorLayer({
 		terrainIndexRef.current = terrainIndex;
 	}, [terrainIndex]);
 
-	useEffect(() => {
-		liveActorPosesRef.current = liveActorPoses;
-	}, [liveActorPoses]);
-
 	const tickMoveAnimations = (now: number) => {
 		moveAnimationRafRef.current = 0;
 		for (const [key, animation] of Array.from(moveAnimationsRef.current)) {
@@ -990,8 +999,39 @@ export function ThreeDActorLayer({
 			}
 		}
 
-		if (moveAnimationsRef.current.size > 0) {
+		// Live-pose followers: exponentially chase the latest pose target. The
+		// chase keeps running between packets, so bursty delivery degrades into a
+		// slightly longer glide instead of a stutter.
+		const followers = livePoseTargetsRef.current;
+		if (followers.size > 0) {
+			const dtSeconds =
+				lastFollowTickRef.current > 0
+					? Math.min(
+							ACTOR_LIVE_POSE_MAX_DT_S,
+							(now - lastFollowTickRef.current) / 1000
+					  )
+					: 0;
+			if (dtSeconds > 0) {
+				const alpha = 1 - Math.exp(-ACTOR_LIVE_POSE_SMOOTHING * dtSeconds);
+				for (const [key, target] of followers) {
+					const group = actorGroupsRef.current.get(key);
+					if (!group) continue;
+					group.position.lerp(target, alpha);
+					if (
+						group.position.distanceToSquared(target) <
+						ACTOR_LIVE_POSE_SNAP_DISTANCE_SQ
+					) {
+						group.position.copy(target);
+					}
+				}
+			}
+		}
+		lastFollowTickRef.current = now;
+
+		if (moveAnimationsRef.current.size > 0 || followers.size > 0) {
 			moveAnimationRafRef.current = requestAnimationFrame(tickMoveAnimations);
+		} else {
+			lastFollowTickRef.current = 0;
 		}
 	};
 
@@ -1027,19 +1067,59 @@ export function ThreeDActorLayer({
 	};
 
 	const getActorRenderTarget = (
+		actorKey: string,
 		actor: ActorTokenDescriptor,
 		currentTerrain: VoxelTerrain
 	): THREE.Vector3 => {
-		const livePose = liveActorPosesRef.current?.get(actor.id);
-		if (livePose) {
-			return new THREE.Vector3(
-				livePose.position[0],
-				livePose.position[1],
-				livePose.position[2]
-			);
-		}
+		const liveTarget = livePoseTargetsRef.current.get(actorKey);
+		if (liveTarget) return liveTarget.clone();
 		return getActorGroundPosition(actor, currentTerrain);
 	};
+
+	// Imperative live-pose subscription. Each pose packet only retargets the
+	// affected follower vector and lets the rAF chase do the motion; when a pose
+	// disappears (expiry, peer loss), the token eases back to its authoritative
+	// position. Reads descriptors/terrain through refs so the subscription never
+	// needs to be re-established per render.
+	useEffect(() => {
+		const service = actionService?.actorPoseService;
+		if (!service) return;
+
+		const syncPoseTargets = () => {
+			const currentTerrain = terrainRef.current;
+			if (!currentTerrain) return;
+			const targets = livePoseTargetsRef.current;
+			const poses = service.getLiveActorPoses(currentTerrain.Id);
+			const seen = new Set<string>();
+			for (const [actorKey, descriptor] of descriptorsByKeyRef.current) {
+				const pose = poses.get(descriptor.id);
+				if (!pose) continue;
+				seen.add(actorKey);
+				let target = targets.get(actorKey);
+				if (!target) {
+					target = new THREE.Vector3();
+					targets.set(actorKey, target);
+					// The follower takes over from any in-flight ease animation.
+					moveAnimationsRef.current.delete(actorKey);
+				}
+				target.set(pose.position[0], pose.position[1], pose.position[2]);
+			}
+			for (const actorKey of Array.from(targets.keys())) {
+				if (seen.has(actorKey)) continue;
+				targets.delete(actorKey);
+				const descriptor = descriptorsByKeyRef.current.get(actorKey);
+				if (descriptor) {
+					animateActorToPosition(actorKey, descriptor, descriptor.position);
+				}
+			}
+			if (targets.size > 0) {
+				scheduleMoveAnimationTick();
+			}
+		};
+
+		syncPoseTargets();
+		return service.subscribeLiveActorPoses(syncPoseTargets);
+	}, [actionService]);
 
 	const clearFlightGuide = () => {
 		const guide = flightGuideRef.current;
@@ -1109,6 +1189,7 @@ export function ThreeDActorLayer({
 		targetPositionsRef.current.delete(actorKey);
 		visualHandlesRef.current.delete(actorKey);
 		moveAnimationsRef.current.delete(actorKey);
+		livePoseTargetsRef.current.delete(actorKey);
 		pendingVisualBuildsRef.current.delete(actorKey);
 	};
 
@@ -1147,7 +1228,7 @@ export function ThreeDActorLayer({
 		}
 
 		const currentTerrain = terrainRef.current;
-		const targetPosition = getActorRenderTarget(latestActor, currentTerrain);
+		const targetPosition = getActorRenderTarget(actorKey, latestActor, currentTerrain);
 		const previousVisualPosition = previousVisualPositionsRef.current.get(actorKey);
 		previousVisualPositionsRef.current.delete(actorKey);
 		const actorGroup = new THREE.Group();
@@ -1685,7 +1766,13 @@ export function ThreeDActorLayer({
 				applyActorXRay(visual, xRayActorsRef.current);
 			}
 
-			const nextTarget = getActorRenderTarget(actor, terrain);
+			// Live-pose followers are driven by the rAF chase; an authoritative
+			// position change must not start a competing ease animation. When the
+			// pose disappears, the subscription eases the token to its (then
+			// current) authoritative position.
+			if (livePoseTargetsRef.current.has(key)) continue;
+
+			const nextTarget = getActorGroundPosition(actor, terrain);
 			const currentTarget = targetPositionsRef.current.get(key);
 			if (
 				currentTarget &&
@@ -1696,19 +1783,16 @@ export function ThreeDActorLayer({
 			}
 
 			targetPositionsRef.current.set(key, nextTarget.clone());
-			const hasLivePose = liveActorPoses?.has(actor.id) ?? false;
 			moveAnimationsRef.current.set(key, {
 				group: actorGroup,
 				from: actorGroup.position.clone(),
 				to: nextTarget,
 				startedAt: now,
-				durationMs: hasLivePose
-					? ACTOR_LIVE_POSE_FOLLOW_MS
-					: getMovementAnimationDuration(actorGroup.position, nextTarget),
+				durationMs: getMovementAnimationDuration(actorGroup.position, nextTarget),
 			});
 			scheduleMoveAnimationTick();
 		}
-	}, [characters, entities, cutoutImageIds, terrain, isDM, performanceMode, liveActorPoses]);
+	}, [characters, entities, cutoutImageIds, terrain, isDM, performanceMode]);
 
 	useEffect(() => {
 		return () => {

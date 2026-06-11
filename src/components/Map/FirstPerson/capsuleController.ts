@@ -831,33 +831,6 @@ export function stepFirstPersonCapsuleController(
 	clampPositionToBounds(terrain, dimensions, state.position);
 }
 
-export function worldPositionToRulesPosition(
-	terrain: VoxelTerrain,
-	worldX: number,
-	worldY: number,
-	worldZ: number
-): Position {
-	const offsetX = (terrain.Width - 1) / 2;
-	const offsetZ = (terrain.Length - 1) / 2;
-	const h =
-		worldY -
-		ACTOR_TOKEN_PLACEMENT.TERRAIN_WORLD_Y_OFFSET -
-		ACTOR_TOKEN_PLACEMENT.BASE_Y_OFFSET;
-
-	// Use a small epsilon before flooring to absorb the ~0.01 undershoot that
-	// the capsule binary search introduces (the capsule rests just clear of the
-	// voxel surface, so world-Y converts to h_raw slightly below the exact
-	// rules-space surface height). 0.1 is safely above the observed undershoot
-	// and well below the tightest safe ceiling of 1/R = 0.25 at resolution 4.
-	const H_FLOOR_EPSILON = 0.1;
-	return {
-		terrainId: terrain.Id,
-		x: Math.round(clamp(worldX + offsetX, 0, terrain.Width - 1)),
-		y: Math.round(clamp(worldZ + offsetZ, 0, terrain.Length - 1)),
-		h: Math.floor(h + H_FLOOR_EPSILON),
-	};
-}
-
 export function firstPersonCapsuleToRulesPosition(
 	terrain: VoxelTerrain,
 	state: FirstPersonCapsuleState,

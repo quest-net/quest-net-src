@@ -2,7 +2,6 @@ import type { Campaign } from "../domains/Campaign/Campaign";
 import { CampaignActions } from "../domains/Campaign/CampaignActions";
 import type { Context } from "../domains/Context/Context";
 import type { Room, ActionSend } from "../domains/Room/Room";
-import type { User } from "../domains/User/User";
 
 const ACTOR_POSE_TIMEOUT_MS = 800;
 const ACTOR_POSE_PRUNE_INTERVAL_MS = 250;
@@ -20,10 +19,6 @@ export type LiveActorPose = ActorPosePacket & {
 
 type LiveActorPoseListener = () => void;
 
-interface ActorPoseServiceOptions {
-	getPeerUser: (peerId: string) => User | undefined;
-}
-
 export class ActorPoseService {
 	private context: Context;
 	private sendActorPosePacket?: ActionSend;
@@ -31,11 +26,7 @@ export class ActorPoseService {
 	private liveActorPoseListeners: Set<LiveActorPoseListener> = new Set();
 	private pruneInterval?: ReturnType<typeof setInterval>;
 
-	constructor(
-		context: Context,
-		room: Room,
-		private options: ActorPoseServiceOptions
-	) {
+	constructor(context: Context, room: Room) {
 		this.context = context;
 		const actorPose = room.makeAction<any>("actorPose");
 		this.sendActorPosePacket = actorPose.send;
@@ -172,8 +163,12 @@ export class ActorPoseService {
 		// Store poses for any terrain; consumers filter by the terrain they are
 		// rendering via getLiveActorPoses(terrainId, ...). With per-actor terrain
 		// there is no single global terrain to reject against.
+		//
+		// No per-peer control check: a peer can only be in first person with an
+		// actor it has selected/impersonated, so the sender is trusted. A control
+		// gate here also depended on peer User metadata having arrived, which made
+		// observers drop early-session poses.
 		if (!this.actorExistsInGameState(campaign, data.actorId)) return;
-		if (!this.canPeerControlActor(peerId, data.actorId, campaign)) return;
 
 		this.liveActorPoses.set(data.actorId, {
 			actorId: data.actorId,
@@ -204,18 +199,6 @@ export class ActorPoseService {
 			campaign.GameState.Characters.some((actor) => actor.Id === actorId) ||
 			campaign.GameState.Entities.some((actor) => actor.Id === actorId)
 		);
-	}
-
-	private canPeerControlActor(
-		peerId: string,
-		actorId: string,
-		campaign: Campaign
-	): boolean {
-		const user = this.options.getPeerUser(peerId);
-		if (!user) return false;
-		if (user.Role === "dm") return true;
-		if (user.Role !== "player") return false;
-		return user.SelectedCharacters?.[campaign.RoomCode] === actorId;
 	}
 
 	private emitLiveActorPoseChange(): void {

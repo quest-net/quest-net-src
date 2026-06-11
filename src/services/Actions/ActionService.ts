@@ -69,9 +69,7 @@ export class ActionService {
 			() => this.getDmPeerId(),
 			this.execute.bind(this)
 		);
-		this.actorPoseService = new ActorPoseService(context, room, {
-			getPeerUser: (peerId) => this.peerUsers.get(peerId),
-		});
+		this.actorPoseService = new ActorPoseService(context, room);
 		this.terrainTransferService = new TerrainTransferService(
 			room,
 			context.User.Role === "dm",
@@ -246,7 +244,10 @@ export class ActionService {
 			}
 		});
 
-		this.actorPoseService.clearLiveActorPoses();
+		// Live actor poses are deliberately NOT cleared here. Poses self-expire
+		// (ACTOR_POSE_TIMEOUT_MS) and are pruned on peer loss; wiping them all on
+		// every incoming broadcast made walking tokens lurch back toward their
+		// last committed tile whenever ANY action landed.
 
 		// Resolve the first-update promise after the React update has been
 		// queued so CampaignView's setState({ status: "ready" }) batches with

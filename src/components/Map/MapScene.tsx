@@ -43,7 +43,6 @@ import { ThreeDTerrainLinkLayer, type TerrainLinkInteractionFocus } from './Terr
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from './Actors3D/actorTokenConstants';
 import { useActiveStickers } from './hooks/useActiveStickers';
 import { useActivePings } from './hooks/useActivePings';
-import { useLiveActorPoseOverrides } from './hooks/useLiveActorPoseOverrides';
 import { PING_DURATION_MS } from '../../domains/Ping/Ping';
 import { usePeerTracking } from '../../hooks/usePeerTracking';
 import { findFirstPersonActor } from './FirstPerson/actor';
@@ -187,7 +186,6 @@ export default function MapScene({
 		() => (terrain ? allActivePings.filter((p) => p.terrainId === terrain.Id) : []),
 		[allActivePings, terrain]
 	);
-	const liveActorPoses = useLiveActorPoseOverrides(terrain, characters, entities);
 	const lastPingTimeRef = useRef(0);
 	const performanceModeRef = useRef(AppSettingActions.getPerformanceMode(context));
 	const performanceMode = performanceModeRef.current;
@@ -716,7 +714,6 @@ export default function MapScene({
 						performanceMode={performanceMode}
 						xRayActors={isWorld && xRayActors}
 						imageService={imageService}
-						liveActorPoses={liveActorPoses}
 						onActorClick={handleActorClick}
 						onActorSelect={handleActorSelect}
 						canControlActor={isWorld ? canControlActor : undefined}
@@ -815,8 +812,6 @@ export default function MapScene({
 					controller={controller}
 					terrain={terrain ?? null}
 					terrainIndex={terrainIndex}
-					characters={characters}
-					entities={entities}
 					onExitFirstPerson={onExitFirstPerson}
 					onLiveRulesPositionChange={handleLiveFirstPersonRulesPositionChange}
 					linkFocus={linkFocus}

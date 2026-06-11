@@ -10,21 +10,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Position } from "../../../domains/Actor/Actor";
-import type { Character } from "../../../domains/Character/Character";
-import type { Entity } from "../../../domains/Entity/Entity";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { CampaignActions } from "../../../domains/Campaign/CampaignActions";
 import { useQuestContext } from "../../../domains/Context/ContextProvider";
 import { usePeerTracking } from "../../../hooks/usePeerTracking";
 import { useActionService } from "../../../services/Actions/ActionServiceProvider";
 import {
-	canOccupyVoxelTile,
 	getVoxelTileHeightKey,
 	normalizeVoxelPosition,
 	shouldRestrictPlayerMovementToRange,
 } from "../../../utils/terrain/movement/VoxelMovementUtilities";
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants";
-import { useLiveActorPoseOverrides } from "../hooks/useLiveActorPoseOverrides";
 import { useMapState } from "../MapStateProvider";
 import {
 	actorPositionToGroundWorld,
@@ -37,10 +33,8 @@ import {
 	firstPersonCapsuleToRulesPosition,
 	isFirstPersonCapsuleSettled,
 	stepFirstPersonCapsuleController,
-	worldPositionToRulesPosition,
 	type FirstPersonCapsuleState,
 } from "./capsuleController";
-import type { LiveActorPose } from "../../../services/ActorPoseService";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	FIRST_PERSON_CAMERA,
@@ -60,6 +54,12 @@ import type { MapModeController } from "../MapModeController";
 const PENDING_MOVE_TIMEOUT_MS = 2000;
 const ACTOR_POSE_SEND_INTERVAL_MS = 80;
 const ACTOR_POSE_MIN_DISTANCE_SQ = 0.0004;
+// While a settled-but-uncommitted position exists (commit in flight, or the
+// capsule can't settle, e.g. holding a key against a wall), resend the last
+// pose at this interval so observers' ACTOR_POSE_TIMEOUT_MS never reverts the
+// token to a stale authoritative tile. The gate closes as soon as the DM
+// confirms the move, so steady-state traffic cost is zero.
+const ACTOR_POSE_HEARTBEAT_MS = 300;
 const EMPTY_FIRST_PERSON_KEYS: ReadonlySet<string> = new Set();
 const MOVEMENT_OVERAGE_EPSILON = 0.0001;
 
@@ -67,8 +67,6 @@ interface FirstPersonViewProps {
 	controller: MapModeController;
 	terrain: VoxelTerrain | null;
 	terrainIndex: VoxelTerrainIndex | null;
-	characters?: Character[];
-	entities?: Entity[];
 	onExitFirstPerson?: () => void;
 	onLiveRulesPositionChange?: (position: Position | null) => void;
 	linkFocus?: TerrainLinkInteractionFocus | null;
@@ -113,8 +111,6 @@ export default function FirstPersonView({
 	controller,
 	terrain,
 	terrainIndex,
-	characters = [],
-	entities = [],
 	onExitFirstPerson,
 	onLiveRulesPositionChange,
 	linkFocus,
@@ -165,11 +161,6 @@ export default function FirstPersonView({
 	const isCombatActiveRef = useRef(false);
 	const restrictMovementToRangeRef = useRef(false);
 	const turnStartWorldRef = useRef<THREE.Vector3 | null>(null);
-	const charactersRef = useRef(characters);
-	const entitiesRef = useRef(entities);
-	const liveActorPosesRef = useRef<ReadonlyMap<string, LiveActorPose> | null>(
-		null
-	);
 
 	// Identity that determines when the first-person sim must reset: which terrain
 	// and its extents, deliberately excluding voxel content. A content edit (e.g.
@@ -195,7 +186,6 @@ export default function FirstPersonView({
 	const [isPointerLocked, setIsPointerLocked] = useState(
 		controller.isPointerLocked
 	);
-	const liveActorPoses = useLiveActorPoseOverrides(terrain, characters, entities);
 	const campaign = CampaignActions.getActiveCampaign(context);
 	const userRole = context.User.Role === "dm" ? "dm" : "player";
 	const actor = useMemo(
@@ -273,18 +263,6 @@ export default function FirstPersonView({
 	}, [terrain]);
 
 	useEffect(() => {
-		charactersRef.current = characters;
-	}, [characters]);
-
-	useEffect(() => {
-		entitiesRef.current = entities;
-	}, [entities]);
-
-	useEffect(() => {
-		liveActorPosesRef.current = liveActorPoses ?? null;
-	}, [liveActorPoses]);
-
-	useEffect(() => {
 		voxelTerrainIndexRef.current = voxelTerrainIndex;
 	}, [voxelTerrainIndex]);
 
@@ -336,55 +314,24 @@ export default function FirstPersonView({
 		});
 	}, [actor?.id, actor?.kind, actor?.actor.MoveSpeed, selectActor]);
 
-	const commitActorPosition = useCallback((position: Position) => {
+	// Commits the settled rules position to the DM. Occupancy is deliberately
+	// NOT validated here (nor on the DM): the capsule already physically stands
+	// on the tile, so rejecting the commit only splits the visual position from
+	// the rules position. Two actors settling on one tile is tolerated -- they
+	// resolve it by walking apart. Returns true when the move was sent (or is a
+	// duplicate of the last sent move); false means "couldn't send, keep the
+	// pending position so the flush retries".
+	const commitActorPosition = useCallback((position: Position): boolean => {
 		const currentActor = activeActorRef.current;
 		const service = actionServiceRef.current;
 		if (!currentActor || !service || !canControlFirstPersonActorRef.current) {
-			return;
+			return false;
 		}
 
 		const normalized = normalizeVoxelPosition(position);
-		const currentTerrain = terrainRef.current;
-		if (
-			currentTerrain &&
-			!canOccupyVoxelTile(
-				currentTerrain,
-				normalized,
-				charactersRef.current,
-				entitiesRef.current,
-				currentActor.id
-			)
-		) {
-			return;
-		}
-
-		// Reject the move if any other actor's live peer pose discretizes to the
-		// same tile (see the original FirstPersonMap notes on collision lag).
-		if (currentTerrain) {
-			const livePoses = liveActorPosesRef.current;
-			if (livePoses) {
-				for (const [poseActorId, pose] of livePoses) {
-					if (poseActorId === currentActor.id) continue;
-					const peerRules = worldPositionToRulesPosition(
-						currentTerrain,
-						pose.position[0],
-						pose.position[1],
-						pose.position[2]
-					);
-					if (
-						peerRules.x === normalized.x &&
-						peerRules.y === normalized.y &&
-						peerRules.h === normalized.h
-					) {
-						return;
-					}
-				}
-			}
-		}
-
 		const key = `${currentActor.kind}:${currentActor.id}:${normalized.x},${normalized.y},${normalized.h}`;
 		if (lastSentKeyRef.current === key) {
-			return;
+			return true;
 		}
 
 		if (currentActor.kind === "character") {
@@ -401,9 +348,16 @@ export default function FirstPersonView({
 		lastSentKeyRef.current = key;
 		lastSentPositionRef.current = normalized;
 		lastSentAtRef.current = Date.now();
+		return true;
 	}, []);
 
-	const sendCurrentActorPose = useCallback((now: number, position: THREE.Vector3) => {
+	// force=true bypasses the min-distance gate (heartbeat resends of a
+	// stationary pose); the rate gate still applies.
+	const sendCurrentActorPose = useCallback((
+		now: number,
+		position: THREE.Vector3,
+		force = false
+	) => {
 		const currentActor = activeActorRef.current;
 		const currentTerrain = terrainRef.current;
 		const service = actionServiceRef.current;
@@ -422,6 +376,7 @@ export default function FirstPersonView({
 
 		const lastPosition = lastPoseSentPositionRef.current;
 		if (
+			!force &&
 			lastPosition &&
 			lastPosition.distanceToSquared(position) < ACTOR_POSE_MIN_DISTANCE_SQ
 		) {
@@ -444,8 +399,9 @@ export default function FirstPersonView({
 	const flushPendingPosition = useCallback(() => {
 		const pending = pendingSyncPositionRef.current;
 		if (!pending) return;
-		commitActorPosition(pending);
-		pendingSyncPositionRef.current = null;
+		if (commitActorPosition(pending)) {
+			pendingSyncPositionRef.current = null;
+		}
 	}, [commitActorPosition]);
 
 	const commitCurrentPosition = useCallback(() => {
@@ -583,6 +539,9 @@ export default function FirstPersonView({
 					if (confirmed || timedOut) {
 						lastSentPositionRef.current = null;
 						if (timedOut && !confirmed && !pendingSyncPositionRef.current) {
+							// The commit never landed; clear the dedup key so re-walking
+							// to the same tile can commit again.
+							lastSentKeyRef.current = "";
 							capsuleStateRef.current = createFirstPersonCapsuleState(
 								currentActor,
 								currentTerrain
@@ -732,6 +691,25 @@ export default function FirstPersonView({
 				}
 			}
 
+			// Heartbeat: while a position is uncommitted (pending settle-debounce,
+			// commit in flight, or a capsule that can't settle, e.g. pushing against
+			// a wall), keep the pose alive on observers so their pose timeout never
+			// reverts the token to the stale authoritative tile. Stops as soon as
+			// the commit is confirmed, so it adds no steady-state traffic.
+			{
+				const state = capsuleStateRef.current;
+				if (
+					state &&
+					actorOnCurrentTerrain &&
+					canControlFirstPersonActorRef.current &&
+					(pendingSyncPositionRef.current !== null ||
+						lastSentPositionRef.current !== null) &&
+					now - lastPoseSentAtRef.current >= ACTOR_POSE_HEARTBEAT_MS
+				) {
+					sendCurrentActorPose(now, state.position, true);
+				}
+			}
+
 			updateCameraFromBody(dt, cameraSmoothing);
 		},
 		[
@@ -759,16 +737,19 @@ export default function FirstPersonView({
 		return () => controller.setPointerLockListener(null);
 	}, [controller]);
 
-	// Commit any settled pending position when leaving first-person (unmount). The
+	// Commit any pending position when leaving first-person (unmount). The
 	// controller exits pointer lock itself, but our handlers are unregistered
-	// before its setViewMode('world') runs, so flush here directly.
-	const commitCurrentPositionRef = useRef(commitCurrentPosition);
+	// before its setViewMode('world') runs, so flush here directly. Unlike the
+	// settled-gated control-release path, this flush is unconditional: exiting
+	// mid-air/mid-slide should commit the last rules position (already
+	// surface-clamped for walkers) rather than silently roll the token back.
+	const flushPendingPositionRef = useRef(flushPendingPosition);
 	useEffect(() => {
-		commitCurrentPositionRef.current = commitCurrentPosition;
-	}, [commitCurrentPosition]);
+		flushPendingPositionRef.current = flushPendingPosition;
+	}, [flushPendingPosition]);
 	useEffect(
 		() => () => {
-			commitCurrentPositionRef.current();
+			flushPendingPositionRef.current();
 		},
 		[]
 	);
@@ -847,6 +828,10 @@ export default function FirstPersonView({
 				capsuleStateRef.current = authoritativeState;
 				capsuleInitializedRef.current = true;
 				pendingSyncPositionRef.current = null;
+				// The actor was moved authoritatively from elsewhere (DM drag,
+				// terrain:moveActors, repairActors). Clear the dedup key so walking
+				// back to the previously committed tile isn't silently suppressed.
+				lastSentKeyRef.current = "";
 			}
 		}
 
