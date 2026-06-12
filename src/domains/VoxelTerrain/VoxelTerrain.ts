@@ -33,7 +33,15 @@ export interface VoxelTerrainBackground {
  * terrain means disabled (same convention as Background.Color).
  */
 export interface VoxelTerrainSurroundings {
-	Height: number;     // tactical units above the terrain base (0..Height)
+	/**
+	 * Tactical units above the terrain base (0..Height). May be fractional in
+	 * voxel steps (multiples of 1/Resolution) so the plane can sit partway up a
+	 * tactical cell -- e.g. a waterline lapping a hull. Stored in tactical
+	 * units so the value is resolution-independent; the editor displays and
+	 * edits it as whole voxel layers (Height * Resolution), matching the
+	 * app-wide height convention.
+	 */
+	Height: number;
 	ColorIndex: number; // terrain palette index (0-255); 240+ picks a special material
 }
 

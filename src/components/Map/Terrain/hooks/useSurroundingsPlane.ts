@@ -8,23 +8,26 @@ import type { VoxelTerrainOccupancy } from "../geometry/VoxelTerrainGeometryUtil
 import {
 	createPlaceholderVoxelAoTexture,
 	getMaterialBucket,
+	getMaterialDeformsSurface,
 	isVolumetricMaterial,
 	TERRAIN_MATERIAL_REGISTRY,
 	type VoxelAoTexture,
 } from "../materials";
+import { createSurroundingsCloudsMaterial } from "../materials/surroundingsCloudsMaterial";
 
 // ---------------------------------------------------------------------------
 // Decorative "surroundings" plane for the map scene.
 //
 // Renders a flat surface at a DM-configured height, using a DM-configured
-// palette color or special material (water, grass, lava, ...). Purely visual:
+// palette color or special material (water, grass, lava, clouds...). Purely
+// visual:
 //   - never added to occlusionTargets (invisible to the occlusion fade),
 //   - never casts shadows (it would swamp the terrain-fitted shadow frustum),
 //   - inert to interaction for free, since world-view picking raycasts voxel
 //     DATA (DDA), not scene meshes.
 //
 // Geometry has three parts:
-//   1. Ring: four top-facing mega-quads extending outward from the terrain's
+//   1. Ring: top-facing quads extending outward from the terrain's
 //      bounding-box footprint.
 //   2. Interior fill: the plane also extends INWARD over voxel columns that
 //      are open at the plane height, so a non-rectangular terrain (a boat in
@@ -44,16 +47,27 @@ import {
 //      dark seam through translucent materials). Offset outward by a small
 //      epsilon so it never z-fights terrain side faces.
 //
+// Vertex displacement (water ripples, cloud puffs): when the chosen material
+// deforms its surface, the interior fill and a "detail band" of the ring
+// around the footprint are tessellated into DETAIL_CELL_SIZE quads and given
+// a per-vertex surfaceDeformStrength of 1 -- except vertices that touch a
+// closed column (a hull wall), the band's outer seam, or the skirt, which get
+// 0 so the sheet stays pinned where displacement could open cracks. Beyond
+// the band the ring remains mega-quads with strength 0 (distant surface stays
+// flat; no vertex budget wasted off-screen). Tessellation cuts are anchored
+// to the footprint origin so vertices on shared rectangle borders coincide;
+// borders at off-grid voxel positions can produce T-junctions, but the
+// displacement field is a smooth world-position noise, so the mismatch is
+// bounded by its curvature over one cell -- far below visibility.
+//
 // Without an occupancy snapshot (terrain still meshing, or empty terrain) the
-// geometry falls back to ring + full skirt -- the pre-interior-fill shape.
+// geometry falls back to ring + full skirt with zero deform strength.
 //
 // Materials reuse the real terrain material factories (AO-only variant, same
 // as the first-person view) so an endless water/grass/lava field looks like
 // the in-map material. The AO sampler gets the placeholder "fully empty"
 // texture: the plane lies outside the terrain's AO volume and must not pick
-// up clamped edge darkening. surfaceDeformStrength is 0 on every vertex --
-// the merged quads have too few vertices to ripple, so vertex displacement
-// is disabled while per-fragment animation still plays.
+// up clamped edge darkening.
 // ---------------------------------------------------------------------------
 
 interface SurroundingsResources {
@@ -184,12 +198,49 @@ function forEachUncoveredRun(
 	}
 }
 
+type QuadStrengths = readonly [number, number, number, number];
+const ZERO_STRENGTHS: QuadStrengths = [0, 0, 0, 0];
+
+/**
+ * Per-vertex deform strength for displaced materials: 1 in the open field,
+ * 0 where displacement must not move the sheet -- vertices that touch a
+ * closed (wall) column, and vertices on the detail band's outer seam where
+ * tessellated geometry meets the flat far-field mega-quads.
+ */
+function makeStrengthAt(
+	coverage: InteriorCoverage,
+	bandX: number,
+	bandZ: number
+): (x: number, z: number) => number {
+	const { covered, voxelWidth, voxelLength, voxelSize, originX, originZ } =
+		coverage;
+	const eps = 1e-4;
+	const columnOpen = (wx: number, wz: number): boolean => {
+		const vx = Math.floor((wx - originX) / voxelSize);
+		const vz = Math.floor((wz - originZ) / voxelSize);
+		// Outside the footprint is open field (the ring).
+		if (vx < 0 || vx >= voxelWidth || vz < 0 || vz >= voxelLength) return true;
+		return covered[vz * voxelWidth + vx] === 1;
+	};
+	return (x: number, z: number): number => {
+		if (x <= -bandX + eps || x >= bandX - eps) return 0;
+		if (z <= -bandZ + eps || z >= bandZ - eps) return 0;
+		return columnOpen(x - eps, z - eps) &&
+			columnOpen(x + eps, z - eps) &&
+			columnOpen(x - eps, z + eps) &&
+			columnOpen(x + eps, z + eps)
+			? 1
+			: 0;
+	};
+}
+
 function buildSurroundingsGeometry(
 	width: number,
 	length: number,
 	planeHeight: number,
 	color: THREE.Color,
-	coverage: InteriorCoverage | null
+	coverage: InteriorCoverage | null,
+	tessellate: boolean
 ): THREE.BufferGeometry {
 	const halfWidth = width / 2;
 	const halfLength = length / 2;
@@ -207,24 +258,34 @@ function buildSurroundingsGeometry(
 	const positions: number[] = [];
 	const normals: number[] = [];
 	const colors: number[] = [];
+	const deformStrengths: number[] = [];
 	const indices: number[] = [];
 
 	const addQuad = (
 		corners: ReadonlyArray<readonly [number, number, number]>,
-		normal: readonly [number, number, number]
+		normal: readonly [number, number, number],
+		strengths: QuadStrengths = ZERO_STRENGTHS
 	) => {
 		const base = positions.length / 3;
-		for (const [x, y, z] of corners) {
+		for (let i = 0; i < corners.length; i++) {
+			const [x, y, z] = corners[i];
 			positions.push(x, y, z);
 			normals.push(normal[0], normal[1], normal[2]);
 			colors.push(color.r, color.g, color.b);
+			deformStrengths.push(strengths[i]);
 		}
 		indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
 	};
 
-	// Ring: four top-facing strips around the footprint. Corner order matches
-	// the voxel mesher's +Y face winding (CCW viewed from above).
-	const addTopQuad = (minX: number, maxX: number, minZ: number, maxZ: number) =>
+	// Top-facing quad; corner order matches the voxel mesher's +Y face winding
+	// (CCW viewed from above). Strengths follow the same corner order.
+	const addTopQuad = (
+		minX: number,
+		maxX: number,
+		minZ: number,
+		maxZ: number,
+		strengths: QuadStrengths = ZERO_STRENGTHS
+	) =>
 		addQuad(
 			[
 				[minX, planeY, maxZ],
@@ -232,12 +293,76 @@ function buildSurroundingsGeometry(
 				[maxX, planeY, minZ],
 				[minX, planeY, minZ],
 			],
-			[0, 1, 0]
+			[0, 1, 0],
+			strengths
 		);
-	addTopQuad(-extent, extent, -extent, -halfLength); // -Z strip
-	addTopQuad(-extent, extent, halfLength, extent);   // +Z strip
-	addTopQuad(-extent, -halfWidth, -halfLength, halfLength); // -X strip
-	addTopQuad(halfWidth, extent, -halfLength, halfLength);   // +X strip
+
+	// Tessellated top quad: cut at DETAIL_CELL_SIZE multiples anchored to the
+	// footprint corner, so cut lines coincide across separately-emitted quads.
+	const detailCell = THREE_D_SURROUNDINGS.DETAIL_CELL_SIZE;
+	const cutsBetween = (min: number, max: number, anchor: number): number[] => {
+		const cuts: number[] = [min];
+		const firstStep = Math.ceil((min - anchor) / detailCell + 1e-6);
+		for (let k = firstStep; ; k++) {
+			const c = anchor + k * detailCell;
+			if (c >= max - 1e-6) break;
+			if (c > min + 1e-6) cuts.push(c);
+		}
+		cuts.push(max);
+		return cuts;
+	};
+	const addDetailTopQuad = (
+		minX: number,
+		maxX: number,
+		minZ: number,
+		maxZ: number,
+		strengthAt: (x: number, z: number) => number
+	) => {
+		const xs = cutsBetween(minX, maxX, -halfWidth);
+		const zs = cutsBetween(minZ, maxZ, -halfLength);
+		for (let zi = 0; zi < zs.length - 1; zi++) {
+			for (let xi = 0; xi < xs.length - 1; xi++) {
+				const x0 = xs[xi];
+				const x1 = xs[xi + 1];
+				const z0 = zs[zi];
+				const z1 = zs[zi + 1];
+				addTopQuad(x0, x1, z0, z1, [
+					strengthAt(x0, z1),
+					strengthAt(x1, z1),
+					strengthAt(x1, z0),
+					strengthAt(x0, z0),
+				]);
+			}
+		}
+	};
+
+	const detailed = coverage !== null && tessellate;
+	const bandX = Math.min(halfWidth + THREE_D_SURROUNDINGS.DETAIL_MARGIN, extent);
+	const bandZ = Math.min(halfLength + THREE_D_SURROUNDINGS.DETAIL_MARGIN, extent);
+	const strengthAt = detailed ? makeStrengthAt(coverage, bandX, bandZ) : null;
+
+	// Ring around the footprint.
+	if (strengthAt) {
+		// Detail band: tessellated strips between the footprint and the band
+		// rectangle, then flat far-field mega-quads out to the extent.
+		addDetailTopQuad(-bandX, bandX, -bandZ, -halfLength, strengthAt); // -Z
+		addDetailTopQuad(-bandX, bandX, halfLength, bandZ, strengthAt);   // +Z
+		addDetailTopQuad(-bandX, -halfWidth, -halfLength, halfLength, strengthAt); // -X
+		addDetailTopQuad(halfWidth, bandX, -halfLength, halfLength, strengthAt);   // +X
+		if (bandZ < extent) {
+			addTopQuad(-extent, extent, -extent, -bandZ);
+			addTopQuad(-extent, extent, bandZ, extent);
+		}
+		if (bandX < extent) {
+			addTopQuad(-extent, -bandX, -bandZ, bandZ);
+			addTopQuad(bandX, extent, -bandZ, bandZ);
+		}
+	} else {
+		addTopQuad(-extent, extent, -extent, -halfLength); // -Z strip
+		addTopQuad(-extent, extent, halfLength, extent);   // +Z strip
+		addTopQuad(-extent, -halfWidth, -halfLength, halfLength); // -X strip
+		addTopQuad(halfWidth, extent, -halfLength, halfLength);   // +X strip
+	}
 
 	// Interior fill: greedy-merge the covered mask into rectangles and emit a
 	// top quad per rectangle, in world units via the occupancy grid mapping.
@@ -269,12 +394,15 @@ function buildSurroundingsGeometry(
 					const rowBase = (z + dz) * voxelWidth + x;
 					consumed.fill(1, rowBase, rowBase + w);
 				}
-				addTopQuad(
-					originX + x * voxelSize,
-					originX + (x + w) * voxelSize,
-					originZ + z * voxelSize,
-					originZ + (z + d) * voxelSize
-				);
+				const rectMinX = originX + x * voxelSize;
+				const rectMaxX = originX + (x + w) * voxelSize;
+				const rectMinZ = originZ + z * voxelSize;
+				const rectMaxZ = originZ + (z + d) * voxelSize;
+				if (strengthAt) {
+					addDetailTopQuad(rectMinX, rectMaxX, rectMinZ, rectMaxZ, strengthAt);
+				} else {
+					addTopQuad(rectMinX, rectMaxX, rectMinZ, rectMaxZ);
+				}
 			}
 		}
 	}
@@ -285,6 +413,7 @@ function buildSurroundingsGeometry(
 	// cover -- a covered run's surface is continuous across the boundary.
 	// Windings match the voxel mesher's side faces. Skipped at height 0
 	// (degenerate). Without coverage info every edge is one full run.
+	// Always zero deform strength: the skirt must stay pinned.
 	if (planeY > baseY) {
 		const zNeg = -halfLength - eps;
 		const zPos = halfLength + eps;
@@ -374,10 +503,12 @@ function buildSurroundingsGeometry(
 	geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
 	geometry.setAttribute("normal", new THREE.BufferAttribute(new Float32Array(normals), 3));
 	geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(colors), 3));
-	// Custom terrain-shader attributes. Some material variants declare these
-	// (e.g. water's surfaceDeformStrength), so every vertex carries them;
-	// all-zero values mean "static surface, no highlight".
-	geometry.setAttribute("surfaceDeformStrength", new THREE.BufferAttribute(new Float32Array(vertexCount), 1));
+	// Custom terrain-shader attributes. surfaceDeformStrength gates vertex
+	// displacement (water ripples, cloud puffs) -- nonzero only on tessellated
+	// detail-band/interior vertices clear of walls and seams. tileHeight and
+	// highlightStrength stay zero: the surroundings never shows the movement
+	// highlight.
+	geometry.setAttribute("surfaceDeformStrength", new THREE.BufferAttribute(new Float32Array(deformStrengths), 1));
 	geometry.setAttribute("tileHeight", new THREE.BufferAttribute(new Float32Array(vertexCount), 1));
 	geometry.setAttribute("highlightStrength", new THREE.BufferAttribute(new Float32Array(vertexCount), 1));
 	geometry.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
@@ -444,22 +575,28 @@ export function useSurroundingsPlane(
 		const coverage = matchingOccupancy
 			? computeInteriorCoverage(matchingOccupancy, planeHeight)
 			: null;
+		// Tessellate only for materials that displace vertices (clouds, and any
+		// terrain material flagged deformSurface, e.g. water); static materials
+		// keep the cheap mega-quad geometry.
+		const deformingMaterial =
+			isVolumetricMaterial(surroundingsColorIndex) ||
+			getMaterialDeformsSurface(surroundingsColorIndex);
 		const geometry = buildSurroundingsGeometry(
 			terrainWidth,
 			terrainLength,
 			planeHeight,
 			color,
-			coverage
+			coverage,
+			deformingMaterial
 		);
 
-		// Volumetric materials (fog) have no surface shader; fall back to the
-		// plain vertex-colored default, tinted with the swatch color.
-		const bucketKey = isVolumetricMaterial(surroundingsColorIndex)
-			? "default"
-			: getMaterialBucket(surroundingsColorIndex);
-		const factory =
-			TERRAIN_MATERIAL_REGISTRY.get(bucketKey) ??
-			TERRAIN_MATERIAL_REGISTRY.get("default")!;
+		// Volumetric materials (fog) have no surface shader -- the raymarched fog
+		// pass cannot draw a sheet outside the terrain volume -- so they get the
+		// dedicated "sea of clouds" surroundings material instead.
+		const factory = isVolumetricMaterial(surroundingsColorIndex)
+			? createSurroundingsCloudsMaterial
+			: TERRAIN_MATERIAL_REGISTRY.get(getMaterialBucket(surroundingsColorIndex)) ??
+				TERRAIN_MATERIAL_REGISTRY.get("default")!;
 		const voxelAo = createPlaceholderVoxelAoTexture();
 		const result = factory({
 			acceptsMovementHighlight: false,

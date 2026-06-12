@@ -10,18 +10,7 @@ import {
 	type VoxelTerrainLighting,
 	type VoxelTerrainSurroundings,
 } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import {
-	isVolumetricMaterial,
-	SPECIAL_MATERIAL_SWATCHES,
-} from "../../Map/Terrain/materials";
 import { TerrainColorPicker } from "./TerrainColorPicker";
-
-// Volumetric materials (fog) have no surface shader, so they cannot render as
-// a surroundings plane; hide them from the picker here.
-const SURROUNDINGS_EXCLUDED_INDICES: readonly number[] =
-	SPECIAL_MATERIAL_SWATCHES
-		.filter((swatch) => isVolumetricMaterial(swatch.index))
-		.map((swatch) => swatch.index);
 
 const LIGHTING_INTENSITY_MIN = 0;
 const LIGHTING_INTENSITY_MAX = 3;
@@ -114,6 +103,13 @@ interface PreviewSettingsPanelProps {
 	surroundings: VoxelTerrainSurroundings | undefined;
 	/** Terrain Height in tactical units -- the surroundings height slider's max. */
 	maxSurroundingsHeight: number;
+	/**
+	 * Terrain Resolution (voxels per tactical unit). The height slider works
+	 * in whole VOXEL layers -- the app-wide height convention -- so tactical
+	 * height 2 shows as 2/4/6/8 at resolution 1/2/3/4. Storage stays in
+	 * tactical units (resolution-independent).
+	 */
+	surroundingsResolution: number;
 	readOnly: boolean;
 	onLightingChange: (updates: Partial<VoxelTerrainLighting>) => void;
 	onBackgroundChange: (updates: VoxelTerrainBackground) => void;
@@ -125,6 +121,7 @@ export function PreviewSettingsPanel({
 	background,
 	surroundings,
 	maxSurroundingsHeight,
+	surroundingsResolution,
 	readOnly,
 	onLightingChange,
 	onBackgroundChange,
@@ -202,14 +199,17 @@ export function PreviewSettingsPanel({
 					<>
 						<SliderRow
 							label="Height"
-							valueText={`${Math.round(surroundings.Height)}`}
+							valueText={`${Math.round(surroundings.Height * surroundingsResolution)}`}
 							min={0}
-							max={maxSurroundingsHeight}
+							max={Math.round(maxSurroundingsHeight * surroundingsResolution)}
 							step={1}
-							value={surroundings.Height}
+							value={Math.round(surroundings.Height * surroundingsResolution)}
 							disabled={readOnly}
 							onChange={(value) =>
-								onSurroundingsChange({ ...surroundings, Height: value })
+								onSurroundingsChange({
+									...surroundings,
+									Height: value / surroundingsResolution,
+								})
 							}
 						/>
 						<TerrainColorPicker
@@ -219,7 +219,6 @@ export function PreviewSettingsPanel({
 								onSurroundingsChange({ ...surroundings, ColorIndex: index })
 							}
 							disabled={readOnly}
-							excludeIndices={SURROUNDINGS_EXCLUDED_INDICES}
 						/>
 					</>
 				)}

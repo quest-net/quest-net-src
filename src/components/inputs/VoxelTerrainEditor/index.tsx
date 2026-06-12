@@ -2051,6 +2051,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 									background={background}
 									surroundings={terrain.Surroundings}
 									maxSurroundingsHeight={terrain.Height}
+									surroundingsResolution={getVoxelTerrainResolution(terrain)}
 									readOnly={readOnly}
 									onLightingChange={updateLighting}
 									onBackgroundChange={updateBackground}

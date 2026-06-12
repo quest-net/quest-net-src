@@ -59,6 +59,16 @@ export const THREE_D_SURROUNDINGS = {
 	// Outward offset of the skirt so it never z-fights the terrain's side faces
 	// at the footprint boundary.
 	SKIRT_EPSILON: 0.002,
+	// Width (world units) of the tessellated "detail band" around the terrain
+	// footprint when the surroundings material deforms its surface (water
+	// ripples, cloud puffs). Vertex displacement needs real vertices; beyond
+	// the band the plane stays mega-quads with zero deform strength.
+	DETAIL_MARGIN: 24,
+	// Tessellation cell size (world units) inside the detail band and the
+	// interior fill. Cuts are aligned to the global integer grid so vertices
+	// on shared rectangle borders coincide exactly (no cracks under
+	// displacement).
+	DETAIL_CELL_SIZE: 1,
 } as const;
 
 export const THREE_D_MAP_CONTROLS = {
