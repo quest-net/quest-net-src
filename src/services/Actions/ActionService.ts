@@ -15,6 +15,7 @@ import { CampaignLoadingService } from "../CampaignLoadingService";
 import { TerrainStorageService } from "../TerrainStorageService";
 import { TerrainTransferService } from "../TerrainTransferService";
 import { ActorPoseService } from "../ActorPoseService";
+import { ScriptEngine } from "../Scripting/ScriptEngine";
 
 const PING_INTERVAL_MS = 3000;
 // A ping that doesn't pong within this window counts as a failure. room.ping()
@@ -515,7 +516,12 @@ export class ActionService {
 	 */
 	private async executeDM(actionKey: string, params: any): Promise<void> {
 		const campaign = await this.mutateCampaign(async () => {
+			// Snapshot script hosts before the action (so onRemove cleanup still binds).
+			ScriptEngine.beginAction(actionKey, this.context);
 			await this.runDomainAction(actionKey, params);
+			// Authoritative reactions: run scripts triggered by this action (and the
+			// whole cascade) inside the same mutation, so it commits/broadcasts once.
+			ScriptEngine.onAction(actionKey, params, undefined, this.context);
 		});
 
 		const isSecret = this.context.SecretModes?.[campaign.Id];
@@ -588,6 +594,8 @@ export class ActionService {
 			// domain-level player validations run in the same context as
 			// optimistic local execution.
 			await this.mutateCampaign(async () => {
+				// Snapshot script hosts before the action (so onRemove cleanup still binds).
+				ScriptEngine.beginAction(data.actionKey, this.context);
 				const originalUser = this.context.User;
 				try {
 					this.context.User = requestingUser;
@@ -595,6 +603,13 @@ export class ActionService {
 				} finally {
 					this.context.User = originalUser;
 				}
+				// Reactions run as the DM (authoritative), atomic with the request.
+				ScriptEngine.onAction(
+					data.actionKey,
+					data.params,
+					undefined,
+					this.context
+				);
 			});
 		} catch (error) {
 			console.error("[ActionService] Error executing player request:", error);

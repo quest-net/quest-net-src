@@ -14,6 +14,7 @@ import {
 import { TagEditor } from "../../components/inputs/TagEditor";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { AttributeEditor } from "../../components/inputs/AttributeEditor";
+import { ScriptingFields } from "../../components/inputs/ScriptingFields";
 import { ACTOR_DEFAULT_COLORS } from "../Actor/Actor";
 import { isDmAccess } from "../../utils/UrlParser";
 import {
@@ -381,6 +382,9 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 					onChange={(tags) => handleFieldChange("Tags", tags)}
 				/>
 			</FormSection>
+
+			{/* Scripting */}
+			<ScriptingFields data={data} onChange={onChange} />
 		</>
 	);
 }

@@ -15,6 +15,7 @@ import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { RestoreRuleEditor } from "../../components/inputs/RestoreRuleEditor";
 import { StatCostEditor } from "../../components/inputs/StatCostEditor";
 import { ActionCostEditor } from "../../components/inputs/ActionCostEditor";
+import { ScriptingFields } from "../../components/inputs/ScriptingFields";
 
 interface ItemEditProps {
 	item?: Item;
@@ -225,6 +226,9 @@ function ItemForm({ data, onChange }: ItemFormProps) {
 					onChange={(tags) => handleFieldChange("Tags", tags)}
 				/>
 			</FormSection>
+
+			{/* Scripting */}
+			<ScriptingFields data={data} onChange={onChange} />
 		</>
 	);
 }

@@ -11,6 +11,7 @@ import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
 import { VoxelTerrain } from "../VoxelTerrain/VoxelTerrain";
 import { Scenario } from "../Scenario/Scenario";
 import { TerrainLink } from "../TerrainLink/TerrainLink";
+import type { Script, ScriptParam, ScriptVars } from "../Script/Script";
 
 export interface Campaign {
 	Id: string;
@@ -38,5 +39,11 @@ export interface Campaign {
 	LogHead: number;
 	//Campaign-specific settings
 	Settings: CampaignSettings;
+	// Scripting. Campaign-level hooks are world rules: `this` is the campaign and
+	// they can react to any action and reach anything. ScriptVars holds world-rule
+	// scratch read in scripts as `this.vars`.
+	Scripts?: Script[];
+	Parameters?: ScriptParam[];
+	ScriptVars?: ScriptVars;
 }
 

@@ -1,4 +1,5 @@
 import type { RestoreRule } from "../CampaignSetting/CampaignSetting";
+import type { Script, ScriptParam, ScriptVars } from "../Script/Script";
 
 export type ActorSize = "extra-small" | "small" | "medium" | "large";
 
@@ -47,6 +48,14 @@ export interface Actor {
 
 	// Optional
 	Tags?: string[];
+
+	// Scripting. Characters carry their hooks on the object itself; a spawned
+	// entity is a structuredClone of its template, so template hooks ride along on
+	// the instance. Parameters declare DM-tunable knobs; ScriptVars is actor-level
+	// scratch read in scripts as `this.vars`.
+	Scripts?: Script[];
+	Parameters?: ScriptParam[];
+	ScriptVars?: ScriptVars;
 }
 
 // ---- Stat/Action/Attribute Slots (instance data on actors) ----
@@ -101,16 +110,22 @@ export interface AttributeSlot {
 export interface InventorySlot {
 	Id: string;
 	UsesLeft?: number;
+	/** Per-instance script scratch (`this.vars` when this slot is the host). */
+	ScriptVars?: ScriptVars;
 }
 
 export interface EquipmentSlot {
 	Id: string;
 	UsesLeft?: number;
+	/** Per-instance script scratch (`this.vars` when this slot is the host). */
+	ScriptVars?: ScriptVars;
 }
 
 export interface SkillSlot {
 	Id: string;
 	UsesLeft?: number;
+	/** Per-instance script scratch (`this.vars` when this slot is the host). */
+	ScriptVars?: ScriptVars;
 }
 
 /**
@@ -131,6 +146,8 @@ export type StatusSlotExpiration =
 export interface StatusSlot {
 	Id: string;
 	expiration: StatusSlotExpiration;
+	/** Per-instance script scratch (`this.vars` when this slot is the host). */
+	ScriptVars?: ScriptVars;
 }
 
 export interface Position {

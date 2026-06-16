@@ -34,6 +34,14 @@ type ActionHandler = (params: any, context: Context) => void | Promise<void>;
 interface ActionDefinition {
 	roles: Role[];
 	handler: ActionHandler;
+	/**
+	 * Whether a script may invoke this action via the host facade
+	 * (`game.action(key, params)`). Optional override of the default policy in
+	 * {@link isScriptableAction}: leave undefined to inherit "sync handler is
+	 * script-ok"; set `false` on a sync-but-destructive action (deletes,
+	 * campaign:edit). Async handlers are auto-excluded regardless.
+	 */
+	scriptable?: boolean;
 }
 
 /**
@@ -47,6 +55,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"campaign:edit": {
 		roles: ["dm"],
 		handler: CampaignActions.edit,
+		scriptable: false, // structural whole-campaign replace; not for scripts
 	},
 	// ============================================================================
 	// CHARACTER ACTIONS
@@ -74,6 +83,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"character:delete": {
 		roles: ["dm"], // Players can delete their own, validation in action
 		handler: CharacterActions.delete,
+		scriptable: false,
 	},
 	"character:move": {
 		roles: ["dm", "player"],
@@ -126,6 +136,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"item:delete": {
 		roles: ["dm"],
 		handler: ItemActions.delete,
+		scriptable: false,
 	},
 	"item:adjustUses": {
 		roles: ["dm", "player"],
@@ -181,6 +192,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"skill:delete": {
 		roles: ["dm"],
 		handler: SkillActions.delete,
+		scriptable: false,
 	},
 	"skill:use": {
 		roles: ["dm", "player"],
@@ -217,6 +229,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"entity:delete": {
 		roles: ["dm"],
 		handler: EntityActions.delete,
+		scriptable: false,
 	},
 	"entity:spawn": {
 		roles: ["dm"],
@@ -322,6 +335,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"status:delete": {
 		roles: ["dm"],
 		handler: StatusActions.delete,
+		scriptable: false,
 	},
 	"status:adjustDuration": {
 		roles: ["dm", "player"],
@@ -368,6 +382,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"note:delete": {
 		roles: ["player"],
 		handler: NoteActions.delete,
+		scriptable: false,
 	},
 	// ============================================================================
 	// CAMPAIGN SETTING ACTIONS
@@ -417,6 +432,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"terrainLink:delete": {
 		roles: ["dm"],
 		handler: TerrainLinkActions.delete,
+		scriptable: false,
 	},
 
 	// ============================================================================
@@ -433,6 +449,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"scenario:delete": {
 		roles: ["dm"],
 		handler: ScenarioActions.delete,
+		scriptable: false,
 	},
 	"scenario:edit": {
 		roles: ["dm"],
@@ -458,6 +475,27 @@ export function canPerformAction(user: User, actionKey: string): boolean {
 
 	const action = ACTION_REGISTRY[actionKey];
 	return action ? action.roles.includes(user.Role) : false;
+}
+
+/**
+ * Whether an action may be invoked from a script (via `game.action`).
+ *
+ * Policy (default-allow with automatic exclusions — no maintained allowlist):
+ *  - An explicit `scriptable` flag on the definition wins.
+ *  - Otherwise an action is script-ok iff its handler is SYNCHRONOUS. Async
+ *    handlers (terrain edits, scenario load, image/audio IndexedDB work, network)
+ *    are auto-excluded — they cannot run safely inline inside the synchronous
+ *    cascade, and this needs no code change when a new async action is added.
+ *
+ * The few sync-but-destructive actions (deletes, campaign:edit) opt out with
+ * `scriptable: false`. This is the scripting mutation boundary: `game.action`
+ * throws for any key where this returns false.
+ */
+export function isScriptableAction(actionKey: string): boolean {
+	const action = ACTION_REGISTRY[actionKey];
+	if (!action) return false;
+	if (action.scriptable !== undefined) return action.scriptable;
+	return action.handler.constructor.name !== "AsyncFunction";
 }
 
 /**

@@ -1,3 +1,5 @@
+import type { Script, ScriptParam } from "../Script/Script";
+
 /**
  * StatusExpiration determines how/when a status effect expires.
  * - permanent: Never expires (only removed manually)
@@ -21,4 +23,8 @@ export interface Status {
 	Tags?: string[];
 
 	Expiration: StatusExpiration;
+
+	// Scripting. Behavior hooks + DM-tunable param declarations (on the template).
+	Scripts?: Script[];
+	Parameters?: ScriptParam[];
 }

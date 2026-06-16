@@ -22,6 +22,7 @@ import { SharedInventoriesEditor } from "../../components/inputs/SharedInventori
 import CalendarConfigEditor from "../../components/inputs/CalendarConfigEditor";
 import { MovementSettingsEditor } from "../../components/inputs/MovementSettingsEditor";
 import { InitiativeSettingsEditor } from "../../components/inputs/InitiativeSettingsEditor";
+import { ScriptingFields } from "../../components/inputs/ScriptingFields";
 import { Campaign } from "../Campaign/Campaign";
 import {
 	cloneVoxelTerrainEnvironmentPreset,
@@ -51,6 +52,20 @@ export function CampaignSettingEdit() {
 
 		actionService.execute("setting:edit", {
 			updates: data,
+		});
+	};
+
+	// World-rule scripts live on the campaign itself: `this` is the campaign and
+	// they can react to any action. Persisted via campaign:edit alongside metadata.
+	const handleSaveWorldRules = (data: Campaign) => {
+		if (!actionService) return;
+
+		actionService.execute("campaign:edit", {
+			campaignId: campaign.Id,
+			updates: {
+				Scripts: data.Scripts,
+				Parameters: data.Parameters,
+			},
 		});
 	};
 
@@ -125,6 +140,27 @@ export function CampaignSettingEdit() {
 					<CampaignSettingForm
 						combatActive={campaign.GameState.CombatState.isActive}
 					/>
+				</FormWrapper>
+			</div>
+
+			{/* World Rules (Scripting) Section */}
+			<div className="mt-6">
+				<FormWrapper
+					domain="campaign"
+					entityId={campaign.Id}
+					initialData={campaign}
+					onSave={handleSaveWorldRules}
+					onClose={() => { }}
+					createTitle="World Rules"
+					editTitle="World Rules"
+					viewTitle="World Rules"
+					buttonConfig={{
+						showTopCancel: false,
+						showBottomButtons: true,
+						keepButtonsVisible: true,
+					}}
+				>
+					<CampaignWorldRulesForm />
 				</FormWrapper>
 			</div>
 
@@ -212,6 +248,34 @@ function CampaignNameForm({ data, onChange }: CampaignNameFormProps) {
 		</FormSection>
 	);
 }
+// ============================================================================
+// CAMPAIGN WORLD RULES FORM (campaign-level scripting)
+// ============================================================================
+
+interface CampaignWorldRulesFormProps {
+	data?: Campaign;
+	onChange?: (data: Campaign) => void;
+}
+
+function CampaignWorldRulesForm({ data, onChange }: CampaignWorldRulesFormProps) {
+	if (!data || !onChange) return null;
+
+	return (
+		<>
+			<FormSection
+				title="World Rules"
+				description="Campaign-wide scripted behavior. A world rule reacts to any action across the whole campaign — every actor, combat, spawns — to express house rules (e.g. a toxic-fog map that drains HP each round). Usually machine-authored."
+			>
+				<div className="text-sm opacity-70">
+					World-rule scripts run with <code>this</code> bound to the campaign and
+					can reach anything via <code>game</code>.
+				</div>
+			</FormSection>
+			<ScriptingFields data={data} onChange={onChange} />
+		</>
+	);
+}
+
 // ============================================================================
 // CAMPAIGN SETTING FORM (Receives data and onChange from FormWrapper)
 // ============================================================================

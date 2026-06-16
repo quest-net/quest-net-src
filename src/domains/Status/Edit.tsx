@@ -12,6 +12,7 @@ import {
 } from "../../components/Form/Form";
 import { TagEditor } from "../../components/inputs/TagEditor";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
+import { ScriptingFields } from "../../components/inputs/ScriptingFields";
 
 interface StatusEditProps {
 	status?: Status;
@@ -244,6 +245,9 @@ function StatusForm({ data, onChange }: StatusFormProps) {
 					onChange={(tags) => handleFieldChange("Tags", tags)}
 				/>
 			</FormSection>
+
+			{/* Scripting */}
+			<ScriptingFields data={data} onChange={onChange} />
 		</>
 	);
 }
