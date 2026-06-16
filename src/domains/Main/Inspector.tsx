@@ -1,7 +1,8 @@
 // domains/Main/Inspector.tsx
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useMapState } from "../../components/Map/MapStateProvider";
+import { useDebouncedCallback } from "../../hooks/useDebounced";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
@@ -116,13 +117,6 @@ function UnifiedInspector({
 	const [showObjectPicker, setShowObjectPicker] = useState(false);
 	const [showTerrainPicker, setShowTerrainPicker] = useState(false);
 
-	// Debounce timers
-	const nameTimer = useRef<NodeJS.Timeout | null>(null);
-	const descTimer = useRef<NodeJS.Timeout | null>(null);
-	const moveSpeedTimer = useRef<NodeJS.Timeout | null>(null);
-	const colorTimer = useRef<NodeJS.Timeout | null>(null);
-	const attrTimer = useRef<NodeJS.Timeout | null>(null);
-
 	// Sync local state when actor changes
 	useEffect(() => {
 		setLocalName(actor.Name);
@@ -150,53 +144,53 @@ function UnifiedInspector({
 		});
 	};
 
+	// One debounced commit per field so distinct fields don't coalesce into a
+	// single update and clobber one another.
+	const commitName = useDebouncedCallback((v: string) =>
+		handleFieldChange("Name", v)
+	);
+	const commitDescription = useDebouncedCallback((v: string) =>
+		handleFieldChange("Description", v)
+	);
+	const commitMoveSpeed = useDebouncedCallback((v: number) =>
+		handleFieldChange("MoveSpeed", v)
+	);
+	const commitColor = useDebouncedCallback((v: string) =>
+		handleFieldChange("Color", v)
+	);
+	const commitAttributes = useDebouncedCallback(
+		(updatedAttributes: Actor["Attributes"]) =>
+			handleFieldChange("Attributes", updatedAttributes)
+	);
+
 	const handleNameChange = (value: string) => {
 		setLocalName(value);
-
-		if (nameTimer.current) clearTimeout(nameTimer.current);
-		nameTimer.current = setTimeout(() => {
-			handleFieldChange("Name", value);
-		}, 500);
+		commitName(value);
 	};
 
 	const handleDescriptionChange = (value: string) => {
 		setLocalDescription(value);
-
-		if (descTimer.current) clearTimeout(descTimer.current);
-		descTimer.current = setTimeout(() => {
-			handleFieldChange("Description", value);
-		}, 500);
+		commitDescription(value);
 	};
 
 	const handleMoveSpeedChange = (value: number) => {
 		const clamped = Math.max(0, Math.min(99, value));
 		setLocalMoveSpeed(clamped);
-
-		if (moveSpeedTimer.current) clearTimeout(moveSpeedTimer.current);
-		moveSpeedTimer.current = setTimeout(() => {
-			handleFieldChange("MoveSpeed", clamped);
-		}, 500);
+		commitMoveSpeed(clamped);
 	};
 
 	const handleColorChange = (value: string) => {
 		setLocalColor(value);
-
-		if (colorTimer.current) clearTimeout(colorTimer.current);
-		colorTimer.current = setTimeout(() => {
-			handleFieldChange("Color", value);
-		}, 500);
+		commitColor(value);
 	};
 
 	const handleAttributeChange = (id: string, value: string) => {
 		setLocalAttributes((prev) => new Map(prev).set(id, value));
 
-		if (attrTimer.current) clearTimeout(attrTimer.current);
-		attrTimer.current = setTimeout(() => {
-			const updatedAttributes = actor.Attributes.map((attr) =>
-				attr.Id === id ? { ...attr, Value: value } : attr
-			);
-			handleFieldChange("Attributes", updatedAttributes);
-		}, 500);
+		const updatedAttributes = actor.Attributes.map((attr) =>
+			attr.Id === id ? { ...attr, Value: value } : attr
+		);
+		commitAttributes(updatedAttributes);
 	};
 
 	const handleStatChange = (

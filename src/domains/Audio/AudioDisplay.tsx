@@ -10,6 +10,7 @@ import { AudioVisualizer } from "./AudioVisualizer";
 import { extractPathTags } from "../../utils/FolderUtils";
 import { useAudioState } from "./AudioContext";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { useDebouncedCallback, LIVE_DEBOUNCE_MS } from "../../hooks/useDebounced";
 
 type SearchResult =
 	| { kind: "playlist"; key: string; name: string; trackCount: number }
@@ -54,7 +55,6 @@ export function AudioDisplay() {
 	const displayVolume = isDM ? dmVolume : playerVolume;
 
 	const [localVolume, setLocalVolume] = useState(displayVolume * 100);
-	const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	// Search state
 	const [isSearching, setIsSearching] = useState(false);
@@ -121,22 +121,23 @@ export function AudioDisplay() {
 		return [...playlistResults, ...trackResults];
 	}, [allFolders, campaign.Audios, searchQuery]);
 
-	// Debounced volume change
+	// Only the DM path is debounced: audio:setVolume is an action that triggers a
+	// state sync, so a slider drag would otherwise broadcast one update per pixel.
+	// Kept snappy (LIVE_DEBOUNCE_MS) because the playing volume reads from the
+	// committed value, so a longer delay would lag the audible change.
+	const commitDmVolume = useDebouncedCallback((normalizedVolume: number) => {
+		actionService?.execute("audio:setVolume", { volume: normalizedVolume });
+	}, LIVE_DEBOUNCE_MS);
+
 	const handleVolumeChange = (value: number) => {
 		setLocalVolume(value);
 		const normalizedVolume = value / 100;
 
 		if (isDM) {
-			if (debounceTimerRef.current) {
-				clearTimeout(debounceTimerRef.current);
-			}
-
-			debounceTimerRef.current = setTimeout(() => {
-				actionService?.execute("audio:setVolume", {
-					volume: normalizedVolume,
-				});
-			}, 150);
+			commitDmVolume(normalizedVolume);
 		} else {
+			// Player volume is a local-only AppSetting (no peer sync), so it can
+			// commit immediately for continuous feedback.
 			AppSettingActions.setPlayerVolume({ volume: normalizedVolume }, context);
 		}
 	};

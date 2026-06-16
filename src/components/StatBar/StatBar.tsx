@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect } from "react";
 import type { ResolvedStat } from "../../utils/ActorResolvers";
+import { useDebouncedCallback } from "../../hooks/useDebounced";
 
 interface StatBarProps {
 	stat: ResolvedStat;
@@ -33,9 +34,10 @@ export function StatBar({
 	const [localCurrent, setLocalCurrent] = useState<number>(actualCurrent);
 	const [localMax, setLocalMax] = useState(stat.Max);
 
-	// Debounce timers
-	const currentTimer = useRef<NodeJS.Timeout | null>(null);
-	const maxTimer = useRef<NodeJS.Timeout | null>(null);
+	// Debounced commits (separate timers so a Current edit and a Max edit don't
+	// coalesce into one and drop the other).
+	const commitCurrent = useDebouncedCallback(onCurrentChange);
+	const commitMax = useDebouncedCallback(onMaxChange);
 
 	// Sync local state when props change (from external updates)
 	useEffect(() => {
@@ -104,11 +106,7 @@ export function StatBar({
 	const handleCurrentChange = (value: number) => {
 		const clamped = Math.max(0, Math.min(localMax, value));
 		setLocalCurrent(clamped);
-
-		if (currentTimer.current) clearTimeout(currentTimer.current);
-		currentTimer.current = setTimeout(() => {
-			onCurrentChange(clamped);
-		}, 300);
+		commitCurrent(clamped);
 	};
 
 	const handleMaxChange = (value: number) => {
@@ -118,16 +116,10 @@ export function StatBar({
 		// Also clamp current value if it exceeds new max
 		if (localCurrent > clamped) {
 			setLocalCurrent(clamped);
-			if (currentTimer.current) clearTimeout(currentTimer.current);
-			currentTimer.current = setTimeout(() => {
-				onCurrentChange(clamped);
-			}, 300);
+			commitCurrent(clamped);
 		}
 
-		if (maxTimer.current) clearTimeout(maxTimer.current);
-		maxTimer.current = setTimeout(() => {
-			onMaxChange(clamped);
-		}, 300);
+		commitMax(clamped);
 	};
 
 	return (

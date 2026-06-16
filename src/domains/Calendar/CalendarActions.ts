@@ -21,77 +21,22 @@ export const CalendarActions = {
 	},
 
 	/**
-	 * Directly set absolute day (can be negative to represent pre-epoch).
-	 * DM-only (enforced by ActionService / UI layer).
+	 * The single canonical date mutation, matching every other domain's `edit`.
+	 * Takes the target absolute day in `updates.CalendarDay` (callers do any
+	 * Y/M/D or delta math, e.g. via ymdToAbsolute). The "the day moved forward"
+	 * consequence — decrementing day-based statuses — is centralized here in
+	 * `setCalendarDay`, so it happens no matter how the date is edited (steppers,
+	 * text input, day-of-week jump, or a long rest that auto-advances). DM-only
+	 * (enforced by ActionService / UI).
 	 */
-	setAbsolute(params: { absoluteDay: number }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
-		if (
-			typeof params.absoluteDay !== "number" ||
-			!Number.isFinite(params.absoluteDay)
-		) {
-			console.warn(
-				"[Calendar] setAbsolute: invalid absoluteDay",
-				params.absoluteDay
-			);
+	edit(params: { updates: { CalendarDay?: number } }, context: Context): void {
+		const next = params.updates?.CalendarDay;
+		if (typeof next !== "number" || !Number.isFinite(next)) {
+			console.warn("[Calendar] edit: invalid CalendarDay", next);
 			return;
 		}
-		campaign.GameState.CalendarDay = Math.trunc(params.absoluteDay);
-	},
-
-	/**
-	 * Set date using Y/M/D (1-based). Values are clamped to valid ranges.
-	 * DM-only (enforced by ActionService / UI layer).
-	 */
-	setDate(
-		params: { year: number; month: number; day: number },
-		context: Context
-	): void {
-		const cfg = CalendarActions.getConfig(context);
-		const absolute = ymdToAbsolute(params, cfg);
 		const campaign = CampaignActions.getActiveCampaign(context);
-		campaign.GameState.CalendarDay = absolute;
-	},
-
-	/**
-	 * Advance by a delta (can be negative). Weeks only apply if daysPerWeek > 0.
-	 * DM-only (enforced by ActionService / UI layer).
-	 */
-	advance(
-		params: { days?: number; weeks?: number; months?: number; years?: number },
-		context: Context
-	): void {
-		const cfg = CalendarActions.getConfig(context);
-		const campaign = CampaignActions.getActiveCampaign(context);
-
-		const d = params.days ?? 0;
-		const w = params.weeks ?? 0;
-		const m = params.months ?? 0;
-		const y = params.years ?? 0;
-
-		let delta = d;
-
-		if (cfg.daysPerWeek > 0) {
-			delta += w * cfg.daysPerWeek;
-		} else if (w !== 0) {
-			console.warn(
-				"[Calendar] weeks provided but weeks are disabled by config"
-			);
-		}
-
-		delta += m * cfg.daysPerMonth;
-		delta += y * daysPerYear(cfg);
-
-		campaign.GameState.CalendarDay = Math.trunc(
-			campaign.GameState.CalendarDay + delta
-		);
-
-		// If advancing forward by at least 1 day, decrement day-based statuses
-		if (delta > 0) {
-			for (let i = 0; i < Math.floor(delta); i++) {
-				decrementDayStatuses(campaign);
-			}
-		}
+		setCalendarDay(campaign, next);
 	},
 
 	/**
@@ -165,15 +110,17 @@ export const CalendarActions = {
 		// Clear "until short rest" and "until long rest" statuses (long rest is a superset)
 		clearStatusesByExpirationType(campaign, ["shortRest", "longRest"]);
 
-		// Decrement day-based statuses (long rest counts as a day passing)
-		decrementDayStatuses(campaign);
-
 		// Reset short rests for the new day
 		campaign.GameState.RemainingShortRests = restSettings.shortRestsPerDay;
 
-		// Advance calendar if configured
+		// A long rest counts as a day passing for day-based statuses. If the day
+		// also auto-advances, route through setCalendarDay so it decrements those
+		// statuses in the one canonical place; otherwise just tick the statuses
+		// (no calendar move).
 		if (restSettings.autoAdvanceDayOnLongRest) {
-			campaign.GameState.CalendarDay++;
+			setCalendarDay(campaign, campaign.GameState.CalendarDay + 1);
+		} else {
+			decrementDayStatuses(campaign);
 		}
 
 		LogActions.create(
@@ -194,6 +141,32 @@ export const CalendarActions = {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+/**
+ * Largest number of day-status decrement steps for a single forward jump. A
+ * normal edit moves the date by a handful of days; this cap only matters for an
+ * absurd jump (e.g. editing the year far into the future) so we never freeze the
+ * app looping billions of times. No realistic day-based status outlasts it.
+ */
+const MAX_DAY_DECREMENT_STEPS = 100000;
+
+/**
+ * Set the calendar to an absolute day and apply the "the day moved forward"
+ * consequence in one place (see CalendarActions.edit): if the day increased,
+ * decrement day-based statuses once per advanced day (bounded). Moving backward
+ * or staying put does nothing.
+ */
+function setCalendarDay(campaign: any, newDay: number): void {
+	const old = campaign.GameState.CalendarDay;
+	const next = Math.trunc(newDay);
+	campaign.GameState.CalendarDay = next;
+
+	const advanced = next - old;
+	if (advanced <= 0) return;
+
+	const steps = Math.min(advanced, MAX_DAY_DECREMENT_STEPS);
+	for (let i = 0; i < steps; i++) decrementDayStatuses(campaign);
+}
 
 /**
  * Clears statuses with the specified expiration types from all actors in the game state.

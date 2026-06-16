@@ -5,9 +5,15 @@ import { createPortal } from "react-dom";
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CalendarActions, resolveNames, ordinal } from "./CalendarActions";
+import { CalendarActions, resolveNames, ordinal, ymdToAbsolute } from "./CalendarActions";
 import type { CalendarSettings } from "../CampaignSetting/CampaignSetting";
 import { ToggleButton } from "../../components/ui/ToggleButton";
+import { useDebouncedCallback } from "../../hooks/useDebounced";
+
+// A burst of stepper clicks or keystrokes in the date inputs would otherwise fire
+// one calendar:edit per event — each a full mutation + broadcast + script-cascade
+// pass — so we coalesce them into a single commit once the user pauses, using the
+// app-wide debounce window.
 
 /**
  * Clean, centered display. Looks the same for DM & players.
@@ -28,9 +34,23 @@ export default function CalendarDisplay() {
   const calendarEnabled = cfg.enabled !== false;
   const absolute = campaign.GameState.CalendarDay ?? 0;
 
+  // localAbsolute drives the readout so the UI stays responsive while the actual
+  // calendar:edit is debounced. It resyncs whenever the authoritative day changes
+  // (a commit, a long rest, or a peer update).
+  const [localAbsolute, setLocalAbsolute] = useState(absolute);
+  useEffect(() => {
+    setLocalAbsolute(absolute);
+  }, [absolute]);
+
+  // Debounced canonical commit. useDebouncedCallback flushes any pending edit on
+  // unmount, so a last-moment change isn't lost.
+  const commitDay = useDebouncedCallback((day: number) => {
+    actionService?.execute("calendar:edit", { updates: { CalendarDay: day } });
+  });
+
   const { parts, monthName, dayName } = useMemo(
-    () => resolveNames(absolute, cfg),
-    [absolute, cfg]
+    () => resolveNames(localAbsolute, cfg),
+    [localAbsolute, cfg]
   );
 
   const showWeeks = cfg.daysPerWeek > 0;
@@ -54,17 +74,31 @@ export default function CalendarDisplay() {
   const clamp = (n: number, min: number, max: number) =>
     Math.max(min, Math.min(max, Math.trunc(n)));
 
-  const setDate = (next: { year?: number; month?: number; day?: number }) => {
+  // The single canonical date mutation (mirrors every other domain's edit). The
+  // UI resolves Y/M/D and deltas to an absolute day; CalendarActions.edit handles
+  // the day-status decrement + dayAdvance script phase centrally.
+  // Updates the readout immediately, then debounces the single canonical
+  // calendar:edit so a burst of clicks/keystrokes commits exactly once.
+  const editDay = (absoluteDay: number) => {
     if (!isInteractive || !actionService) return;
+    const next = Math.trunc(absoluteDay);
+    setLocalAbsolute(next);
+    commitDay(next);
+  };
+
+  const setDate = (next: { year?: number; month?: number; day?: number }) => {
+    if (!isInteractive) return;
     const y = clamp(next.year ?? parts.year, 1, Number.MAX_SAFE_INTEGER);
     const m = clamp(next.month ?? parts.month, 1, cfg.monthsPerYear);
     const d = clamp(next.day ?? parts.day, 1, cfg.daysPerMonth);
-    actionService.execute("calendar:setDate", { year: y, month: m, day: d });
+    editDay(ymdToAbsolute({ year: y, month: m, day: d }, cfg));
   };
 
-  const advance = (delta: { days?: number; weeks?: number; months?: number; years?: number }) => {
-    if (!isInteractive || !actionService) return;
-    actionService.execute("calendar:advance", delta);
+  // Step relative to the optimistic local day so rapid clicks accumulate even
+  // before the debounced commit lands.
+  const advanceDays = (days: number) => {
+    if (!isInteractive) return;
+    editDay(localAbsolute + days);
   };
 
   const jumpToDayOfWeek = (targetIndex: number) => {
@@ -73,7 +107,7 @@ export default function CalendarDisplay() {
     const curr = parts.dayOfWeekIndex;
     const n = cfg.daysPerWeek;
     const forward = (targetIndex - curr + n) % n; // move forward to next chosen weekday
-    if (forward !== 0) advance({ days: forward });
+    if (forward !== 0) advanceDays(forward);
   };
 
   const handleShortRest = () => {

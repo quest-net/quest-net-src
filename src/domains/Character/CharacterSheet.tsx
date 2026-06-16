@@ -1,7 +1,8 @@
 // domains/Character/CharacterSheet.tsx
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
+import { useDebouncedCallback } from "../../hooks/useDebounced";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignActions } from "../Campaign/CampaignActions";
 import { Character } from "./Character";
@@ -47,13 +48,7 @@ export function CharacterSheet() {
 	const [localAttributes, setLocalAttributes] = useState<Map<string, string>>(
 		new Map()
 	);
-
-	// Debounce timers
-	const nameTimer = useRef<NodeJS.Timeout | null>(null);
-	const descTimer = useRef<NodeJS.Timeout | null>(null);
-	const critTimer = useRef<NodeJS.Timeout | null>(null);
-	const colorTimer = useRef<NodeJS.Timeout | null>(null);
-	const attrTimer = useRef<NodeJS.Timeout | null>(null);
+	const [localMoveSpeed, setLocalMoveSpeed] = useState(0);
 
 	// Initialize local state when character loads
 	useEffect(() => {
@@ -62,18 +57,15 @@ export function CharacterSheet() {
 			setLocalDescription(character.Description || "");
 			setLocalCritMessage(character.CritMessage || "");
 			setLocalColor(character.Color ?? ACTOR_DEFAULT_COLORS.CHARACTER);
+			setLocalMoveSpeed(character.MoveSpeed);
 			setLocalAttributes(
 				new Map(character.Attributes.map((attr) => [attr.Id, attr.Value]))
 			);
 		}
 	}, [character?.Id]);
 
-	if (!character) {
-		return <EmptyState>No character selected</EmptyState>;
-	}
-
 	const handleFieldChange = (field: keyof Character, value: any) => {
-		if (!actionService) return;
+		if (!actionService || !character) return;
 
 		actionService.execute("character:edit", {
 			characterId: character.Id,
@@ -81,41 +73,57 @@ export function CharacterSheet() {
 		});
 	};
 
+	// One debounced commit per field so distinct fields don't coalesce into a
+	// single update and clobber one another.
+	const commitName = useDebouncedCallback((v: string) =>
+		handleFieldChange("Name", v)
+	);
+	const commitDescription = useDebouncedCallback((v: string) =>
+		handleFieldChange("Description", v)
+	);
+	const commitCritMessage = useDebouncedCallback((v: string | undefined) =>
+		handleFieldChange("CritMessage", v)
+	);
+	const commitColor = useDebouncedCallback((v: string) =>
+		handleFieldChange("Color", v)
+	);
+	const commitMoveSpeed = useDebouncedCallback((v: number) =>
+		handleFieldChange("MoveSpeed", v)
+	);
+	const commitAttributes = useDebouncedCallback(
+		(updatedAttributes: Character["Attributes"]) =>
+			handleFieldChange("Attributes", updatedAttributes)
+	);
+
+	if (!character) {
+		return <EmptyState>No character selected</EmptyState>;
+	}
+
 	const handleNameChange = (value: string) => {
 		setLocalName(value);
-
-		if (nameTimer.current) clearTimeout(nameTimer.current);
-		nameTimer.current = setTimeout(() => {
-			handleFieldChange("Name", value);
-		}, 500);
+		commitName(value);
 	};
 
 	const handleDescriptionChange = (value: string) => {
 		setLocalDescription(value);
-
-		if (descTimer.current) clearTimeout(descTimer.current);
-		descTimer.current = setTimeout(() => {
-			handleFieldChange("Description", value);
-		}, 500);
+		commitDescription(value);
 	};
 
 	const handleCritMessageChange = (value: string) => {
 		const truncated = value.slice(0, 50);
 		setLocalCritMessage(truncated);
-
-		if (critTimer.current) clearTimeout(critTimer.current);
-		critTimer.current = setTimeout(() => {
-			handleFieldChange("CritMessage", truncated || undefined);
-		}, 500);
+		commitCritMessage(truncated || undefined);
 	};
 
 	const handleColorChange = (value: string) => {
 		setLocalColor(value);
+		commitColor(value);
+	};
 
-		if (colorTimer.current) clearTimeout(colorTimer.current);
-		colorTimer.current = setTimeout(() => {
-			handleFieldChange("Color", value);
-		}, 500);
+	const handleMoveSpeedChange = (value: number) => {
+		const clamped = Math.max(0, Math.min(99, value));
+		setLocalMoveSpeed(clamped);
+		commitMoveSpeed(clamped);
 	};
 
 	const handleStatChange = (statId: string, field: "Current" | "Max", value: number) => {
@@ -134,19 +142,10 @@ export function CharacterSheet() {
 	const handleAttributeChange = (id: string, value: string) => {
 		setLocalAttributes((prev) => new Map(prev).set(id, value));
 
-		if (attrTimer.current) clearTimeout(attrTimer.current);
-		attrTimer.current = setTimeout(() => {
-			if (!actionService) return;
-
-			const updatedAttributes = character.Attributes.map((attr) =>
-				attr.Id === id ? { ...attr, Value: value } : attr
-			);
-
-			actionService.execute("character:edit", {
-				characterId: character.Id,
-				updates: { Attributes: updatedAttributes },
-			});
-		}, 500);
+		const updatedAttributes = character.Attributes.map((attr) =>
+			attr.Id === id ? { ...attr, Value: value } : attr
+		);
+		commitAttributes(updatedAttributes);
 	};
 
 	const handleActionsChange = (updatedActions: ResolvedAction[]) => {
@@ -250,9 +249,9 @@ export function CharacterSheet() {
 					</label>
 					<input
 						type="number"
-						value={character.MoveSpeed}
+						value={localMoveSpeed}
 						onChange={(e) =>
-							handleFieldChange("MoveSpeed", Number(e.target.value))
+							handleMoveSpeedChange(Number(e.target.value))
 						}
 						className="input input-bordered w-full"
 						min={0}
