@@ -60,9 +60,6 @@ export function ScriptingFields<T extends Scriptable>({
 							<div key={param.Key} className="flex flex-wrap items-center gap-3">
 								<div className="min-w-40">
 									<div className="text-sm font-medium">{param.Label || param.Key}</div>
-									{param.Description && (
-										<div className="text-xs opacity-60">{param.Description}</div>
-									)}
 								</div>
 								<div className="flex-1 min-w-40">
 									<ParamValueInput

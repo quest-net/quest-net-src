@@ -27,9 +27,9 @@ interface HostOption {
 }
 
 const DEFAULT_CODE = `// 'this' is the selected host; 'game' and 'event' are in scope.
-// Change the world only via game.action(key, params).
+// Change the world only via await game.action(key, params).
 const actor = this.actor ?? game.actors()[0];
-if (actor) game.log("Test harness ran on " + actor.Name);`;
+if (actor) await game.log("Test harness ran on " + actor.Name);`;
 
 function buildHostOptions(campaign: any): HostOption[] {
 	const out: HostOption[] = [
@@ -84,7 +84,7 @@ export function ScriptTestHarness() {
 		ran: boolean;
 	}>({ ok: true, patch: "", ran: false });
 
-	const handleRun = () => {
+	const handleRun = async () => {
 		if (!campaign) return;
 		let params: any = {};
 		if (paramsText.trim()) {
@@ -109,7 +109,7 @@ export function ScriptTestHarness() {
 			IsOptimistic: false,
 		};
 		const selection = hostOptions[hostIndex]?.selection ?? { kind: "campaign" };
-		const result = ScriptEngine.runForTest({
+		const result = await ScriptEngine.runForTest({
 			context: fakeContext,
 			host: selection,
 			code,

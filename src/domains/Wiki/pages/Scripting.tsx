@@ -71,7 +71,7 @@ const scriptingPage: WikiPageDefinition = {
 								name: "Reads anything, changes via actions",
 								tone: "info",
 								detail:
-									"`this`, `game`, and `event` are real live objects, so reading any field or collection is plain property access — even fields added to the app later. To CHANGE the world you call game.action(...), the same handler the app uses, so validation/clamping/logging are shared.",
+									"`this`, `game`, and `event` are real live objects, so reading any field or collection is plain property access — even fields added to the app later. To CHANGE the world you await game.action(...), the same handler the app uses, so validation/clamping/logging are shared.",
 							},
 							{
 								name: "One atomic reaction",
@@ -152,13 +152,13 @@ this.vars            // persistent scratch — read AND write (this.vars.count =
 this.actor           // the bearer/holder actor (undefined for campaign hosts)`}</CodeBlock>
 					<p className="text-sm opacity-80">The <WikiCode>game</WikiCode> facade:</p>
 					<CodeBlock>{`game.campaign            // the whole live Campaign (read anything)
-game.action(key, params) // THE only way to change the world (see below)
+await game.action(key, params) // THE only way to change the world (see below)
 game.actors()            // active characters + entities
 game.find("Goblin*")     // active actor by name glob
 game.template(coll, name)// resolve a template by name -> the template object (use .Id)
 game.roll("2d6+1")       // DM-authoritative dice -> number
 game.rng()               // 0..1
-game.log("text")         // quick log entry
+await game.log("text")   // quick log entry
 game.combat              // read-only combat state { isActive, currentRound, ... }`}</CodeBlock>
 					<p className="text-sm opacity-80">The triggering <WikiCode>event</WikiCode>:</p>
 					<CodeBlock>{`event.key        // the action key that fired, e.g. "character:move"
@@ -174,14 +174,14 @@ event.actor      // the acting actor (resolved from params.actorId/entityId), if
 				<div className="space-y-4">
 					<p>
 						A script changes the world in exactly one way:{" "}
-						<WikiCode>game.action("domain:verb", params)</WikiCode>. This runs the same
-						handler the app uses, inline, so all validation/clamping/logging is shared.
+						<WikiCode>await game.action("domain:verb", params)</WikiCode>. This runs the same
+						handler the app uses, so all validation/clamping/logging is shared.
 						Pass plain ids and values — never a live object as an id (use{" "}
 						<WikiCode>actor.Id</WikiCode>, <WikiCode>template.Id</WikiCode>).
 					</p>
-					<CodeBlock>{`game.action("entity:move",  { entityId: e.Id, position: this.actor.Position });
-game.action("status:give",  { statusIds: [s.Id], actorIds: [this.actor.Id], count: 1 });
-game.action("entity:edit",  { entityId: this.actor.Id, updates: { Size: "large" } });`}</CodeBlock>
+					<CodeBlock>{`await game.action("entity:move",  { entityId: e.Id, position: this.actor.Position });
+await game.action("status:give",  { statusIds: [s.Id], actorIds: [this.actor.Id], count: 1 });
+await game.action("entity:edit",  { entityId: this.actor.Id, updates: { Size: "large" } });`}</CodeBlock>
 					<p className="text-sm opacity-80">
 						Script-ok actions (generated from the registry — anything not listed throws
 						when called):
@@ -189,12 +189,10 @@ game.action("entity:edit",  { entityId: this.actor.Id, updates: { Size: "large" 
 					<CodeBlock>{SCRIPTABLE_ACTION_KEYS.join("\n")}</CodeBlock>
 					<WikiCallout tone="info" title="Why some actions are missing">
 						<p>
-							An action is script-ok unless it is <strong>asynchronous</strong> (terrain
-							edits, scenario load, image/audio work — they can't run inline in the
-							reaction) or explicitly <strong>destructive</strong> (deletes,{" "}
-							<WikiCode>campaign:edit</WikiCode>). The set grows automatically as new
-							synchronous actions are added — scripting reach expands with the app, with
-							no engine changes.
+							An action is script-ok only when its registry entry has{" "}
+							<WikiCode>scriptable: true</WikiCode>. Sync and async handlers both work;
+							destructive or structural actions such as deletes and{" "}
+							<WikiCode>campaign:edit</WikiCode> stay out unless they are explicitly opted in.
 						</p>
 					</WikiCallout>
 				</div>
@@ -269,9 +267,9 @@ if (event.params.actorId !== this.actor.Id) return;   // only OUR bearer
 const stalker = game.find("Stalker");
 const pos = this.actor.Position;
 if (!stalker) {
-  game.action("entity:spawn", { entityId: game.template("EntityTemplates", "Stalker").Id, position: pos });
+  await game.action("entity:spawn", { entityId: game.template("EntityTemplates", "Stalker").Id, position: pos });
 } else {
-  game.action("entity:move", { entityId: stalker.Id, position: pos });
+  await game.action("entity:move", { entityId: stalker.Id, position: pos });
 }`}</CodeBlock>
 					<p className="text-sm opacity-80">
 						Enlarging buff — bigger while applied, restored on removal:
@@ -279,23 +277,23 @@ if (!stalker) {
 					<CodeBlock>{`// Status, script A  ·  Trigger: "status:give"
 if (!event.params.actorIds?.includes(this.actor.Id)) return;
 this.vars.prevSize = this.actor.Size ?? "medium";
-game.action("entity:edit", { entityId: this.actor.Id, updates: { Size: "large" } });
+await game.action("entity:edit", { entityId: this.actor.Id, updates: { Size: "large" } });
 
 // Status, script B  ·  Trigger: "status:remove"
 if (event.params.actorId !== this.actor.Id) return;
-game.action("entity:edit", { entityId: this.actor.Id, updates: { Size: this.vars.prevSize ?? "medium" } });`}</CodeBlock>
+await game.action("entity:edit", { entityId: this.actor.Id, updates: { Size: this.vars.prevSize ?? "medium" } });`}</CodeBlock>
 					<p className="text-sm opacity-80">
 						On-use trinket — applies a status to the user:
 					</p>
 					<CodeBlock>{`// Item hook  ·  Trigger: "item:use"
-game.action("status:give", {
+await game.action("status:give", {
   statusIds: [game.template("StatusTemplates", "Blessed").Id],
   actorIds: [this.actor.Id],
   count: 1,
 });`}</CodeBlock>
 					<p className="text-sm opacity-80">Campaign world rule — log each round:</p>
 					<CodeBlock>{`// Campaign hook  ·  Trigger: "combat:incrementRound"
-game.log("Round " + game.combat.currentRound + " begins", { category: "combat" });`}</CodeBlock>
+await game.log("Round " + game.combat.currentRound + " begins", { category: "combat" });`}</CodeBlock>
 				</div>
 			),
 		},

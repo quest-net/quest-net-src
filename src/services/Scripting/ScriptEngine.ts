@@ -7,9 +7,9 @@
  *   ActionService runs a domain action → calls ScriptEngine.onAction(...) →
  *   the engine finds every enabled script whose Trigger glob matches the action
  *   key, binds `this` / `game` / `event`, and runs each script body. A script
- *   changes the world ONLY by calling game.action(key, params), which runs the
- *   same handler inline and recurses the engine — so reactions cascade, and the
- *   whole chain resolves inside the single triggering mutation (one broadcast).
+ *   changes the world by awaiting game.action(key, params), which runs the same
+ *   handler and recurses the engine, so reactions cascade and the whole chain
+ *   resolves inside the single triggering mutation (one broadcast).
  *
  * Authority: the engine is only ever invoked on the DM's authoritative path
  * (ActionService.executeDM), so scripts never run during a player's optimistic
@@ -27,6 +27,12 @@ import { LogActions } from "../../domains/Log/LogActions";
 import { rollDiceFormula } from "../../utils/DiceUtils";
 import { validateScriptSource } from "./scriptValidation";
 import { SCRIPT_BUDGETS, SCRIPTING_DISABLED_SETTING } from "./scriptConstants";
+
+type AsyncFunctionConstructor = new (
+	...args: string[]
+) => (...args: any[]) => Promise<unknown>;
+
+const AsyncFunction = (async function () {}).constructor as AsyncFunctionConstructor;
 
 // ---- Glob matching (action keys, names) -------------------------------------
 
@@ -155,7 +161,29 @@ function makeEvent(
 	return Object.freeze({ key, params: params ?? {}, result, actor });
 }
 
-function makeGame(context: Context): any {
+interface ScriptRunState {
+	cascadeDepth: number;
+	actionCount: number;
+	pendingActions: Set<Promise<void>>;
+}
+
+function createRunState(): ScriptRunState {
+	return { cascadeDepth: 0, actionCount: 0, pendingActions: new Set() };
+}
+
+function trackScriptAction(
+	promise: Promise<void>,
+	state: ScriptRunState
+): Promise<void> {
+	state.pendingActions.add(promise);
+	promise.then(
+		() => state.pendingActions.delete(promise),
+		() => state.pendingActions.delete(promise)
+	);
+	return promise;
+}
+
+function makeGame(context: Context, state: ScriptRunState): any {
 	const campaign = () => CampaignActions.getActiveCampaign(context);
 	return {
 		get campaign() {
@@ -172,49 +200,56 @@ function makeGame(context: Context): any {
 		roll: (expr: string) => rollDiceFormula(expr).total,
 		rng: () => Math.random(),
 		log: (text: string, opts?: { category?: string; level?: string; details?: string }) =>
-			dispatch(
-				"log:create",
-				{
-					action: text,
-					details: opts?.details,
-					category: opts?.category ?? "system",
-					level: opts?.level ?? "info",
-				},
-				context
+			trackScriptAction(
+				dispatch(
+					"log:create",
+					{
+						action: text,
+						details: opts?.details,
+						category: opts?.category ?? "system",
+						level: opts?.level ?? "info",
+					},
+					context,
+					state
+				),
+				state
 			),
-		action: (key: string, params?: any) => dispatch(key, params ?? {}, context),
+		action: (key: string, params?: any) =>
+			trackScriptAction(dispatch(key, params ?? {}, context, state), state),
 	};
 }
 
 // ---- Cascade state ----------------------------------------------------------
-
-let cascadeDepth = 0;
-let actionCount = 0;
 /**
- * Hosts that matched the top-level action's trigger BEFORE it ran — captured by
- * beginAction (ActionService) so a script on a thing the action then REMOVED
- * (e.g. a status's onRemove cleanup) still has a host to bind. Consumed by the
- * next onAction. Cascade actions capture their own pre-set locally in dispatch().
+ * Hosts that matched the top-level action's trigger BEFORE it ran. ActionService
+ * passes this snapshot back to onAction so a script on a thing the action then
+ * removed (e.g. a status's onRemove cleanup) still has a host to bind.
  */
-let topPre: ScriptMatch[] = [];
+type ScriptActionSnapshot = ScriptMatch[];
 
-/** The mutation channel exposed to scripts as game.action — runs inline + cascades. */
-function dispatch(key: string, params: any, context: Context): void {
-	if (!isScriptableAction(key)) {
+/** The mutation channel exposed to scripts as game.action -- awaits + cascades. */
+async function dispatch(
+	key: string,
+	params: any,
+	context: Context,
+	state: ScriptRunState
+): Promise<void> {
+	const action = ACTION_REGISTRY[key];
+	if (!action || !isScriptableAction(key)) {
 		throw new Error(`Action "${key}" is not allowed in scripts.`);
 	}
-	if (actionCount >= SCRIPT_BUDGETS.MAX_TOTAL_ACTIONS) {
+	if (state.actionCount >= SCRIPT_BUDGETS.MAX_TOTAL_ACTIONS) {
 		throw new Error(
 			`Script action budget exceeded (${SCRIPT_BUDGETS.MAX_TOTAL_ACTIONS}); cascade halted.`
 		);
 	}
-	actionCount++;
+	state.actionCount++;
 	// Capture hosts before the action so a removal still has a host to react with.
 	const pre = collectMatches(CampaignActions.getActiveCampaign(context), key);
-	// Run the SAME handler the app uses, inline against the live campaign.
-	ACTION_REGISTRY[key].handler(params, context);
+	// Run the SAME handler the app uses against the live campaign.
+	await action.handler(params, context);
 	// React to what this action just did (the cascade).
-	runReactions(key, params, undefined, context, pre);
+	await runReactions(key, params, undefined, context, pre, state);
 }
 
 // ---- Host enumeration -------------------------------------------------------
@@ -323,13 +358,14 @@ function logScriptError(context: Context, script: Script, err: unknown): void {
 	console.error("[Scripting] script failed:", script.Name ?? script.Trigger, err);
 }
 
-function runOneScript(
+async function runOneScript(
 	match: ScriptMatch,
 	game: any,
 	event: any,
 	context: Context,
-	campaign: Campaign
-): void {
+	campaign: Campaign,
+	state: ScriptRunState
+): Promise<void> {
 	const { script } = match;
 	// A host removed by an earlier script in this same pass: skip it.
 	if (match.actor && !isActorActive(campaign, match.actor)) return;
@@ -340,28 +376,37 @@ function runOneScript(
 	}
 	try {
 		const thisHost = makeThis(match);
+		const pendingBefore = new Set(state.pendingActions);
 		// eslint-disable-next-line no-new-func
-		const fn = new Function("game", "event", '"use strict";\n' + script.Code);
-		fn.call(thisHost, game, event);
+		const fn = new AsyncFunction("game", "event", '"use strict";\n' + script.Code);
+		await fn.call(thisHost, game, event);
+
+		const unawaitedActions = [...state.pendingActions].filter(
+			(promise) => !pendingBefore.has(promise)
+		);
+		if (unawaitedActions.length > 0) {
+			await Promise.all(unawaitedActions);
+		}
 	} catch (err) {
 		logScriptError(context, script, err);
 	}
 }
 
-function runReactions(
+async function runReactions(
 	key: string,
 	params: any,
 	result: unknown,
 	context: Context,
-	pre: ScriptMatch[]
-): void {
-	if (cascadeDepth >= SCRIPT_BUDGETS.MAX_CASCADE_DEPTH) {
+	pre: ScriptMatch[],
+	state: ScriptRunState
+): Promise<void> {
+	if (state.cascadeDepth >= SCRIPT_BUDGETS.MAX_CASCADE_DEPTH) {
 		console.warn(
 			`[Scripting] cascade depth cap (${SCRIPT_BUDGETS.MAX_CASCADE_DEPTH}) reached; not reacting to "${key}".`
 		);
 		return;
 	}
-	cascadeDepth++;
+	state.cascadeDepth++;
 	try {
 		const campaign = CampaignActions.getActiveCampaign(context);
 		// Current hosts run once each (keyed by logical identity, so a slot the
@@ -375,13 +420,13 @@ function runReactions(
 			if (removed.length) matches = [...post, ...removed];
 		}
 		if (matches.length === 0) return;
-		const game = makeGame(context);
+		const game = makeGame(context, state);
 		const event = makeEvent(key, params, result, campaign);
 		for (const match of matches) {
-			runOneScript(match, game, event, context, campaign);
+			await runOneScript(match, game, event, context, campaign, state);
 		}
 	} finally {
-		cascadeDepth--;
+		state.cascadeDepth--;
 	}
 }
 
@@ -436,11 +481,12 @@ function bindingForSelection(
 export const ScriptEngine = {
 	/**
 	 * Called by ActionService BEFORE a domain action runs, to snapshot the hosts
-	 * that match its trigger — so a script on something the action then removes
-	 * (a status's onRemove cleanup) still has a host. Paired with onAction.
+	 * that match its trigger, so a script on something the action then removes
+	 * (a status's onRemove cleanup) still has a host. Pass the returned snapshot
+	 * to onAction after the domain action completes.
 	 */
-	beginAction(key: string, context: Context): void {
-		topPre = scriptsDisabled(context)
+	beginAction(key: string, context: Context): ScriptActionSnapshot {
+		return scriptsDisabled(context)
 			? []
 			: collectMatches(CampaignActions.getActiveCampaign(context), key);
 	},
@@ -451,13 +497,15 @@ export const ScriptEngine = {
 	 * script reacting to `key` and the entire cascade it triggers, inside the
 	 * current mutation. No-op when scripting is globally disabled.
 	 */
-	onAction(key: string, params: any, result: unknown, context: Context): void {
-		const pre = topPre;
-		topPre = [];
+	async onAction(
+		key: string,
+		params: any,
+		result: unknown,
+		context: Context,
+		pre: ScriptActionSnapshot
+	): Promise<void> {
 		if (scriptsDisabled(context)) return;
-		// Top-level entry: reset the per-mutation action budget. (cascadeDepth is 0.)
-		actionCount = 0;
-		runReactions(key, params, result, context, pre);
+		await runReactions(key, params, result, context, pre, createRunState());
 	},
 
 	/**
@@ -466,27 +514,35 @@ export const ScriptEngine = {
 	 * ActiveCampaign is a clone, so the live game is untouched). The script's
 	 * game.action(...) calls still cascade through scripts saved on the clone.
 	 */
-	runForTest(opts: {
+	async runForTest(opts: {
 		context: Context;
 		host: ScriptHostSelection;
 		code: string;
 		triggerKey: string;
 		params?: any;
-	}): { ok: boolean; error?: string } {
+	}): Promise<{ ok: boolean; error?: string }> {
 		const { context, host, code, triggerKey, params } = opts;
 		const campaign = CampaignActions.getActiveCampaign(context);
 		const binding = bindingForSelection(campaign, host);
 		if (!binding) return { ok: false, error: "Selected host not found in campaign." };
 		const validation = validateScriptSource(code);
 		if (!validation.ok) return { ok: false, error: validation.error };
-		actionCount = 0;
-		const game = makeGame(context);
+		const state = createRunState();
+		const game = makeGame(context, state);
 		const event = makeEvent(triggerKey, params ?? {}, undefined, campaign);
 		try {
 			const thisHost = makeThis(binding);
+			const pendingBefore = new Set(state.pendingActions);
 			// eslint-disable-next-line no-new-func
-			const fn = new Function("game", "event", '"use strict";\n' + code);
-			fn.call(thisHost, game, event);
+			const fn = new AsyncFunction("game", "event", '"use strict";\n' + code);
+			await fn.call(thisHost, game, event);
+
+			const unawaitedActions = [...state.pendingActions].filter(
+				(promise) => !pendingBefore.has(promise)
+			);
+			if (unawaitedActions.length > 0) {
+				await Promise.all(unawaitedActions);
+			}
 			return { ok: true };
 		} catch (err) {
 			return { ok: false, error: String((err as any)?.message ?? err) };

@@ -517,11 +517,17 @@ export class ActionService {
 	private async executeDM(actionKey: string, params: any): Promise<void> {
 		const campaign = await this.mutateCampaign(async () => {
 			// Snapshot script hosts before the action (so onRemove cleanup still binds).
-			ScriptEngine.beginAction(actionKey, this.context);
+			const scriptSnapshot = ScriptEngine.beginAction(actionKey, this.context);
 			await this.runDomainAction(actionKey, params);
 			// Authoritative reactions: run scripts triggered by this action (and the
 			// whole cascade) inside the same mutation, so it commits/broadcasts once.
-			ScriptEngine.onAction(actionKey, params, undefined, this.context);
+			await ScriptEngine.onAction(
+				actionKey,
+				params,
+				undefined,
+				this.context,
+				scriptSnapshot
+			);
 		});
 
 		const isSecret = this.context.SecretModes?.[campaign.Id];
@@ -595,7 +601,7 @@ export class ActionService {
 			// optimistic local execution.
 			await this.mutateCampaign(async () => {
 				// Snapshot script hosts before the action (so onRemove cleanup still binds).
-				ScriptEngine.beginAction(data.actionKey, this.context);
+				const scriptSnapshot = ScriptEngine.beginAction(data.actionKey, this.context);
 				const originalUser = this.context.User;
 				try {
 					this.context.User = requestingUser;
@@ -604,11 +610,12 @@ export class ActionService {
 					this.context.User = originalUser;
 				}
 				// Reactions run as the DM (authoritative), atomic with the request.
-				ScriptEngine.onAction(
+				await ScriptEngine.onAction(
 					data.actionKey,
 					data.params,
 					undefined,
-					this.context
+					this.context,
+					scriptSnapshot
 				);
 			});
 		} catch (error) {

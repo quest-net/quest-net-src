@@ -7,8 +7,8 @@
  *
  *   - Event     : a domain action was dispatched (matched by an action-key glob).
  *   - Condition : whatever the Code chooses to check (it reads the live campaign).
- *   - Action    : the Code calls game.action(key, params) — the SAME handlers the
- *                 app uses — which is the only sanctioned way to change the world.
+ *   - Action    : the Code awaits game.action(key, params) — the SAME handlers
+ *                 the app uses — which is the only sanctioned way to change the world.
  *
  * There is no sandbox and no marshaling: inside a script, `this`, `game`, and
  * `event` are real live objects, so reading any field/collection — including ones
@@ -49,14 +49,12 @@ export interface ScriptParam {
 	Key: string;
 	/** DM-facing name. */
 	Label: string;
-	Description?: string;
 	/** Drives which input renders. Extensible. */
 	Type: "number" | "boolean" | "text" | "select" | "statRef" | "color";
 	Default: ScriptValue;
 	// number
 	Min?: number;
 	Max?: number;
-	Step?: number;
 	// select
 	Options?: { value: string; label: string }[];
 }

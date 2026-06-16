@@ -100,7 +100,7 @@ export function ScriptEditor({ scripts, onChange, readOnly }: ScriptEditorProps)
 						<p className="text-xs opacity-60">
 							Runs when a dispatched action matches the Trigger glob. In scope:{" "}
 							<code>game</code>, <code>event</code>, <code>this</code>. Change the world
-							only via <code>game.action(key, params)</code>.
+							only via <code>await game.action(key, params)</code>.
 						</p>
 
 						<textarea
@@ -112,7 +112,7 @@ export function ScriptEditor({ scripts, onChange, readOnly }: ScriptEditorProps)
 							spellCheck={false}
 							placeholder={
 								'// e.g. if (event.params.actorId !== this.actor.Id) return;\n' +
-								'// game.action("entity:move", { entityId: stalker.Id, position: this.actor.Position });'
+								'// await game.action("entity:move", { entityId: stalker.Id, position: this.actor.Position });'
 							}
 						/>
 

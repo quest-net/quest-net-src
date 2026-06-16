@@ -55,7 +55,6 @@ export function ParamValueInput({
 					value={value === null || value === undefined ? "" : Number(value)}
 					min={param.Min}
 					max={param.Max}
-					step={param.Step}
 					disabled={readOnly}
 					onChange={(e) => {
 						const n = Number(e.target.value);

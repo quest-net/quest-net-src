@@ -1,13 +1,14 @@
 /**
  * Light keyword-denylist validation for script source.
  *
- * This is NOT a sandbox. Scripts run unsandboxed via `new Function` on the DM, so
+ * This is NOT a sandbox. Scripts run unsandboxed via `AsyncFunction` on the DM, so
  * a determined author can obfuscate around any textual check (e.g. building a
  * string at runtime). The denylist exists to (a) stop the obvious escape vectors
  * — network, storage, DOM, the Function/constructor reflection trick — and (b)
  * make a malicious snippet visible to a glancing human review. Combined with the
- * fact that destructive/async actions are unreachable via game.action, this is a
- * proportionate guard for scripts that only ever touch their own campaign.
+ * fact that game.action only exposes actions explicitly marked scriptable in the
+ * registry, this is a proportionate guard for scripts that only ever touch their
+ * own campaign.
  *
  * Run at author time (block save) and again before execution (skip + log).
  */

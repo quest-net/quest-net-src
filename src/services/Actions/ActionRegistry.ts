@@ -36,12 +36,10 @@ interface ActionDefinition {
 	handler: ActionHandler;
 	/**
 	 * Whether a script may invoke this action via the host facade
-	 * (`game.action(key, params)`). Optional override of the default policy in
-	 * {@link isScriptableAction}: leave undefined to inherit "sync handler is
-	 * script-ok"; set `false` on a sync-but-destructive action (deletes,
-	 * campaign:edit). Async handlers are auto-excluded regardless.
+	 * (`game.action(key, params)`). Only `true` means scriptable; missing/false
+	 * actions are blocked regardless of whether their handlers are sync or async.
 	 */
-	scriptable?: boolean;
+	scriptable: boolean;
 }
 
 /**
@@ -63,22 +61,27 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"character:create": {
 		roles: ["dm", "player"],
 		handler: CharacterActions.create,
+		scriptable: true,
 	},
 	"character:spawn": {
 		roles: ["dm"],
 		handler: CharacterActions.spawn,
+		scriptable: true,
 	},
 	"character:createAndSpawn": {
 		roles: ["dm", "player"],
 		handler: CharacterActions.createAndSpawn,
+		scriptable: true,
 	},
 	"character:remove": {
 		roles: ["dm"],
 		handler: CharacterActions.remove,
+		scriptable: true,
 	},
 	"character:edit": {
 		roles: ["dm", "player"], // Players can update their own, validation in action
 		handler: CharacterActions.edit,
+		scriptable: true,
 	},
 	"character:delete": {
 		roles: ["dm"], // Players can delete their own, validation in action
@@ -88,14 +91,17 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"character:move": {
 		roles: ["dm", "player"],
 		handler: CharacterActions.move,
+		scriptable: true,
 	},
 	"character:bulkEditTags": {
 		roles: ["dm"], // Players can organize their own characters
 		handler: CharacterActions.bulkEditTags,
+		scriptable: true,
 	},
 	"actor:transferStat": {
 		roles: ["dm", "player"],
 		handler: ActorActions.transferStat,
+		scriptable: true,
 	},
 
 	// ============================================================================
@@ -104,34 +110,42 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"item:use": {
 		roles: ["dm", "player"],
 		handler: ItemActions.use,
+		scriptable: true,
 	},
 	"item:equip": {
 		roles: ["dm", "player"],
 		handler: ItemActions.equip,
+		scriptable: true,
 	},
 	"item:unequip": {
 		roles: ["dm", "player"],
 		handler: ItemActions.unequip,
+		scriptable: true,
 	},
 	"item:discard": {
 		roles: ["dm", "player"],
 		handler: ItemActions.discard,
+		scriptable: true,
 	},
 	"item:give": {
 		roles: ["dm"],
 		handler: ItemActions.give,
+		scriptable: true,
 	},
 	"item:transfer": {
 		roles: ["dm", "player"],
 		handler: ItemActions.transfer,
+		scriptable: true,
 	},
 	"item:create": {
 		roles: ["dm"],
 		handler: ItemActions.create,
+		scriptable: true,
 	},
 	"item:edit": {
 		roles: ["dm", "player"], //players can upload their own images
 		handler: ItemActions.edit,
+		scriptable: true,
 	},
 	"item:delete": {
 		roles: ["dm"],
@@ -141,22 +155,27 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"item:adjustUses": {
 		roles: ["dm", "player"],
 		handler: ItemActions.adjustUses,
+		scriptable: true,
 	},
 	"item:drop": {
 		roles: ["dm", "player"],
 		handler: ItemActions.drop,
+		scriptable: true,
 	},
 	"item:pickup": {
 		roles: ["dm", "player"],
 		handler: ItemActions.pickup,
+		scriptable: true,
 	},
 	"item:spawn": {
 		roles: ["dm"],
 		handler: ItemActions.spawn,
+		scriptable: true,
 	},
 	"item:bulkEditTags": {
 		roles: ["dm"],
 		handler: ItemActions.bulkEditTags,
+		scriptable: true,
 	},
 
 	// ============================================================================
@@ -165,18 +184,22 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"sharedInventory:transferItem": {
 		roles: ["dm", "player"],
 		handler: SharedInventoryActions.transferItem,
+		scriptable: true,
 	},
 	"sharedInventory:discardItem": {
 		roles: ["dm", "player"],
 		handler: SharedInventoryActions.discardItem,
+		scriptable: true,
 	},
 	"sharedInventory:transferStat": {
 		roles: ["dm", "player"],
 		handler: SharedInventoryActions.transferStat,
+		scriptable: true,
 	},
 	"sharedInventory:editStat": {
 		roles: ["dm", "player"],
 		handler: SharedInventoryActions.editStat,
+		scriptable: true,
 	},
 
 	// ============================================================================
@@ -184,10 +207,12 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"skill:create": {
 		roles: ["dm"],
 		handler: SkillActions.create,
+		scriptable: true,
 	},
 	"skill:edit": {
 		roles: ["dm", "player"], //players can upload their own images
 		handler: SkillActions.edit,
+		scriptable: true,
 	},
 	"skill:delete": {
 		roles: ["dm"],
@@ -197,22 +222,27 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"skill:use": {
 		roles: ["dm", "player"],
 		handler: SkillActions.use,
+		scriptable: true,
 	},
 	"skill:discard": {
 		roles: ["dm", "player"],
 		handler: SkillActions.discard,
+		scriptable: true,
 	},
 	"skill:give": {
 		roles: ["dm"],
 		handler: SkillActions.give,
+		scriptable: true,
 	},
 	"skill:bulkEditTags": {
 		roles: ["dm"],
 		handler: SkillActions.bulkEditTags,
+		scriptable: true,
 	},
 	"skill:adjustUses": {
 		roles: ["dm", "player"],
 		handler: SkillActions.adjustUses,
+		scriptable: true,
 	},
 
 	//   ============================================================================
@@ -221,10 +251,12 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"entity:create": {
 		roles: ["dm"],
 		handler: EntityActions.create,
+		scriptable: true,
 	},
 	"entity:edit": {
 		roles: ["dm"],
 		handler: EntityActions.edit,
+		scriptable: true,
 	},
 	"entity:delete": {
 		roles: ["dm"],
@@ -234,18 +266,22 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"entity:spawn": {
 		roles: ["dm"],
 		handler: EntityActions.spawn,
+		scriptable: true,
 	},
 	"entity:remove": {
 		roles: ["dm"],
 		handler: EntityActions.remove,
+		scriptable: true,
 	},
 	"entity:move": {
 		roles: ["dm"],
 		handler: EntityActions.move,
+		scriptable: true,
 	},
 	"entity:bulkEditTags": {
 		roles: ["dm"],
 		handler: EntityActions.bulkEditTags,
+		scriptable: true,
 	},
 	// ============================================================================
 	// COMBAT ACTIONS (uncomment when CombatActions is implemented)
@@ -253,64 +289,116 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"combat:start": {
 		roles: ["dm"],
 		handler: CombatActions.start,
+		scriptable: true,
 	},
 	"combat:end": {
 		roles: ["dm"],
 		handler: CombatActions.end,
+		scriptable: true,
 	},
 	"combat:incrementRound": {
 		roles: ["dm"],
 		handler: CombatActions.incrementRound,
+		scriptable: true,
 	},
 	"combat:decrementRound": {
 		roles: ["dm"],
 		handler: CombatActions.decrementRound,
+		scriptable: true,
 	},
 	"combat:markActorTurnDone": {
 		// Both roles allowed: UI restricts players to their own selected character.
 		// The handler itself is non-destructive (toggles a string-array entry).
 		roles: ["dm", "player"],
 		handler: CombatActions.markActorTurnDone,
+		scriptable: true,
 	},
 
 	// ============================================================================
 	// AUDIO ACTIONS (uncomment when AudioActions is implemented)
 	// ============================================================================
-	...registerDomain("audio", AudioActions, ["dm"]),
+	"audio:create": {
+		roles: ["dm"],
+		handler: AudioActions.create,
+		scriptable: false,
+	},
+	"audio:importPlaylistByIds": {
+		roles: ["dm"],
+		handler: AudioActions.importPlaylistByIds,
+		scriptable: false,
+	},
+	"audio:edit": {
+		roles: ["dm"],
+		handler: AudioActions.edit,
+		scriptable: true,
+	},
+	"audio:delete": {
+		roles: ["dm"],
+		handler: AudioActions.delete,
+		scriptable: false,
+	},
+	"audio:setTrack": {
+		roles: ["dm"],
+		handler: AudioActions.setTrack,
+		scriptable: true,
+	},
+	"audio:setVolume": {
+		roles: ["dm"],
+		handler: AudioActions.setVolume,
+		scriptable: true,
+	},
+	"audio:stopTrack": {
+		roles: ["dm"],
+		handler: AudioActions.stopTrack,
+		scriptable: true,
+	},
+	"audio:bulkEditTags": {
+		roles: ["dm"],
+		handler: AudioActions.bulkEditTags,
+		scriptable: true,
+	},
 	// ============================================================================
 	// IMAGE/SCENE ACTIONS
 	// ============================================================================
 	"scene:setEnvironmentImage": {
 		roles: ["dm"],
 		handler: SceneActions.setEnvironmentImage,
+		scriptable: true,
 	},
 	"scene:setFocusImage": {
 		roles: ["dm"],
 		handler: SceneActions.setFocusImage,
+		scriptable: true,
 	},
 	"image:create": {
 		roles: ["dm", "player"],
 		handler: ImageActions.create,
+		scriptable: true,
 	},
 	"image:bulkCreate": {
 		roles: ["dm", "player"],
 		handler: ImageActions.bulkCreate,
+		scriptable: true,
 	},
 	"image:edit": {
 		roles: ["dm"],
 		handler: ImageActions.edit,
+		scriptable: true,
 	},
 	"image:delete": {
 		roles: ["dm"],
 		handler: ImageActions.delete,
+		scriptable: false,
 	},
 	"image:bulkEditTags": {
 		roles: ["dm"],
 		handler: ImageActions.bulkEditTags,
+		scriptable: true,
 	},
 	"image:reassignOwner": {
 		roles: ["dm"],
 		handler: ImageActions.reassignOwner,
+		scriptable: true,
 	},
 
 	// ============================================================================
@@ -319,18 +407,22 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"status:give": {
 		roles: ["dm"],
 		handler: StatusActions.give,
+		scriptable: true,
 	},
 	"status:remove": {
 		roles: ["dm"],
 		handler: StatusActions.remove,
+		scriptable: true,
 	},
 	"status:create": {
 		roles: ["dm"],
 		handler: StatusActions.create,
+		scriptable: true,
 	},
 	"status:edit": {
 		roles: ["dm", "player"],
 		handler: StatusActions.edit,
+		scriptable: true,
 	},
 	"status:delete": {
 		roles: ["dm"],
@@ -340,10 +432,12 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"status:adjustDuration": {
 		roles: ["dm", "player"],
 		handler: StatusActions.adjustDuration,
+		scriptable: true,
 	},
 	"status:bulkEditTags": {
 		roles: ["dm"],
 		handler: StatusActions.bulkEditTags,
+		scriptable: true,
 	},
 	// ============================================================================
 	// LOG ACTIONS
@@ -351,10 +445,12 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"log:create": {
 		roles: ["dm", "player"],
 		handler: LogActions.create,
+		scriptable: true,
 	},
 	"log:log": {
 		roles: ["dm", "player"],
 		handler: LogActions.log,
+		scriptable: true,
 	},
 	// ============================================================================
 	// PING ACTIONS
@@ -362,6 +458,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"ping:create": {
 		roles: ["dm", "player"],
 		handler: PingActions.create,
+		scriptable: true,
 	},
 	// ============================================================================
 	// STICKER ACTIONS
@@ -369,15 +466,18 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"sticker:create": {
 		roles: ["dm", "player"],
 		handler: StickerActions.create,
+		scriptable: true,
 	},
 	// NOTE ACTIONS
 	"note:create": {
 		roles: ["player"],
 		handler: NoteActions.create,
+		scriptable: true,
 	},
 	"note:edit": {
 		roles: ["player"],
 		handler: NoteActions.edit,
+		scriptable: true,
 	},
 	"note:delete": {
 		roles: ["player"],
@@ -387,12 +487,30 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	// ============================================================================
 	// CAMPAIGN SETTING ACTIONS
 	// ============================================================================
-	...registerDomain("setting", CampaignSettingActions, ["dm"]),
+	"setting:edit": {
+		roles: ["dm"],
+		handler: CampaignSettingActions.edit,
+		scriptable: true,
+	},
 
 	// ============================================================================
-	// CAMPAIGN SETTING ACTIONS
+	// CALENDAR ACTIONS
 	// ============================================================================
-	...registerDomain("calendar", CalendarActions, ["dm"]),
+	"calendar:edit": {
+		roles: ["dm"],
+		handler: CalendarActions.edit,
+		scriptable: true,
+	},
+	"calendar:shortRest": {
+		roles: ["dm"],
+		handler: CalendarActions.shortRest,
+		scriptable: true,
+	},
+	"calendar:longRest": {
+		roles: ["dm"],
+		handler: CalendarActions.longRest,
+		scriptable: true,
+	},
 	// ============================================================================
 	//TERRAIN ACTIONS
 	// ============================================================================
@@ -400,22 +518,27 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"terrain:create": {
 		roles: ["dm"],
 		handler: VoxelTerrainActions.create,
+		scriptable: false,
 	},
 	"terrain:edit": {
 		roles: ["dm"],
 		handler: VoxelTerrainActions.edit,
+		scriptable: true,
 	},
 	"terrain:delete": {
 		roles: ["dm"],
 		handler: VoxelTerrainActions.delete,
+		scriptable: false,
 	},
 	"terrain:moveActors": {
 		roles: ["dm"],
 		handler: VoxelTerrainActions.moveActors,
+		scriptable: true,
 	},
 	"terrain:bulkEditTags": {
 		roles: ["dm"],
 		handler: VoxelTerrainActions.bulkEditTags,
+		scriptable: true,
 	},
 
 	// ============================================================================
@@ -424,10 +547,12 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"terrainLink:create": {
 		roles: ["dm"],
 		handler: TerrainLinkActions.create,
+		scriptable: true,
 	},
 	"terrainLink:edit": {
 		roles: ["dm"],
 		handler: TerrainLinkActions.edit,
+		scriptable: true,
 	},
 	"terrainLink:delete": {
 		roles: ["dm"],
@@ -441,10 +566,12 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"scenario:capture": {
 		roles: ["dm"],
 		handler: ScenarioActions.capture,
+		scriptable: true,
 	},
 	"scenario:load": {
 		roles: ["dm"],
 		handler: ScenarioActions.load,
+		scriptable: true,
 	},
 	"scenario:delete": {
 		roles: ["dm"],
@@ -454,10 +581,12 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"scenario:edit": {
 		roles: ["dm"],
 		handler: ScenarioActions.edit,
+		scriptable: true,
 	},
 	"scenario:bulkEditTags": {
 		roles: ["dm"],
 		handler: ScenarioActions.bulkEditTags,
+		scriptable: true,
 	},
 };
 
@@ -480,22 +609,13 @@ export function canPerformAction(user: User, actionKey: string): boolean {
 /**
  * Whether an action may be invoked from a script (via `game.action`).
  *
- * Policy (default-allow with automatic exclusions — no maintained allowlist):
- *  - An explicit `scriptable` flag on the definition wins.
- *  - Otherwise an action is script-ok iff its handler is SYNCHRONOUS. Async
- *    handlers (terrain edits, scenario load, image/audio IndexedDB work, network)
- *    are auto-excluded — they cannot run safely inline inside the synchronous
- *    cascade, and this needs no code change when a new async action is added.
- *
- * The few sync-but-destructive actions (deletes, campaign:edit) opt out with
- * `scriptable: false`. This is the scripting mutation boundary: `game.action`
- * throws for any key where this returns false.
+ * The registry flag is the sole authority: only `scriptable: true` is callable.
+ * Handler sync/async shape is deliberately irrelevant because the scripting
+ * engine awaits every action through one async path.
  */
 export function isScriptableAction(actionKey: string): boolean {
 	const action = ACTION_REGISTRY[actionKey];
-	if (!action) return false;
-	if (action.scriptable !== undefined) return action.scriptable;
-	return action.handler.constructor.name !== "AsyncFunction";
+	return action?.scriptable === true;
 }
 
 /**
@@ -505,22 +625,4 @@ export function getActionsForRole(role: Role): string[] {
 	return Object.entries(ACTION_REGISTRY)
 		.filter(([_, action]) => action.roles.includes(role))
 		.map(([key, _]) => key);
-}
-
-/**
- * Helper to register all actions from a domain with specific roles
- */
-function registerDomain(
-	domain: string,
-	actions: Record<string, any>,
-	roles: Role[]
-) {
-	const registered: Record<string, ActionDefinition> = {};
-	for (const [actionName, handler] of Object.entries(actions)) {
-		// only include handlers that look like (params, context)
-		if (typeof handler === "function" && handler.length >= 2) {
-			registered[`${domain}:${actionName}`] = { roles, handler };
-		}
-	}
-	return registered;
 }
