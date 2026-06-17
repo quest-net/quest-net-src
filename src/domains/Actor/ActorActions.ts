@@ -1,12 +1,137 @@
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Context } from "../Context/Context";
 import { LogActions } from "../Log/LogActions";
+import { ActorUtils } from "./ActorUtils";
+import { Actor, Position } from "./Actor";
 
 /**
- * Shared actor logic for both Characters and Entities
- * Domain-specific spawn/remove logic belongs in CharacterActions/EntityActions
+ * Shared actor logic for both Characters and Entities.
+ *
+ * The operations that are identical for Characters and Entities (move, edit,
+ * delete, bulkEditTags) live here as a single `actor:*` surface: each resolves
+ * the actor's kind from collection membership and delegates to the shared
+ * ActorUtils helpers, folding in the few kind-specific permission/guard rules.
+ * Domain-specific spawn/remove/create logic still belongs in
+ * CharacterActions/EntityActions, since those genuinely differ (move-vs-clone,
+ * roster-vs-delete).
  */
 export const ActorActions = {
+	/**
+	 * Moves an actor to a new position. Players may only move their own selected
+	 * Character; they can never control Entities (DM-only).
+	 */
+	move(
+		params: { actorId: string; position: Position },
+		context: Context
+	): void {
+		// A player may only move their own selected Character. Since that selection
+		// only ever points at a Character the player owns, this single check also
+		// covers "players can't control Entities" (an entity id is never the
+		// player's selected character) without resolving the actor's kind.
+		if (context.User.Role === "player") {
+			const campaign = CampaignUtils.getActiveCampaign(context);
+			if (
+				context.User.SelectedCharacters?.[campaign.RoomCode] !== params.actorId
+			) {
+				console.warn(
+					`Player ${context.User.Id} cannot move actor: ${params.actorId}`
+				);
+				return;
+			}
+			// Movement-range restriction is enforced entirely client-side (world view
+			// blocks out-of-range clicks; first-person applies a soft pull-back). The
+			// DM trusts the requested position rather than re-validating range here.
+		}
+
+		ActorUtils.moveActor(
+			{ actorId: params.actorId, position: params.position },
+			context
+		);
+	},
+
+	/**
+	 * Edits an actor's properties. Players may edit Characters but never Entities.
+	 */
+	edit(
+		params: { actorId: string; updates: Partial<Actor> },
+		context: Context
+	): void {
+		// Players may edit Characters but never Entities. Kind only matters for this
+		// permission gate; editing itself is kind-agnostic. A not-found id falls
+		// through to editActor, which logs and no-ops.
+		if (context.User.Role === "player") {
+			const kind = ActorUtils.getActorKind(context, params.actorId);
+			if (kind === "entity") {
+				console.warn(
+					`Player ${context.User.Id} cannot edit entity: ${params.actorId}`
+				);
+				return;
+			}
+		}
+
+		ActorUtils.editActor(
+			{ actorId: params.actorId, updates: params.updates },
+			context
+		);
+	},
+
+	/**
+	 * Deletes an actor from the roster/templates (NOT from GameState). A Character
+	 * that is currently spawned must be removed from the field first.
+	 */
+	delete(params: { actorId: string }, context: Context): void {
+		const kind = ActorUtils.getActorKind(context, params.actorId);
+		if (!kind) {
+			console.warn(`actor:delete - actor not found: ${params.actorId}`);
+			return;
+		}
+
+		if (kind === "character") {
+			const campaign = CampaignUtils.getActiveCampaign(context);
+			const isSpawned = campaign.GameState.Characters.some(
+				(c) => c.Id === params.actorId
+			);
+			if (isSpawned) {
+				console.warn(
+					`Cannot delete spawned character: ${params.actorId}. Remove from field first.`
+				);
+				return;
+			}
+		}
+
+		ActorUtils.deleteActor(kind, { actorId: params.actorId }, context);
+	},
+
+	/**
+	 * Bulk edit tags for multiple actors in roster/templates. Updates are grouped
+	 * by resolved kind so a mixed batch is handled correctly (call sites are
+	 * single-kind today).
+	 */
+	bulkEditTags(
+		params: { updates: Array<{ actorId: string; tags: string[] }> },
+		context: Context
+	): void {
+		const byKind: Record<"character" | "entity", Array<{ actorId: string; tags: string[] }>> = {
+			character: [],
+			entity: [],
+		};
+		for (const update of params.updates) {
+			const kind = ActorUtils.getActorKind(context, update.actorId);
+			if (!kind) {
+				console.warn(`actor:bulkEditTags - actor not found: ${update.actorId}`);
+				continue;
+			}
+			byKind[kind].push(update);
+		}
+
+		if (byKind.character.length) {
+			ActorUtils.bulkEditTags("character", { updates: byKind.character }, context);
+		}
+		if (byKind.entity.length) {
+			ActorUtils.bulkEditTags("entity", { updates: byKind.entity }, context);
+		}
+	},
+
 	/**
 	 * Transfers a stat amount from an actor to another actor or shared inventory
 	 */

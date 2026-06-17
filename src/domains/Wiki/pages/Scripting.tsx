@@ -65,7 +65,7 @@ const scriptingPage: WikiPageDefinition = {
 								name: "Triggered by actions",
 								tone: "accent",
 								detail:
-									"Every dispatched action is an event. A script subscribes to an action-key glob (a move is character:move / entity:move; a round tick is combat:incrementRound). When a matching action runs, the script runs right after it.",
+									"Every dispatched action is an event. A script subscribes to an action-key glob (a move is actor:move; a round tick is combat:incrementRound). When a matching action runs, the script runs right after it.",
 							},
 							{
 								name: "Reads anything, changes via actions",
@@ -104,7 +104,7 @@ const scriptingPage: WikiPageDefinition = {
 						<WikiCode>*</WikiCode> is special.
 					</p>
 					<CodeBlock>{`"item:use"            // exactly this action
-"*:move"              // character:move OR entity:move
+"*:move"              // any move, e.g. actor:move
 "status:give"         // when any status is applied
 "combat:incrementRound"   // each round tick ("round start")
 "*"                   // every action (use sparingly)`}</CodeBlock>
@@ -161,7 +161,7 @@ game.rng()               // 0..1
 await game.log("text")   // quick log entry
 game.combat              // read-only combat state { isActive, currentRound, ... }`}</CodeBlock>
 					<p className="text-sm opacity-80">The triggering <WikiCode>event</WikiCode>:</p>
-					<CodeBlock>{`event.key        // the action key that fired, e.g. "character:move"
+					<CodeBlock>{`event.key        // the action key that fired, e.g. "actor:move"
 event.params     // the params that action was called with
 event.actor      // the acting actor (resolved from params.actorId/entityId), if any`}</CodeBlock>
 				</div>
@@ -179,9 +179,9 @@ event.actor      // the acting actor (resolved from params.actorId/entityId), if
 						Pass plain ids and values — never a live object as an id (use{" "}
 						<WikiCode>actor.Id</WikiCode>, <WikiCode>template.Id</WikiCode>).
 					</p>
-					<CodeBlock>{`await game.action("entity:move",  { entityId: e.Id, position: this.actor.Position });
+					<CodeBlock>{`await game.action("actor:move",   { actorId: e.Id, position: this.actor.Position });
 await game.action("status:give",  { statusIds: [s.Id], actorIds: [this.actor.Id], count: 1 });
-await game.action("entity:edit",  { entityId: this.actor.Id, updates: { Size: "large" } });`}</CodeBlock>
+await game.action("actor:edit",   { actorId: this.actor.Id, updates: { Size: "large" } });`}</CodeBlock>
 					<p className="text-sm opacity-80">
 						Script-ok actions (generated from the registry — anything not listed throws
 						when called):
@@ -269,7 +269,7 @@ const pos = this.actor.Position;
 if (!stalker) {
   await game.action("entity:spawn", { entityId: game.template("EntityTemplates", "Stalker").Id, position: pos });
 } else {
-  await game.action("entity:move", { entityId: stalker.Id, position: pos });
+  await game.action("actor:move", { actorId: stalker.Id, position: pos });
 }`}</CodeBlock>
 					<p className="text-sm opacity-80">
 						Enlarging buff — bigger while applied, restored on removal:
@@ -277,11 +277,11 @@ if (!stalker) {
 					<CodeBlock>{`// Status, script A  ·  Trigger: "status:give"
 if (!event.params.actorIds?.includes(this.actor.Id)) return;
 this.vars.prevSize = this.actor.Size ?? "medium";
-await game.action("entity:edit", { entityId: this.actor.Id, updates: { Size: "large" } });
+await game.action("actor:edit", { actorId: this.actor.Id, updates: { Size: "large" } });
 
 // Status, script B  ·  Trigger: "status:remove"
 if (event.params.actorId !== this.actor.Id) return;
-await game.action("entity:edit", { entityId: this.actor.Id, updates: { Size: this.vars.prevSize ?? "medium" } });`}</CodeBlock>
+await game.action("actor:edit", { actorId: this.actor.Id, updates: { Size: this.vars.prevSize ?? "medium" } });`}</CodeBlock>
 					<p className="text-sm opacity-80">
 						On-use trinket — applies a status to the user:
 					</p>

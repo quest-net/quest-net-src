@@ -8,7 +8,7 @@
 // stamps). Hovering a link's hitbox reveals where it leads (unless locked, for
 // non-DMs). "Using" a link is just a terrain-crossing move of the controlled
 // actor to the link's opposite anchor, dispatched via onTraverse -> the ordinary
-// character:move / entity:move (see TerrainLinkActions header). Use is gated on
+// actor:move (see TerrainLinkActions header). Use is gated on
 // the controlled actor being on or adjacent to the anchor, and on the link not
 // being locked (DM bypasses the lock).
 

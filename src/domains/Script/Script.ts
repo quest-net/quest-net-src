@@ -21,7 +21,7 @@
 export interface Script {
 	/**
 	 * Action-key glob that triggers this script. Matched against the key of every
-	 * dispatched action. Examples: "character:move", "*:move", "item:use",
+	 * dispatched action. Examples: "actor:move", "*:move", "item:use",
 	 * "combat:incrementRound", "*". Only `*` is special; everything else is literal.
 	 */
 	Trigger: string;

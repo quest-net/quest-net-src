@@ -4,7 +4,6 @@ import { Context } from "../Context/Context";
 import { Entity } from "./Entity";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
-import { ActorUtils } from "../Actor/ActorUtils";
 import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
 import { getVoxelSpawnPosition, getVoxelTerrainById } from "../../utils/terrain/data/VoxelTerrainUtils";
 import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
@@ -218,61 +217,4 @@ export const EntityActions = {
 		);
 	},
 
-	/**
-	 * Edits an entity's properties
-	 * Works on both templates and spawned instances
-	 */
-	edit(
-		params: { entityId: string; updates: Partial<Entity> },
-		context: Context
-	): void {
-		ActorUtils.editActor(
-			"entity",
-			{ actorId: params.entityId, updates: params.updates },
-			context
-		);
-	},
-
-	/**
-	 * Deletes an entity template permanently
-	 * Cannot delete if instances are currently spawned (safety check)
-	 * DM only - handled by ACTION_REGISTRY
-	 */
-	delete(params: { entityId: string }, context: Context): void {
-		ActorUtils.deleteActor("entity", { actorId: params.entityId }, context);
-	},
-
-	/**
-	 * Moves an entity to a new position
-	 * DM only
-	 */
-	move(
-		params: { entityId: string; position: Position },
-		context: Context
-	): void {
-		ActorUtils.moveActor(
-			"entity",
-			{ actorId: params.entityId, position: params.position },
-			context
-		);
-	},
-
-	/**
-	 * Bulk edit tags for multiple entity templates
-	 */
-	bulkEditTags(
-		params: { updates: Array<{ entityId: string; tags: string[] }> },
-		context: Context
-	): void {
-		ActorUtils.bulkEditTags(
-			"entity",
-			{
-				updates: params.updates.map((update) => ({
-					actorId: update.entityId,
-					tags: update.tags,
-				})),
-			},
-			context
-		);
-	},
 };

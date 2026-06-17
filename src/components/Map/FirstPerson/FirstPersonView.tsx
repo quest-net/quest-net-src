@@ -334,17 +334,10 @@ export default function FirstPersonView({
 			return true;
 		}
 
-		if (currentActor.kind === "character") {
-			service.execute("character:move", {
-				characterId: currentActor.id,
-				position: normalized,
-			});
-		} else {
-			service.execute("entity:move", {
-				entityId: currentActor.id,
-				position: normalized,
-			});
-		}
+		service.execute("actor:move", {
+			actorId: currentActor.id,
+			position: normalized,
+		});
 		lastSentKeyRef.current = key;
 		lastSentPositionRef.current = normalized;
 		lastSentAtRef.current = Date.now();

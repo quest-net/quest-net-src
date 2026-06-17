@@ -25,27 +25,52 @@ export const ActorUtils = {
 	},
 
 	/**
-	 * Moves an actor to a new position (works for both Characters and Entities)
+	 * Resolves whether an actor id belongs to a Character or an Entity by where it
+	 * lives. Storage location is the single source of truth (there is no Kind field
+	 * on the Actor model). IDs are unique GUIDs across every collection, so an
+	 * entity instance and its template both independently resolve to "entity".
+	 */
+	getActorKind(
+		context: Context,
+		actorId: string
+	): "character" | "entity" | undefined {
+		const campaign = CampaignUtils.getActiveCampaign(context);
+		if (
+			campaign.GameState.Characters.some((a) => a.Id === actorId) ||
+			campaign.CharacterRoster.some((a) => a.Id === actorId)
+		) {
+			return "character";
+		}
+		if (
+			campaign.GameState.Entities.some((a) => a.Id === actorId) ||
+			campaign.EntityTemplates.some((a) => a.Id === actorId)
+		) {
+			return "entity";
+		}
+		return undefined;
+	},
+
+	/**
+	 * Moves an actor to a new position. Movement is identical for Characters and
+	 * Entities, so this resolves the actor by id across both active collections —
+	 * no kind needed. (Only spawned actors can move; the roster/templates are not
+	 * searched.)
 	 */
 	moveActor(
-		type: "character" | "entity",
 		params: { actorId: string; position: Position },
 		context: Context
 	): void {
 		const campaign = CampaignUtils.getActiveCampaign(context);
-		const actors =
-			type === "character"
-				? campaign.GameState.Characters
-				: campaign.GameState.Entities;
-
-		const actor = actors.find((a) => a.Id === params.actorId);
+		const actor =
+			campaign.GameState.Characters.find((a) => a.Id === params.actorId) ??
+			campaign.GameState.Entities.find((a) => a.Id === params.actorId);
 		if (!actor) {
-			console.warn(`${type} not found in GameState: ${params.actorId}`);
+			console.warn(`Actor not found in GameState: ${params.actorId}`);
 			return;
 		}
 
 		if (!ActorUtils.isValidPosition(params.position)) {
-			console.warn(`Invalid ${type} move position: ${params.actorId}`);
+			console.warn(`Invalid actor move position: ${params.actorId}`);
 			return;
 		}
 
@@ -81,7 +106,7 @@ export const ActorUtils = {
 
 		LogActions.create(
 			{
-				action: `${type} moved`,
+				action: "Actor moved",
 				details: `${actor.Name} moved from (${oldPosition.x}, ${oldPosition.y}, h=${oldPosition.h}) to (${nextPosition.x}, ${nextPosition.y}, h=${nextPosition.h})`,
 				category: "movement",
 				level: "verbose",
@@ -94,40 +119,26 @@ export const ActorUtils = {
 	},
 
 	/**
-	 * Edits an actor's properties (works for both Characters and Entities)
-	 * Searches in Roster/Templates first, then GameState
-	 * Characters can only be in one location (Roster OR GameState)
-	 * Entities can exist in both (template + instances with different IDs)
+	 * Edits an actor's properties. Editing is identical for Characters and
+	 * Entities, so this resolves the actor by id across every collection (roster,
+	 * templates, and GameState) — no kind needed. IDs are unique, so a template
+	 * and its spawned instances are distinct objects matched independently.
 	 */
 	editActor(
-		type: "character" | "entity",
 		params: { actorId: string; updates: Partial<Actor> },
 		context: Context
 	): void {
 		const campaign = CampaignUtils.getActiveCampaign(context);
 
-		// Get the appropriate storage locations
-		const roster =
-			type === "character"
-				? campaign.CharacterRoster
-				: campaign.EntityTemplates;
-		const gameState =
-			type === "character"
-				? campaign.GameState.Characters
-				: campaign.GameState.Entities;
-
-		// Try to find in roster/templates first, then in gamestate
-		let actor = roster.find((a) => a.Id === params.actorId);
-		let isSpawnedActor = false;
+		const actor = getAllActors(campaign).find((a) => a.Id === params.actorId);
 		if (!actor) {
-			actor = gameState.find((a) => a.Id === params.actorId);
-			isSpawnedActor = !!actor;
-		}
-
-		if (!actor) {
-			console.warn(`${type} not found: ${params.actorId}`);
+			console.warn(`Actor not found: ${params.actorId}`);
 			return;
 		}
+
+		const isSpawnedActor =
+			campaign.GameState.Characters.some((a) => a.Id === params.actorId) ||
+			campaign.GameState.Entities.some((a) => a.Id === params.actorId);
 
 		const previousCanFly = actor.CanFly;
 
@@ -145,7 +156,7 @@ export const ActorUtils = {
 
 		LogActions.create(
 			{
-				action: `${type} edited`,
+				action: "Actor edited",
 				details: `${actor.Name} was updated`,
 				category: "character",
 				level: "info",

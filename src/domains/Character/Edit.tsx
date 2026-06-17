@@ -75,8 +75,8 @@ export function CharacterEdit({
 				});
 		} else {
 			// Edit mode
-			actionService.execute("character:edit", {
-				characterId: data.Id,
+			actionService.execute("actor:edit", {
+				actorId: data.Id,
 				updates: validatedData,
 			});
 		}
@@ -101,14 +101,15 @@ export function CharacterEdit({
 	const handleDelete = () => {
 		if (!actionService || !character) return;
 
-		actionService.execute("character:delete", {
-			characterId: character.Id,
+		actionService.execute("actor:delete", {
+			actorId: character.Id,
 		});
 	};
 
 	return (
 		<FormWrapper
 			domain="character"
+			mutationDomain="actor"
 			entityId={character?.Id}
 			initialData={initialData}
 			onSave={handleSave}

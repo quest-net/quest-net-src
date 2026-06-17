@@ -117,6 +117,13 @@ export function FloatingActionBar({ show, children }: FloatingActionBarProps) {
 
 interface FormWrapperProps<T> {
 	domain: string;
+	/**
+	 * Permission domain for the edit/delete gates, when it differs from `domain`.
+	 * Defaults to `domain`. Character/Entity forms set this to "actor" because
+	 * their edit/delete go through the unified `actor:*` actions, while create
+	 * stays domain-specific (`character:create` / `entity:create`).
+	 */
+	mutationDomain?: string;
 	entityId?: string;
 	initialData: T;
 	onSave: (data: T) => void;
@@ -138,6 +145,7 @@ interface FormWrapperProps<T> {
 
 export function FormWrapper<T extends Record<string, any>>({
 	domain,
+	mutationDomain,
 	entityId,
 	initialData,
 	onSave,
@@ -161,11 +169,13 @@ export function FormWrapper<T extends Record<string, any>>({
 		keepButtonsVisible = false,
 	} = buttonConfig;
 
-	// Check permissions for this domain
+	// Check permissions for this domain. Create stays on `domain`; edit/delete use
+	// `mutationDomain` when provided (e.g. "actor" for Characters/Entities).
+	const mutDomain = mutationDomain ?? domain;
 	const canCreate = canPerformAction(context.User, `${domain}:create`);
-	const canEdit = canPerformAction(context.User, `${domain}:edit`);
+	const canEdit = canPerformAction(context.User, `${mutDomain}:edit`);
 	const canDelete =
-		entityId && onDelete && canPerformAction(context.User, `${domain}:delete`);
+		entityId && onDelete && canPerformAction(context.User, `${mutDomain}:delete`);
 
 	// Determine mode based on permissions
 	const mode: FormMode =

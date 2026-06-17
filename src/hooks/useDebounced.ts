@@ -39,7 +39,7 @@ export interface DebouncedFn<A extends unknown[]> {
  *
  * @example
  *   const commitName = useDebouncedCallback((name: string) =>
- *     actionService.execute("character:edit", { id, name })
+ *     actionService.execute("actor:edit", { actorId, updates: { Name: name } })
  *   );
  *   <input onChange={(e) => commitName(e.target.value)} />
  */

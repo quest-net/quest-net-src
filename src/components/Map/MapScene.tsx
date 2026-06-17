@@ -490,17 +490,10 @@ export default function MapScene({
 		(position: { x: number; y: number; h: number }) => {
 			if (!selectedActor || !actionService) return;
 
-			if (selectedActor.kind === "character") {
-				actionService.execute("character:move", {
-					characterId: selectedActor.id,
-					position,
-				});
-			} else {
-				actionService.execute("entity:move", {
-					entityId: selectedActor.id,
-					position,
-				});
-			}
+			actionService.execute("actor:move", {
+				actorId: selectedActor.id,
+				position,
+			});
 
 			updateHoveredTile(null);
 			clearSelection();
@@ -522,17 +515,10 @@ export default function MapScene({
 			if (!isWorld) {
 				liveFirstPersonRulesPositionRef.current = destination;
 			}
-			if (actor.kind === "character") {
-				actionService.execute("character:move", {
-					characterId: actor.id,
-					position: destination,
-				});
-			} else {
-				actionService.execute("entity:move", {
-					entityId: actor.id,
-					position: destination,
-				});
-			}
+			actionService.execute("actor:move", {
+				actorId: actor.id,
+				position: destination,
+			});
 			if (isDM) {
 				setViewedTerrain(destination.terrainId);
 			}
@@ -585,17 +571,10 @@ export default function MapScene({
 			if (!actionService) return;
 
 			selectActor(actor);
-			if (actor.kind === "character") {
-				actionService.execute("character:move", {
-					characterId: actor.id,
-					position,
-				});
-			} else {
-				actionService.execute("entity:move", {
-					entityId: actor.id,
-					position,
-				});
-			}
+			actionService.execute("actor:move", {
+				actorId: actor.id,
+				position,
+			});
 
 			updateHoveredTile(null);
 		},

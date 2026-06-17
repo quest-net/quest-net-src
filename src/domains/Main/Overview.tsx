@@ -273,12 +273,8 @@ export function Overview({ onInspectActor }: OverviewProps) {
 		const updatedStats = entry.actor.Stats.map((stat) =>
 			stat.Id === statId ? { ...stat, [field]: value } : stat
 		);
-		const actionKey =
-			entry.kind === "character" ? "character:edit" : "entity:edit";
-		const idKey = entry.kind === "character" ? "characterId" : "entityId";
-
-		actionService.execute(actionKey, {
-			[idKey]: entry.actor.Id,
+		actionService.execute("actor:edit", {
+			actorId: entry.actor.Id,
 			updates: { Stats: updatedStats },
 		});
 	};
@@ -294,12 +290,8 @@ export function Overview({ onInspectActor }: OverviewProps) {
 			Max: action.Max,
 			Current: action.Current,
 		}));
-		const actionKey =
-			entry.kind === "character" ? "character:edit" : "entity:edit";
-		const idKey = entry.kind === "character" ? "characterId" : "entityId";
-
-		actionService.execute(actionKey, {
-			[idKey]: entry.actor.Id,
+		actionService.execute("actor:edit", {
+			actorId: entry.actor.Id,
 			updates: { Actions: actionSlots },
 		});
 	};

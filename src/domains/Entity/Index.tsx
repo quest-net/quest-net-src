@@ -37,9 +37,9 @@ export function EntityIndex() {
 	) => {
 		if (!actionService) return;
 
-		actionService.execute("entity:bulkEditTags", {
+		actionService.execute("actor:bulkEditTags", {
 			updates: updates.map((update) => ({
-				entityId: update.itemId,
+				actorId: update.itemId,
 				tags: update.newTags,
 			})),
 		});

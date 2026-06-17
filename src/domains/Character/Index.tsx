@@ -37,9 +37,9 @@ export function CharacterIndex() {
 	) => {
 		if (!actionService) return;
 
-		actionService.execute("character:bulkEditTags", {
+		actionService.execute("actor:bulkEditTags", {
 			updates: updates.map((update) => ({
-				characterId: update.itemId,
+				actorId: update.itemId,
 				tags: update.newTags,
 			})),
 		});

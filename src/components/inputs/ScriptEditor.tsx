@@ -112,7 +112,7 @@ export function ScriptEditor({ scripts, onChange, readOnly }: ScriptEditorProps)
 							spellCheck={false}
 							placeholder={
 								'// e.g. if (event.params.actorId !== this.actor.Id) return;\n' +
-								'// await game.action("entity:move", { entityId: stalker.Id, position: this.actor.Position });'
+								'// await game.action("actor:move", { actorId: stalker.Id, position: this.actor.Position });'
 							}
 						/>
 

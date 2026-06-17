@@ -449,7 +449,7 @@ location.reload();`}
 					</p>
 					<WikiFlow>
 						<FlowStep number="1" title="UI calls ActionService.execute">
-							Components request a named action such as <Code>character:move</Code>{" "}
+							Components request a named action such as <Code>actor:move</Code>{" "}
 							or <Code>terrain:moveActors</Code>.
 						</FlowStep>
 						<FlowStep number="2" title="Role permission is checked">

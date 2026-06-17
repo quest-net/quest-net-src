@@ -4,7 +4,6 @@ import { Context } from "../Context/Context";
 import { Character } from "./Character";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
-import { ActorUtils } from "../Actor/ActorUtils";
 import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
 import { getVoxelSpawnPosition, getVoxelTerrainById } from "../../utils/terrain/data/VoxelTerrainUtils";
 import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
@@ -217,100 +216,4 @@ export const CharacterActions = {
 		);
 	},
 
-	edit(
-		params: { characterId: string; updates: Partial<Character> },
-		context: Context
-	): void {
-		ActorUtils.editActor(
-			"character",
-			{ actorId: params.characterId, updates: params.updates },
-			context
-		);
-	},
-
-	delete(params: { characterId: string }, context: Context): void {
-		const campaign = CampaignUtils.getActiveCampaign(context);
-
-		const isSpawned = campaign.GameState.Characters.some(
-			(c) => c.Id === params.characterId
-		);
-		if (isSpawned) {
-			console.warn(
-				`Cannot delete spawned character: ${params.characterId}. Remove from field first.`
-			);
-			return;
-		}
-
-		ActorUtils.deleteActor(
-			"character",
-			{ actorId: params.characterId },
-			context
-		);
-	},
-
-	/**
-	 * Moves a character to a new position
-	 * Players can only move their own characters
-	 */
-	move(
-		params: { characterId: string; position: Position },
-		context: Context
-	): void {
-		const campaign = CampaignUtils.getActiveCampaign(context);
-		const character = campaign.GameState.Characters.find(
-			(c) => c.Id === params.characterId
-		);
-
-		if (!character) {
-			console.warn(`Character not found in GameState: ${params.characterId}`);
-			return;
-		}
-
-		if (!ActorUtils.isValidPosition(params.position)) {
-			console.warn(`Invalid character move position: ${params.characterId}`);
-			return;
-		}
-
-		if (context.User.Role === "player") {
-			if (
-				context.User.SelectedCharacters?.[campaign.RoomCode] !==
-				params.characterId
-			) {
-				console.warn(
-					`Player ${context.User.Id} cannot move character: ${params.characterId}`
-				);
-				return;
-			}
-
-			// Movement-range restriction is enforced entirely client-side now (world
-			// view blocks out-of-range clicks; first-person applies a soft pull-back
-			// toward the turn-start position). The DM trusts the requested position
-			// rather than re-validating range here.
-		}
-
-		ActorUtils.moveActor(
-			"character",
-			{ actorId: params.characterId, position: params.position },
-			context
-		);
-	},
-
-	/**
-	 * Bulk edit tags for multiple characters
-	 */
-	bulkEditTags(
-		params: { updates: Array<{ characterId: string; tags: string[] }> },
-		context: Context
-	): void {
-		ActorUtils.bulkEditTags(
-			"character",
-			{
-				updates: params.updates.map((update) => ({
-					actorId: update.characterId,
-					tags: update.tags,
-				})),
-			},
-			context
-		);
-	},
 };

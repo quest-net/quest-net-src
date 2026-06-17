@@ -135,11 +135,8 @@ function UnifiedInspector({
 	const handleFieldChange = (field: keyof Actor, value: any) => {
 		if (!actionService || !isDM) return;
 
-		const actionKey = kind === "character" ? "character:edit" : "entity:edit";
-		const idKey = kind === "character" ? "characterId" : "entityId";
-
-		actionService.execute(actionKey, {
-			[idKey]: actor.Id,
+		actionService.execute("actor:edit", {
+			actorId: actor.Id,
 			updates: { [field]: value },
 		});
 	};
@@ -204,11 +201,8 @@ function UnifiedInspector({
 			stat.Id === statId ? { ...stat, [field]: value } : stat
 		);
 
-		const actionKey = kind === "character" ? "character:edit" : "entity:edit";
-		const idKey = kind === "character" ? "characterId" : "entityId";
-
-		actionService.execute(actionKey, {
-			[idKey]: actor.Id,
+		actionService.execute("actor:edit", {
+			actorId: actor.Id,
 			updates: { Stats: updatedStats },
 		});
 	};
@@ -222,11 +216,8 @@ function UnifiedInspector({
 			Current: a.Current,
 		}));
 
-		const actionKey = kind === "character" ? "character:edit" : "entity:edit";
-		const idKey = kind === "character" ? "characterId" : "entityId";
-
-		actionService.execute(actionKey, {
-			[idKey]: actor.Id,
+		actionService.execute("actor:edit", {
+			actorId: actor.Id,
 			updates: { Actions: actionSlots },
 		});
 	};

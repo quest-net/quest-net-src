@@ -67,8 +67,8 @@ export function CharacterSheet() {
 	const handleFieldChange = (field: keyof Character, value: any) => {
 		if (!actionService || !character) return;
 
-		actionService.execute("character:edit", {
-			characterId: character.Id,
+		actionService.execute("actor:edit", {
+			actorId: character.Id,
 			updates: { [field]: value },
 		});
 	};
@@ -133,8 +133,8 @@ export function CharacterSheet() {
 			stat.Id === statId ? { ...stat, [field]: value } : stat
 		);
 
-		actionService.execute("character:edit", {
-			characterId: character.Id,
+		actionService.execute("actor:edit", {
+			actorId: character.Id,
 			updates: { Stats: updatedStats },
 		});
 	};
@@ -157,8 +157,8 @@ export function CharacterSheet() {
 			Current: a.Current,
 		}));
 
-		actionService.execute("character:edit", {
-			characterId: character.Id,
+		actionService.execute("actor:edit", {
+			actorId: character.Id,
 			updates: { Actions: actionSlots },
 		});
 	};

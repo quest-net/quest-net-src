@@ -78,24 +78,27 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		handler: CharacterActions.remove,
 		scriptable: true,
 	},
-	"character:edit": {
-		roles: ["dm", "player"], // Players can update their own, validation in action
-		handler: CharacterActions.edit,
+	// ============================================================================
+	// ACTOR ACTIONS (unified surface for Characters and Entities)
+	// ============================================================================
+	"actor:move": {
+		roles: ["dm", "player"], // Player control gated in handler (own character only)
+		handler: ActorActions.move,
 		scriptable: true,
 	},
-	"character:delete": {
-		roles: ["dm"], // Players can delete their own, validation in action
-		handler: CharacterActions.delete,
+	"actor:edit": {
+		roles: ["dm", "player"], // Players may edit characters, not entities (in handler)
+		handler: ActorActions.edit,
+		scriptable: true,
+	},
+	"actor:delete": {
+		roles: ["dm"],
+		handler: ActorActions.delete,
 		scriptable: false,
 	},
-	"character:move": {
-		roles: ["dm", "player"],
-		handler: CharacterActions.move,
-		scriptable: true,
-	},
-	"character:bulkEditTags": {
-		roles: ["dm"], // Players can organize their own characters
-		handler: CharacterActions.bulkEditTags,
+	"actor:bulkEditTags": {
+		roles: ["dm"],
+		handler: ActorActions.bulkEditTags,
 		scriptable: true,
 	},
 	"actor:transferStat": {
@@ -253,16 +256,6 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		handler: EntityActions.create,
 		scriptable: true,
 	},
-	"entity:edit": {
-		roles: ["dm"],
-		handler: EntityActions.edit,
-		scriptable: true,
-	},
-	"entity:delete": {
-		roles: ["dm"],
-		handler: EntityActions.delete,
-		scriptable: false,
-	},
 	"entity:spawn": {
 		roles: ["dm"],
 		handler: EntityActions.spawn,
@@ -271,16 +264,6 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"entity:remove": {
 		roles: ["dm"],
 		handler: EntityActions.remove,
-		scriptable: true,
-	},
-	"entity:move": {
-		roles: ["dm"],
-		handler: EntityActions.move,
-		scriptable: true,
-	},
-	"entity:bulkEditTags": {
-		roles: ["dm"],
-		handler: EntityActions.bulkEditTags,
 		scriptable: true,
 	},
 	// ============================================================================

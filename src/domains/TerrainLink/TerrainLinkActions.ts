@@ -6,8 +6,8 @@
 //
 // Note: there is no "traverse" action. Using a link is just a terrain-crossing
 // move: the map's link layer resolves the destination from the link (via the
-// helpers in TerrainLink.ts) and dispatches the ordinary character:move /
-// entity:move, which already honors a destination terrainId and re-anchors the
+// helpers in TerrainLink.ts) and dispatches the ordinary actor:move, which
+// already honors a destination terrainId and re-anchors the
 // combat budget on a terrain change (ActorUtils.moveActor). Lock and adjacency
 // are enforced client-side at the interaction point, consistent with how movement
 // legality is handled throughout the app.

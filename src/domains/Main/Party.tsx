@@ -48,8 +48,8 @@ export function Party({ onInspectActor }: PartyProps) {
 			Current: action.Current,
 		}));
 
-		actionService.execute("character:edit", {
-			characterId,
+		actionService.execute("actor:edit", {
+			actorId: characterId,
 			updates: { Actions: actionSlots },
 		});
 	};
