@@ -128,9 +128,9 @@ export class ActorPoseService {
 			this.clearLiveActorPoses();
 			return;
 		}
-		// Movement and despawn are unified under actor:move / actor:remove, both
+		// Movement and despawn are unified under actor:move / actor:despawn, both
 		// keyed by actorId.
-		if (actionKey === "actor:move" || actionKey === "actor:remove") {
+		if (actionKey === "actor:move" || actionKey === "actor:despawn") {
 			if (typeof params?.actorId === "string") {
 				this.clearLiveActorPoses(params.actorId);
 			}

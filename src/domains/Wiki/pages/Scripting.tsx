@@ -267,7 +267,7 @@ if (event.params.actorId !== this.actor.Id) return;   // only OUR bearer
 const stalker = game.find("Stalker");
 const pos = this.actor.Position;
 if (!stalker) {
-  await game.action("entity:spawn", { entityId: game.template("EntityTemplates", "Stalker").Id, position: pos });
+  await game.action("actor:spawn", { actorId: game.template("EntityTemplates", "Stalker").Id, position: pos });
 } else {
   await game.action("actor:move", { actorId: stalker.Id, position: pos });
 }`}</CodeBlock>

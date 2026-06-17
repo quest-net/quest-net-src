@@ -10,14 +10,17 @@ import { EntityActions } from "../Entity/EntityActions";
  * Shared actor logic for both Characters and Entities.
  *
  * The operations callers invoke are unified under a single `actor:*` surface
- * (move, edit, delete, bulkEditTags, remove): each resolves the actor's kind
- * from its id via `ActorUtils.getActorKind` and either runs kind-agnostic logic
- * or routes to the kind-specific handler. Callers never branch on kind.
+ * (move, edit, delete, bulkEditTags, spawn, despawn): each resolves the actor's
+ * kind from its id via `ActorUtils.getActorKind` and either runs kind-agnostic
+ * logic or routes to the kind-specific handler. Callers never branch on kind.
  *
- * `remove` keeps the genuinely-different despawn semantics in
- * CharacterActions/EntityActions (Characters return to the roster, Entities are
- * deleted) but hides that split behind the unified action. Spawn/create stay
- * split because their call sites are inherently single-kind.
+ * `spawn` and `despawn` keep the genuinely-different semantics in
+ * CharacterActions/EntityActions (a Character MOVEs between roster and field; an
+ * Entity is CLONEd from a template on spawn and deleted on despawn) but hide that
+ * split behind the unified action. `getActorKind` resolves both active ids and
+ * roster/template ids, so a script can call `actor:spawn`/`actor:despawn` with a
+ * single id and never know the kind. `create`/`createAndSpawn` stay kind-specific
+ * because their call sites are inherently single-kind (and not script-reachable).
  */
 export const ActorActions = {
 	/**
@@ -107,18 +110,55 @@ export const ActorActions = {
 	},
 
 	/**
+	 * Spawns an actor onto the field from its roster/template. Resolves kind from
+	 * the id and routes to the kind-specific spawn semantics — a Character MOVEs
+	 * out of the roster (preserving its persistent state), an Entity is CLONEd from
+	 * its template into a fresh instance. Callers never branch. Entity-only options
+	 * (instanceId, repairActors) stay on EntityActions.spawn for its single-kind
+	 * call sites (scenario load); the unified surface forwards only the common
+	 * placement params.
+	 */
+	spawn(
+		params: { actorId: string; terrainId?: string; position?: Position },
+		context: Context
+	): void {
+		const kind = ActorUtils.getActorKind(context, params.actorId);
+		if (kind === "character") {
+			CharacterActions.spawn(
+				{
+					characterId: params.actorId,
+					terrainId: params.terrainId,
+					position: params.position,
+				},
+				context
+			);
+		} else if (kind === "entity") {
+			EntityActions.spawn(
+				{
+					entityId: params.actorId,
+					terrainId: params.terrainId,
+					position: params.position,
+				},
+				context
+			);
+		} else {
+			console.warn(`actor:spawn - actor not found: ${params.actorId}`);
+		}
+	},
+
+	/**
 	 * Removes a spawned actor from the field. Resolves kind from the id and routes
 	 * to the kind-specific despawn semantics — a Character returns to the roster
 	 * (state preserved), an Entity instance is deleted. Callers never branch.
 	 */
-	remove(params: { actorId: string }, context: Context): void {
+	despawn(params: { actorId: string }, context: Context): void {
 		const kind = ActorUtils.getActorKind(context, params.actorId);
 		if (kind === "character") {
 			CharacterActions.remove({ characterId: params.actorId }, context);
 		} else if (kind === "entity") {
 			EntityActions.remove({ entityId: params.actorId }, context);
 		} else {
-			console.warn(`actor:remove - actor not found: ${params.actorId}`);
+			console.warn(`actor:despawn - actor not found: ${params.actorId}`);
 		}
 	},
 

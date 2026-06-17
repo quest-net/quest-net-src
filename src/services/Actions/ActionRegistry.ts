@@ -81,9 +81,14 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		handler: ActorActions.move,
 		scriptable: true,
 	},
-	"actor:remove": {
+	"actor:spawn": {
+		roles: ["dm"], // Resolves kind internally: character -> move from roster, entity -> clone from template
+		handler: ActorActions.spawn,
+		scriptable: true,
+	},
+	"actor:despawn": {
 		roles: ["dm"], // Resolves kind internally: character -> roster, entity -> delete
-		handler: ActorActions.remove,
+		handler: ActorActions.despawn,
 		scriptable: true,
 	},
 	"actor:edit": {

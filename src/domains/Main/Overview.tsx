@@ -238,7 +238,7 @@ export function Overview({ onInspectActor }: OverviewProps) {
 		allEntries
 			.filter((entry) => selectedActorIds.includes(entry.actor.Id))
 			.forEach((entry) => {
-				actionService.execute("actor:remove", { actorId: entry.actor.Id });
+				actionService.execute("actor:despawn", { actorId: entry.actor.Id });
 			});
 
 		setSelectedActorIds([]);
