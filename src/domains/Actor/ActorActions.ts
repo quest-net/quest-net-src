@@ -3,17 +3,21 @@ import { Context } from "../Context/Context";
 import { LogActions } from "../Log/LogActions";
 import { ActorUtils } from "./ActorUtils";
 import { Actor, Position } from "./Actor";
+import { CharacterActions } from "../Character/CharacterActions";
+import { EntityActions } from "../Entity/EntityActions";
 
 /**
  * Shared actor logic for both Characters and Entities.
  *
- * The operations that are identical for Characters and Entities (move, edit,
- * delete, bulkEditTags) live here as a single `actor:*` surface: each resolves
- * the actor's kind from collection membership and delegates to the shared
- * ActorUtils helpers, folding in the few kind-specific permission/guard rules.
- * Domain-specific spawn/remove/create logic still belongs in
- * CharacterActions/EntityActions, since those genuinely differ (move-vs-clone,
- * roster-vs-delete).
+ * The operations callers invoke are unified under a single `actor:*` surface
+ * (move, edit, delete, bulkEditTags, remove): each resolves the actor's kind
+ * from its id via `ActorUtils.getActorKind` and either runs kind-agnostic logic
+ * or routes to the kind-specific handler. Callers never branch on kind.
+ *
+ * `remove` keeps the genuinely-different despawn semantics in
+ * CharacterActions/EntityActions (Characters return to the roster, Entities are
+ * deleted) but hides that split behind the unified action. Spawn/create stay
+ * split because their call sites are inherently single-kind.
  */
 export const ActorActions = {
 	/**
@@ -100,6 +104,22 @@ export const ActorActions = {
 		}
 
 		ActorUtils.deleteActor(kind, { actorId: params.actorId }, context);
+	},
+
+	/**
+	 * Removes a spawned actor from the field. Resolves kind from the id and routes
+	 * to the kind-specific despawn semantics — a Character returns to the roster
+	 * (state preserved), an Entity instance is deleted. Callers never branch.
+	 */
+	remove(params: { actorId: string }, context: Context): void {
+		const kind = ActorUtils.getActorKind(context, params.actorId);
+		if (kind === "character") {
+			CharacterActions.remove({ characterId: params.actorId }, context);
+		} else if (kind === "entity") {
+			EntityActions.remove({ entityId: params.actorId }, context);
+		} else {
+			console.warn(`actor:remove - actor not found: ${params.actorId}`);
+		}
 	},
 
 	/**

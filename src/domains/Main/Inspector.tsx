@@ -225,11 +225,7 @@ function UnifiedInspector({
 	const handleDespawn = () => {
 		if (!actionService || !isDM) return;
 
-		if (kind === "character") {
-			actionService.execute("character:remove", { characterId: actor.Id });
-		} else {
-			actionService.execute("entity:remove", { entityId: actor.Id });
-		}
+		actionService.execute("actor:remove", { actorId: actor.Id });
 	};
 
 	const handleMove = (toTerrainId: string) => {

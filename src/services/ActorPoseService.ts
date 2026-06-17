@@ -128,23 +128,11 @@ export class ActorPoseService {
 			this.clearLiveActorPoses();
 			return;
 		}
-		// Movement is unified under actor:move (actorId); despawn stays split
-		// (character:remove -> roster, entity:remove -> delete).
-		if (actionKey === "actor:move") {
+		// Movement and despawn are unified under actor:move / actor:remove, both
+		// keyed by actorId.
+		if (actionKey === "actor:move" || actionKey === "actor:remove") {
 			if (typeof params?.actorId === "string") {
 				this.clearLiveActorPoses(params.actorId);
-			}
-			return;
-		}
-		if (actionKey === "character:remove") {
-			if (typeof params?.characterId === "string") {
-				this.clearLiveActorPoses(params.characterId);
-			}
-			return;
-		}
-		if (actionKey === "entity:remove") {
-			if (typeof params?.entityId === "string") {
-				this.clearLiveActorPoses(params.entityId);
 			}
 		}
 	}

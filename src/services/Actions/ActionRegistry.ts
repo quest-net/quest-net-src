@@ -73,17 +73,17 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		handler: CharacterActions.createAndSpawn,
 		scriptable: true,
 	},
-	"character:remove": {
-		roles: ["dm"],
-		handler: CharacterActions.remove,
-		scriptable: true,
-	},
 	// ============================================================================
 	// ACTOR ACTIONS (unified surface for Characters and Entities)
 	// ============================================================================
 	"actor:move": {
 		roles: ["dm", "player"], // Player control gated in handler (own character only)
 		handler: ActorActions.move,
+		scriptable: true,
+	},
+	"actor:remove": {
+		roles: ["dm"], // Resolves kind internally: character -> roster, entity -> delete
+		handler: ActorActions.remove,
 		scriptable: true,
 	},
 	"actor:edit": {
@@ -259,11 +259,6 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"entity:spawn": {
 		roles: ["dm"],
 		handler: EntityActions.spawn,
-		scriptable: true,
-	},
-	"entity:remove": {
-		roles: ["dm"],
-		handler: EntityActions.remove,
 		scriptable: true,
 	},
 	// ============================================================================

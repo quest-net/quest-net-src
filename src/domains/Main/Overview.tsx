@@ -238,13 +238,7 @@ export function Overview({ onInspectActor }: OverviewProps) {
 		allEntries
 			.filter((entry) => selectedActorIds.includes(entry.actor.Id))
 			.forEach((entry) => {
-				if (entry.kind === "character") {
-					actionService.execute("character:remove", {
-						characterId: entry.actor.Id,
-					});
-				} else {
-					actionService.execute("entity:remove", { entityId: entry.actor.Id });
-				}
+				actionService.execute("actor:remove", { actorId: entry.actor.Id });
 			});
 
 		setSelectedActorIds([]);
