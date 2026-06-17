@@ -3,7 +3,7 @@ import * as THREE from "three";
 import type { VoxelTerrain } from "../../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCount } from "../../../../utils/terrain/data/VoxelDataUtils";
 import { resolveTerrainVoxels } from "../../../../utils/terrain/data/terrainPayloadStore";
-import { getMaxVoxelSurfaceHeight } from "../../../../utils/terrain/data/VoxelTerrainUtils";
+import { getMaxVoxelSurfaceHeight } from "../../../../utils/terrain/data/VoxelTerrainQueries";
 import type { ThreeDSceneResources } from "../../Actors3D/actorTokenTypes";
 import { getShadowCameraBounds } from "../../shadowCameraBounds";
 import { THREE_D_MAP_DOF } from "../../threeDMapConstants";

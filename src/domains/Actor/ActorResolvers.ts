@@ -3,13 +3,13 @@
 // These combine template data (Name, Color, etc.) with instance data (Current, Max, etc.)
 // so that UI components get a single merged object to render.
 
-import type { StatSlot, ActionSlot, AttributeSlot } from "../domains/Actor/Actor";
+import type { StatSlot, ActionSlot, AttributeSlot } from "./Actor";
 import type {
 	StatDefinition,
 	ActionDefinition,
 	AttributeDefinition,
 	RestoreRule,
-} from "../domains/CampaignSetting/CampaignSetting";
+} from "../CampaignSetting/CampaignSetting";
 
 // ---- Resolved types (template + instance merged for UI consumption) ----
 

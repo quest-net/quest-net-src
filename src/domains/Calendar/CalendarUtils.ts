@@ -8,7 +8,7 @@ import { Character } from "../Character/Character";
 import { Item } from "../Item/Item";
 import { Skill } from "../Skill/Skill";
 import { Actor } from "../Actor/Actor";
-import { resolveStat } from "../../utils/ActorResolvers";
+import { resolveStat } from "../Actor/ActorResolvers";
 
 export const CalendarUtils = {
 	/**

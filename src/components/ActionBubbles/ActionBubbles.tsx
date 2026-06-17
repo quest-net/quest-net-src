@@ -1,7 +1,7 @@
 // components/ActionBubbles.tsx
 
 import { useRef, useState, useEffect } from "react";
-import type { ResolvedAction } from "../../utils/ActorResolvers";
+import type { ResolvedAction } from "../../domains/Actor/ActorResolvers";
 
 interface ActionBubblesProps {
 	actions: ResolvedAction[];

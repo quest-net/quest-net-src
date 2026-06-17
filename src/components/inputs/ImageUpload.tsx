@@ -3,7 +3,7 @@ import { useState, useRef } from "react";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
-import { compressImage } from "../../domains/Image/ImageUtils";
+import { compressImage } from "../../utils/ImageUtils";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 import { Image } from "../../domains/Image/Image";
 

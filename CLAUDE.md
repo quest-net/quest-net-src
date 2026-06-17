@@ -182,3 +182,22 @@ npm run deploy:2.0
 - Large terrain voxel data is always stored in IndexedDB via `TerrainStorageService`; never embed large `Voxels` strings directly in the campaign object or localStorage
 - Tags double as folder paths for hierarchical organization (via FolderUtils)
 - Dice notation follows D&D conventions: `2d6`, `1d20+5`, `2d20kh1` (keep highest), etc.
+
+## File Placement
+
+Keep these rules consistent — splitting a concept across folders is what breeds duplicated/colliding helpers.
+
+**Naming by responsibility** (within a domain folder):
+- `XxxActions.ts` — ONLY registered `ACTION_REGISTRY` handlers (what the action system / scripting engine dispatches). No plain helpers live here.
+- `XxxUtils.ts` — pure helpers/math used by actions or UI.
+- `XxxService.ts` — stateful/side-effecting lifecycle (load/save/connect/join), not registry handlers.
+
+**Utils — decide by dependency direction:**
+- Imports a domain model (`Actor`, `Campaign`, `CampaignSetting`, `VoxelTerrain`, …) and is only meaningful for that domain → `src/domains/<Domain>/`.
+- Pure/generic with zero domain imports (base64, IndexedDB, localStorage, URL, folders, dice, compression, camera math, color) → `src/utils/`.
+
+**UI:**
+- Whole pages/layouts/views for a single domain (`Edit`, `Index`, `Display`, `Collection`, the `Main/*` panels) → `src/domains/<Domain>/`.
+- Reusable, presentation-only, or used by 2+ domains (the `ui/` primitives, `inputs/` editors, `IndexView`/`CollectionView` shells) → `src/components/`. Tiebreaker: dispatches actions / bound to one domain → domain page; takes props and renders → reusable component.
+
+Avoid duplicate/colliding filenames across folders (e.g. two `VoxelTerrainUtils.ts`) — they make imports ambiguous and invite copy-paste drift. The wiki (pure documentation) lives at `src/wiki/`, not under `src/domains/`.

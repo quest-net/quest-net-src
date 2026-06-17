@@ -6,7 +6,7 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Actor, SkillSlot } from "../Actor/Actor";
 import { SkillSlotDisplay } from "./SkillSlotDisplay";
-import { formatActionCost, formatStatCost } from "../../utils/ActorCostUtils";
+import { formatActionCost, formatStatCost } from "../Actor/ActorCostUtils";
 
 interface SkillCollectionProps {
 	actor: Actor;

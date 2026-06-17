@@ -2,7 +2,7 @@ import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Context } from "../Context/Context";
 import { LogActions } from "../Log/LogActions";
 import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
-import { getVoxelTerrainById } from "../../utils/terrain/data/VoxelTerrainUtils";
+import { getVoxelTerrainById } from "../../utils/terrain/data/VoxelTerrainQueries";
 import { Actor, Position, StatSlot, ActionSlot, AttributeSlot } from "./Actor";
 import type {
 	StatDefinition,

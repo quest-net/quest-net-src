@@ -19,7 +19,7 @@ import { ACTOR_DEFAULT_COLORS } from "../Actor/Actor";
 import {
 	resolveStats,
 	resolveActions,
-} from "../../utils/ActorResolvers";
+} from "../Actor/ActorResolvers";
 
 interface EntityEditProps {
 	entity?: Entity;

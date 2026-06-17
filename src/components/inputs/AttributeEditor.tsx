@@ -2,7 +2,7 @@
 
 import { AttributeSlot } from "../../domains/Actor/Actor";
 import { AttributeDefinition } from "../../domains/CampaignSetting/CampaignSetting";
-import { resolveAttributes } from "../../utils/ActorResolvers";
+import { resolveAttributes } from "../../domains/Actor/ActorResolvers";
 import { useFormReadOnly } from "../Form/Form";
 import { EmptyState } from "../ui/EmptyState";
 

@@ -1,4 +1,4 @@
-// domains/Image/ImageUtils.ts
+// utils/ImageUtils.ts
 
 const MAX_IMAGE_SIZE = 1024 * 1024; // 1 MB
 const MAX_DIMENSION = 2048; // Max width or height

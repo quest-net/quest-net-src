@@ -7,7 +7,7 @@ import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { useActionService } from "../../../services/Actions/ActionServiceProvider";
 import {
 	getMaxVoxelSurfaceHeight,
-} from "../../../utils/terrain/data/VoxelTerrainUtils";
+} from "../../../utils/terrain/data/VoxelTerrainQueries";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import { canStandVoxel } from "../../../utils/terrain/movement/VoxelMovementUtilities";
 import type { SelectedActor } from "../MapStateProvider";

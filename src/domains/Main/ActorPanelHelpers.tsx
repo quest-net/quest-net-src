@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Actor } from "../Actor/Actor";
 import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
-import { resolveStat } from "../../utils/ActorResolvers";
+import { resolveStat } from "../Actor/ActorResolvers";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 
 interface AggregateStat {

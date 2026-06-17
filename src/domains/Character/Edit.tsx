@@ -20,7 +20,7 @@ import { isDmAccess } from "../../utils/UrlParser";
 import {
 	resolveStats,
 	resolveActions,
-} from "../../utils/ActorResolvers";
+} from "../Actor/ActorResolvers";
 
 interface CharacterEditProps {
 	character?: Character;

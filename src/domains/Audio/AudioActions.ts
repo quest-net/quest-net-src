@@ -4,7 +4,7 @@ import { Context } from "../Context/Context";
 import type { Audio } from "./Audio";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
-import { buildPathTag } from "./AudioUtils";
+import { buildPathTag } from "../../utils/FolderUtils";
 import {
 	extractPlaylistId,
 	extractYoutubeId,
@@ -12,7 +12,7 @@ import {
 	fetchYoutubePlaylistTitle,
 	fetchYoutubeVideoTitle,
 	sanitizeYoutubeFolderName,
-} from "./YouTubeUtils";
+} from "../../utils/YouTubeUtils";
 
 const FALLBACK_AUDIO_NAME = "Untitled Audio Track";
 

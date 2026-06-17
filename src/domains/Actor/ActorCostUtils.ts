@@ -1,9 +1,9 @@
-import type { Actor } from "../domains/Actor/Actor";
+import type { Actor } from "./Actor";
 import type {
 	ActionCost,
 	CampaignSettings,
 	StatCost,
-} from "../domains/CampaignSetting/CampaignSetting";
+} from "../CampaignSetting/CampaignSetting";
 
 interface CostAvailability {
 	current: number;

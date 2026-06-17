@@ -1,7 +1,7 @@
 // components/StatBar/StatBar.tsx
 
 import { useRef, useState, useEffect } from "react";
-import type { ResolvedStat } from "../../utils/ActorResolvers";
+import type { ResolvedStat } from "../../domains/Actor/ActorResolvers";
 import { useDebouncedCallback } from "../../hooks/useDebounced";
 
 interface StatBarProps {

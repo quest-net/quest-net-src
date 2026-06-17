@@ -9,7 +9,7 @@ import { StatBar } from "../../components/StatBar/StatBar";
 import { ItemSlotDisplay } from "../Item/ItemSlotDisplay";
 import { ActorPicker } from "../../components/inputs/ActorPicker";
 import { ToggleButton } from "../../components/ui/ToggleButton";
-import { resolveStats } from "../../utils/ActorResolvers";
+import { resolveStats } from "../Actor/ActorResolvers";
 import { EmptyState } from "../../components/ui/EmptyState";
 
 interface SharedInventoryDisplayProps {

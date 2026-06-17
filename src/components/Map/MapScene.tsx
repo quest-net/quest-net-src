@@ -24,7 +24,7 @@ import { useQuestContext } from '../../domains/Context/ContextProvider';
 import { useActionService } from '../../services/Actions/ActionServiceProvider';
 import { CampaignUtils } from '../../domains/Campaign/CampaignUtils';
 import { AppSettingUtils } from '../../domains/AppSetting/AppSettingUtils';
-import { getMaxVoxelSurfaceHeight } from '../../utils/terrain/data/VoxelTerrainUtils';
+import { getMaxVoxelSurfaceHeight } from '../../utils/terrain/data/VoxelTerrainQueries';
 import { getVoxelCount } from '../../utils/terrain/data/VoxelDataUtils';
 import { getVoxelTerrainIndex } from '../../utils/terrain/data/VoxelTerrainIndex';
 import { resolveTerrainVoxels } from '../../utils/terrain/data/terrainPayloadStore';

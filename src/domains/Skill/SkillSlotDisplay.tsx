@@ -19,7 +19,7 @@ import {
 	formatStatCost,
 	getActionCostAvailability,
 	getStatCostAvailability,
-} from "../../utils/ActorCostUtils";
+} from "../Actor/ActorCostUtils";
 
 interface SkillSlotDisplayProps {
 	isOpen: boolean;

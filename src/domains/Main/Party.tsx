@@ -11,11 +11,11 @@ import {
 	ResolvedAction,
 	resolveActions,
 	resolveStats,
-} from "../../utils/ActorResolvers";
+} from "../Actor/ActorResolvers";
 import {
 	computeInitiativeOrder,
 	hasInitiativeSourceValue,
-} from "../../utils/InitiativeUtils";
+} from "../Combat/InitiativeUtils";
 import {
 	AggregateStatsSummary,
 	isInteractiveCardTarget,

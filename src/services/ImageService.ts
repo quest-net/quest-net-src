@@ -2,7 +2,7 @@
 
 import { IndexedDBUtilities } from "../utils/IndexedDBUtilities";
 import { Room, type ActionRequest } from "../domains/Room/Room";
-import { compressImage } from "../domains/Image/ImageUtils";
+import { compressImage } from "../utils/ImageUtils";
 import { Image } from "../domains/Image/Image";
 
 const IMAGE_REQUEST_TIMEOUT_MS = 30000;

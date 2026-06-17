@@ -20,7 +20,7 @@ import {
 	ResolvedStat,
 	resolveStats,
 	resolveActions,
-} from "../../utils/ActorResolvers";
+} from "../Actor/ActorResolvers";
 
 export function CharacterSheet() {
 	const context = useQuestContext();

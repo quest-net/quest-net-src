@@ -23,7 +23,7 @@ import {
 	ResolvedAction,
 	resolveStats,
 	resolveActions,
-} from "../../utils/ActorResolvers";
+} from "../Actor/ActorResolvers";
 import { EntityActionBar } from "./EntityActionBar";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 import { EmptyState } from "../../components/ui/EmptyState";

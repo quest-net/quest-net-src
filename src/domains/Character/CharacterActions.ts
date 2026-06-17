@@ -5,7 +5,7 @@ import { Character } from "./Character";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
-import { getVoxelSpawnPosition, getVoxelTerrainById } from "../../utils/terrain/data/VoxelTerrainUtils";
+import { getVoxelSpawnPosition, getVoxelTerrainById } from "../../utils/terrain/data/VoxelTerrainQueries";
 import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
 
 /**

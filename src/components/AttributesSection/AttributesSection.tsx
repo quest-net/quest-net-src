@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { AttributeSlot } from "../../domains/Actor/Actor";
 import { AttributeDefinition } from "../../domains/CampaignSetting/CampaignSetting";
-import { resolveAttributes } from "../../utils/ActorResolvers";
+import { resolveAttributes } from "../../domains/Actor/ActorResolvers";
 import { EmptyState } from "../ui/EmptyState";
 
 interface AttributesSectionProps {

@@ -9,7 +9,7 @@ import {
   generateImageFromPrompt,
   getProvider,
 } from "../../services/ImageGenerationService";
-import { compressImage } from "../../domains/Image/ImageUtils";
+import { compressImage } from "../../utils/ImageUtils";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 import type { Image as DomainImage } from "../../domains/Image/Image";
 

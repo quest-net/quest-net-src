@@ -1,16 +1,16 @@
-// utils/InitiativeUtils.ts
+// domains/Combat/InitiativeUtils.ts
 // Pure functions that compute initiative order for a list of actors against a
 // CampaignSettings.InitiativeSettings configuration. No state stored — order
 // is recomputed at render time. The "done" flag for each actor lives on
 // CombatState.RoundCompleted (a unified per-round list).
 
-import { Actor } from "../domains/Actor/Actor";
+import { Actor } from "../Actor/Actor";
 import {
 	CampaignSettings,
 	InitiativeSettings,
 	InitiativeSource,
-} from "../domains/CampaignSetting/CampaignSetting";
-import { resolveStat } from "./ActorResolvers";
+} from "../CampaignSetting/CampaignSetting";
+import { resolveStat } from "../Actor/ActorResolvers";
 
 export interface InitiativeEntry {
 	ActorId: string;

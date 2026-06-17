@@ -3,7 +3,7 @@
 import type { Campaign } from "../Campaign/Campaign";
 import { Actor } from "../Actor/Actor";
 import type { InitiativeMode } from "../CampaignSetting/CampaignSetting";
-import { resolveStat } from "../../utils/ActorResolvers";
+import { resolveStat } from "../Actor/ActorResolvers";
 
 export function getInitiativeMode(campaign: Campaign): InitiativeMode {
 	const initiativeSettings = campaign.Settings.InitiativeSettings;

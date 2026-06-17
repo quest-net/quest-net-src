@@ -1,4 +1,4 @@
-// domains/CampaignSetting/ActionDefinitionEditor.tsx
+// components/inputs/ActionDefinitionEditor.tsx
 
 import { ActionDefinition } from "../../domains/CampaignSetting/CampaignSetting";
 import { useFormReadOnly } from "../../components/Form/Form";

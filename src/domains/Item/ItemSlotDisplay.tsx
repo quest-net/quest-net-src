@@ -20,7 +20,7 @@ import {
 	formatStatCost,
 	getActionCostAvailability,
 	getStatCostAvailability,
-} from "../../utils/ActorCostUtils";
+} from "../Actor/ActorCostUtils";
 
 interface ItemSlotDisplayProps {
 	isOpen: boolean;

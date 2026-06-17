@@ -142,7 +142,7 @@ export function validateFolderName(name: string): string | null {
  * @param pathSegments - Array of path segments
  * @returns Full tag string (e.g., "path:Knights/Elite")
  */
-function buildPathTag(pathSegments: string[]): string {
+export function buildPathTag(pathSegments: string[]): string {
 	return PATH_TAG_PREFIX + pathSegments.join(PATH_SEPARATOR);
 }
 

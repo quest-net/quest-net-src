@@ -8,7 +8,7 @@ import {
 	computeInitiativeOrder,
 	getActiveOrder,
 	hasInitiativeSourceValue,
-} from "../../utils/InitiativeUtils";
+} from "./InitiativeUtils";
 import { InitiativeSettingsEditor } from "../../components/inputs/InitiativeSettingsEditor";
 import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
 import { Modal } from "../../components/ui/Modal";
