@@ -186,8 +186,8 @@ export const CampaignSettingUtils = {
 	 * Creates default campaign settings
 	 */
 	createDefault(): CampaignSettings {
-		// Default formula: gentle slopes (2 height = 1 movement)
-		const defaultFormula = "floor(h/2)";
+		// Default formula: steep terrain (2:1 ratio)
+		const defaultFormula = "2*h";
 		const defaultLookup = validateAndBuildHeightCostLookup(defaultFormula);
 
 		// This should never fail, but safety check
