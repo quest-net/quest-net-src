@@ -29,6 +29,7 @@
 
 import * as THREE from 'three';
 
+import { registerTerrainMaterialRules } from '../../../../utils/terrain/materials/terrainMaterialRules';
 import type {
 	MaterialCategory,
 	MaterialFactory,
@@ -366,6 +367,14 @@ const EDITOR_COLOR_BY_PALETTE_INDEX: ReadonlyMap<number, number> = new Map(
 		.filter((m): m is TerrainMaterial & { special: NonNullable<TerrainMaterial['special']> } => m.special !== undefined)
 		.map((m) => [m.special.paletteIndex, parseInt(m.special.swatchColor.slice(1), 16)] as const)
 );
+
+// Push passable + editor-color rule sets down to the data layer so
+// VoxelTerrainIndex and VoxelTerrainEditorUtils can read them without importing
+// upward into this rendering module.
+registerTerrainMaterialRules({
+	passableIndices: PASSABLE_PALETTE_INDICES,
+	editorColors: EDITOR_COLOR_BY_PALETTE_INDEX,
+});
 
 /**
  * Editor render color for a special palette index, as a 0xRRGGBB number, or

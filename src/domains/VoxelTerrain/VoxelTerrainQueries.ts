@@ -2,11 +2,11 @@
 // owns the runtime data (occupancy, surface heights, walkable surfaces); this
 // file owns the small domain helpers callers across the app rely on.
 
-import type { Position } from "../../../domains/Actor/Actor";
-import type { Campaign } from "../../../domains/Campaign/Campaign";
-import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { FLYING_SPAWN_ELEVATION } from "../../../domains/VoxelTerrain/voxelTerrainConstants";
-import { getVoxelTerrainIndex } from "./VoxelTerrainIndex";
+import type { Position } from "../Actor/Actor";
+import type { Campaign } from "../Campaign/Campaign";
+import type { VoxelTerrain } from "./VoxelTerrain";
+import { FLYING_SPAWN_ELEVATION } from "./voxelTerrainConstants";
+import { getVoxelTerrainIndex } from "../../utils/terrain/data/VoxelTerrainIndex";
 
 // Re-export coordinate primitives so existing imports keep working unchanged.
 export {
@@ -14,7 +14,7 @@ export {
 	getVoxelTerrainResolution,
 	voxelTopToRulesHeight,
 	voxelTopToTacticalHeight,
-} from "./VoxelTerrainIndex";
+} from "../../utils/terrain/data/VoxelTerrainIndex";
 
 type TilePosition = { x: number; y: number; h: number };
 

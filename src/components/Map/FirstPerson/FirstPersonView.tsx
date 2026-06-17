@@ -19,7 +19,7 @@ import {
 	getVoxelTileHeightKey,
 	normalizeVoxelPosition,
 	shouldRestrictPlayerMovementToRange,
-} from "../../../utils/terrain/movement/VoxelMovementUtilities";
+} from "../../../domains/VoxelTerrain/VoxelMovementUtilities";
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants";
 import { useMapState } from "../MapStateProvider";
 import {

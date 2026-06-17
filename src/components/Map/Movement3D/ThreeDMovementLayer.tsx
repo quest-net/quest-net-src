@@ -10,7 +10,7 @@ import {
 	canStandVoxel,
 	getVoxelTileHeightKey,
 	type VoxelMovementTile,
-} from "../../../utils/terrain/movement/VoxelMovementUtilities";
+} from "../../../domains/VoxelTerrain/VoxelMovementUtilities";
 import type { HoveredTile, SelectedActor } from "../MapStateProvider";
 import { THREE_D_MOVEMENT_HIGHLIGHT } from "../threeDMapConstants";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";

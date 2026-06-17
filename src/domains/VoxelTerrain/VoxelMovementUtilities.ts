@@ -1,13 +1,13 @@
-import type { Position } from "../../../domains/Actor/Actor";
-import type { Character } from "../../../domains/Character/Character";
-import type { Entity } from "../../../domains/Entity/Entity";
-import type { MovementSettings } from "../../../domains/CampaignSetting/CampaignSetting";
-import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { isItemEntity } from "../../../domains/Item/ItemDropUtils";
+import type { Position } from "../Actor/Actor";
+import type { Character } from "../Character/Character";
+import type { Entity } from "../Entity/Entity";
+import type { MovementSettings } from "../CampaignSetting/CampaignSetting";
+import type { VoxelTerrain } from "./VoxelTerrain";
+import { isItemEntity } from "../Item/ItemDropUtils";
 import {
 	getVoxelTerrainIndex,
 	type VoxelTerrainIndex,
-} from "../data/VoxelTerrainIndex";
+} from "../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	getVoxelMovementAdjacency,
 	isCellStandable,
@@ -337,7 +337,7 @@ export function calculateVoxelMovementRange(
 	// ascent above the start height the flood originates from. When
 	// `flyingIgnoresHeight` is on, climbing is capped at 1 per height level while
 	// still respecting cheaper lookup formulas: total climb cost is
-	// min(lookup(Δh), Δh). When off, a flier pays the normal height-cost lookup.
+	// min(lookup(dh), dh). When off, a flier pays the normal height-cost lookup.
 	// Dropping back toward (or below) the start costs nothing. The ladder edges
 	// below add the per-level increment of this total so a contiguous climb
 	// telescopes exactly to it.

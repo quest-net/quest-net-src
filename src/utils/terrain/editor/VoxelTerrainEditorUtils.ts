@@ -10,9 +10,9 @@ import {
 	TERRAIN_PALETTE,
 	getTerrainColorByIndex,
 } from "../palette/TerrainPaletteUtils";
-import { getSpecialMaterialEditorColor } from "../../../components/Map/Terrain/materials";
+import { getSpecialMaterialEditorColor } from "../materials/terrainMaterialRules";
 import { decodeVoxels, encodeVoxels } from "../data/VoxelDataUtils";
-import { getVoxelTerrainResolution } from "../data/VoxelTerrainUtils";
+import { getVoxelTerrainResolution } from "../data/VoxelTerrainIndex";
 
 export const MAX_VOXEL_TERRAIN_WIDTH = 64;
 export const MAX_VOXEL_TERRAIN_LENGTH = 64;

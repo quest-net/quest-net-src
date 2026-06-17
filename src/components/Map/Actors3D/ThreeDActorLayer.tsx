@@ -7,9 +7,9 @@ import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { useActionService } from "../../../services/Actions/ActionServiceProvider";
 import {
 	getMaxVoxelSurfaceHeight,
-} from "../../../utils/terrain/data/VoxelTerrainQueries";
+} from "../../../domains/VoxelTerrain/VoxelTerrainQueries";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
-import { canStandVoxel } from "../../../utils/terrain/movement/VoxelMovementUtilities";
+import { canStandVoxel } from "../../../domains/VoxelTerrain/VoxelMovementUtilities";
 import type { SelectedActor } from "../MapStateProvider";
 import type { ActorTokenDescriptor, ThreeDSceneResources } from "./actorTokenTypes";
 import {

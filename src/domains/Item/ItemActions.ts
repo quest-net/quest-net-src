@@ -13,7 +13,7 @@ import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
 import {
 	getVoxelSpawnPosition,
 	getVoxelTerrainById,
-} from "../../utils/terrain/data/VoxelTerrainQueries";
+} from "../VoxelTerrain/VoxelTerrainQueries";
 
 /**
  * Item action handlers

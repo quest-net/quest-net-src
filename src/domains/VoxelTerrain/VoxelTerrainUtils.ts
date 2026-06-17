@@ -10,7 +10,7 @@ import { LogActions } from "../Log/LogActions";
 import {
 	getVoxelTerrainById,
 	getMaxVoxelSurfaceHeight,
-} from "../../utils/terrain/data/VoxelTerrainQueries";
+} from "./VoxelTerrainQueries";
 import {
 	getVoxelTerrainIndex,
 	type VoxelTerrainIndex,

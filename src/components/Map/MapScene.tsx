@@ -24,7 +24,7 @@ import { useQuestContext } from '../../domains/Context/ContextProvider';
 import { useActionService } from '../../services/Actions/ActionServiceProvider';
 import { CampaignUtils } from '../../domains/Campaign/CampaignUtils';
 import { AppSettingUtils } from '../../domains/AppSetting/AppSettingUtils';
-import { getMaxVoxelSurfaceHeight } from '../../utils/terrain/data/VoxelTerrainQueries';
+import { getMaxVoxelSurfaceHeight } from '../../domains/VoxelTerrain/VoxelTerrainQueries';
 import { getVoxelCount } from '../../utils/terrain/data/VoxelDataUtils';
 import { getVoxelTerrainIndex } from '../../utils/terrain/data/VoxelTerrainIndex';
 import { resolveTerrainVoxels } from '../../utils/terrain/data/terrainPayloadStore';
@@ -32,7 +32,7 @@ import {
 	calculateVoxelMovementRange,
 	calculateVoxelRemainingMovementRange,
 	shouldRestrictPlayerMovementToRange,
-} from '../../utils/terrain/movement/VoxelMovementUtilities';
+} from '../../domains/VoxelTerrain/VoxelMovementUtilities';
 import type { VoxelTerrain } from '../../domains/VoxelTerrain/VoxelTerrain';
 import { useMapState } from './MapStateProvider';
 import { ThreeDActorLayer } from './Actors3D/ThreeDActorLayer';

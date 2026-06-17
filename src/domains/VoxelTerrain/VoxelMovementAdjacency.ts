@@ -1,4 +1,4 @@
-// src/utils/terrain/movement/VoxelMovementAdjacency.ts
+// src/domains/VoxelTerrain/VoxelMovementAdjacency.ts
 //
 // Per-terrain-revision adjacency graph for surface-to-surface movement.
 //
@@ -31,12 +31,12 @@
 // is gone, the adjacency for that revision is also useless -- but we keep them
 // independent to avoid coupling the modules.
 
-import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import type { VoxelTerrain } from "./VoxelTerrain";
 import {
 	createTerrainRevision,
 	getVoxelTerrainIndex,
 	type VoxelTerrainIndex,
-} from "../data/VoxelTerrainIndex";
+} from "../../utils/terrain/data/VoxelTerrainIndex";
 
 export interface VoxelMovementNeighbor {
 	readonly x: number;
@@ -63,7 +63,7 @@ export interface VoxelMovementAdjacency {
 	 * Walkable neighbors reachable in one cardinal step from (x, y, h),
 	 * grouped by direction. Index d corresponds to VOXEL_MOVEMENT_DIRECTIONS[d];
 	 * the returned outer array always has length VOXEL_MOVEMENT_DIRECTIONS.length.
-	 * Each inner array is the (typically 0–2) reachable surface heights via
+	 * Each inner array is the (typically 0-2) reachable surface heights via
 	 * that step. Returns the shared empty result when (x, y, h) is not a
 	 * surface tile.
 	 */

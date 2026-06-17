@@ -18,7 +18,7 @@ import {
 	DEFAULT_TERRAIN_RESOLUTION,
 } from "../../../domains/VoxelTerrain/voxelTerrainConstants";
 import type { Voxel, VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { isPassableMaterial } from "../../../components/Map/Terrain/materials";
+import { isPassableMaterial } from "../materials/terrainMaterialRules";
 import { decodeVoxels } from "./VoxelDataUtils";
 import { resolveTerrainVoxels } from "./terrainPayloadStore";
 
