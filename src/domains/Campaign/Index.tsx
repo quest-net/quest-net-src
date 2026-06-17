@@ -3,7 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { triggerContextUpdate } from "../Context/ContextProvider";
-import { CampaignActions, ExportProgress } from "./CampaignActions";
+import { CampaignActions } from "./CampaignActions";
+import { CampaignUtils, type ExportProgress } from "./CampaignUtils";
 import { ContextActions } from "../Context/ContextActions";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 import { useNavigate } from "react-router-dom";
@@ -95,7 +96,7 @@ export function CampaignIndex() {
 		}
 
 		// Domain action persists to IndexedDB and adds CampaignInfo to context
-		const info = await CampaignActions.create({
+		const info = await CampaignUtils.create({
 			name: campaignName,
 			roomCode: roomCode || undefined,
 		}, context);
@@ -131,7 +132,7 @@ export function CampaignIndex() {
 		}
 
 		// Domain action removes CampaignInfo + IndexedDB payload
-		await CampaignActions.delete({ campaignId }, context);
+		await CampaignUtils.delete({ campaignId }, context);
 
 		// Manually trigger update
 		triggerContextUpdate();
@@ -209,7 +210,7 @@ export function CampaignIndex() {
 		});
 
 		try {
-			const campaign = await CampaignActions.importFromFile(
+			const campaign = await CampaignUtils.importFromFile(
 				{ file },
 				context,
 				setImportProgress

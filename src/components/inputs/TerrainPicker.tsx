@@ -13,7 +13,7 @@
 
 import { useMemo, useState } from "react";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { useViewedTerrain } from "../Map/useViewedTerrain";
 import { isStampTerrain } from "../../utils/terrain/editor/VoxelStampUtils";
 import { Modal } from "../ui/Modal";
@@ -41,7 +41,7 @@ export function TerrainPicker({
 	currentTerrainId,
 }: TerrainPickerProps) {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const { viewedTerrainIds } = useViewedTerrain();
 
 	const [searchQuery, setSearchQuery] = useState("");

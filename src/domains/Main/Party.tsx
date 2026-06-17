@@ -3,7 +3,7 @@
 import { KeyboardEvent, MouseEvent } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
 import { useMapState } from "../../components/Map/MapStateProvider";
@@ -32,7 +32,7 @@ export function Party({ onInspectActor }: PartyProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const { selectActor } = useMapState();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const myCharacterId = context.User.SelectedCharacters[campaign.RoomCode];
 	const characters = campaign.GameState.Characters;
 

@@ -5,9 +5,9 @@
 // ping different tiles simultaneously.
 
 import { useMemo, useState, useEffect, useRef } from "react";
-import { CampaignActions } from "../../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../../domains/Campaign/CampaignUtils";
 import { useQuestContext } from "../../../domains/Context/ContextProvider";
-import { LogActions } from "../../../domains/Log/LogActions";
+import { LogUtils } from "../../../domains/Log/LogUtils";
 import {
 	PING_DURATION_MS,
 	parsePingDetails,
@@ -39,7 +39,7 @@ const EXPIRATION_TICK_MS = 250;
 
 export function useActivePings(): UseActivePingsResult {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const [now, setNow] = useState(() => Date.now());
 
 	// Track which ping ids we've already played sounds for (mirrors useActiveStickers).
@@ -48,7 +48,7 @@ export function useActivePings(): UseActivePingsResult {
 	// Compute active pings on every render so the timer can drive animation.
 	const pings = useMemo(() => {
 		const out: ActivePing[] = [];
-		const logs = LogActions.getChronologicalLog(campaign);
+		const logs = LogUtils.getChronologicalLog(campaign);
 
 		// Iterate newest -> oldest so we can break out as soon as we find
 		// an entry that has expired.

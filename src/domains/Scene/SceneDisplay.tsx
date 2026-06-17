@@ -4,7 +4,7 @@ import { Rnd } from "react-rnd";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuestContext } from "../Context/ContextProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
@@ -18,7 +18,7 @@ export function SceneDisplay({
   dmToolbar?: boolean;
 } = {}) {
   const context = useQuestContext();
-  const campaign = CampaignActions.getActiveCampaign(context);
+  const campaign = CampaignUtils.getActiveCampaign(context);
   const scene = campaign.GameState.Scene;
   const isMobile = useIsMobile();
 

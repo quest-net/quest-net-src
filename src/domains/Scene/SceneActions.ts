@@ -1,7 +1,7 @@
 // domains/Scene/SceneActions.ts
 
 import { Context } from "../Context/Context";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 
 export const SceneActions = {
@@ -9,7 +9,7 @@ export const SceneActions = {
 	 * Sets the environment (background) image for the scene
 	 */
 	setEnvironmentImage(params: { imageId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		
 		campaign.GameState.Scene.EnvironmentImageId = params.imageId;
 
@@ -36,7 +36,7 @@ export const SceneActions = {
 	 * Sets the focus (foreground) image for the scene
 	 */
 	setFocusImage(params: { imageId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		
 		campaign.GameState.Scene.FocusImageId = params.imageId;
 

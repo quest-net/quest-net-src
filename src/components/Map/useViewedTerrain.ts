@@ -18,7 +18,7 @@ import {
 	useQuestContext,
 	triggerContextUpdate,
 } from "../../domains/Context/ContextProvider";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import type { Campaign } from "../../domains/Campaign/Campaign";
 
 const MAX_RECENT = 10;
@@ -85,7 +85,7 @@ interface ViewedTerrainState {
 
 export function useViewedTerrain(): ViewedTerrainState {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const rawList = context.ViewedTerrains?.[campaign.Id] ?? [];
 

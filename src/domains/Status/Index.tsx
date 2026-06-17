@@ -3,17 +3,17 @@
 import { useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
 import { replacePathTag } from "../../utils/FolderUtils";
 import { Status } from "./Status";
 import { StatusEdit } from "./Edit";
-import { formatTemplateExpiration } from "./StatusActions";
+import { formatTemplateExpiration } from "./StatusUtils";
 
 export function StatusIndex() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	// Force a fresh key for the create drawer so it resets cleanly each time
 	const [createCounter, setCreateCounter] = useState(0);

@@ -1,13 +1,13 @@
 // domains/Skill/SkillActions.ts
 
 import { Context } from "../Context/Context";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 import { Skill } from "./Skill";
 import { Actor } from "../Actor/Actor";
 import { rollDiceFormula } from "../../utils/DiceUtils";
-import { syncSkillSlotsAfterEdit, getAllActors } from "../../utils/SlotSyncUtils";
-import { applyActionCost, applyStatCost } from "../../utils/ActorCostUtils";
+import { syncSkillSlotsAfterEdit } from "./SkillUtils";
+import { getAllActors, applyActionCost, applyStatCost } from "../Actor/ActorUtils";
 
 /**
  * Skill action handlers
@@ -15,25 +15,10 @@ import { applyActionCost, applyStatCost } from "../../utils/ActorCostUtils";
  */
 export const SkillActions = {
 	/**
-	 * Creates a default skill template
-	 */
-	createDefault(_context: Context): Skill {
-		return {
-			Id: crypto.randomUUID(),
-			Name: "New Skill",
-			Description: "",
-			Image: undefined,
-			Tags: [],
-			MaxUses: undefined,
-			DiceRoll: "",
-		};
-	},
-
-	/**
 	 * Creates a new skill and adds to the campaign skill templates
 	 */
 	create(params: { skill: Skill }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		campaign.SkillTemplates.push(params.skill);
 
 		LogActions.create(
@@ -56,7 +41,7 @@ export const SkillActions = {
 		params: { skillId: string; updates: Partial<Skill> },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		const idx = campaign.SkillTemplates.findIndex((s) => s.Id === params.skillId);
 		if (idx === -1) {
 			console.warn(`Skill not found: ${params.skillId}`);
@@ -95,7 +80,7 @@ export const SkillActions = {
 	 * Deletes a skill template permanently
 	 */
 	delete(params: { skillId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		const idx = campaign.SkillTemplates.findIndex((s) => s.Id === params.skillId);
 		if (idx === -1) {
 			console.warn(`Skill not found: ${params.skillId}`);
@@ -130,7 +115,7 @@ export const SkillActions = {
 		},
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		
 		// Validate count
 		const count = Math.max(1, Math.floor(params.count));
@@ -197,7 +182,7 @@ export const SkillActions = {
 		params: { updates: Array<{ skillId: string; tags: string[] }> },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		let successCount = 0;
 		params.updates.forEach((update) => {
@@ -233,7 +218,7 @@ export const SkillActions = {
 		params: { actorId: string; skillId: string },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find actor in all possible locations
 		const actors: Actor[] = getAllActors(campaign);
@@ -350,7 +335,7 @@ export const SkillActions = {
 		params: { actorId: string; skillId: string },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find actor in all possible locations
 		const actors: Actor[] = getAllActors(campaign);
@@ -395,7 +380,7 @@ export const SkillActions = {
 		params: { actorId: string; skillId: string; usesLeft: number | undefined },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find actor in all possible locations
 		const actors: Actor[] = getAllActors(campaign);

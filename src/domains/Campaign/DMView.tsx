@@ -8,7 +8,7 @@ import { ImpersonationPicker } from "../../components/inputs/ImpersonationPicker
 import { SecretModeToggle } from "../../components/inputs/SecretModeToggle";
 import { CharacterIndex } from "../Character/Index";
 import { CampaignSettingEdit } from "../CampaignSetting/Edit";
-import { TerrainIndex } from "../Terrain/Index";
+import { TerrainIndex } from "../VoxelTerrain/Index";
 import { ImageIndex } from "../Image/Index";
 import { Main } from "../Main/Main";
 import { LogAlerts } from "../Log/LogAlerts";

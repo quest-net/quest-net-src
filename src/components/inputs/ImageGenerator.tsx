@@ -9,7 +9,7 @@ import {
   generateImageFromPrompt,
   getProvider,
 } from "../../services/ImageGenerationService";
-import { ImageActions } from "../../domains/Image/ImageActions";
+import { compressImage } from "../../domains/Image/ImageUtils";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 import type { Image as DomainImage } from "../../domains/Image/Image";
 
@@ -145,7 +145,7 @@ export function ImageGenerator({
           width,
           height,
           mimeType,
-        } = await ImageActions.compressImage(file);
+        } = await compressImage(file);
 
         const image: DomainImage = {
           Id: crypto.randomUUID(),

@@ -9,7 +9,8 @@
 
 import { Context } from "../Context/Context";
 import { LogActions } from "../Log/LogActions";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { LogUtils } from "../Log/LogUtils";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { serializePingDetails, PING_DURATION_MS } from "./Ping";
 
 export const PingActions = {
@@ -35,7 +36,7 @@ export const PingActions = {
 		const y = Math.round(params.y);
 		let h = params.h;
 
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Defense-in-depth bounds check against the ping's terrain. The UI's
 		// screenToTile() should already discard clicks outside the grid, so
@@ -56,7 +57,7 @@ export const PingActions = {
 		// purely on the client-side rate limit.
 		if (params.actorId) {
 			const cutoff = Date.now() - PING_DURATION_MS;
-			const logs = LogActions.getChronologicalLog(campaign);
+			const logs = LogUtils.getChronologicalLog(campaign);
 			for (let i = logs.length - 1; i >= 0; i--) {
 				const entry = logs[i];
 				if (entry.Timestamp < cutoff) break;

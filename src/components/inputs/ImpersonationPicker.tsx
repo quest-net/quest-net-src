@@ -2,13 +2,13 @@
 // DM-only dropdown for selecting an actor to impersonate.
 
 import { useQuestContext, triggerContextUpdate } from "../../domains/Context/ContextProvider";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { UserActions } from "../../domains/User/UserActions";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
 
 export function ImpersonationPicker() {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const impersonatedActorId =
 		(context.User.ImpersonatedActors ?? {})[campaign.RoomCode] ?? null;

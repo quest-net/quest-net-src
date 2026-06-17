@@ -20,8 +20,8 @@ import { useEffect, useRef, useState } from "react";
 import { gsap } from "gsap";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
-import { LogActions } from "./LogActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
+import { LogUtils } from "./LogUtils";
 import { LogEntry } from "./LogEntry";
 import { isCritRoll, getCritRollValue } from "../../utils/DiceUtils";
 import { AppSettingActions } from "../AppSetting/AppSettingActions";
@@ -260,7 +260,7 @@ function playTimeline(
 export function CritSplash() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const userRole = context.User.Role;
 	const isDM = userRole === "dm";
 	const splashEnabled = AppSettingActions.getCritSplashEnabled(context);
@@ -273,14 +273,14 @@ export function CritSplash() {
 	// watch the log for fresh, visible crits -> enqueue
 	useEffect(() => {
 		const now = Date.now();
-		const chronological = LogActions.getChronologicalLog(campaign);
+		const chronological = LogUtils.getChronologicalLog(campaign);
 		const fresh = chronological.filter(
 			(e) =>
 				isCritRoll(e) &&
 				e.ActorId &&
 				now - e.Timestamp < MAX_ALERT_AGE &&
 				!processedRef.current.has(e.Id) &&
-				LogActions.canUserSeeEntry(e, userRole)
+				LogUtils.canUserSeeEntry(e, userRole)
 		);
 		if (fresh.length === 0) return;
 		// Always mark as processed so toggling the splash on later doesn't replay

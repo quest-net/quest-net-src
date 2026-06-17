@@ -2,13 +2,13 @@
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 
 export function SceneEdit() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const scene = campaign.GameState.Scene;
 	const hasEnvironmentImage = !!scene.EnvironmentImageId;
 	const hasFocusImage = !!scene.FocusImageId;

@@ -5,7 +5,7 @@ import { useMapState } from "../../components/Map/MapStateProvider";
 import { useDebouncedCallback } from "../../hooks/useDebounced";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { StatBar } from "../../components/StatBar/StatBar";
@@ -34,7 +34,7 @@ export function Inspector() {
 	const { selectedActor } = useMapState();
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const myCharacterId = context.User.SelectedCharacters[campaign.RoomCode];
 
 	const isDM = context.User.Role === "dm";
@@ -89,7 +89,7 @@ function UnifiedInspector({
 	playersSeeEntityHealth,
 }: UnifiedInspectorProps) {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	// Tab state
 	const [activeTab, setActiveTab] = useState<InspectorTab>("info");

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { CharacterEdit } from "./Edit";
 import { IndexView, IndexViewItem, SelectionAction } from "../../components/IndexView/IndexView";
 import { replacePathTag } from "../../utils/FolderUtils";
@@ -13,7 +13,7 @@ import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
 export function CharacterIndex() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const { viewedTerrainId } = useViewedTerrain();
 
 	// Add a counter to force new keys on each create

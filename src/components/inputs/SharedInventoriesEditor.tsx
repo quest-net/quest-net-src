@@ -3,7 +3,7 @@ import { useState } from "react";
 import { SharedInventory } from "../../domains/CampaignSetting/CampaignSetting";
 import { useFormReadOnly } from "../Form/Form";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { RestoreRuleEditor } from "./RestoreRuleEditor";
 import { Modal } from "../ui/Modal";
 import { EmptyState } from "../ui/EmptyState";
@@ -22,7 +22,7 @@ export function SharedInventoriesEditor({
     const contextReadOnly = useFormReadOnly();
     const readOnly = readOnlyProp ?? contextReadOnly;
     const context = useQuestContext();
-    const campaign = CampaignActions.getActiveCampaign(context);
+    const campaign = CampaignUtils.getActiveCampaign(context);
     const globalStats = campaign.Settings.StatDefinitions || [];
 
     const [editingInventoryId, setEditingInventoryId] = useState<string | null>(null);

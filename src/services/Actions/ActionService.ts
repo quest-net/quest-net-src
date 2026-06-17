@@ -3,13 +3,13 @@
 import { Context } from "../../domains/Context/Context";
 import { canPerformAction, ACTION_REGISTRY } from "./ActionRegistry";
 import type { Campaign } from "../../domains/Campaign/Campaign";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { StateSync } from "../StateSync";
 import { ImageService } from "../ImageService";
 import { Room, type ActionSend } from "../../domains/Room/Room";
 import { triggerContextUpdate } from "../../domains/Context/ContextProvider";
 import { RoomActions } from "../../domains/Room/RoomActions";
-import { LogActions } from "../../domains/Log/LogActions";
+import { LogUtils } from "../../domains/Log/LogUtils";
 import { User } from "../../domains/User/User";
 import { CampaignLoadingService } from "../CampaignLoadingService";
 import { TerrainStorageService } from "../TerrainStorageService";
@@ -475,7 +475,7 @@ export class ActionService {
 		producer: () => Promise<void> | void
 	): Promise<Campaign> {
 		await producer();
-		const campaign = CampaignActions.getActiveCampaign(this.context);
+		const campaign = CampaignUtils.getActiveCampaign(this.context);
 		await TerrainStorageService.packInactiveTerrains(campaign);
 		this.bumpCampaignRefs(campaign);
 		this.commitActiveCampaign(campaign);
@@ -484,7 +484,7 @@ export class ActionService {
 
 	private async broadcastFullAfterPendingMutations(): Promise<void> {
 		await this.mutationChain;
-		const campaign = CampaignActions.getActiveCampaign(this.context);
+		const campaign = CampaignUtils.getActiveCampaign(this.context);
 		const isSecret = this.context.SecretModes?.[campaign.Id];
 		if (isSecret) return;
 		await TerrainStorageService.packInactiveTerrains(campaign);
@@ -582,7 +582,7 @@ export class ActionService {
 		// Applying them would corrupt the prep state (e.g. a move request
 		// scoped to the player's stale terrain). The full sync that fires when
 		// secret mode is turned off reconciles the player's optimistic state.
-		const activeCampaign = CampaignActions.getActiveCampaign(this.context);
+		const activeCampaign = CampaignUtils.getActiveCampaign(this.context);
 		if (this.context.SecretModes?.[activeCampaign.Id]) {
 			return;
 		}
@@ -627,9 +627,9 @@ export class ActionService {
 		// mutateCampaign above may have thrown, in which case we want to
 		// broadcast the pre-mutation state to reset the player's optimistic
 		// update.
-		const campaign = CampaignActions.getActiveCampaign(this.context);
+		const campaign = CampaignUtils.getActiveCampaign(this.context);
 
-		if (LogActions.isCommand(data.params, "/REQUEST_FULL_SYNC")) {
+		if (LogUtils.isCommand(data.params, "/REQUEST_FULL_SYNC")) {
 			this.stateSync.broadcastFull(campaign);
 		} else {
 			// FORCE SYNC: Always broadcast, even if no changes (reverts optimistic state)

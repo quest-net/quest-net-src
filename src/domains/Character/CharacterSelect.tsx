@@ -6,7 +6,7 @@ import {
 	triggerContextUpdate,
 } from "../Context/ContextProvider";
 import { PeerInfo } from "../../hooks/usePeerTracking";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { UserActions } from "../User/UserActions";
 import { Character } from "./Character";
 import { CharacterEdit } from "./Edit";
@@ -19,7 +19,7 @@ interface CharacterSelectProps {
 
 export function CharacterSelect({ peers }: CharacterSelectProps) {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const [isDrawerOpen, setDrawerOpen] = useState(false);
 	const [createCounter, setCreateCounter] = useState(0);

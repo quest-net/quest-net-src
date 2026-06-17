@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { AudioEdit } from "./Edit";
 import { AddPlaylistModal } from "./AddPlaylistModal";
 import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
@@ -12,7 +12,7 @@ import { replacePathTag } from "../../utils/FolderUtils";
 export function AudioIndex() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const [createCounter, setCreateCounter] = useState(0);
 	const [showImportModal, setShowImportModal] = useState(false);

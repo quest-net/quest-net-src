@@ -2,9 +2,9 @@ import { useState } from "react";
 import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { replacePathTag } from "../../utils/FolderUtils";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { useQuestContext } from "../Context/ContextProvider";
-import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
+import { VoxelTerrainUtils } from "./VoxelTerrainUtils";
 import { TerrainEdit } from "./Edit";
 import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
 
@@ -17,7 +17,7 @@ export function TerrainIndex({
 } = {}) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const { viewedTerrainId, setViewedTerrain } = useViewedTerrain();
 	const effectiveViewedTerrainId = viewedTerrainId ?? undefined;
 
@@ -92,7 +92,7 @@ export function TerrainIndex({
 						terrain={terrain}
 						isDeleteProtected={
 							terrain
-								? VoxelTerrainActions.isDeleteProtected(campaign, terrain.Id)
+								? VoxelTerrainUtils.isDeleteProtected(campaign, terrain.Id)
 								: false
 						}
 						initialTags={initialTags}

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { ObjectPicker, ObjectTypeConfig } from "./ObjectPicker";
 import { Actor } from "../../domains/Actor/Actor";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 
 interface ActorPickerProps {
     isOpen: boolean;
@@ -28,7 +28,7 @@ export function ActorPicker({
     amountLabel = "Amount",
 }: ActorPickerProps) {
     const context = useQuestContext();
-    const campaign = CampaignActions.getActiveCampaign(context);
+    const campaign = CampaignUtils.getActiveCampaign(context);
 
     // Players may only interact with actors on the terrain their selected
     // character currently occupies; the DM can target any actor anywhere.

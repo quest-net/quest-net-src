@@ -2,12 +2,12 @@
 // DM-only toggle for secret mode where changes are not broadcasted.
 
 import { useQuestContext, triggerContextUpdate } from "../../domains/Context/ContextProvider";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 
 export function SecretModeToggle() {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const { actionService } = useActionService();
 
 	const isSecret = context.SecretModes?.[campaign.Id] || false;

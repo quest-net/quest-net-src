@@ -3,9 +3,9 @@
 import { useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useQuestContext } from "../Context/ContextProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CalendarActions, resolveNames, ordinal, ymdToAbsolute } from "./CalendarActions";
+import { CalendarUtils, resolveNames, ordinal, ymdToAbsolute } from "./CalendarUtils";
 import type { CalendarSettings } from "../CampaignSetting/CampaignSetting";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 import { useDebouncedCallback } from "../../hooks/useDebounced";
@@ -24,11 +24,11 @@ import { useDebouncedCallback } from "../../hooks/useDebounced";
 export default function CalendarDisplay() {
   const context = useQuestContext();
   const { actionService } = useActionService();
-  const campaign = CampaignActions.getActiveCampaign(context);
+  const campaign = CampaignUtils.getActiveCampaign(context);
   const isDM = context.User.Role === "dm";
   const isInteractive = isDM && !!actionService;
 
-  const cfg: CalendarSettings = CalendarActions.getConfig(context);
+  const cfg: CalendarSettings = CalendarUtils.getConfig(context);
   // Display-only switch: when disabled, hide the date readout but keep the rest
   // controls (the day-tracking math still runs in the background).
   const calendarEnabled = cfg.enabled !== false;

@@ -2,9 +2,9 @@
 
 import { Context } from "../Context/Context";
 import type { Audio } from "./Audio";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
-import { buildPathTag } from "../../utils/FolderUtils";
+import { buildPathTag } from "./AudioUtils";
 import {
 	extractPlaylistId,
 	extractYoutubeId,
@@ -12,7 +12,7 @@ import {
 	fetchYoutubePlaylistTitle,
 	fetchYoutubeVideoTitle,
 	sanitizeYoutubeFolderName,
-} from "../../utils/Audio/YouTubeUtils";
+} from "./YouTubeUtils";
 
 const FALLBACK_AUDIO_NAME = "Untitled Audio Track";
 
@@ -28,7 +28,7 @@ export const AudioActions = {
 		params: { audio: Omit<Audio, "Id"> },
 		context: Context
 	): Promise<void> {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Validate YouTube ID
 		const youtubeId = extractYoutubeId(params.audio.YoutubeId);
@@ -72,7 +72,7 @@ export const AudioActions = {
 		params: { playlistUrl: string },
 		context: Context
 	): Promise<void> {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Extract playlist ID
 		const playlistId = extractPlaylistId(params.playlistUrl);
@@ -128,7 +128,7 @@ export const AudioActions = {
 		params: { audioId: string; updates: Partial<Audio> },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		const audio = campaign.Audios.find((a) => a.Id === params.audioId);
 		if (!audio) {
@@ -165,7 +165,7 @@ export const AudioActions = {
 	 * Deletes an audio track
 	 */
 	delete(params: { audioId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		const index = campaign.Audios.findIndex((a) => a.Id === params.audioId);
 		if (index === -1) {
@@ -195,7 +195,7 @@ export const AudioActions = {
 			: [params.audioId];
 
 		// Validate all IDs exist
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		const validIds = audioIds.filter((id) =>
 			campaign.Audios.find((a) => a.Id === id)
 		);
@@ -233,7 +233,7 @@ export const AudioActions = {
 	 * Sets the DM's volume level (0.0 to 1.0)
 	 */
 	setVolume(params: { volume: number }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Clamp volume between 0 and 1
 		const volume = Math.max(0, Math.min(1, params.volume));
@@ -246,7 +246,7 @@ export const AudioActions = {
 	 * Stops the currently playing track
 	 */
 	stopTrack(_params: {}, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		if (!campaign.GameState.Audio) {
 			return; // Nothing playing
@@ -273,7 +273,7 @@ export const AudioActions = {
 		params: { updates: Array<{ audioId: string; tags: string[] }> },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		let successCount = 0;
 

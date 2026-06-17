@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { DetailDrawer } from "../../components/ui/DetailDrawer";
@@ -12,7 +12,7 @@ import { PropertyRow } from "../../components/ui/PropertyRow";
 import { ImageThumb } from "../../components/ui/ImageThumb";
 import { ConfirmButton } from "../../components/ui/ConfirmButton";
 import { Actor, StatusSlot } from "../Actor/Actor";
-import { formatSlotExpiration, formatTemplateExpiration } from "./StatusActions";
+import { formatSlotExpiration, formatTemplateExpiration } from "./StatusUtils";
 
 interface StatusSlotDisplayProps {
 	isOpen: boolean;
@@ -29,7 +29,7 @@ export function StatusSlotDisplay({
 }: StatusSlotDisplayProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const [localCountValue, setLocalCountValue] = useState(() => {
 		if (slot.expiration.type === "turns") return slot.expiration.turnsLeft;

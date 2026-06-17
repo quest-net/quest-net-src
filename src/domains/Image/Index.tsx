@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { ImageUpload } from "../../components/inputs/ImageUpload";
 import {
 	IndexView,
@@ -22,7 +22,7 @@ import { EmptyState } from "../../components/ui/EmptyState";
 export function ImageIndex() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const [uploadingImageId, setUploadingImageId] = useState<string | undefined>(
 		undefined

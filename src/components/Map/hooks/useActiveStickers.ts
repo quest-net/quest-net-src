@@ -1,8 +1,8 @@
 
 import { useMemo, useState, useEffect, useRef } from "react";
-import { CampaignActions } from "../../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../../domains/Campaign/CampaignUtils";
 import { useQuestContext } from "../../../domains/Context/ContextProvider";
-import { LogActions } from "../../../domains/Log/LogActions";
+import { LogUtils } from "../../../domains/Log/LogUtils";
 import {
     STICKER_DURATION_MS,
     getStickerSoundId,
@@ -11,7 +11,7 @@ import { SoundEffectService } from "../../../services/SoundEffectService";
 
 export function useActiveStickers() {
     const context = useQuestContext();
-    const campaign = CampaignActions.getActiveCampaign(context);
+    const campaign = CampaignUtils.getActiveCampaign(context);
     const [now, setNow] = useState(Date.now());
 
     // Track which sticker log entry IDs we've already played sounds for
@@ -21,7 +21,7 @@ export function useActiveStickers() {
         const map = new Map<string, string>(); // ActorId -> Emoji
 
         // Get recent logs
-        const logs = LogActions.getChronologicalLog(campaign);
+        const logs = LogUtils.getChronologicalLog(campaign);
 
         // Iterate from newest to oldest to find the latest sticker for each actor efficiently
         // But getChronologicalLog returns oldest -> newest. So we reverse or iterate backwards.

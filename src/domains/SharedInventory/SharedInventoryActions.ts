@@ -1,7 +1,7 @@
 // domains/SharedInventory/SharedInventoryActions.ts
 
 import { Context } from "../Context/Context";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 
 export const SharedInventoryActions = {
@@ -16,7 +16,7 @@ export const SharedInventoryActions = {
         },
         context: Context
     ): void {
-        const campaign = CampaignActions.getActiveCampaign(context);
+        const campaign = CampaignUtils.getActiveCampaign(context);
 
         // Resolve source inventory
         const sourceInv = campaign.Settings.SharedInventories?.find(
@@ -87,7 +87,7 @@ export const SharedInventoryActions = {
         },
         context: Context
     ): void {
-        const campaign = CampaignActions.getActiveCampaign(context);
+        const campaign = CampaignUtils.getActiveCampaign(context);
 
         const inv = campaign.Settings.SharedInventories?.find(
             (i) => i.Id === params.inventoryId
@@ -131,7 +131,7 @@ export const SharedInventoryActions = {
         },
         context: Context
     ): void {
-        const campaign = CampaignActions.getActiveCampaign(context);
+        const campaign = CampaignUtils.getActiveCampaign(context);
 
         // Resolve source
         const sourceInv = campaign.Settings.SharedInventories?.find(
@@ -214,7 +214,7 @@ export const SharedInventoryActions = {
         },
         context: Context
     ): void {
-        const campaign = CampaignActions.getActiveCampaign(context);
+        const campaign = CampaignUtils.getActiveCampaign(context);
         const inv = campaign.Settings.SharedInventories?.find(i => i.Id === params.inventoryId);
         if (!inv) return;
 

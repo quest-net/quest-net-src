@@ -1,7 +1,7 @@
 // components/inputs/StatCostEditor.tsx
 
 import { useQuestContext } from "../../domains/Context/ContextProvider";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import type { StatCost } from "../../domains/CampaignSetting/CampaignSetting";
 import { EmptyState } from "../ui/EmptyState";
 
@@ -12,7 +12,7 @@ interface StatCostEditorProps {
 
 export function StatCostEditor({ value, onChange }: StatCostEditorProps) {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const isEnabled = !!value;
 	const statId = value?.statId || "";

@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { Position } from "../../../domains/Actor/Actor";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { CampaignActions } from "../../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../../domains/Campaign/CampaignUtils";
 import { useQuestContext } from "../../../domains/Context/ContextProvider";
 import { usePeerTracking } from "../../../hooks/usePeerTracking";
 import { useActionService } from "../../../services/Actions/ActionServiceProvider";
@@ -186,7 +186,7 @@ export default function FirstPersonView({
 	const [isPointerLocked, setIsPointerLocked] = useState(
 		controller.isPointerLocked
 	);
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const userRole = context.User.Role === "dm" ? "dm" : "player";
 	const actor = useMemo(
 		() =>

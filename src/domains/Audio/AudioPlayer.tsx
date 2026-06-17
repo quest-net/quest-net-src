@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { AppSettingActions } from "../AppSetting/AppSettingActions";
 import { useAudioState } from "./AudioContext";
 
@@ -16,7 +16,7 @@ declare global {
 
 export function AudioPlayer() {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const playerRef = useRef<any>(null);
 	const isPlayerReadyRef = useRef(false);
 	const currentVideoIdsRef = useRef<string>("");

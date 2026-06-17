@@ -2,7 +2,7 @@
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { StatusActions } from "./StatusActions";
+import { StatusUtils } from "./StatusUtils";
 import { Status, StatusExpiration } from "./Status";
 import {
 	FormWrapper,
@@ -24,7 +24,7 @@ export function StatusEdit({ status, initialTags, onClose }: StatusEditProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 
-	const defaultStatus = StatusActions.createDefault(context);
+	const defaultStatus = StatusUtils.createDefault(context);
 	if (initialTags && !status) {
 		defaultStatus.Tags = initialTags;
 	}

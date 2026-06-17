@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { PeerInfo } from "../../hooks/usePeerTracking";
 import { useQuestContext } from "../Context/ContextProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 
 interface PeerStatusProps {
 	connectionStatus: "online" | "connected";
@@ -17,7 +17,7 @@ export function PeerStatus({ connectionStatus, peers, selfPeer, totalInRoom }: P
 	const windowRef = useRef<HTMLDivElement>(null);
 	const badgeRef = useRef<HTMLButtonElement>(null);
 
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	useEffect(() => {
 		if (!isOpen) return;

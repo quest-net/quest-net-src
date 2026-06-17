@@ -2,8 +2,8 @@
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
-import { CharacterActions } from "./CharacterActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
+import { CharacterUtils } from "./CharacterUtils";
 import { Character } from "./Character";
 import {
 	FormWrapper,
@@ -36,7 +36,7 @@ export function CharacterEdit({
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 
-	const defaultCharacter = CharacterActions.createDefault(context);
+	const defaultCharacter = CharacterUtils.createDefault(context);
 	if (initialTags && !character) {
 		defaultCharacter.Tags = initialTags;
 	}
@@ -138,7 +138,7 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 	if (!data || !onChange) return null;
 
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const handleFieldChange = (field: keyof Character, value: any) => {
 		onChange({

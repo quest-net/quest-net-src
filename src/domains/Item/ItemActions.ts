@@ -1,18 +1,15 @@
 // domains/Item/ItemActions.ts
 
 import { Context } from "../Context/Context";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 import { Item } from "./Item";
 import { Actor, Position } from "../Actor/Actor";
 import { rollDiceFormula } from "../../utils/DiceUtils";
-import {
-	syncItemSlotsAfterEdit,
-	getAllActors,
-} from "../../utils/SlotSyncUtils";
-import { applyActionCost, applyStatCost } from "../../utils/ActorCostUtils";
+import { syncItemSlotsAfterEdit } from "./ItemUtils";
+import { getAllActors, applyActionCost, applyStatCost } from "../Actor/ActorUtils";
 import { createItemEntity, createItemEntityFromTemplate, getItemDataFromEntity, isItemEntity } from "./ItemDropUtils";
-import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
+import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
 import {
 	getVoxelSpawnPosition,
 	getVoxelTerrainById,
@@ -24,26 +21,10 @@ import {
  */
 export const ItemActions = {
 	/**
-	 * Creates a default item template
-	 */
-	createDefault(_context: Context): Item {
-		return {
-			Id: crypto.randomUUID(),
-			Name: "New Item",
-			Description: "",
-			Image: undefined,
-			Tags: [],
-			MaxUses: undefined,
-			IsEquippable: false,
-			DiceRoll: "",
-		};
-	},
-
-	/**
 	 * Creates a new item and adds to the campaign item templates
 	 */
 	create(params: { item: Item }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		campaign.ItemTemplates.push(params.item);
 
 		LogActions.create(
@@ -66,7 +47,7 @@ export const ItemActions = {
 		params: { itemId: string; updates: Partial<Item> },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		const idx = campaign.ItemTemplates.findIndex((i) => i.Id === params.itemId);
 		if (idx === -1) {
 			console.warn(`Item not found: ${params.itemId}`);
@@ -105,7 +86,7 @@ export const ItemActions = {
 	 * Deletes an item template permanently
 	 */
 	delete(params: { itemId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		const idx = campaign.ItemTemplates.findIndex((i) => i.Id === params.itemId);
 		if (idx === -1) {
 			console.warn(`Item not found: ${params.itemId}`);
@@ -140,7 +121,7 @@ export const ItemActions = {
 		},
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Validate count
 		const count = Math.max(1, Math.floor(params.count));
@@ -216,7 +197,7 @@ export const ItemActions = {
 		},
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find all actors in all possible locations
 		const allActors: Actor[] = getAllActors(campaign);
@@ -316,7 +297,7 @@ export const ItemActions = {
 		params: { updates: Array<{ itemId: string; tags: string[] }> },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		let successCount = 0;
 		params.updates.forEach((update) => {
@@ -348,7 +329,7 @@ export const ItemActions = {
 	 * Works with any actor (characters or entities, in any location)
 	 */
 	use(params: { actorId: string; itemId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find actor in all possible locations
 		const actors: Actor[] = getAllActors(campaign);
@@ -477,7 +458,7 @@ export const ItemActions = {
 	 * Works with any actor (characters or entities, in any location)
 	 */
 	equip(params: { actorId: string; itemId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find actor in all possible locations
 		const actors: Actor[] = getAllActors(campaign);
@@ -535,7 +516,7 @@ export const ItemActions = {
 	 * Works with any actor (characters or entities, in any location)
 	 */
 	unequip(params: { actorId: string; itemId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find actor in all possible locations
 		const actors: Actor[] = getAllActors(campaign);
@@ -587,7 +568,7 @@ export const ItemActions = {
 	 * Works with any actor (characters or entities, in any location)
 	 */
 	discard(params: { actorId: string; itemId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find actor in all possible locations
 		const actors: Actor[] = getAllActors(campaign);
@@ -664,7 +645,7 @@ export const ItemActions = {
 		params: { actorId: string; itemId: string },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find the actor (must be in GameState since we need a position)
 		const actor =
@@ -711,7 +692,7 @@ export const ItemActions = {
 		slots.splice(slotIndex, 1);
 
 		if (getVoxelTerrainById(campaign, actor.Position.terrainId)) {
-			VoxelTerrainActions.repairActors(context);
+			VoxelTerrainUtils.repairActors(context);
 		}
 
 		LogActions.create(
@@ -736,7 +717,7 @@ export const ItemActions = {
 		params: { entityId: string; actorId: string },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find the item entity
 		const entityIndex = campaign.GameState.Entities.findIndex(
@@ -806,7 +787,7 @@ export const ItemActions = {
 		params: { itemId: string; terrainId: string; position?: Position },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		const template = campaign.ItemTemplates.find((t) => t.Id === params.itemId);
 		if (!template) {
@@ -828,7 +809,7 @@ export const ItemActions = {
 		);
 		campaign.GameState.Entities.push(entity);
 		if (getVoxelTerrainById(campaign, params.terrainId)) {
-			VoxelTerrainActions.repairActors(context);
+			VoxelTerrainUtils.repairActors(context);
 		}
 
 		LogActions.create(
@@ -847,7 +828,7 @@ export const ItemActions = {
 		params: { actorId: string; itemId: string; usesLeft: number | undefined },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find actor in all possible locations
 		const actors: Actor[] = getAllActors(campaign);

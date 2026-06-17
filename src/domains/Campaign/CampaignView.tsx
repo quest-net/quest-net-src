@@ -9,7 +9,7 @@ import {
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { useAutoReconnect } from "../../hooks/useAutoReconnect";
 import { useRelayWatchdog } from "../../hooks/useRelayWatchdog";
-import { CampaignActions } from "./CampaignActions";
+import { CampaignUtils } from "./CampaignUtils";
 import { ContextActions } from "../Context/ContextActions";
 import { RoomActions } from "../Room/RoomActions";
 import type { RoomCallbacks } from "../Room/RoomActions";
@@ -145,7 +145,7 @@ export function CampaignView() {
 				// campaign if it's different from the one we're about to load,
 				// matching the user's mental model: an actively played campaign
 				// stays unpacked, and we only swap when the URL truly changes.
-				let info = CampaignActions.findCampaignByIdentifier(
+				let info = CampaignUtils.findCampaignByIdentifier(
 					identifier,
 					context
 				);
@@ -165,7 +165,7 @@ export function CampaignView() {
 							});
 							return;
 						}
-						const loaded = await CampaignActions.switchActive(
+						const loaded = await CampaignUtils.switchActive(
 							identifier!,
 							context
 						);
@@ -182,11 +182,11 @@ export function CampaignView() {
 						// IndexedDB; otherwise, we'll wait for the DM's first state
 						// broadcast and ActionService will create the entry.
 						if (info) {
-							await CampaignActions.switchActive(identifier!, context);
+							await CampaignUtils.switchActive(identifier!, context);
 						} else if (context.ActiveCampaign) {
 							// No info — but if some other campaign is currently
 							// unpacked, pack it away before we wait for the DM.
-							await CampaignActions.packActive(context);
+							await CampaignUtils.packActive(context);
 						}
 					}
 					// Persist the reshape (active campaign + metadata refresh).
@@ -196,7 +196,7 @@ export function CampaignView() {
 
 				// Refresh info reference now that the active campaign has been
 				// swapped in (packActive may have refreshed metadata too).
-				info = CampaignActions.findCampaignByIdentifier(identifier, context);
+				info = CampaignUtils.findCampaignByIdentifier(identifier, context);
 
 				// Set user role if not already set.
 				if (isDM && context.User.Role !== "dm") {

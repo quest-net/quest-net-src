@@ -2,7 +2,7 @@
 
 import { IndexedDBUtilities } from "../utils/IndexedDBUtilities";
 import { Room, type ActionRequest } from "../domains/Room/Room";
-import { ImageActions } from "../domains/Image/ImageActions";
+import { compressImage } from "../domains/Image/ImageUtils";
 import { Image } from "../domains/Image/Image";
 
 const IMAGE_REQUEST_TIMEOUT_MS = 30000;
@@ -97,7 +97,7 @@ export class ImageService {
 		}
 
 		const { blob, width, height, mimeType, cutout } =
-			await ImageActions.compressImage(file);
+			await compressImage(file);
 
 		if (blob.size > MAX_IMAGE_BYTES) {
 			throw new Error(

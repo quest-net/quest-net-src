@@ -1,65 +1,12 @@
 // domains/Status/StatusActions.ts
 
 import { Context } from "../Context/Context";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
-import { Status, StatusExpiration } from "./Status";
+import { Status } from "./Status";
 import { Actor, StatusSlotExpiration } from "../Actor/Actor";
-import { syncStatusSlotsAfterEdit, getAllActors } from "../../utils/SlotSyncUtils";
-
-/**
- * Converts a template StatusExpiration to a runtime StatusSlotExpiration
- */
-function templateToSlotExpiration(expiration: StatusExpiration): StatusSlotExpiration {
-	switch (expiration.type) {
-		case "permanent":
-			return { type: "permanent" };
-		case "turns":
-			return { type: "turns", turnsLeft: expiration.count };
-		case "shortRest":
-			return { type: "shortRest" };
-		case "longRest":
-			return { type: "longRest" };
-		case "days":
-			return { type: "days", daysLeft: expiration.count };
-	}
-}
-
-/**
- * Formats a StatusSlotExpiration for display text
- */
-export function formatSlotExpiration(exp: StatusSlotExpiration): string {
-	switch (exp.type) {
-		case "permanent":
-			return "Permanent (never expires)";
-		case "turns":
-			return `${exp.turnsLeft} turn${exp.turnsLeft === 1 ? '' : 's'} remaining`;
-		case "shortRest":
-			return "Until short rest";
-		case "longRest":
-			return "Until long rest";
-		case "days":
-			return `${exp.daysLeft} day${exp.daysLeft === 1 ? '' : 's'} remaining`;
-	}
-}
-
-/**
- * Formats a template StatusExpiration for display text
- */
-export function formatTemplateExpiration(exp: StatusExpiration): string {
-	switch (exp.type) {
-		case "permanent":
-			return "Permanent";
-		case "turns":
-			return `${exp.count} turn${exp.count === 1 ? '' : 's'}`;
-		case "shortRest":
-			return "Until short rest";
-		case "longRest":
-			return "Until long rest";
-		case "days":
-			return `${exp.count} day${exp.count === 1 ? '' : 's'}`;
-	}
-}
+import { syncStatusSlotsAfterEdit, formatSlotExpiration, templateToSlotExpiration } from "./StatusUtils";
+import { getAllActors } from "../Actor/ActorUtils";
 
 /**
  * Status action handlers
@@ -67,24 +14,10 @@ export function formatTemplateExpiration(exp: StatusExpiration): string {
  */
 export const StatusActions = {
 	/**
-	 * Creates a default status template
-	 */
-	createDefault(_context: Context): Status {
-		return {
-			Id: crypto.randomUUID(),
-			Name: "New Status",
-			Description: "",
-			Image: undefined,
-			Tags: [],
-			Expiration: { type: "turns", count: 3 }, // Default 3 turns
-		};
-	},
-
-	/**
 	 * Creates a new status and adds to the campaign status templates
 	 */
 	create(params: { status: Status }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		campaign.StatusTemplates.push(params.status);
 
 		LogActions.create(
@@ -107,7 +40,7 @@ export const StatusActions = {
 		params: { statusId: string; updates: Partial<Status> },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		const idx = campaign.StatusTemplates.findIndex((s) => s.Id === params.statusId);
 		if (idx === -1) {
 			console.warn(`Status not found: ${params.statusId}`);
@@ -146,7 +79,7 @@ export const StatusActions = {
 	 * Deletes a status template permanently
 	 */
 	delete(params: { statusId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		const idx = campaign.StatusTemplates.findIndex((s) => s.Id === params.statusId);
 		if (idx === -1) {
 			console.warn(`Status not found: ${params.statusId}`);
@@ -178,7 +111,7 @@ export const StatusActions = {
 		},
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Validate count
 		const count = Math.max(1, Math.floor(params.count));
@@ -245,7 +178,7 @@ export const StatusActions = {
 		params: { updates: Array<{ statusId: string; tags: string[] }> },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		let successCount = 0;
 		params.updates.forEach((update) => {
@@ -278,7 +211,7 @@ export const StatusActions = {
 		params: { actorId: string; statusId: string },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find actor in all possible locations
 		const actors: Actor[] = getAllActors(campaign);
@@ -322,7 +255,7 @@ export const StatusActions = {
 		params: { actorId: string; statusId: string; expiration: StatusSlotExpiration },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find actor in all possible locations
 		const actors: Actor[] = getAllActors(campaign);

@@ -11,8 +11,8 @@
 import { useRef, useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
-import { buildCapturePlacements } from "./ScenarioActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
+import { buildCapturePlacements } from "./ScenarioUtils";
 import { countPlacements } from "./Scenario";
 import { Modal } from "../../components/ui/Modal";
 
@@ -26,7 +26,7 @@ const OVERWRITE_HINT = " (save over this scenario?)";
 export function CaptureModal({ isOpen, onClose }: CaptureModalProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const [name, setName] = useState("");
 	const inputRef = useRef<HTMLInputElement>(null);

@@ -1,8 +1,8 @@
-// domains/Terrain/TerrainDisplay.tsx
+// domains/VoxelTerrain/TerrainDisplay.tsx
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { getCampaignTerrainEnvironmentPresets } from "../CampaignSetting/CampaignSetting";
@@ -15,7 +15,7 @@ import {
 	type VoxelTerrainEnvironmentPreset,
 	type VoxelTerrainEnvironmentPresetId,
 	type VoxelTerrainLighting,
-} from "../VoxelTerrain/VoxelTerrain";
+} from "./VoxelTerrain";
 
 const ENVIRONMENT_EDIT_DEBOUNCE_MS = 300;
 const LIGHTING_INTENSITY_MIN = 0;
@@ -166,7 +166,7 @@ export default function TerrainDisplay({
 }) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const isDM = context.User.Role === "dm";
 
 	// The terrain whose atmosphere we display/edit is the one being rendered

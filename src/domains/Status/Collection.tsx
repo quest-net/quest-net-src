@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { CollectionView, CollectionViewItem } from "../../components/CollectionView/CollectionView";
 import { useQuestContext } from "../Context/ContextProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Actor, StatusSlot } from "../Actor/Actor";
 import { StatusSlotDisplay } from "./StatusSlotDisplay";
 
@@ -13,7 +13,7 @@ interface StatusCollectionProps {
 
 export function StatusCollection({ actor }: StatusCollectionProps) {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	// Drawer state
 	const [isDrawerOpen, setDrawerOpen] = useState(false);

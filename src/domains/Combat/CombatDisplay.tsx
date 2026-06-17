@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import {
 	computeInitiativeOrder,
 	getActiveOrder,
@@ -17,7 +17,7 @@ import { isItemEntity } from "../Item/ItemDropUtils";
 export function CombatDisplay() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const isDM = context.User.Role === "dm";
 	const isInteractive = isDM && !!actionService;
 	const [showInitiativeModal, setShowInitiativeModal] = useState(false);

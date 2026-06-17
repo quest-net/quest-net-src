@@ -1,4 +1,4 @@
-// domains/Terrain/Edit.tsx
+// domains/VoxelTerrain/Edit.tsx
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
@@ -12,9 +12,9 @@ import { useQuestContext } from "../../domains/Context/ContextProvider";
 import type {
 	EditableVoxelTerrain,
 	VoxelTerrain,
-} from "../VoxelTerrain/VoxelTerrain";
+} from "./VoxelTerrain";
 import type { TerrainLinkAnchor } from "../TerrainLink/TerrainLink";
-import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
+import { VoxelTerrainUtils } from "./VoxelTerrainUtils";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { getTerrainVoxels } from "../../utils/terrain/data/terrainPayloadStore";
 import {
@@ -132,7 +132,7 @@ export function TerrainEdit({
 			Tags: initialTags ?? terrainData.Tags,
 		}
 		: {
-			...VoxelTerrainActions.createNew(),
+			...VoxelTerrainUtils.createNew(),
 			Tags: initialTags,
 		};
 

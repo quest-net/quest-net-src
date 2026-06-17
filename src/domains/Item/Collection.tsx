@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { CollectionView, CollectionViewItem } from "../../components/CollectionView/CollectionView";
 import { useQuestContext } from "../Context/ContextProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Actor, InventorySlot, EquipmentSlot } from "../Actor/Actor";
 import { ItemSlotDisplay } from "./ItemSlotDisplay";
 import { formatActionCost, formatStatCost } from "../../utils/ActorCostUtils";
@@ -15,7 +15,7 @@ interface ItemCollectionProps {
 
 export function ItemCollection({ actor, mode }: ItemCollectionProps) {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	// Drawer state
 	const [isDrawerOpen, setDrawerOpen] = useState(false);

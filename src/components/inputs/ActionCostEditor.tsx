@@ -1,5 +1,5 @@
 import { useQuestContext } from "../../domains/Context/ContextProvider";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import type { ActionCost } from "../../domains/CampaignSetting/CampaignSetting";
 import { EmptyState } from "../ui/EmptyState";
 
@@ -10,7 +10,7 @@ interface ActionCostEditorProps {
 
 export function ActionCostEditor({ value, onChange }: ActionCostEditorProps) {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const isEnabled = !!value;
 	const actionId = value?.actionId || "";

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions, ExportProgress } from "../Campaign/CampaignActions";
+import { CampaignUtils, ExportProgress } from "../Campaign/CampaignUtils";
 import {
 	getCampaignTerrainEnvironmentPresets,
 	type CampaignSettings,
@@ -32,7 +32,7 @@ import {
 export function CampaignSettingEdit() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
 	const [isExporting, setIsExporting] = useState(false);
 
@@ -78,7 +78,7 @@ export function CampaignSettingEdit() {
 		});
 
 		try {
-			await CampaignActions.download(
+			await CampaignUtils.download(
 				{ campaignId: campaign.Id },
 				context,
 				setExportProgress

@@ -2,13 +2,13 @@
 
 import { Context } from "../Context/Context";
 import { Entity } from "./Entity";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
-import { ActorActions } from "../Actor/ActorActions";
+import { ActorUtils } from "../Actor/ActorUtils";
 import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
-import { createDefaultStatSlots, createDefaultActionSlots, createDefaultAttributeSlots } from "../../utils/ActorResolvers";
 import { getVoxelSpawnPosition, getVoxelTerrainById } from "../../utils/terrain/data/VoxelTerrainUtils";
-import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
+import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
+import { EntityUtils } from "./EntityUtils";
 
 /**
  * Entity action handlers
@@ -17,39 +17,10 @@ import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
  */
 export const EntityActions = {
 	/**
-	 * Creates a default entity with campaign stat definitions
-	 */
-	createDefault(context: Context): Entity {
-		const campaign = CampaignActions.getActiveCampaign(context);
-		const settings = campaign.Settings;
-
-		return {
-			Id: crypto.randomUUID(),
-			Name: "New Entity",
-			Description: "",
-			Image: undefined,
-			Color: ACTOR_DEFAULT_COLORS.ENTITY,
-			Stats: createDefaultStatSlots(settings.StatDefinitions),
-			Actions: createDefaultActionSlots(settings.ActionDefinitions),
-			Attributes: createDefaultAttributeSlots(settings.AttributeDefinitions ?? []),
-			// Template default; terrainId is assigned when the entity is spawned.
-			Position: { terrainId: "", x: 0, y: 0, h: 0 },
-			MoveSpeed: 5,
-			CanFly: false,
-			Size: "small",
-			Inventory: [],
-			Equipment: [],
-			Skills: [],
-			Statuses: [],
-			Tags: [],
-		};
-	},
-
-	/**
 	 * Creates a new entity template and adds to EntityTemplates
 	 */
 	create(params: { entity: Entity }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 
 		// Ensure stats are fully healed upon creation
@@ -79,25 +50,6 @@ export const EntityActions = {
 	},
 
 	/**
-	 * Helper function to extract base name from entity name
-	 * "Goblin" -> "Goblin"
-	 * "Goblin [A]" -> "Goblin"
-	 * "Goblin [Z]" -> "Goblin"
-	 */
-	getBaseName(name: string): string {
-		const match = name.match(/^(.+?)\s*\[[A-Z]\]$/);
-		return match ? match[1] : name;
-	},
-
-	/**
-	 * Helper function to get letter suffix from alphabet position
-	 * 0 -> 'A', 1 -> 'B', ..., 25 -> 'Z'
-	 */
-	getLetterSuffix(index: number): string {
-		return String.fromCharCode(65 + index); // 65 is 'A' in ASCII
-	},
-
-	/**
 	 * Spawns an entity from template onto the field (CLONE operation)
 	 * Creates a new instance with a new ID, leaving template intact
 	 * Automatically handles naming for multiple instances
@@ -117,7 +69,7 @@ export const EntityActions = {
 		},
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Prefer an explicit position's terrain, then a caller terrain, then the
 		// first terrain in the list as the default landing.
@@ -137,11 +89,11 @@ export const EntityActions = {
 		}
 
 		// Get the base name from template
-		const baseName = EntityActions.getBaseName(template.Name);
+		const baseName = EntityUtils.getBaseName(template.Name);
 
 		// Find all existing entities that match this base name
 		const matchingEntities = campaign.GameState.Entities.filter((e) => {
-			return EntityActions.getBaseName(e.Name) === baseName;
+			return EntityUtils.getBaseName(e.Name) === baseName;
 		});
 
 		const existingCount = matchingEntities.length;
@@ -167,7 +119,7 @@ export const EntityActions = {
 		// If we have existing entities, rename them all with letter suffixes
 		if (existingCount > 0) {
 			matchingEntities.forEach((entity, index) => {
-				entity.Name = `${baseName} [${EntityActions.getLetterSuffix(index)}]`;
+				entity.Name = `${baseName} [${EntityUtils.getLetterSuffix(index)}]`;
 			});
 		}
 
@@ -189,7 +141,7 @@ export const EntityActions = {
 			instance.Name = baseName;
 		} else {
 			// Add letter suffix for new instance
-			instance.Name = `${baseName} [${EntityActions.getLetterSuffix(existingCount)}]`;
+			instance.Name = `${baseName} [${EntityUtils.getLetterSuffix(existingCount)}]`;
 		}
 
 		// Set position from the target voxel terrain if not provided.
@@ -223,7 +175,7 @@ export const EntityActions = {
 			params.repairActors !== false &&
 			getVoxelTerrainById(campaign, targetTerrainId)
 		) {
-			VoxelTerrainActions.repairActors(context);
+			VoxelTerrainUtils.repairActors(context);
 		}
 	},
 
@@ -233,7 +185,7 @@ export const EntityActions = {
 	 * DM only - handled by ACTION_REGISTRY
 	 */
 	remove(params: { entityId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		const gameStateIndex = campaign.GameState.Entities.findIndex(
 			(e) => e.Id === params.entityId
@@ -274,7 +226,7 @@ export const EntityActions = {
 		params: { entityId: string; updates: Partial<Entity> },
 		context: Context
 	): void {
-		ActorActions.editActor(
+		ActorUtils.editActor(
 			"entity",
 			{ actorId: params.entityId, updates: params.updates },
 			context
@@ -287,7 +239,7 @@ export const EntityActions = {
 	 * DM only - handled by ACTION_REGISTRY
 	 */
 	delete(params: { entityId: string }, context: Context): void {
-		ActorActions.deleteActor("entity", { actorId: params.entityId }, context);
+		ActorUtils.deleteActor("entity", { actorId: params.entityId }, context);
 	},
 
 	/**
@@ -298,7 +250,7 @@ export const EntityActions = {
 		params: { entityId: string; position: Position },
 		context: Context
 	): void {
-		ActorActions.moveActor(
+		ActorUtils.moveActor(
 			"entity",
 			{ actorId: params.entityId, position: params.position },
 			context
@@ -312,7 +264,7 @@ export const EntityActions = {
 		params: { updates: Array<{ entityId: string; tags: string[] }> },
 		context: Context
 	): void {
-		ActorActions.bulkEditTags(
+		ActorUtils.bulkEditTags(
 			"entity",
 			{
 				updates: params.updates.map((update) => ({

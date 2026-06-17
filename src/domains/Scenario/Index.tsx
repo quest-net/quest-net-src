@@ -2,7 +2,7 @@
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { ScenarioEdit } from "./Edit";
 import { countPlacements } from "./Scenario";
 import { IndexView, IndexViewItem } from "../../components/IndexView/IndexView";
@@ -12,7 +12,7 @@ import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
 export function ScenarioIndex() {
     const context = useQuestContext();
     const { actionService } = useActionService();
-    const campaign = CampaignActions.getActiveCampaign(context);
+    const campaign = CampaignUtils.getActiveCampaign(context);
     const { setViewedTerrain } = useViewedTerrain();
 
     const handleLoad = (scenarioId: string) => {

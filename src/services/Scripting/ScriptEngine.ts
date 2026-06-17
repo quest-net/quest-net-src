@@ -22,7 +22,7 @@ import type { Context } from "../../domains/Context/Context";
 import type { Actor } from "../../domains/Actor/Actor";
 import type { Script, ScriptParam, ScriptValue, ScriptVars } from "../../domains/Script/Script";
 import { ACTION_REGISTRY, isScriptableAction } from "../Actions/ActionRegistry";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { LogActions } from "../../domains/Log/LogActions";
 import { rollDiceFormula } from "../../utils/DiceUtils";
 import { validateScriptSource } from "./scriptValidation";
@@ -212,7 +212,7 @@ function createActionSink(): ScriptActionSink {
 }
 
 function makeGame(context: Context, state: ScriptRunState, sink: ScriptActionSink): any {
-	const campaign = () => CampaignActions.getActiveCampaign(context);
+	const campaign = () => CampaignUtils.getActiveCampaign(context);
 	return {
 		get campaign() {
 			return campaign();
@@ -272,7 +272,7 @@ async function dispatch(
 	}
 	state.actionCount++;
 	// Capture hosts before the action so a removal still has a host to react with.
-	const pre = collectMatches(CampaignActions.getActiveCampaign(context), key);
+	const pre = collectMatches(CampaignUtils.getActiveCampaign(context), key);
 	// Run the SAME handler the app uses against the live campaign.
 	await action.handler(params, context);
 	// React to what this action just did (the cascade).
@@ -431,7 +431,7 @@ async function runReactions(
 	}
 	state.cascadeDepth++;
 	try {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		// Current hosts run once each (keyed by logical identity, so a slot the
 		// action rebuilt is NOT double-counted). Then add only pre-action hosts the
 		// action genuinely removed, so onRemove cleanup still fires exactly once.
@@ -510,7 +510,7 @@ export const ScriptEngine = {
 	beginAction(key: string, context: Context): ScriptActionSnapshot {
 		return scriptsDisabled(context)
 			? []
-			: collectMatches(CampaignActions.getActiveCampaign(context), key);
+			: collectMatches(CampaignUtils.getActiveCampaign(context), key);
 	},
 
 	/**
@@ -544,7 +544,7 @@ export const ScriptEngine = {
 		params?: any;
 	}): Promise<{ ok: boolean; error?: string }> {
 		const { context, host, code, triggerKey, params } = opts;
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		const binding = bindingForSelection(campaign, host);
 		if (!binding) return { ok: false, error: "Selected host not found in campaign." };
 		const validation = validateScriptSource(code);

@@ -3,14 +3,14 @@
 import { useState, useEffect } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Note } from "./Note";
 import { EmptyState } from "../../components/ui/EmptyState";
 
 export function NoteDisplay() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const [searchQuery, setSearchQuery] = useState("");
 	const [editingNoteId, setEditingNoteId] = useState<string | null>(null);

@@ -1,5 +1,5 @@
 import type { Campaign } from "../domains/Campaign/Campaign";
-import { CampaignActions } from "../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../domains/Campaign/CampaignUtils";
 import type { Context } from "../domains/Context/Context";
 import type { Room, ActionSend } from "../domains/Room/Room";
 
@@ -155,7 +155,7 @@ export class ActorPoseService {
 
 		let campaign: Campaign;
 		try {
-			campaign = CampaignActions.getActiveCampaign(this.context);
+			campaign = CampaignUtils.getActiveCampaign(this.context);
 		} catch {
 			return;
 		}

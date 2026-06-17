@@ -4,7 +4,7 @@ import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react"
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { useDiceRoller } from "./DiceRollerContext";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import { ToggleButton } from "../ui/ToggleButton";
@@ -420,7 +420,7 @@ export function DiceRoller() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const { registerHandler } = useDiceRoller();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const userRole = context.User.Role;
 	const isMobile = useIsMobile();
 	const containerRef = useRef<HTMLDivElement>(null);

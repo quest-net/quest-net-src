@@ -3,7 +3,7 @@ import { useState, useRef } from "react";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
-import { ImageActions } from "../../domains/Image/ImageActions";
+import { compressImage } from "../../domains/Image/ImageUtils";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 import { Image } from "../../domains/Image/Image";
 
@@ -88,7 +88,7 @@ export function ImageUpload({
 		try {
 			// Compress the image
 			const { blob, width, height, mimeType, cutout } =
-				await ImageActions.compressImage(file);
+				await compressImage(file);
 
 			// Verify size after compression
 			if (blob.size > 1024 * 1024) {
@@ -185,7 +185,7 @@ export function ImageUpload({
 				try {
 					// Compress the image
 					const { blob, width, height, mimeType, cutout } =
-						await ImageActions.compressImage(file);
+						await compressImage(file);
 
 					// Verify size after compression
 					if (blob.size > 1024 * 1024) {

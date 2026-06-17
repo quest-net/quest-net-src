@@ -2,13 +2,12 @@
 
 import { Context } from "../Context/Context";
 import { Character } from "./Character";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
-import { ActorActions } from "../Actor/ActorActions";
+import { ActorUtils } from "../Actor/ActorUtils";
 import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
-import { createDefaultStatSlots, createDefaultActionSlots, createDefaultAttributeSlots } from "../../utils/ActorResolvers";
 import { getVoxelSpawnPosition, getVoxelTerrainById } from "../../utils/terrain/data/VoxelTerrainUtils";
-import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
+import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
 
 /**
  * Character action handlers
@@ -16,42 +15,11 @@ import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
  * Unlike Entities, Characters are never cloned - they MOVE between locations
  */
 export const CharacterActions = {
-	/**
-	 * Creates a default character with campaign stat definitions
-	 */
-	createDefault(context: Context): Character {
-		const campaign = CampaignActions.getActiveCampaign(context);
-		const settings = campaign.Settings;
-
-		return {
-			Id: crypto.randomUUID(),
-			Name: "New Character",
-			Description: "",
-			Image: undefined,
-			Color: ACTOR_DEFAULT_COLORS.CHARACTER,
-			Stats: createDefaultStatSlots(settings.StatDefinitions),
-			Actions: createDefaultActionSlots(settings.ActionDefinitions),
-			Attributes: createDefaultAttributeSlots(settings.AttributeDefinitions ?? []),
-			// Roster default; terrainId is assigned when the character is spawned.
-			Position: { terrainId: "", x: 0, y: 0, h: 0 },
-			MoveSpeed: 5,
-			CanFly: false,
-			Size: "small",
-			Inventory: [],
-			Equipment: [],
-			Skills: [],
-			Statuses: [],
-			Tags: [],
-			Notes: [],
-			CritMessage: undefined,
-		};
-	},
-
 	create(
 		params: { character: Character },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		const character: Character = {
 			...params.character,
@@ -86,7 +54,7 @@ export const CharacterActions = {
 		params: { character: Character; terrainId?: string },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		// A player creating a character cannot know the world layout, so default
 		// to the first terrain in the list (§5.4). The DM may relocate later.
 		const terrainId = params.terrainId ?? campaign.VoxelTerrains[0]?.Id ?? "";
@@ -124,7 +92,7 @@ export const CharacterActions = {
 		);
 
 		if (getVoxelTerrainById(campaign, terrainId)) {
-			VoxelTerrainActions.repairActors(context);
+			VoxelTerrainUtils.repairActors(context);
 		}
 	},
 
@@ -137,7 +105,7 @@ export const CharacterActions = {
 		params: { characterId: string; terrainId?: string; position?: Position },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		const rosterIndex = campaign.CharacterRoster.findIndex(
 			(c) => c.Id === params.characterId
@@ -192,7 +160,7 @@ export const CharacterActions = {
 		);
 
 		if (getVoxelTerrainById(campaign, terrainId)) {
-			VoxelTerrainActions.repairActors(context);
+			VoxelTerrainUtils.repairActors(context);
 		}
 	},
 
@@ -202,7 +170,7 @@ export const CharacterActions = {
 	 * DM only - handled by ACTION_REGISTRY
 	 */
 	remove(params: { characterId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		const gameStateIndex = campaign.GameState.Characters.findIndex(
 			(c) => c.Id === params.characterId
@@ -253,7 +221,7 @@ export const CharacterActions = {
 		params: { characterId: string; updates: Partial<Character> },
 		context: Context
 	): void {
-		ActorActions.editActor(
+		ActorUtils.editActor(
 			"character",
 			{ actorId: params.characterId, updates: params.updates },
 			context
@@ -261,7 +229,7 @@ export const CharacterActions = {
 	},
 
 	delete(params: { characterId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		const isSpawned = campaign.GameState.Characters.some(
 			(c) => c.Id === params.characterId
@@ -273,7 +241,7 @@ export const CharacterActions = {
 			return;
 		}
 
-		ActorActions.deleteActor(
+		ActorUtils.deleteActor(
 			"character",
 			{ actorId: params.characterId },
 			context
@@ -288,7 +256,7 @@ export const CharacterActions = {
 		params: { characterId: string; position: Position },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		const character = campaign.GameState.Characters.find(
 			(c) => c.Id === params.characterId
 		);
@@ -298,7 +266,7 @@ export const CharacterActions = {
 			return;
 		}
 
-		if (!ActorActions.isValidPosition(params.position)) {
+		if (!ActorUtils.isValidPosition(params.position)) {
 			console.warn(`Invalid character move position: ${params.characterId}`);
 			return;
 		}
@@ -320,7 +288,7 @@ export const CharacterActions = {
 			// rather than re-validating range here.
 		}
 
-		ActorActions.moveActor(
+		ActorUtils.moveActor(
 			"character",
 			{ actorId: params.characterId, position: params.position },
 			context
@@ -334,7 +302,7 @@ export const CharacterActions = {
 		params: { updates: Array<{ characterId: string; tags: string[] }> },
 		context: Context
 	): void {
-		ActorActions.bulkEditTags(
+		ActorUtils.bulkEditTags(
 			"character",
 			{
 				updates: params.updates.map((update) => ({

@@ -22,7 +22,7 @@ import type { Entity } from '../../domains/Entity/Entity';
 import type { Position } from '../../domains/Actor/Actor';
 import { useQuestContext } from '../../domains/Context/ContextProvider';
 import { useActionService } from '../../services/Actions/ActionServiceProvider';
-import { CampaignActions } from '../../domains/Campaign/CampaignActions';
+import { CampaignUtils } from '../../domains/Campaign/CampaignUtils';
 import { AppSettingActions } from '../../domains/AppSetting/AppSettingActions';
 import { getMaxVoxelSurfaceHeight } from '../../utils/terrain/data/VoxelTerrainUtils';
 import { getVoxelCount } from '../../utils/terrain/data/VoxelDataUtils';
@@ -221,7 +221,7 @@ export default function MapScene({
 
 	const isDM = context.User.Role === "dm";
 	const imageService = (actionService as any)?.imageService ?? null;
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const { setViewedTerrain } = useViewedTerrain();
 	const selectedActorObject = useMemo(
 		() => findSelectedActor(selectedActor, characters, entities),

@@ -1,7 +1,7 @@
 // components/inputs/MovementSettingsEditor.tsx
 import { useState, useMemo } from "react";
 import { useFormReadOnly } from "../Form/Form";
-import { validateAndBuildHeightCostLookup } from "../../domains/CampaignSetting/CampaignSettingActions";
+import { validateAndBuildHeightCostLookup } from "../../domains/CampaignSetting/CampaignSettingUtils";
 import { MAX_HEIGHT } from "../../domains/VoxelTerrain/VoxelTerrain";
 
 interface MovementSettingsEditorProps {

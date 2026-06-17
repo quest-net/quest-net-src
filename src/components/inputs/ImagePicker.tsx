@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
 import { ImageUpload } from "./ImageUpload";
 import { ImageGenerator } from "./ImageGenerator";
@@ -27,7 +27,7 @@ export function ImagePicker({
 	generationContext,
 }: ImagePickerProps) {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const [isOpen, setIsOpen] = useState(false);
 	const [selectedImageId, setSelectedImageId] = useState<string | undefined>(

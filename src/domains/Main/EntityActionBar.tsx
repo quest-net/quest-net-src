@@ -4,7 +4,7 @@
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Actor } from "../Actor/Actor";
 import { isItemEntity, getItemDataFromEntity } from "../Item/ItemDropUtils";
 
@@ -22,7 +22,7 @@ interface EntityActionBarProps {
 export function EntityActionBar({ actor }: EntityActionBarProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const isPlayer = context.User.Role === "player";
 	const myCharacterId = context.User.SelectedCharacters[campaign.RoomCode];

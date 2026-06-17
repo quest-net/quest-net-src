@@ -3,7 +3,7 @@
 import { KeyboardEvent, MouseEvent, useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { StatBar } from "../../components/StatBar/StatBar";
 import { ObjectPicker, ObjectTypeConfig } from "../../components/inputs/ObjectPicker";
@@ -46,7 +46,7 @@ export function Overview({ onInspectActor }: OverviewProps) {
 	const { actionService } = useActionService();
 	const { selectActor } = useMapState();
 	const { viewedTerrainId } = useViewedTerrain();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const [filter, setFilter] = useState<OverviewFilter>("all");
 	const [terrainScope, setTerrainScope] = useState<TerrainScope>("viewed");
 	const [search, setSearch] = useState("");

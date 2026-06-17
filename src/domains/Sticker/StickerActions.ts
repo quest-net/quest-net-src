@@ -10,7 +10,8 @@
 
 import { Context } from "../Context/Context";
 import { LogActions } from "../Log/LogActions";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { LogUtils } from "../Log/LogUtils";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { STICKER_RATE_LIMIT_MS } from "./Sticker";
 
 export const StickerActions = {
@@ -36,13 +37,13 @@ export const StickerActions = {
 		if (!emoji || typeof emoji !== "string") return;
 		if (!actorId || typeof actorId !== "string") return;
 
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Per-actor cooldown. Skip if this actor sent another sticker within
 		// the rate-limit window. Walk newest -> oldest and break as soon as
 		// we drop out of the window.
 		const cutoff = Date.now() - STICKER_RATE_LIMIT_MS;
-		const logs = LogActions.getChronologicalLog(campaign);
+		const logs = LogUtils.getChronologicalLog(campaign);
 		for (let i = logs.length - 1; i >= 0; i--) {
 			const entry = logs[i];
 			if (entry.Timestamp < cutoff) break;

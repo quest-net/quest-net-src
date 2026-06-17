@@ -10,9 +10,9 @@ import {
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogEntry, LogCategory } from "./LogEntry";
-import { LogActions } from "./LogActions";
+import { LogUtils } from "./LogUtils";
 import { getMentionTargets, parseMentions } from "./MentionUtils";
 import { EmptyState } from "../../components/ui/EmptyState";
 
@@ -117,7 +117,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	const prevDisplayedLengthRef = useRef(0);
 	const prevLastIdRef = useRef<string | undefined>(undefined);
 
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const userRole = context.User.Role;
 	const selectedCharacterId =
 		context.User.SelectedCharacters[campaign.RoomCode];
@@ -154,9 +154,9 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	const lastLogId = logLength > 0 ? campaign.Log[logLength - 1].Id : "∅";
 
 	const visibleLog = useMemo(() => {
-		const chronologicalLog = LogActions.getChronologicalLog(campaign);
+		const chronologicalLog = LogUtils.getChronologicalLog(campaign);
 		return chronologicalLog.filter((entry) =>
-			LogActions.canUserSeeEntry(entry, userRole)
+			LogUtils.canUserSeeEntry(entry, userRole)
 		);
 	}, [campaign.Log, campaign.LogHead, userRole, selectedCharacterId, logLength, lastLogId]);
 

@@ -1,7 +1,7 @@
 // domains/Note/NoteActions.ts
 
 import { Context } from "../Context/Context";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Note } from "./Note";
 
 /**
@@ -16,7 +16,7 @@ export const NoteActions = {
 		params: { characterId: string; note: Partial<Note> },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find character in GameState (spawned characters)
 		const character = campaign.GameState.Characters.find(
@@ -45,7 +45,7 @@ export const NoteActions = {
 		params: { characterId: string; noteId: string; updates: Partial<Note> },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		const character = campaign.GameState.Characters.find(
 			(c) => c.Id === params.characterId
@@ -82,7 +82,7 @@ export const NoteActions = {
 		params: { characterId: string; noteId: string },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		const character = campaign.GameState.Characters.find(
 			(c) => c.Id === params.characterId

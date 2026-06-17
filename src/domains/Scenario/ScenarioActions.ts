@@ -1,91 +1,15 @@
 // domains/Scenario/ScenarioActions.ts
 
 import { Context } from "../Context/Context";
-import { Scenario, ActorPlacement, countPlacements } from "./Scenario";
-import { Campaign } from "../Campaign/Campaign";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { Scenario, countPlacements } from "./Scenario";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 import { EntityActions } from "../Entity/EntityActions";
 import { CharacterActions } from "../Character/CharacterActions";
-import { VoxelTerrainActions } from "../VoxelTerrain/VoxelTerrainActions";
+import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
-import { isItemEntity, getItemDataFromEntity, createItemEntity } from "../Item/ItemDropUtils";
-
-/**
- * Builds the placement snapshot for a scenario capture from the live GameState.
- *
- * Multi-terrain capture rule: the entire party is always saved (every active
- * character, wherever it stands), but entities and dropped items are saved ONLY
- * when they share a terrain with at least one party member. This keeps a
- * scenario focused on what is around the party — a room the DM prepped on some
- * far-off terrain the party hasn't reached is left out of the snapshot (and so
- * is left untouched on load).
- *
- * Pure and side-effect free so the capture modal can preview exactly what
- * `ScenarioActions.capture` will store.
- */
-export function buildCapturePlacements(campaign: Campaign): ActorPlacement[] {
-    const gs = campaign.GameState;
-
-    // Terrains any party member currently occupies. Only entities/items on
-    // these terrains are captured.
-    const partyTerrainIds = new Set(
-        gs.Characters.map((c) => c.Position.terrainId)
-    );
-
-    const placements: ActorPlacement[] = [];
-
-    // Characters keep their stable roster Id; they are relocated (not
-    // re-created) on load. The whole party is captured regardless of terrain.
-    for (const character of gs.Characters) {
-        placements.push({
-            Type: "character",
-            ActorId: character.Id,
-            Position: { ...character.Position },
-        });
-    }
-
-    for (const entity of gs.Entities) {
-        // Skip entities the party isn't sharing a terrain with.
-        if (!partyTerrainIds.has(entity.Position.terrainId)) continue;
-
-        if (isItemEntity(entity)) {
-            // Templateless item entity — capture instance Id + template ref +
-            // uses + position. The item snapshot lives in a tag; pull the
-            // template ID and remaining uses out of it. Skip if unreadable.
-            const snapshot = getItemDataFromEntity(entity);
-            if (snapshot) {
-                placements.push({
-                    Type: "item",
-                    ActorId: entity.Id,
-                    TemplateId: snapshot.Id,
-                    UsesLeft: snapshot.UsesLeft,
-                    Position: { ...entity.Position },
-                });
-            }
-            continue;
-        }
-
-        // Regular entity — capture instance Id plus the template it was
-        // spawned from (matched by base name), so it can be re-created if
-        // it is no longer on the field at load time.
-        const baseName = EntityActions.getBaseName(entity.Name);
-        const template = campaign.EntityTemplates.find(
-            (t) => EntityActions.getBaseName(t.Name) === baseName
-        );
-
-        if (template) {
-            placements.push({
-                Type: "entity",
-                ActorId: entity.Id,
-                TemplateId: template.Id,
-                Position: { ...entity.Position },
-            });
-        }
-    }
-
-    return placements;
-}
+import { createItemEntity } from "../Item/ItemDropUtils";
+import { buildCapturePlacements } from "./ScenarioUtils";
 
 /**
  * Scenario action handlers
@@ -97,7 +21,7 @@ export const ScenarioActions = {
      * If a scenario with the same name exists, it will be overwritten
      */
     capture(params: { name: string }, context: Context): void {
-        const campaign = CampaignActions.getActiveCampaign(context);
+        const campaign = CampaignUtils.getActiveCampaign(context);
         const gs = campaign.GameState;
 
         const placements = buildCapturePlacements(campaign);
@@ -163,7 +87,7 @@ export const ScenarioActions = {
      * simply stays where it is.
      */
     async load(params: { scenarioId: string }, context: Context): Promise<void> {
-        const campaign = CampaignActions.getActiveCampaign(context);
+        const campaign = CampaignUtils.getActiveCampaign(context);
         const scenario = campaign.Scenarios.find((s) => s.Id === params.scenarioId);
 
         if (!scenario) {
@@ -287,7 +211,7 @@ export const ScenarioActions = {
                 await TerrainStorageService.hydrateTerrain(campaign, terrainId);
             }
         }
-        VoxelTerrainActions.repairActors(context);
+        VoxelTerrainUtils.repairActors(context);
 
         LogActions.create(
             {
@@ -305,7 +229,7 @@ export const ScenarioActions = {
      * Deletes a scenario from the collection
      */
     delete(params: { scenarioId: string }, context: Context): void {
-        const campaign = CampaignActions.getActiveCampaign(context);
+        const campaign = CampaignUtils.getActiveCampaign(context);
 
         const index = campaign.Scenarios.findIndex(
             (s) => s.Id === params.scenarioId
@@ -337,7 +261,7 @@ export const ScenarioActions = {
         params: { scenarioId: string; updates: Partial<Scenario> },
         context: Context
     ): void {
-        const campaign = CampaignActions.getActiveCampaign(context);
+        const campaign = CampaignUtils.getActiveCampaign(context);
 
         const scenario = campaign.Scenarios.find(
             (s) => s.Id === params.scenarioId
@@ -369,7 +293,7 @@ export const ScenarioActions = {
         params: { updates: Array<{ scenarioId: string; tags: string[] }> },
         context: Context
     ): void {
-        const campaign = CampaignActions.getActiveCampaign(context);
+        const campaign = CampaignUtils.getActiveCampaign(context);
 
         let successCount = 0;
 

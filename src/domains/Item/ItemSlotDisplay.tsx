@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
-import { formatRestoreRule } from "../CampaignSetting/CampaignSettingActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
+import { formatRestoreRule } from "../CampaignSetting/CampaignSettingUtils";
 import { ImageDisplay } from "../Image/ImageDisplay";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { ActorPicker } from "../../components/inputs/ActorPicker";
@@ -39,7 +39,7 @@ export function ItemSlotDisplay({
 }: ItemSlotDisplayProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const [localUsesLeft, setLocalUsesLeft] = useState(slot.UsesLeft ?? 1);
 	const [isTransferPickerOpen, setIsTransferPickerOpen] = useState(false);

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { SharedInventory } from "../CampaignSetting/CampaignSetting";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { StatBar } from "../../components/StatBar/StatBar";
@@ -21,7 +21,7 @@ export function SharedInventoryDisplay({
 }: SharedInventoryDisplayProps) {
     const context = useQuestContext();
     const { actionService } = useActionService();
-    const campaign = CampaignActions.getActiveCampaign(context);
+    const campaign = CampaignUtils.getActiveCampaign(context);
 
     const [editingMaxStats, setEditingMaxStats] = useState(false);
     const [showUnsetStats, setShowUnsetStats] = useState(false);

@@ -2,7 +2,7 @@
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { SkillActions } from "./SkillActions";
+import { SkillUtils } from "./SkillUtils";
 import { Skill } from "./Skill";
 import {
 	FormWrapper,
@@ -27,7 +27,7 @@ export function SkillEdit({ skill, initialTags, onClose }: SkillEditProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 
-	const defaultSkill = SkillActions.createDefault(context);
+	const defaultSkill = SkillUtils.createDefault(context);
 	if (initialTags && !skill) {
 		defaultSkill.Tags = initialTags;
 	}

@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../../domains/Campaign/CampaignActions";
+import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import {
     COMMON_EMOJIS,
     STICKER_RATE_LIMIT_MS,
@@ -16,7 +16,7 @@ export function StickerPicker() {
     const [timeLeft, setTimeLeft] = useState(0);
     const popoverRef = useRef<HTMLDivElement>(null);
 
-    const campaign = CampaignActions.getActiveCampaign(context);
+    const campaign = CampaignUtils.getActiveCampaign(context);
     const isPlayer = context.User.Role === "player";
     const selectedCharacterId = context.User.SelectedCharacters[campaign.RoomCode];
     const impersonatedActorId = (context.User.ImpersonatedActors ?? {})[campaign.RoomCode];

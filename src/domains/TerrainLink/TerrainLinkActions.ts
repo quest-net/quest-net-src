@@ -8,12 +8,12 @@
 // move: the map's link layer resolves the destination from the link (via the
 // helpers in TerrainLink.ts) and dispatches the ordinary character:move /
 // entity:move, which already honors a destination terrainId and re-anchors the
-// combat budget on a terrain change (ActorActions.moveActor). Lock and adjacency
+// combat budget on a terrain change (ActorUtils.moveActor). Lock and adjacency
 // are enforced client-side at the interaction point, consistent with how movement
 // legality is handled throughout the app.
 
 import type { Context } from "../Context/Context";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 import {
 	anchorsEqual,
@@ -22,36 +22,12 @@ import {
 	type TerrainLink,
 	type TerrainLinkAnchor,
 } from "./TerrainLink";
-
-function isValidAnchor(
-	anchor: TerrainLinkAnchor | undefined | null
-): anchor is TerrainLinkAnchor {
-	return (
-		!!anchor &&
-		typeof anchor.terrainId === "string" &&
-		anchor.terrainId.length > 0 &&
-		Number.isFinite(anchor.x) &&
-		Number.isFinite(anchor.y) &&
-		Number.isFinite(anchor.h)
-	);
-}
-
-function isAnchorOccupiedByOtherLink(
-	links: readonly TerrainLink[],
-	anchor: TerrainLinkAnchor,
-	linkId: string
-): boolean {
-	return links.some(
-		(link) =>
-			link.Id !== linkId &&
-			(anchorsEqual(link.A, anchor) || anchorsEqual(link.B, anchor))
-	);
-}
+import { isValidAnchor, isAnchorOccupiedByOtherLink } from "./TerrainLinkUtils";
 
 export const TerrainLinkActions = {
 	/** Creates an undirected terrain link between two anchors (DM authoring). */
 	create(params: { a: TerrainLinkAnchor; b: TerrainLinkAnchor }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		if (!isValidAnchor(params.a) || !isValidAnchor(params.b)) {
 			console.warn("Terrain link create rejected: invalid anchor(s)");
@@ -99,7 +75,7 @@ export const TerrainLinkActions = {
 		params: { linkId: string; updates: Partial<Pick<TerrainLink, "A" | "B" | "Locked">> },
 		context: Context
 	): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		const link = campaign.TerrainLinks.find((l) => l.Id === params.linkId);
 		if (!link) {
 			console.warn(`Terrain link not found: ${params.linkId}`);
@@ -137,7 +113,7 @@ export const TerrainLinkActions = {
 
 	/** Deletes a terrain link (DM). */
 	delete(params: { linkId: string }, context: Context): void {
-		const campaign = CampaignActions.getActiveCampaign(context);
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		const index = campaign.TerrainLinks.findIndex((l) => l.Id === params.linkId);
 		if (index === -1) {
 			console.warn(`Terrain link not found: ${params.linkId}`);

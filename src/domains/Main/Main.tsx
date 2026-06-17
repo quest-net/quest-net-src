@@ -1,7 +1,7 @@
 // domains/Main/Main.tsx - Updated
 
 import { useQuestContext, triggerContextUpdate } from "../Context/ContextProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import MapScene, { type CameraPreference } from "../../components/Map/MapScene";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -10,7 +10,7 @@ import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
 import { DmMapToolbar } from "../../components/Map/DmMapToolbar";
 import { Inspector } from "./Inspector";
 import CalendarDisplay from "../Calendar/CalendarDisplay";
-import TerrainDisplay from "../Terrain/TerrainDisplay";
+import TerrainDisplay from "../VoxelTerrain/TerrainDisplay";
 import { AudioDisplay } from "../Audio/AudioDisplay";
 import { SceneDisplay } from "../Scene/SceneDisplay";
 import { isDmAccess } from "../../utils/UrlParser";
@@ -71,7 +71,7 @@ function SidebarTabButton({ active, onClick, title, icon }: SidebarTabButtonProp
 
 export function Main({ active = true }: { active?: boolean } = {}) {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const isDM = isDmAccess();
 	const isMobile = useIsMobile();
 	// On mobile the side panel overlays the map: collapsed = icon-only strip,
@@ -709,7 +709,7 @@ export function Main({ active = true }: { active?: boolean } = {}) {
  */
 function ViewTerrainSync() {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const isDM = isDmAccess();
 	const { selectedActor } = useMapState();
 	const { setViewedTerrain } = useViewedTerrain();

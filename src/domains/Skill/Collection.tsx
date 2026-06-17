@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { CollectionView, CollectionViewItem } from "../../components/CollectionView/CollectionView";
 import { useQuestContext } from "../Context/ContextProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Actor, SkillSlot } from "../Actor/Actor";
 import { SkillSlotDisplay } from "./SkillSlotDisplay";
 import { formatActionCost, formatStatCost } from "../../utils/ActorCostUtils";
@@ -14,7 +14,7 @@ interface SkillCollectionProps {
 
 export function SkillCollection({ actor }: SkillCollectionProps) {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	// Drawer state
 	const [isDrawerOpen, setDrawerOpen] = useState(false);

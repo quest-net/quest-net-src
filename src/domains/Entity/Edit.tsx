@@ -2,8 +2,8 @@
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
-import { EntityActions } from "./EntityActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
+import { EntityUtils } from "./EntityUtils";
 import { Entity } from "./Entity";
 import {
 	FormWrapper,
@@ -35,7 +35,7 @@ export function EntityEdit({
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 
-	const defaultEntity = EntityActions.createDefault(context);
+	const defaultEntity = EntityUtils.createDefault(context);
 	if (initialTags && !entity) {
 		defaultEntity.Tags = initialTags;
 	}
@@ -130,7 +130,7 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 	if (!data || !onChange) return null;
 
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const handleFieldChange = (field: keyof Entity, value: any) => {
 		onChange({

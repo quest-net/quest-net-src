@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useDebouncedCallback } from "../../hooks/useDebounced";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Character } from "./Character";
 import { ImagePicker } from "../../components/inputs/ImagePicker";
 import { StatBar } from "../../components/StatBar/StatBar";
@@ -26,7 +26,7 @@ export function CharacterSheet() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 	const { requestRoll } = useDiceRoller();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const [editingMaxStats, setEditingMaxStats] = useState(false);
 	const [transferStat, setTransferStat] = useState<ResolvedStat | null>(null);

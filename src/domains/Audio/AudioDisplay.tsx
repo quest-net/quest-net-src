@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { AppSettingActions } from "../AppSetting/AppSettingActions";
 import { isDmAccess } from "../../utils/UrlParser";
 import { AudioVisualizer } from "./AudioVisualizer";
@@ -19,7 +19,7 @@ type SearchResult =
 export function AudioDisplay() {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const isDM = isDmAccess();
 
 	// Get current audio(s)

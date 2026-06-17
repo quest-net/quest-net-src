@@ -2,7 +2,7 @@
 
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { ItemActions } from "./ItemActions";
+import { ItemUtils } from "./ItemUtils";
 import { Item } from "./Item";
 import {
 	FormWrapper,
@@ -27,7 +27,7 @@ export function ItemEdit({ item, initialTags, onClose }: ItemEditProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
 
-	const defaultItem = ItemActions.createDefault(context);
+	const defaultItem = ItemUtils.createDefault(context);
 	if (initialTags && !item) {
 		defaultItem.Tags = initialTags;
 	}

@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
-import { CampaignActions } from "../Campaign/CampaignActions";
+import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogEntry } from "./LogEntry";
-import { LogActions } from "./LogActions";
+import { LogUtils } from "./LogUtils";
 import { DM_MENTION_ID } from "./MentionUtils";
 import { isDiceRoll, isCritRoll, isFumbleRoll } from "../../utils/DiceUtils";
 import { AppSettingActions } from "../AppSetting/AppSettingActions";
@@ -19,7 +19,7 @@ const MAX_ALERT_AGE = 10000; // Only show alerts for logs created in the last 10
 
 export function LogAlerts() {
 	const context = useQuestContext();
-	const campaign = CampaignActions.getActiveCampaign(context);
+	const campaign = CampaignUtils.getActiveCampaign(context);
 	const [alerts, setAlerts] = useState<Alert[]>([]);
 	const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
 	const userRole = context.User.Role;
@@ -45,14 +45,14 @@ export function LogAlerts() {
 		const now = Date.now();
 
 		// Get chronologically sorted log
-		const chronologicalLog = LogActions.getChronologicalLog(campaign);
+		const chronologicalLog = LogUtils.getChronologicalLog(campaign);
 
 		// Surface important/critical logs, plus any chat message that @mentions
 		// the current viewer regardless of its level.
 		const newAlerts = chronologicalLog.filter((entry) => {
 			const levelOk = entry.Level === "important" || entry.Level === "critical";
 			const fresh = now - entry.Timestamp < MAX_ALERT_AGE;
-			const canSee = LogActions.canUserSeeEntry(entry, userRole);
+			const canSee = LogUtils.canUserSeeEntry(entry, userRole);
 			// Crits are normally shown via the full-screen CritSplash, not a toast;
 			// when that splash is disabled they fall back to a regular alert here.
 			return (
