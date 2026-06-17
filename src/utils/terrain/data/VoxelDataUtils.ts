@@ -17,7 +17,7 @@ function packPosition(x: number, y: number, z: number): number {
 	return x + y * 256 + z * 65536;
 }
 
-function unpackVoxel(position: number, color: number): Voxel {
+export function unpackVoxel(position: number, color: number): Voxel {
 	return {
 		x: position & 0xff,
 		y: (position >>> 8) & 0xff,

@@ -17,7 +17,7 @@
 // payload from a delta and verify it by re-hashing against the broadcast newHash.
 
 import type { Voxel } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { decodeVoxelBuffers, encodeVoxels } from "./VoxelDataUtils";
+import { decodeVoxelBuffers, encodeVoxels, unpackVoxel } from "./VoxelDataUtils";
 import { bytesToBase64, base64ToBytes } from "../../base64";
 
 /**
@@ -55,15 +55,6 @@ const DELTA_HEADER_BYTES = 13;
 const DELTA_VERSION = 1;
 // "QVDL" = Quest Voxel DeLta.
 const MAGIC = [0x51, 0x56, 0x44, 0x4c] as const;
-
-function unpackVoxel(position: number, color: number): Voxel {
-	return {
-		x: position & 0xff,
-		y: (position >>> 8) & 0xff,
-		z: (position >>> 16) & 0xff,
-		color,
-	};
-}
 
 function* voxelsFromMap(map: Map<number, number>): Generator<Voxel> {
 	for (const [position, color] of map) {

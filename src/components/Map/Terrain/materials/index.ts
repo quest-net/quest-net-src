@@ -376,15 +376,6 @@ registerTerrainMaterialRules({
 	editorColors: EDITOR_COLOR_BY_PALETTE_INDEX,
 });
 
-/**
- * Editor render color for a special palette index, as a 0xRRGGBB number, or
- * undefined if the index is not claimed by any registered special material.
- * Callers should fall back to the standard palette table when undefined.
- */
-export function getSpecialMaterialEditorColor(paletteIndex: number): number | undefined {
-	return EDITOR_COLOR_BY_PALETTE_INDEX.get(paletteIndex);
-}
-
 /** True iff some registered TerrainMaterial claims this palette index. */
 export function isSpecialPaletteIndex(paletteIndex: number): boolean {
 	return EDITOR_COLOR_BY_PALETTE_INDEX.has(paletteIndex);

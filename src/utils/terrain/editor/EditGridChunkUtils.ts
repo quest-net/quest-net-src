@@ -21,6 +21,7 @@ import {
 	editGridSetOccupiedAtIndex,
 	type EditGrid,
 } from "./EditGridUtils";
+import { clamp } from "../../math";
 
 // Each chunk is one mesh + one grid-line group. A 32-voxel edge keeps draw calls
 // manageable for large terrains while preserving bounded per-edit rebuilds.
@@ -43,10 +44,6 @@ export interface DraftShape {
 	length: number;
 	height: number;
 	resolution: number;
-}
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, value));
 }
 
 export function computeChunkDimsForShape(

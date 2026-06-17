@@ -12,6 +12,7 @@ import {
 	type VoxelSelectionBounds,
 } from "./VoxelTerrainSelectionUtils";
 import type { ChunkDims } from "./EditGridChunkUtils";
+import { clamp } from "../../math";
 
 export const MIN_BRUSH_SIZE = 1;
 export const MAX_BRUSH_SIZE = 8;
@@ -28,10 +29,6 @@ export interface PickInfo {
 	 * pointer-down handler clones this before storing it in the stroke state.
 	 */
 	plane: THREE.Plane;
-}
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, value));
 }
 
 /**

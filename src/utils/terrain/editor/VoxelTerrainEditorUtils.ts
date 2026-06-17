@@ -13,6 +13,7 @@ import {
 import { getSpecialMaterialEditorColor } from "../materials/terrainMaterialRules";
 import { decodeVoxels, encodeVoxels } from "../data/VoxelDataUtils";
 import { getVoxelTerrainResolution } from "../data/VoxelTerrainIndex";
+import { clamp } from "../../math";
 
 export const MAX_VOXEL_TERRAIN_WIDTH = 64;
 export const MAX_VOXEL_TERRAIN_LENGTH = 64;
@@ -22,9 +23,6 @@ export const DEFAULT_VOXEL_TERRAIN_HEIGHT = 8;
 export const DEFAULT_VOXEL_TERRAIN_MAX_HEIGHT = 16;
 export const MIN_VOXEL_TERRAIN_RESOLUTION = 1;
 export const MAX_VOXEL_TERRAIN_RESOLUTION = 4;
-
-const clamp = (value: number, min: number, max: number) =>
-	Math.max(min, Math.min(max, value));
 
 export function clampVoxelTerrainHeight(height: number): number {
 	return clamp(

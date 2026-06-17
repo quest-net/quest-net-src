@@ -9,8 +9,13 @@ import { isItemEntity } from "../Item/ItemDropUtils";
 import { LogActions } from "../Log/LogActions";
 import {
 	getVoxelTerrainById,
-	getMaxVoxelSurfaceHeight,
+	findTileFromCenter,
 } from "./VoxelTerrainQueries";
+import {
+	canStandVoxel,
+	getMaxActorHeight,
+	isVoxelTileInBounds,
+} from "./VoxelMovementUtilities";
 import {
 	getVoxelTerrainIndex,
 	type VoxelTerrainIndex,
@@ -20,13 +25,6 @@ import { isStampTerrain } from "../../utils/terrain/editor/VoxelStampUtils";
 import type { EditableVoxelTerrain, VoxelTerrain } from "./VoxelTerrain";
 import { getScenarioTerrainIds } from "../Scenario/Scenario";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
-
-const FLYING_ACTOR_CLEARANCE_BY_SIZE = {
-	"extra-small": 1,
-	small: 1.25,
-	medium: 1.5,
-	large: 1.75,
-} as const;
 
 const POSITION_HEIGHT_EPSILON = 1e-6;
 
@@ -42,55 +40,12 @@ type ActorPositionValidationResult =
 			reason: string;
 	  };
 
-function getCenterTile(terrain: VoxelTerrain): { x: number; y: number } {
-	return {
-		x: Math.max(0, Math.min(terrain.Width - 1, Math.floor(terrain.Width / 2))),
-		y: Math.max(0, Math.min(terrain.Length - 1, Math.floor(terrain.Length / 2))),
-	};
-}
-
-function isInBounds(x: number, y: number, terrain: VoxelTerrain): boolean {
-	return x >= 0 && x < terrain.Width && y >= 0 && y < terrain.Length;
-}
-
-function findTileFromCenter<T>(
-	terrain: VoxelTerrain,
-	findAtTile: (x: number, y: number) => T | null
-): T | null {
-	const center = getCenterTile(terrain);
-	const maxRadius = Math.max(terrain.Width, terrain.Length);
-
-	for (let radius = 0; radius <= maxRadius; radius++) {
-		for (let y = center.y - radius; y <= center.y + radius; y++) {
-			for (let x = center.x - radius; x <= center.x + radius; x++) {
-				if (Math.max(Math.abs(x - center.x), Math.abs(y - center.y)) !== radius) {
-					continue;
-				}
-				if (!isInBounds(x, y, terrain)) {
-					continue;
-				}
-
-				const result = findAtTile(x, y);
-				if (result !== null) {
-					return result;
-				}
-			}
-		}
-	}
-
-	return null;
-}
-
 function getSurfaceHeights(
 	index: VoxelTerrainIndex,
 	x: number,
 	y: number
 ): readonly number[] {
 	return index.allSurfaces.get(`${x},${y}`) ?? [];
-}
-
-function getFlyingActorClearance(actor: Actor): number {
-	return FLYING_ACTOR_CLEARANCE_BY_SIZE[actor.Size ?? "small"];
 }
 
 function normalizeHeight(height: number): number {
@@ -124,58 +79,6 @@ function positionKey(position: Position): string {
 	return `${position.x},${position.y},${normalizeHeight(position.h)}`;
 }
 
-function getMaxActorHeight(terrain: VoxelTerrain): number {
-	return Math.ceil(Math.max(terrain.Height, getMaxVoxelSurfaceHeight(terrain)));
-}
-
-function getStandingSurfaceHeight(
-	index: VoxelTerrainIndex,
-	x: number,
-	y: number,
-	h: number
-): number | null {
-	const exactSurfaces = index.allSurfaceHeights.get(`${x},${y}`) ?? [];
-	let rulesHeightSurface: number | null = null;
-
-	for (const surfaceHeight of exactSurfaces) {
-		if (Math.abs(surfaceHeight - h) <= POSITION_HEIGHT_EPSILON) {
-			return surfaceHeight;
-		}
-
-		if (Math.abs(Math.floor(surfaceHeight) - h) <= POSITION_HEIGHT_EPSILON) {
-			rulesHeightSurface = surfaceHeight;
-		}
-	}
-
-	return rulesHeightSurface;
-}
-
-function isFlyingHeightClear(
-	actor: Actor,
-	terrain: VoxelTerrain,
-	index: VoxelTerrainIndex,
-	x: number,
-	y: number,
-	h: number
-): boolean {
-	if (!isInBounds(x, y, terrain)) return false;
-	if (h < 0) return false;
-	if (h > getMaxActorHeight(terrain)) return false;
-
-	const { resolution } = index;
-	const startVoxelY = Math.max(0, Math.floor(h * resolution));
-	const endVoxelY = Math.max(
-		startVoxelY,
-		Math.ceil((h + getFlyingActorClearance(actor)) * resolution) - 1
-	);
-
-	for (let voxelY = startVoxelY; voxelY <= endVoxelY; voxelY++) {
-		if (index.isVoxelOccupiedAtTile(x, y, voxelY)) return false;
-	}
-
-	return true;
-}
-
 function validateActorPositionForTerrain(
 	actor: Actor,
 	position: Position,
@@ -188,7 +91,7 @@ function validateActorPositionForTerrain(
 		return { ok: false, reason: "position is not finite" };
 	}
 
-	if (!isInBounds(normalized.x, normalized.y, terrain)) {
+	if (!isVoxelTileInBounds(terrain, normalized.x, normalized.y)) {
 		return {
 			ok: false,
 			position: normalized,
@@ -196,48 +99,20 @@ function validateActorPositionForTerrain(
 		};
 	}
 
-	if (normalized.h < 0 || normalized.h > getMaxActorHeight(terrain)) {
-		return {
-			ok: false,
-			position: normalized,
-			reason: "height is outside the active terrain",
-		};
-	}
-
-	const standingSurfaceHeight = getStandingSurfaceHeight(
-		index,
-		normalized.x,
-		normalized.y,
-		normalized.h
-	);
-
-	if (standingSurfaceHeight !== null) {
-		const standingPosition = {
-			...normalized,
-			h: Math.floor(standingSurfaceHeight),
-		};
-		if (!isItemEntity(actor) && occupiedTiles?.has(positionKey(standingPosition))) {
-			return {
-				ok: false,
-				position: standingPosition,
-				reason: "position is occupied",
-			};
-		}
-		return {
-			ok: true,
-			position: standingPosition,
-			mode: isItemEntity(actor) ? "item" : "standing",
-		};
-	}
-
+	// Items are placed, not "stood": they rest on the lowest surface of their
+	// column (which must match their height) or float at ground level on an
+	// empty column. Placement is not part of the standing authority, and items
+	// never block a tile, so they skip the occupancy check.
 	if (isItemEntity(actor)) {
+		if (canStandVoxel(terrain, index, normalized.x, normalized.y, normalized.h, false)) {
+			return { ok: true, position: normalized, mode: "item" };
+		}
 		if (
 			normalized.h === 0 &&
 			getSurfaceHeights(index, normalized.x, normalized.y).length === 0
 		) {
 			return { ok: true, position: normalized, mode: "item" };
 		}
-
 		return {
 			ok: false,
 			position: normalized,
@@ -245,30 +120,39 @@ function validateActorPositionForTerrain(
 		};
 	}
 
-	if (actor.CanFly) {
-		if (occupiedTiles?.has(positionKey(normalized))) {
+	const canFly = actor.CanFly ?? false;
+
+	// The single standing authority (`canStandVoxel`): a non-flyer needs a
+	// walkable surface at this height; a flyer needs an open cell or a surface.
+	if (!canStandVoxel(terrain, index, normalized.x, normalized.y, normalized.h, canFly)) {
+		if (normalized.h < 0 || normalized.h > getMaxActorHeight(terrain, index)) {
 			return {
 				ok: false,
 				position: normalized,
-				reason: "position is occupied",
+				reason: "height is outside the active terrain",
 			};
 		}
-
-		if (isFlyingHeightClear(actor, terrain, index, normalized.x, normalized.y, normalized.h)) {
-			return { ok: true, position: normalized, mode: "flying" };
-		}
-
 		return {
 			ok: false,
 			position: normalized,
-			reason: "flying position is blocked by terrain",
+			reason: canFly
+				? "flying position is blocked by terrain"
+				: "position is not on a walkable surface",
+		};
+	}
+
+	if (occupiedTiles?.has(positionKey(normalized))) {
+		return {
+			ok: false,
+			position: normalized,
+			reason: "position is occupied",
 		};
 	}
 
 	return {
-		ok: false,
+		ok: true,
 		position: normalized,
-		reason: "position is not on a walkable surface",
+		mode: canFly ? "flying" : "standing",
 	};
 }
 
@@ -508,10 +392,6 @@ export const VoxelTerrainUtils = {
 		}
 	},
 
-	isInBounds(x: number, y: number, terrain: VoxelTerrain): boolean {
-		return isInBounds(x, y, terrain);
-	},
-
 	validateActorMove(
 		actor: Actor,
 		position: Position,
@@ -569,7 +449,7 @@ export const VoxelTerrainUtils = {
 		occupiedTiles: Set<string>,
 		index: VoxelTerrainIndex = getVoxelTerrainIndex(terrain)
 	): Position | null {
-		const maxHeight = getMaxActorHeight(terrain);
+		const maxHeight = getMaxActorHeight(terrain, index);
 		const normalizedCurrent =
 			normalizePositionForValidation(actor.Position, terrain) ?? actor.Position;
 		const isPositionAvailable = (x: number, y: number, h: number): Position | null => {
@@ -584,7 +464,7 @@ export const VoxelTerrainUtils = {
 		};
 
 		const findAvailablePosition = (x: number, y: number): Position | null => {
-			if (!isInBounds(x, y, terrain)) return null;
+			if (!isVoxelTileInBounds(terrain, x, y)) return null;
 
 			if (isItemEntity(actor)) {
 				const surfaces = getSurfaceHeights(index, x, y);

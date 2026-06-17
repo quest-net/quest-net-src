@@ -39,8 +39,15 @@ function getCenterTile(terrain: VoxelTerrain): { x: number; y: number } {
 	};
 }
 
-function findSpawnSurface(terrain: VoxelTerrain): TilePosition | null {
-	const index = getVoxelTerrainIndex(terrain);
+/**
+ * Spiral out from the terrain's center tile, returning the first tile for which
+ * `findAtTile` yields a non-null value. Shared by spawn-surface search and
+ * actor-displacement search so both walk tiles in the same center-out order.
+ */
+export function findTileFromCenter<T>(
+	terrain: VoxelTerrain,
+	findAtTile: (x: number, y: number) => T | null
+): T | null {
 	const center = getCenterTile(terrain);
 	const maxRadius = Math.max(terrain.Width, terrain.Length);
 
@@ -54,15 +61,21 @@ function findSpawnSurface(terrain: VoxelTerrain): TilePosition | null {
 					continue;
 				}
 
-				const surfaces = index.allSurfaces.get(`${x},${y}`) ?? [];
-				if (surfaces.length > 0) {
-					return { x, y, h: surfaces[0] };
-				}
+				const result = findAtTile(x, y);
+				if (result !== null) return result;
 			}
 		}
 	}
 
 	return null;
+}
+
+function findSpawnSurface(terrain: VoxelTerrain): TilePosition | null {
+	const index = getVoxelTerrainIndex(terrain);
+	return findTileFromCenter(terrain, (x, y) => {
+		const surfaces = index.allSurfaces.get(`${x},${y}`) ?? [];
+		return surfaces.length > 0 ? { x, y, h: surfaces[0] } : null;
+	});
 }
 
 function getFallbackSpawnPosition(terrain: VoxelTerrain): TilePosition {

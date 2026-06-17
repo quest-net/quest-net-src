@@ -5,11 +5,11 @@ import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { useActionService } from "../../../services/Actions/ActionServiceProvider";
-import {
-	getMaxVoxelSurfaceHeight,
-} from "../../../domains/VoxelTerrain/VoxelTerrainQueries";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
-import { canStandVoxel } from "../../../domains/VoxelTerrain/VoxelMovementUtilities";
+import {
+	canStandVoxel,
+	getMaxActorHeight,
+} from "../../../domains/VoxelTerrain/VoxelMovementUtilities";
 import type { SelectedActor } from "../MapStateProvider";
 import type { ActorTokenDescriptor, ThreeDSceneResources } from "./actorTokenTypes";
 import {
@@ -842,7 +842,7 @@ function getActorHeightRange(
 		terrainIndex.allSurfaces.get(`${actor.position.x},${actor.position.y}`) ??
 		[];
 	const min = surfaces[0] ?? 0;
-	const max = Math.ceil(Math.max(terrain.Height, getMaxVoxelSurfaceHeight(terrain)));
+	const max = getMaxActorHeight(terrain, terrainIndex);
 	return { min, max: Math.max(min, max) };
 }
 

@@ -40,6 +40,7 @@ import {
 	type EditGranularity,
 	type PickInfo,
 } from "./VoxelBrushUtils";
+import { clamp } from "../../math";
 
 export type SelectionEditTool = "place" | "fill" | "erase" | "paint";
 export type VoxelEditTool = BrushTool;
@@ -53,10 +54,6 @@ export interface VoxelEditResult {
 export interface MutationResult {
 	changed: boolean;
 	countDelta: number;
-}
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, value));
 }
 
 /**
