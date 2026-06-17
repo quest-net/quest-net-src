@@ -14,12 +14,12 @@
 
 import { useMemo, useState } from "react";
 import { compare } from "fast-json-patch";
-import { useQuestContext } from "../../Context/ContextProvider";
-import type { Context } from "../../Context/Context";
+import { useQuestContext } from "../../domains/Context/ContextProvider";
+import type { Context } from "../../domains/Context/Context";
 import {
 	ScriptEngine,
 	type ScriptHostSelection,
-} from "../../../services/Scripting/ScriptEngine";
+} from "../../services/Scripting/ScriptEngine";
 
 interface HostOption {
 	label: string;

@@ -7,7 +7,7 @@ import { joinRoom } from "trystero";
  * This is the live connection object with WebSocket channels
  *
  * Usage:
- *   const room = RoomActions.join('room-code');
+ *   const room = RoomService.join('room-code');
  *   const peers = room.getPeers(); // Direct access to Trystero methods
  *   room.onPeerJoin = peerId => ...;
  */

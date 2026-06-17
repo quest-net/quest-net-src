@@ -6,7 +6,7 @@ import {
 	useQuestContext,
 	triggerContextUpdate,
 } from "../Context/ContextProvider";
-import { UserActions } from "../User/UserActions";
+import { UserUtils } from "../User/UserUtils";
 import { LogAlerts } from "../Log/LogAlerts";
 import { CritSplash } from "../Log/CritSplash";
 import { PeerStatus } from "../Room/PeerStatus";
@@ -45,7 +45,7 @@ export function PlayerView() {
 		: null;
 
 	const handleChangeCharacter = () => {
-		UserActions.selectCharacter(
+		UserUtils.selectCharacter(
 			{
 				campaignId: campaign.RoomCode, // Use RoomCode for consistency
 				characterId: null,

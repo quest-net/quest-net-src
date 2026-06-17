@@ -1,4 +1,4 @@
-import { AppSettingActions } from "../../domains/AppSetting/AppSettingActions";
+import { AppSettingUtils } from "../../domains/AppSetting/AppSettingUtils";
 import {
 	triggerContextUpdate,
 	useQuestContext,
@@ -10,7 +10,7 @@ interface ThemeToggleProps {
 
 export function ThemeToggle({ size = "md" }: ThemeToggleProps) {
 	const context = useQuestContext();
-	const theme = AppSettingActions.getTheme(context);
+	const theme = AppSettingUtils.getTheme(context);
 	const isDark = theme === "dark";
 	const nextTheme = isDark ? "light" : "dark";
 	const sizeClass = size === "sm" ? "h-10 w-20" : "h-12 w-24";
@@ -18,7 +18,7 @@ export function ThemeToggle({ size = "md" }: ThemeToggleProps) {
 	const translateClass = size === "sm" ? "translate-x-10" : "translate-x-12";
 
 	const handleToggle = () => {
-		AppSettingActions.setTheme({ theme: nextTheme }, context);
+		AppSettingUtils.setTheme({ theme: nextTheme }, context);
 		triggerContextUpdate();
 	};
 

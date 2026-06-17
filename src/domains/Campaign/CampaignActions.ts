@@ -1,14 +1,8 @@
 import { Context } from "../Context/Context";
 import { Campaign } from "./Campaign";
-import { isReservedRouteKeyword } from "../../utils/UrlParser";
-import { ContextActions } from "../Context/ContextActions";
+import { ContextService } from "../Context/ContextService";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
-
-function assertUsableRoomCode(roomCode?: string): void {
-	if (roomCode && isReservedRouteKeyword(roomCode)) {
-		throw new Error(`"${roomCode}" is a reserved app route and cannot be used as a room code`);
-	}
-}
+import { assertUsableRoomCode } from "./CampaignUtils";
 
 export const CampaignActions = {
 	/**
@@ -60,6 +54,6 @@ export const CampaignActions = {
 			(campaign.CharacterRoster?.length ?? 0) +
 			(campaign.GameState?.Characters?.length ?? 0);
 
-		ContextActions.save(context);
+		ContextService.save(context);
 	},
 };

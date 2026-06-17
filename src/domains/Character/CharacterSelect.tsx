@@ -7,7 +7,7 @@ import {
 } from "../Context/ContextProvider";
 import { PeerInfo } from "../../hooks/usePeerTracking";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
-import { UserActions } from "../User/UserActions";
+import { UserUtils } from "../User/UserUtils";
 import { Character } from "./Character";
 import { CharacterEdit } from "./Edit";
 import { ImageDisplay } from "../Image/ImageDisplay";
@@ -39,7 +39,7 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 	);
 
 	const handleSelectCharacter = (character: Character) => {
-		UserActions.selectCharacter(
+		UserUtils.selectCharacter(
 			{
 				campaignId: campaign.RoomCode,
 				characterId: character.Id,

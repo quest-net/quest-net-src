@@ -10,8 +10,8 @@ import {
 	ReactNode,
 } from "react";
 import { Context } from "./Context";
-import { ContextActions } from "./ContextActions";
-import { AppSettingActions } from "../AppSetting/AppSettingActions";
+import { ContextService } from "./ContextService";
+import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
 
 const ContextContext = createContext<Context | null>(null);
 
@@ -77,10 +77,10 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 		let cancelled = false;
 
 		(async () => {
-			let loadedContext = await ContextActions.load();
+			let loadedContext = await ContextService.load();
 
 			if (!loadedContext) {
-				loadedContext = ContextActions.create();
+				loadedContext = ContextService.create();
 			}
 
 			if (!cancelled) {
@@ -89,7 +89,7 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 		})().catch((error) => {
 			console.error("[Context] Failed to load context:", error);
 			if (!cancelled) {
-				setContext(ContextActions.create());
+				setContext(ContextService.create());
 			}
 		});
 
@@ -109,7 +109,7 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 			persistTimerRef.current = null;
 			const ctx = latestContextRef.current;
 			if (ctx) {
-				void ContextActions.flush(ctx).catch((e) =>
+				void ContextService.flush(ctx).catch((e) =>
 					console.error("[Context] Failed to flush context:", e)
 				);
 			}
@@ -171,7 +171,7 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 			}
 			const ctx = latestContextRef.current;
 			if (ctx) {
-				ContextActions.save(ctx);
+				ContextService.save(ctx);
 			}
 		};
 
@@ -186,7 +186,7 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 	useEffect(() => {
 		if (!context) return;
 
-		const theme = AppSettingActions.getTheme(context);
+		const theme = AppSettingUtils.getTheme(context);
 
 		// Set the data-theme attribute on the html element
 		document.documentElement.setAttribute("data-theme", theme);

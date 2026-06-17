@@ -6,7 +6,7 @@ import {
 	groupWikiPages,
 	searchWikiPages,
 } from "./WikiConfig";
-import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
+import { LocalStorageUtilities } from "../utils/LocalStorageUtilities";
 import { WikiArticle } from "./components/WikiArticle";
 import { WikiArticleRail } from "./components/WikiArticleRail";
 import { WikiHeader } from "./components/WikiHeader";

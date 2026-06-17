@@ -2,7 +2,7 @@ import { Context } from "../Context/Context";
 import { Campaign } from "./Campaign";
 import { CampaignInfo } from "./CampaignInfo";
 import { getUrlIdentifier, isReservedRouteKeyword } from "../../utils/UrlParser";
-import { ContextActions } from "../Context/ContextActions";
+import { ContextService } from "../Context/ContextService";
 import { CampaignSettingUtils } from "../CampaignSetting/CampaignSettingUtils";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 import { APP_VERSION, type VersionString } from "../../version";
@@ -101,7 +101,7 @@ function createBlankCampaign(name: string, roomCode?: string): Campaign {
 	};
 }
 
-function assertUsableRoomCode(roomCode?: string): void {
+export function assertUsableRoomCode(roomCode?: string): void {
 	if (roomCode && isReservedRouteKeyword(roomCode)) {
 		throw new Error(`"${roomCode}" is a reserved app route and cannot be used as a room code`);
 	}
@@ -261,7 +261,7 @@ export const CampaignUtils = {
 
 		const info = CampaignLoadingService.buildInfo(campaign);
 		context.Campaigns.push(info);
-		ContextActions.save(context);
+		ContextService.save(context);
 
 		return info;
 	},
@@ -355,7 +355,7 @@ export const CampaignUtils = {
 			console.error("[CampaignActions] Failed to delete terrain payloads:", e);
 		}
 
-		ContextActions.save(context);
+		ContextService.save(context);
 	},
 
 	/**
@@ -568,7 +568,7 @@ export const CampaignUtils = {
 			await CampaignLoadingService.saveCampaign(campaign);
 			const info = CampaignLoadingService.buildInfo(campaign);
 			context.Campaigns.push(info);
-			ContextActions.save(context);
+			ContextService.save(context);
 
 			onProgress?.({
 				current: totalSteps,

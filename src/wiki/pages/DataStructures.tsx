@@ -69,7 +69,7 @@ export const dataStructuresPage: WikiPage = {
 				<div className="space-y-4">
 					<p>
 						<Code>Context</Code> is defined in <Code>src/domains/Context/Context.ts</Code>.
-						It is persisted by <Code>ContextActions.save</Code> and refreshed
+						It is persisted by <Code>ContextService.save</Code> and refreshed
 						through <Code>triggerContextUpdate</Code>. Most nested mutations rely on
 						a shallow context spread to re-render the UI.
 					</p>
@@ -402,7 +402,7 @@ export const dataStructuresPage: WikiPage = {
 						context. <Code>ContextProvider</Code> registers a{" "}
 						<Code>beforeunload</Code> (and unmount) handler that flushes the live
 						in-memory context back to localStorage via{" "}
-						<Code>ContextActions.save</Code> right as the page unloads. So the
+						<Code>ContextService.save</Code> right as the page unloads. So the
 						refresh re-persists everything you just deleted before the fresh page
 						loads. This is great for crash safety, but it means a manual clear
 						loses the race.

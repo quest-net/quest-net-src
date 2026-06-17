@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { AppSettingActions } from "../../domains/AppSetting/AppSettingActions";
+import { AppSettingUtils } from "../../domains/AppSetting/AppSettingUtils";
 import {
   fillPromptTemplate,
   generateImageFromPrompt,
@@ -35,10 +35,10 @@ export function ImageGenerator({
   const context = useQuestContext();
   const { actionService } = useActionService();
 
-  const providerId = AppSettingActions.getImageService(context);
-  const apiKey = AppSettingActions.getProviderApiKey(context, providerId);
-  const apiSecret = AppSettingActions.getProviderApiSecret(context, providerId);
-  const template = AppSettingActions.getImagePromptTemplate(context);
+  const providerId = AppSettingUtils.getImageService(context);
+  const apiKey = AppSettingUtils.getProviderApiKey(context, providerId);
+  const apiSecret = AppSettingUtils.getProviderApiSecret(context, providerId);
+  const template = AppSettingUtils.getImagePromptTemplate(context);
 
   const provider = getProvider(providerId);
 

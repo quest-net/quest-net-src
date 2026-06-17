@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
-import { AppSettingActions } from "../AppSetting/AppSettingActions";
+import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
 import { isDmAccess } from "../../utils/UrlParser";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { extractPathTags } from "../../utils/FolderUtils";
@@ -51,7 +51,7 @@ export function AudioDisplay() {
 
 	// Volume state
 	const dmVolume = campaign.GameState.Volume;
-	const playerVolume = AppSettingActions.getPlayerVolume(context);
+	const playerVolume = AppSettingUtils.getPlayerVolume(context);
 	const displayVolume = isDM ? dmVolume : playerVolume;
 
 	const [localVolume, setLocalVolume] = useState(displayVolume * 100);
@@ -138,7 +138,7 @@ export function AudioDisplay() {
 		} else {
 			// Player volume is a local-only AppSetting (no peer sync), so it can
 			// commit immediately for continuous feedback.
-			AppSettingActions.setPlayerVolume({ volume: normalizedVolume }, context);
+			AppSettingUtils.setPlayerVolume({ volume: normalizedVolume }, context);
 		}
 	};
 

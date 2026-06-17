@@ -12,7 +12,7 @@
 // This seeds ViewedTerrains for the ACTIVE campaign from its old
 // GameState.VoxelTerrainId so the DM lands on the terrain they left off on.
 // Context migrations run BEFORE the campaign migration that deletes
-// VoxelTerrainId (see ContextActions.load), so the old pointer is still present
+// VoxelTerrainId (see ContextService.load), so the old pointer is still present
 // here. Inactive campaigns (migrated lazily on open) are handled by the smarter
 // party-terrain fallback in useViewedTerrain.
 //

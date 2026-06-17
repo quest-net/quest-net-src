@@ -7,7 +7,7 @@ import { LogEntry } from "./LogEntry";
 import { LogUtils } from "./LogUtils";
 import { DM_MENTION_ID } from "./MentionUtils";
 import { isDiceRoll, isCritRoll, isFumbleRoll } from "../../utils/DiceUtils";
-import { AppSettingActions } from "../AppSetting/AppSettingActions";
+import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
 
 interface Alert {
 	id: string;
@@ -27,7 +27,7 @@ export function LogAlerts() {
 		context.User.SelectedCharacters[campaign.RoomCode];
 	// When the full-screen crit splash is disabled, crits fall back to ordinary
 	// log alert toasts instead of being suppressed here.
-	const critSplashEnabled = AppSettingActions.getCritSplashEnabled(context);
+	const critSplashEnabled = AppSettingUtils.getCritSplashEnabled(context);
 
 	// True when this entry @mentions the current viewer (their selected
 	// character, or the DM via the "DM" sentinel).

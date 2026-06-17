@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
-import { AppSettingActions } from "../AppSetting/AppSettingActions";
+import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
 import { useAudioState } from "./AudioContext";
 
 // YouTube IFrame API types
@@ -25,7 +25,7 @@ export function AudioPlayer() {
 
 	// Get volumes
 	const dmVolume = campaign.GameState.Volume;
-	const playerVolume = AppSettingActions.getPlayerVolume(context);
+	const playerVolume = AppSettingUtils.getPlayerVolume(context);
 	const finalVolume = dmVolume * playerVolume * 0.5 * 100; // YouTube uses 0-100 scale
 
 	// Get current audio(s) and convert to YouTube IDs

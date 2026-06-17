@@ -3,7 +3,7 @@
 
 import { useQuestContext, triggerContextUpdate } from "../../domains/Context/ContextProvider";
 import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
-import { UserActions } from "../../domains/User/UserActions";
+import { UserUtils } from "../../domains/User/UserUtils";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
 
 export function ImpersonationPicker() {
@@ -21,7 +21,7 @@ export function ImpersonationPicker() {
 		: null;
 
 	const handleImpersonate = (actorId: string | null) => {
-		UserActions.impersonate(
+		UserUtils.impersonate(
 			{ campaignId: campaign.RoomCode, actorId },
 			context
 		);

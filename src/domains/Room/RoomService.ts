@@ -1,4 +1,4 @@
-// domains/Room/RoomActions.ts
+// domains/Room/RoomService.ts
 
 import { joinRoom } from "trystero";
 import type { JoinRoomCallbacks, TurnServerConfig } from "trystero";
@@ -56,7 +56,7 @@ export type RoomCallbacks = JoinRoomCallbacks;
  *   - room.onPeerJoin = callback
  *   - room.onPeerLeave = callback
  */
-export const RoomActions = {
+export const RoomService = {
 	/**
 	 * Join a room by room code
 	 * Creates a new Trystero connection

@@ -37,7 +37,7 @@ export const overviewPage: WikiPage = {
 			title: "Adding Pages",
 			body: (
 				<p>
-					New pages live in <code className="font-mono">src/domains/Wiki/pages</code>.
+					New pages live in <code className="font-mono">src/wiki/pages</code>.
 					Add a page definition there, then register it in the page index so it
 					appears in search, navigation, and route resolution.
 				</p>

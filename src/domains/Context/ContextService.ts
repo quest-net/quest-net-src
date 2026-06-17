@@ -1,8 +1,8 @@
-// domains/Context/ContextActions.ts
+// domains/Context/ContextService.ts
 
 import { Context } from "./Context";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
-import { UserActions } from "../User/UserActions";
+import { UserUtils } from "../User/UserUtils";
 import { APP_VERSION } from "../../version";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 import type { Campaign } from "../Campaign/Campaign";
@@ -91,13 +91,13 @@ function looksLikeFullCampaign(c: any): c is Campaign {
 	return c && typeof c === "object" && "GameState" in c && "Settings" in c;
 }
 
-export const ContextActions = {
+export const ContextService = {
 	/**
 	 * Creates a new context with default values
 	 */
 	create(): Context {
 		const context: Context = {
-			User: UserActions.createNewUser(),
+			User: UserUtils.createNewUser(),
 			Campaigns: [],
 			ActiveCampaign: null,
 			AppSettings: {},
@@ -299,11 +299,11 @@ export const ContextActions = {
 	setUserRole(params: { role: "dm" | "player" }, context: Context): void {
 		context.User.Role = params.role;
 		if (params.role === "dm" && context.ActiveCampaign) {
-			UserActions.clearSelectedCharacter(
+			UserUtils.clearSelectedCharacter(
 				{ campaignId: context.ActiveCampaign.Id },
 				context
 			);
-			UserActions.clearSelectedCharacter(
+			UserUtils.clearSelectedCharacter(
 				{ campaignId: context.ActiveCampaign.RoomCode },
 				context
 			);

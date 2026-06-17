@@ -7,7 +7,7 @@ import {
 	WikiHighlight,
 } from "../components/content";
 import type { WikiPageDefinition } from "./WikiPage";
-import { ACTION_REGISTRY, isScriptableAction } from "../../../services/Actions/ActionRegistry";
+import { ACTION_REGISTRY, isScriptableAction } from "../../services/Actions/ActionRegistry";
 import { ScriptTestHarness } from "../components/ScriptTestHarness";
 
 // ---------------------------------------------------------------------------

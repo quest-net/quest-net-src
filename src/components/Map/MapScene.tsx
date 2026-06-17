@@ -23,7 +23,7 @@ import type { Position } from '../../domains/Actor/Actor';
 import { useQuestContext } from '../../domains/Context/ContextProvider';
 import { useActionService } from '../../services/Actions/ActionServiceProvider';
 import { CampaignUtils } from '../../domains/Campaign/CampaignUtils';
-import { AppSettingActions } from '../../domains/AppSetting/AppSettingActions';
+import { AppSettingUtils } from '../../domains/AppSetting/AppSettingUtils';
 import { getMaxVoxelSurfaceHeight } from '../../utils/terrain/data/VoxelTerrainUtils';
 import { getVoxelCount } from '../../utils/terrain/data/VoxelDataUtils';
 import { getVoxelTerrainIndex } from '../../utils/terrain/data/VoxelTerrainIndex';
@@ -187,7 +187,7 @@ export default function MapScene({
 		[allActivePings, terrain]
 	);
 	const lastPingTimeRef = useRef(0);
-	const performanceModeRef = useRef(AppSettingActions.getPerformanceMode(context));
+	const performanceModeRef = useRef(AppSettingUtils.getPerformanceMode(context));
 	const performanceMode = performanceModeRef.current;
 
 	const isWorld = viewMode === 'world';
@@ -282,7 +282,7 @@ export default function MapScene({
 			campaign.Settings.MovementSettings
 		);
 	const preserveFlyingHeightOnTileMove =
-		AppSettingActions.getPreserveFlyingHeightOnTileMove(context);
+		AppSettingUtils.getPreserveFlyingHeightOnTileMove(context);
 
 	// The first-person actor (used to hide the controlled actor's own standee in
 	// the shared layer while in first-person mode).

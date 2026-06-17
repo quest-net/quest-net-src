@@ -3,43 +3,43 @@ import {
 	triggerContextUpdate,
 	useQuestContext,
 } from "../Context/ContextProvider";
-import { AppSettingActions } from "./AppSettingActions";
+import { AppSettingUtils } from "./AppSettingUtils";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 
 export function AppSettingsDisplay() {
 	const context = useQuestContext();
 	const [isOpen, setIsOpen] = useState(false);
 	const [theme, setTheme] = useState<"light" | "dark">(
-		AppSettingActions.getTheme(context)
+		AppSettingUtils.getTheme(context)
 	);
 	const [sfxVolumePercent, setSfxVolumePercent] = useState(
-		Math.round(AppSettingActions.getSfxVolume() * 100)
+		Math.round(AppSettingUtils.getSfxVolume() * 100)
 	);
 	const [preserveFlyingHeightOnTileMove, setPreserveFlyingHeightOnTileMove] =
-		useState(AppSettingActions.getPreserveFlyingHeightOnTileMove(context));
+		useState(AppSettingUtils.getPreserveFlyingHeightOnTileMove(context));
 	const [performanceMode, setPerformanceMode] = useState(
-		AppSettingActions.getPerformanceMode(context)
+		AppSettingUtils.getPerformanceMode(context)
 	);
 	const [performanceModeChanged, setPerformanceModeChanged] = useState(false);
 	const [critSplashEnabled, setCritSplashEnabled] = useState(
-		AppSettingActions.getCritSplashEnabled(context)
+		AppSettingUtils.getCritSplashEnabled(context)
 	);
 	const windowRef = useRef<HTMLDivElement>(null);
 	const buttonRef = useRef<HTMLButtonElement>(null);
 
 	useEffect(() => {
-		setTheme(AppSettingActions.getTheme(context));
+		setTheme(AppSettingUtils.getTheme(context));
 		setPreserveFlyingHeightOnTileMove(
-			AppSettingActions.getPreserveFlyingHeightOnTileMove(context)
+			AppSettingUtils.getPreserveFlyingHeightOnTileMove(context)
 		);
-		setPerformanceMode(AppSettingActions.getPerformanceMode(context));
-		setCritSplashEnabled(AppSettingActions.getCritSplashEnabled(context));
+		setPerformanceMode(AppSettingUtils.getPerformanceMode(context));
+		setCritSplashEnabled(AppSettingUtils.getCritSplashEnabled(context));
 	}, [context]);
 
 	useEffect(() => {
 		if (!isOpen) return;
 
-		setSfxVolumePercent(Math.round(AppSettingActions.getSfxVolume() * 100));
+		setSfxVolumePercent(Math.round(AppSettingUtils.getSfxVolume() * 100));
 
 		const handleClickOutside = (event: MouseEvent) => {
 			if (
@@ -68,7 +68,7 @@ export function AppSettingsDisplay() {
 
 	const handleThemeChange = (nextTheme: "light" | "dark") => {
 		setTheme(nextTheme);
-		AppSettingActions.setTheme({ theme: nextTheme }, context);
+		AppSettingUtils.setTheme({ theme: nextTheme }, context);
 		triggerContextUpdate();
 	};
 
@@ -78,14 +78,14 @@ export function AppSettingsDisplay() {
 			Math.min(100, Math.round(nextVolumePercent))
 		);
 		setSfxVolumePercent(clampedVolumePercent);
-		AppSettingActions.setSfxVolume({
+		AppSettingUtils.setSfxVolume({
 			volume: clampedVolumePercent / 100,
 		});
 	};
 
 	const handlePreserveFlyingHeightChange = (preserve: boolean) => {
 		setPreserveFlyingHeightOnTileMove(preserve);
-		AppSettingActions.setPreserveFlyingHeightOnTileMove(
+		AppSettingUtils.setPreserveFlyingHeightOnTileMove(
 			{ preserve },
 			context
 		);
@@ -95,13 +95,13 @@ export function AppSettingsDisplay() {
 	const handlePerformanceModeChange = (enabled: boolean) => {
 		setPerformanceMode(enabled);
 		setPerformanceModeChanged(true);
-		AppSettingActions.setPerformanceMode({ enabled }, context);
+		AppSettingUtils.setPerformanceMode({ enabled }, context);
 		triggerContextUpdate();
 	};
 
 	const handleCritSplashChange = (enabled: boolean) => {
 		setCritSplashEnabled(enabled);
-		AppSettingActions.setCritSplashEnabled({ enabled }, context);
+		AppSettingUtils.setCritSplashEnabled({ enabled }, context);
 		triggerContextUpdate();
 	};
 

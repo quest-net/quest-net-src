@@ -38,7 +38,7 @@ function generateRandomName(): string {
 	return `${adjective} ${noun}`;
 }
 
-export const UserActions = {
+export const UserUtils = {
 	/**
 	 * Sets the user's name in the provided context object.
 	 */

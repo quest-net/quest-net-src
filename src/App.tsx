@@ -6,7 +6,7 @@ import { ContextProvider } from "./domains/Context/ContextProvider";
 import { ActionServiceProvider } from "./services/Actions/ActionServiceProvider";
 import { CampaignView } from "./domains/Campaign/CampaignView";
 import { AppSettingEdit } from "./domains/AppSetting/Edit";
-import { Wiki } from "./domains/Wiki/Wiki";
+import { Wiki } from "./wiki/Wiki";
 import { useIdleRefresh } from "./hooks/useIdleRefresh";
 import { isAnyFormDirty } from "./utils/formDirtyRegistry";
 import { StorageQuotaErrorOverlay } from "./components/StorageQuotaErrorOverlay";

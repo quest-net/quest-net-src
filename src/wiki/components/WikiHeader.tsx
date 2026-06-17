@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { ThemeToggle } from "../../../components/ThemeToggle/ThemeToggle";
+import { ThemeToggle } from "../../components/ThemeToggle/ThemeToggle";
 
 export function WikiHeader() {
 	const navigate = useNavigate();

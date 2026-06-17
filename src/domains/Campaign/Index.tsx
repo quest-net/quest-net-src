@@ -5,7 +5,7 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { triggerContextUpdate } from "../Context/ContextProvider";
 import { CampaignActions } from "./CampaignActions";
 import { CampaignUtils, type ExportProgress } from "./CampaignUtils";
-import { ContextActions } from "../Context/ContextActions";
+import { ContextService } from "../Context/ContextService";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 import { useNavigate } from "react-router-dom";
 import CircularText from "../../components/CircularText/CircularText";
@@ -61,7 +61,7 @@ export function CampaignIndex() {
 		if (unchanged) return;
 
 		context.Campaigns[idx] = refreshed;
-		ContextActions.save(context);
+		ContextService.save(context);
 		triggerContextUpdate();
 		// Mount-only on purpose — this is "refresh on entry to the index".
 		// eslint-disable-next-line react-hooks/exhaustive-deps

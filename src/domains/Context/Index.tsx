@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useQuestContext, triggerContextUpdate } from "./ContextProvider";
 import { useNavigate } from "react-router-dom";
-import { UserActions } from "../User/UserActions";
+import { UserUtils } from "../User/UserUtils";
 import ASCIIText from "../../components/ASCIIText/ASCIIText";
 import Waves from "../../components/Waves/Waves";
 import { useThemeColors } from "../../utils/ThemeUtils";
 import TextType from "../../components/TextType/TextType";
-import { AppSettingActions } from "../AppSetting/AppSettingActions";
+import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
 import { APP_VERSION } from "../../version";
 import { useIsMobile } from "../../hooks/useIsMobile";
 export function Home() {
@@ -20,7 +20,7 @@ export function Home() {
 	}, [context.User.Name]);
 
 	const colors = useThemeColors("neutral", "primary");
-	const theme = AppSettingActions.getTheme(context);
+	const theme = AppSettingUtils.getTheme(context);
 	const asciiTextColor = theme == "dark" ? "#fdf9f3" : colors.primary.hex;
 	// On narrow screens the single-line "QUEST-NET" overflows; stack it and shrink slightly.
 	const isNarrow = useIsMobile();
@@ -29,7 +29,7 @@ export function Home() {
 		const trimmed = value.trim();
 		if (!trimmed) return;
 		setName(trimmed);
-		UserActions.setName({ name: trimmed }, context);
+		UserUtils.setName({ name: trimmed }, context);
 		triggerContextUpdate();
 	};
 

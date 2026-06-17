@@ -1,8 +1,8 @@
-// domains/AppSetting/AppSettingActions.ts
+// domains/AppSetting/AppSettingUtils.ts
 
 import { isDmAccess } from "../../utils/UrlParser";
 import { Context } from "../Context/Context";
-import { ContextActions } from "../Context/ContextActions";
+import { ContextService } from "../Context/ContextService";
 import { AppSettings, DEFAULT_IMAGE_PROMPT } from "./AppSetting";
 import { SoundEffectService } from "../../services/SoundEffectService";
 import { DEFAULT_PROVIDER_ID } from "../../services/ImageGenerationService";
@@ -28,7 +28,7 @@ function setJson<T>(context: Context, key: string, value: T): void {
 
 // ---------------------------------------------------------------------------
 
-export const AppSettingActions = {
+export const AppSettingUtils = {
   createDefault(): AppSettings {
     return {
       theme: "light",
@@ -46,7 +46,7 @@ export const AppSettingActions = {
   setPlayerVolume(params: { volume: number }, context: Context): void {
     const volume = Math.max(0, Math.min(1, params.volume));
     context.AppSettings.volume = volume.toString();
-    ContextActions.save(context);
+    ContextService.save(context);
   },
 
   /**
@@ -63,7 +63,7 @@ export const AppSettingActions = {
 
   setTheme(params: { theme: "light" | "dark" }, context: Context): void {
     context.AppSettings.theme = params.theme;
-    ContextActions.save(context);
+    ContextService.save(context);
   },
 
   getTheme(context: Context): "light" | "dark" {
@@ -79,7 +79,7 @@ export const AppSettingActions = {
     context.AppSettings.preserveFlyingHeightOnTileMove = params.preserve
       ? "true"
       : "false";
-    ContextActions.save(context);
+    ContextService.save(context);
   },
 
   getPreserveFlyingHeightOnTileMove(context: Context): boolean {
@@ -91,7 +91,7 @@ export const AppSettingActions = {
     context: Context
   ): void {
     context.AppSettings.performanceMode = params.enabled ? "true" : "false";
-    ContextActions.save(context);
+    ContextService.save(context);
   },
 
   getPerformanceMode(context: Context): boolean {
@@ -103,7 +103,7 @@ export const AppSettingActions = {
     context: Context
   ): void {
     context.AppSettings.critSplashEnabled = params.enabled ? "true" : "false";
-    ContextActions.save(context);
+    ContextService.save(context);
   },
 
   /** Defaults to enabled when the setting has never been set. */
@@ -121,7 +121,7 @@ export const AppSettingActions = {
 
   setImageService(params: { providerId: string }, context: Context): void {
     context.AppSettings.imageService = params.providerId;
-    ContextActions.save(context);
+    ContextService.save(context);
   },
 
   // ---------------------------------------------------------------------------
@@ -144,7 +144,7 @@ export const AppSettingActions = {
       delete map[params.providerId];
     }
     setJson(context, "imageApiKeys", map);
-    ContextActions.save(context);
+    ContextService.save(context);
   },
 
   getProviderApiSecret(
@@ -167,7 +167,7 @@ export const AppSettingActions = {
       delete map[params.providerId];
     }
     setJson(context, "imageApiSecrets", map);
-    ContextActions.save(context);
+    ContextService.save(context);
   },
 
   // ---------------------------------------------------------------------------
@@ -181,7 +181,7 @@ export const AppSettingActions = {
   setImagePromptTemplate(params: { template: string }, context: Context): void {
     const trimmed = params.template.trim();
     context.AppSettings.imagePromptTemplate = trimmed || DEFAULT_IMAGE_PROMPT;
-    ContextActions.save(context);
+    ContextService.save(context);
   },
 
   // ---------------------------------------------------------------------------

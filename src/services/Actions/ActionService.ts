@@ -8,7 +8,7 @@ import { StateSync } from "../StateSync";
 import { ImageService } from "../ImageService";
 import { Room, type ActionSend } from "../../domains/Room/Room";
 import { triggerContextUpdate } from "../../domains/Context/ContextProvider";
-import { RoomActions } from "../../domains/Room/RoomActions";
+import { RoomService } from "../../domains/Room/RoomService";
 import { LogUtils } from "../../domains/Log/LogUtils";
 import { User } from "../../domains/User/User";
 import { CampaignLoadingService } from "../CampaignLoadingService";
@@ -544,7 +544,7 @@ export class ActionService {
 	private async executePlayer(actionKey: string, params: any): Promise<void> {
 
 		// Check for connection before allowing any action
-		if (!RoomActions.hasConnectedPeers(this.room)) {
+		if (!RoomService.hasConnectedPeers(this.room)) {
 			console.warn("[ActionService] No peers connected. Action blocked.");
 			return;
 		}
@@ -700,7 +700,7 @@ export class ActionService {
 		this.peerUsers.clear();
 		this.connectedPeerIds.clear();
 		if (this.room) {
-			RoomActions.leave(this.room);
+			RoomService.leave(this.room);
 		}
 	}
 

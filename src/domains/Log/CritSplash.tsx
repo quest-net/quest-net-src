@@ -24,7 +24,7 @@ import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogUtils } from "./LogUtils";
 import { LogEntry } from "./LogEntry";
 import { isCritRoll, getCritRollValue } from "../../utils/DiceUtils";
-import { AppSettingActions } from "../AppSetting/AppSettingActions";
+import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
 import { loadImageBlob } from "../Image/ImageLoading";
 import { Campaign } from "../Campaign/Campaign";
 import "./CritSplash.css";
@@ -263,7 +263,7 @@ export function CritSplash() {
 	const campaign = CampaignUtils.getActiveCampaign(context);
 	const userRole = context.User.Role;
 	const isDM = userRole === "dm";
-	const splashEnabled = AppSettingActions.getCritSplashEnabled(context);
+	const splashEnabled = AppSettingUtils.getCritSplashEnabled(context);
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const processedRef = useRef<Set<string>>(new Set());

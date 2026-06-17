@@ -10,9 +10,9 @@ import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { useAutoReconnect } from "../../hooks/useAutoReconnect";
 import { useRelayWatchdog } from "../../hooks/useRelayWatchdog";
 import { CampaignUtils } from "./CampaignUtils";
-import { ContextActions } from "../Context/ContextActions";
-import { RoomActions } from "../Room/RoomActions";
-import type { RoomCallbacks } from "../Room/RoomActions";
+import { ContextService } from "../Context/ContextService";
+import { RoomService } from "../Room/RoomService";
+import type { RoomCallbacks } from "../Room/RoomService";
 import type { DataPayload } from "trystero";
 import { ActionService } from "../../services/Actions/ActionService";
 import { isGUID } from "../../utils/UrlParser";
@@ -20,7 +20,7 @@ import { DMView } from "./DMView";
 import { PlayerView } from "./PlayerView";
 import { CampaignConnectionScreen } from "./CampaignConnectionScreen";
 import type { User } from "../User/User";
-import { UserActions } from "../User/UserActions";
+import { UserUtils } from "../User/UserUtils";
 
 type ViewStatus = "loading" | "ready" | "waiting-for-dm" | "error";
 
@@ -130,7 +130,7 @@ export function CampaignView() {
 		const isDM = isGUID(identifier);
 
 		// Setup variables that need cleanup
-		let room: ReturnType<typeof RoomActions.join> | null = null;
+		let room: ReturnType<typeof RoomService.join> | null = null;
 		let service: ActionService | null = null;
 		let isSubscribed = true; // For handling async state updates after unmount
 		let joinTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -190,7 +190,7 @@ export function CampaignView() {
 						}
 					}
 					// Persist the reshape (active campaign + metadata refresh).
-					ContextActions.save(context);
+					ContextService.save(context);
 					triggerContextUpdate();
 				}
 
@@ -200,10 +200,10 @@ export function CampaignView() {
 
 				// Set user role if not already set.
 				if (isDM && context.User.Role !== "dm") {
-					ContextActions.setUserRole({ role: "dm" }, context);
+					ContextService.setUserRole({ role: "dm" }, context);
 					triggerContextUpdate();
 				} else if (!isDM && context.User.Role !== "player") {
-					ContextActions.setUserRole({ role: "player" }, context);
+					ContextService.setUserRole({ role: "player" }, context);
 					triggerContextUpdate();
 				}
 
@@ -217,15 +217,15 @@ export function CampaignView() {
 						: undefined;
 
 					if (activeCampaign && hasSelectedCharacter) {
-						UserActions.clearSelectedCharacter(
+						UserUtils.clearSelectedCharacter(
 							{ campaignId: activeCampaign.Id },
 							context
 						);
-						UserActions.clearSelectedCharacter(
+						UserUtils.clearSelectedCharacter(
 							{ campaignId: activeCampaign.RoomCode },
 							context
 						);
-						ContextActions.save(context);
+						ContextService.save(context);
 						triggerContextUpdate();
 					}
 				}
@@ -278,7 +278,7 @@ export function CampaignView() {
 					},
 				};
 
-				room = RoomActions.join(roomCode!, callbacks);
+				room = RoomService.join(roomCode!, callbacks);
 
 				// =====================================================================
 				// STEP 3: Create ActionService
@@ -353,7 +353,7 @@ export function CampaignView() {
 				joinTimeout = null;
 			}
 
-			// service.cleanup() calls RoomActions.leave() internally —
+			// service.cleanup() calls RoomService.leave() internally —
 			// don't call it here too or Trystero's leave logic runs twice.
 			if (service) {
 				service.cleanup();

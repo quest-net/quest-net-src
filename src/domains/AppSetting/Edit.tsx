@@ -7,7 +7,7 @@ import {
   triggerContextUpdate,
 } from "../Context/ContextProvider";
 import { useIsOffscreen, FloatingActionBar } from "../../components/Form/Form";
-import { AppSettingActions } from "./AppSettingActions";
+import { AppSettingUtils } from "./AppSettingUtils";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 import { FloatingActionButton } from "../../components/ui/FloatingActionButton";
 import {
@@ -25,35 +25,35 @@ export function AppSettingEdit() {
 
   // --- General settings ---
   const [theme, setTheme] = useState<"light" | "dark">(
-    AppSettingActions.getTheme(context)
+    AppSettingUtils.getTheme(context)
   );
 
   const [volumePercent, setVolumePercent] = useState<number>(
-    Math.round(AppSettingActions.getPlayerVolume(context) * 100)
+    Math.round(AppSettingUtils.getPlayerVolume(context) * 100)
   );
 
   const [sfxVolumePercent, setSfxVolumePercent] = useState<number>(
-    Math.round(AppSettingActions.getSfxVolume() * 100)
+    Math.round(AppSettingUtils.getSfxVolume() * 100)
   );
 
   const [
     preserveFlyingHeightOnTileMove,
     setPreserveFlyingHeightOnTileMove,
   ] = useState<boolean>(
-    AppSettingActions.getPreserveFlyingHeightOnTileMove(context)
+    AppSettingUtils.getPreserveFlyingHeightOnTileMove(context)
   );
 
   const [performanceMode, setPerformanceMode] = useState<boolean>(
-    AppSettingActions.getPerformanceMode(context)
+    AppSettingUtils.getPerformanceMode(context)
   );
 
   const [critSplashEnabled, setCritSplashEnabled] = useState<boolean>(
-    AppSettingActions.getCritSplashEnabled(context)
+    AppSettingUtils.getCritSplashEnabled(context)
   );
 
   // --- Image generation settings ---
   const [imageService, setImageService] = useState<string>(
-    AppSettingActions.getImageService(context)
+    AppSettingUtils.getImageService(context)
   );
 
   // Per-provider key state: { [providerId]: apiKey }
@@ -61,7 +61,7 @@ export function AppSettingEdit() {
     const initial: Record<string, string> = {};
     for (const provider of PROVIDER_REGISTRY) {
       initial[provider.id] =
-        AppSettingActions.getProviderApiKey(context, provider.id) ?? "";
+        AppSettingUtils.getProviderApiKey(context, provider.id) ?? "";
     }
     return initial;
   });
@@ -72,14 +72,14 @@ export function AppSettingEdit() {
     for (const provider of PROVIDER_REGISTRY) {
       if (provider.requiresSecret) {
         initial[provider.id] =
-          AppSettingActions.getProviderApiSecret(context, provider.id) ?? "";
+          AppSettingUtils.getProviderApiSecret(context, provider.id) ?? "";
       }
     }
     return initial;
   });
 
   const [imagePromptTemplate, setImagePromptTemplate] = useState<string>(
-    AppSettingActions.getImagePromptTemplate(context)
+    AppSettingUtils.getImagePromptTemplate(context)
   );
 
   const [isSaving, setIsSaving] = useState(false);
@@ -93,32 +93,32 @@ export function AppSettingEdit() {
     setIsSaving(true);
 
     // General
-    AppSettingActions.setTheme({ theme }, context);
-    AppSettingActions.setPlayerVolume({ volume: volumePercent / 100 }, context);
-    AppSettingActions.setSfxVolume({ volume: sfxVolumePercent / 100 });
-    AppSettingActions.setPreserveFlyingHeightOnTileMove(
+    AppSettingUtils.setTheme({ theme }, context);
+    AppSettingUtils.setPlayerVolume({ volume: volumePercent / 100 }, context);
+    AppSettingUtils.setSfxVolume({ volume: sfxVolumePercent / 100 });
+    AppSettingUtils.setPreserveFlyingHeightOnTileMove(
       { preserve: preserveFlyingHeightOnTileMove },
       context
     );
-    AppSettingActions.setPerformanceMode({ enabled: performanceMode }, context);
-    AppSettingActions.setCritSplashEnabled(
+    AppSettingUtils.setPerformanceMode({ enabled: performanceMode }, context);
+    AppSettingUtils.setCritSplashEnabled(
       { enabled: critSplashEnabled },
       context
     );
 
     // Image service selection
-    AppSettingActions.setImageService({ providerId: imageService }, context);
+    AppSettingUtils.setImageService({ providerId: imageService }, context);
 
     // Save ALL entered keys (so switching back to a provider doesn't lose its key)
     for (const provider of PROVIDER_REGISTRY) {
       const key = apiKeys[provider.id]?.trim();
-      AppSettingActions.setProviderApiKey(
+      AppSettingUtils.setProviderApiKey(
         { providerId: provider.id, apiKey: key || undefined },
         context
       );
       if (provider.requiresSecret) {
         const secret = apiSecrets[provider.id]?.trim();
-        AppSettingActions.setProviderApiSecret(
+        AppSettingUtils.setProviderApiSecret(
           { providerId: provider.id, apiSecret: secret || undefined },
           context
         );
@@ -126,7 +126,7 @@ export function AppSettingEdit() {
     }
 
     // Prompt template
-    AppSettingActions.setImagePromptTemplate(
+    AppSettingUtils.setImagePromptTemplate(
       { template: imagePromptTemplate },
       context
     );
