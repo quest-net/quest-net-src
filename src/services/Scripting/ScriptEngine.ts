@@ -164,26 +164,54 @@ function makeEvent(
 interface ScriptRunState {
 	cascadeDepth: number;
 	actionCount: number;
-	pendingActions: Set<Promise<void>>;
 }
 
 function createRunState(): ScriptRunState {
-	return { cascadeDepth: 0, actionCount: 0, pendingActions: new Set() };
+	return { cascadeDepth: 0, actionCount: 0 };
 }
 
-function trackScriptAction(
-	promise: Promise<void>,
-	state: ScriptRunState
-): Promise<void> {
-	state.pendingActions.add(promise);
-	promise.then(
-		() => state.pendingActions.delete(promise),
-		() => state.pendingActions.delete(promise)
-	);
-	return promise;
+/**
+ * Per-script action sink. Every `game.action`/`game.log` a single script body
+ * starts is funneled through here. It does two jobs that together keep the
+ * "await is optional but recommended" contract honest:
+ *
+ *  - SEQUENCING: actions are chained so they run in call order even when the
+ *    author forgets to `await`. Without this, two un-awaited async actions race
+ *    and can read-modify-write the same state out of order (lost updates).
+ *  - DRAINING: every action promise is collected so `runOneScript` can await the
+ *    whole batch before the mutation commits, and surface any failure the script
+ *    did not await itself (instead of swallowing it). A failed action does not
+ *    break the chain — later actions still run.
+ *
+ * The sink is created fresh per script body, so a nested cascade script gets its
+ * own sink: it never chains onto (and so never deadlocks awaiting) the parent
+ * action that is still running while the cascade executes.
+ */
+interface ScriptActionSink {
+	run(start: () => Promise<void>): Promise<void>;
+	/** Await every started action; throw the first rejection (or resolve clean). */
+	drain(): Promise<void>;
 }
 
-function makeGame(context: Context, state: ScriptRunState): any {
+function createActionSink(): ScriptActionSink {
+	const all: Promise<void>[] = [];
+	let tail: Promise<void> = Promise.resolve();
+	return {
+		run(start) {
+			const promise = tail.then(start);
+			tail = promise.catch(() => {});
+			all.push(promise);
+			return promise;
+		},
+		async drain() {
+			const settled = await Promise.allSettled(all);
+			const failed = settled.find((s) => s.status === "rejected");
+			if (failed) throw (failed as PromiseRejectedResult).reason;
+		},
+	};
+}
+
+function makeGame(context: Context, state: ScriptRunState, sink: ScriptActionSink): any {
 	const campaign = () => CampaignActions.getActiveCampaign(context);
 	return {
 		get campaign() {
@@ -200,7 +228,7 @@ function makeGame(context: Context, state: ScriptRunState): any {
 		roll: (expr: string) => rollDiceFormula(expr).total,
 		rng: () => Math.random(),
 		log: (text: string, opts?: { category?: string; level?: string; details?: string }) =>
-			trackScriptAction(
+			sink.run(() =>
 				dispatch(
 					"log:create",
 					{
@@ -211,11 +239,10 @@ function makeGame(context: Context, state: ScriptRunState): any {
 					},
 					context,
 					state
-				),
-				state
+				)
 			),
 		action: (key: string, params?: any) =>
-			trackScriptAction(dispatch(key, params ?? {}, context, state), state),
+			sink.run(() => dispatch(key, params ?? {}, context, state)),
 	};
 }
 
@@ -360,7 +387,6 @@ function logScriptError(context: Context, script: Script, err: unknown): void {
 
 async function runOneScript(
 	match: ScriptMatch,
-	game: any,
 	event: any,
 	context: Context,
 	campaign: Campaign,
@@ -374,19 +400,16 @@ async function runOneScript(
 		logScriptError(context, script, validation.error);
 		return;
 	}
+	const sink = createActionSink();
+	const game = makeGame(context, state, sink);
 	try {
 		const thisHost = makeThis(match);
-		const pendingBefore = new Set(state.pendingActions);
 		// eslint-disable-next-line no-new-func
 		const fn = new AsyncFunction("game", "event", '"use strict";\n' + script.Code);
 		await fn.call(thisHost, game, event);
-
-		const unawaitedActions = [...state.pendingActions].filter(
-			(promise) => !pendingBefore.has(promise)
-		);
-		if (unawaitedActions.length > 0) {
-			await Promise.all(unawaitedActions);
-		}
+		// Finish (and surface failures from) any actions the script started but
+		// did not await, before this mutation commits/broadcasts.
+		await sink.drain();
 	} catch (err) {
 		logScriptError(context, script, err);
 	}
@@ -420,10 +443,9 @@ async function runReactions(
 			if (removed.length) matches = [...post, ...removed];
 		}
 		if (matches.length === 0) return;
-		const game = makeGame(context, state);
 		const event = makeEvent(key, params, result, campaign);
 		for (const match of matches) {
-			await runOneScript(match, game, event, context, campaign, state);
+			await runOneScript(match, event, context, campaign, state);
 		}
 	} finally {
 		state.cascadeDepth--;
@@ -528,21 +550,16 @@ export const ScriptEngine = {
 		const validation = validateScriptSource(code);
 		if (!validation.ok) return { ok: false, error: validation.error };
 		const state = createRunState();
-		const game = makeGame(context, state);
+		const sink = createActionSink();
+		const game = makeGame(context, state, sink);
 		const event = makeEvent(triggerKey, params ?? {}, undefined, campaign);
 		try {
 			const thisHost = makeThis(binding);
-			const pendingBefore = new Set(state.pendingActions);
 			// eslint-disable-next-line no-new-func
 			const fn = new AsyncFunction("game", "event", '"use strict";\n' + code);
 			await fn.call(thisHost, game, event);
-
-			const unawaitedActions = [...state.pendingActions].filter(
-				(promise) => !pendingBefore.has(promise)
-			);
-			if (unawaitedActions.length > 0) {
-				await Promise.all(unawaitedActions);
-			}
+			// Finish (and surface failures from) any actions the script did not await.
+			await sink.drain();
 			return { ok: true };
 		} catch (err) {
 			return { ok: false, error: String((err as any)?.message ?? err) };
