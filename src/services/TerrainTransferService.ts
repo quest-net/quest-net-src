@@ -36,9 +36,10 @@ import {
 import {
 	applyVoxelDelta,
 	computeVoxelDelta,
-	decodeDelta,
-	encodeDelta,
+	decodeDeltaBytes,
+	encodeDeltaBytes,
 } from "../utils/terrain/data/VoxelTerrainDeltaUtils";
+import { base64ToBytes, bytesToBase64 } from "../utils/base64";
 
 const TERRAIN_REQUEST_TIMEOUT_MS = 30000;
 
@@ -48,15 +49,18 @@ const TERRAIN_REQUEST_TIMEOUT_MS = 30000;
 // coming (then we full-fetch as before).
 const DELTA_GRACE_MS = 300;
 
-/** Wire envelope broadcast on the `terrainDelta` channel (DM -> players). */
-interface TerrainDeltaMessage {
+/**
+ * Metadata broadcast alongside the binary delta on the `terrainDelta` channel
+ * (DM -> players). The delta itself travels as the raw binary payload (Trystero
+ * serializes/chunks TypedArrays natively); these scalars ride in the action's
+ * `metadata` field since binary must be the top-level payload.
+ */
+interface TerrainDeltaMetadata {
 	terrainId: string;
 	/** ContentHash the delta was computed against; the player must hold this base. */
 	baseHash: string;
 	/** ContentHash of the payload the delta reconstructs; re-hash check target. */
 	newHash: string;
-	/** Compact base64 delta (see VoxelTerrainDeltaUtils.encodeDelta). */
-	delta: string;
 }
 
 interface DeltaWaiterEntry {
@@ -69,8 +73,8 @@ export class TerrainTransferService {
 	private getCampaign: () => Campaign | null;
 	private getDmPeerId: () => string | undefined;
 
-	private requestTerrainData!: ActionRequest; // terrainId -> TerrainPayload
-	private sendDelta!: ActionSend; // TerrainDeltaMessage broadcast
+	private requestTerrainData!: ActionRequest; // terrainId -> raw SVO bytes (ArrayBuffer)
+	private sendDelta!: ActionSend; // delta bytes + TerrainDeltaMetadata broadcast
 
 	// Dedup concurrent player requests for the same terrainId.
 	private pending = new Map<string, Promise<TerrainPayload | null>>();
@@ -126,8 +130,8 @@ export class TerrainTransferService {
 		const terrainDelta = this.room.makeAction<any>("terrainDelta");
 		this.sendDelta = terrainDelta.send;
 		if (!this.isDM) {
-			terrainDelta.onMessage = (data) => {
-				this.enqueueDelta(data as TerrainDeltaMessage);
+			terrainDelta.onMessage = (data: any, { metadata }: any) => {
+				this.enqueueDelta(data, metadata as TerrainDeltaMetadata);
 			};
 		}
 	}
@@ -158,14 +162,18 @@ export class TerrainTransferService {
 		}
 
 		try {
-			const payload = (await this.requestTerrainData(terrainId, {
+			// The DM responds with the raw SVO bytes (an ArrayBuffer). A request
+			// response can't carry separate metadata, so we re-derive the content
+			// hash from the bytes -- the same hash-verify the delta path does.
+			const buf = (await this.requestTerrainData(terrainId, {
 				target: dmPeerId,
 				timeoutMs: TERRAIN_REQUEST_TIMEOUT_MS,
-			})) as TerrainPayload | null;
-			return {
-				voxels: payload?.voxels ?? "",
-				contentHash: payload?.contentHash ?? "",
-			};
+			})) as ArrayBuffer | null;
+			if (!buf || buf.byteLength === 0) {
+				return { voxels: "", contentHash: "" };
+			}
+			const voxels = bytesToBase64(new Uint8Array(buf));
+			return { voxels, contentHash: hashVoxels(voxels) };
 		} catch (error) {
 			console.warn(
 				`[TerrainTransferService] Failed to fetch terrain ${terrainId}:`,
@@ -175,8 +183,13 @@ export class TerrainTransferService {
 		}
 	}
 
-	/** DM: serve a requested terrain payload. Throws if it cannot be served. */
-	private async serveTerrain(terrainId: string): Promise<TerrainPayload> {
+	/**
+	 * DM: serve a requested terrain payload as raw SVO bytes. Sending the bytes
+	 * directly (rather than the base64 string) cuts ~33% off the transfer; the
+	 * requesting player base64-encodes them back for storage and re-hashes to
+	 * recover the ContentHash. Throws if it cannot be served.
+	 */
+	private async serveTerrain(terrainId: string): Promise<Uint8Array> {
 		const campaign = this.getCampaign();
 		if (!campaign) {
 			throw new Error("No active campaign to serve terrain from");
@@ -188,7 +201,7 @@ export class TerrainTransferService {
 		if (!payload) {
 			throw new Error(`No payload to serve for terrain ${terrainId}`);
 		}
-		return payload;
+		return base64ToBytes(payload.voxels);
 	}
 
 	// --- Delta broadcast (DM) ----------------------------------------------
@@ -212,16 +225,16 @@ export class TerrainTransferService {
 		}
 		if (!delta) return;
 
-		let encoded: string;
+		let encoded: Uint8Array;
 		try {
-			encoded = encodeDelta(delta);
+			encoded = encodeDeltaBytes(delta);
 		} catch (error) {
 			console.warn(`[TerrainTransferService] Delta encode failed for ${terrainId}:`, error);
 			return;
 		}
 
-		const message: TerrainDeltaMessage = { terrainId, baseHash, newHash, delta: encoded };
-		void this.sendDelta(message);
+		const metadata: TerrainDeltaMetadata = { terrainId, baseHash, newHash };
+		void this.sendDelta(encoded, { metadata });
 	}
 
 	// --- Delta apply + grace window (players) ------------------------------
@@ -272,8 +285,8 @@ export class TerrainTransferService {
 	}
 
 	/** Queues a received delta for strictly-ordered application. */
-	private enqueueDelta(message: TerrainDeltaMessage): void {
-		const run = this.applyChain.then(() => this.handleDelta(message));
+	private enqueueDelta(deltaData: unknown, metadata: TerrainDeltaMetadata): void {
+		const run = this.applyChain.then(() => this.handleDelta(deltaData, metadata));
 		this.applyChain = run.then(
 			() => undefined,
 			(error) => {
@@ -283,9 +296,15 @@ export class TerrainTransferService {
 	}
 
 	/** Player: reconstruct, verify, and commit a broadcast delta. */
-	private async handleDelta(message: TerrainDeltaMessage): Promise<void> {
-		const { terrainId, baseHash, newHash, delta } = message ?? ({} as TerrainDeltaMessage);
-		if (!terrainId || !baseHash || !newHash || typeof delta !== "string") return;
+	private async handleDelta(
+		deltaData: unknown,
+		metadata: TerrainDeltaMetadata
+	): Promise<void> {
+		const { terrainId, baseHash, newHash } = metadata ?? ({} as TerrainDeltaMetadata);
+		// Binary arrives as a raw ArrayBuffer (same as ImageService); anything else
+		// isn't a delta -- ignore it and let the ContentHash-mismatch path full-fetch.
+		if (!terrainId || !baseHash || !newHash || !(deltaData instanceof ArrayBuffer)) return;
+		const deltaBytes = new Uint8Array(deltaData);
 
 		const campaign = this.getCampaign();
 		if (!campaign) return;
@@ -314,7 +333,7 @@ export class TerrainTransferService {
 
 		let newB64: string;
 		try {
-			newB64 = applyVoxelDelta(base, decodeDelta(delta));
+			newB64 = applyVoxelDelta(base, decodeDeltaBytes(deltaBytes));
 		} catch (error) {
 			console.warn(`[TerrainTransferService] Delta apply failed for ${terrainId}:`, error);
 			return;

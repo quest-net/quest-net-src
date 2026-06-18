@@ -18,7 +18,6 @@
 
 import type { Voxel } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { decodeVoxelBuffers, encodeVoxels, unpackVoxel } from "./VoxelDataUtils";
-import { bytesToBase64, base64ToBytes } from "../../base64";
 
 /**
  * The set of voxels that changed between two payloads. `positions[i]` is packed
@@ -147,8 +146,8 @@ export function applyVoxelDelta(oldB64: string, delta: VoxelDelta): string {
 	return encodeVoxels(voxelsFromMap(map));
 }
 
-/** Serializes a delta to a compact base64 transport string. */
-export function encodeDelta(delta: VoxelDelta): string {
+/** Serializes a delta to its compact binary transport form (layout above). */
+export function encodeDeltaBytes(delta: VoxelDelta): Uint8Array {
 	const { positions, newColors } = delta;
 	const total = positions.length;
 
@@ -195,16 +194,15 @@ export function encodeDelta(delta: VoxelDelta): string {
 		offset += 4;
 	}
 
-	return bytesToBase64(bytes);
+	return bytes;
 }
 
 /**
- * Parses a compact transport string back into a VoxelDelta. Throws on a missing
- * magic or unsupported version so a corrupt/incompatible message is rejected by
- * the caller (which then falls through to a full fetch).
+ * Parses the compact binary transport form back into a VoxelDelta. Throws on a
+ * missing magic or unsupported version so a corrupt/incompatible message is
+ * rejected by the caller (which then falls through to a full fetch).
  */
-export function decodeDelta(encoded: string): VoxelDelta {
-	const bytes = base64ToBytes(encoded);
+export function decodeDeltaBytes(bytes: Uint8Array): VoxelDelta {
 	if (
 		bytes.length < DELTA_HEADER_BYTES ||
 		bytes[0] !== MAGIC[0] ||
