@@ -11,7 +11,11 @@ import {
 	MAX_HEIGHT,
 	createDefaultVoxelTerrainEnvironmentPresets,
 } from "../VoxelTerrain/VoxelTerrain";
-import * as math from "mathjs";
+// Number-only mathjs build: drops the decimal.js/complex.js/fraction.js and
+// bignumber/matrix machinery we never use. Height-cost formulas only ever
+// evaluate plain-number arithmetic over a single `h` scope, so the number
+// build is a drop-in replacement for the one evaluate() call below.
+import { evaluate } from "mathjs/number";
 
 /**
  * Ensures actor stat slots match the current template set.
@@ -87,7 +91,7 @@ export function validateAndBuildHeightCostLookup(
 	for (let h = 1; h <= MAX_HEIGHT; h++) {
 		try {
 			const scope = { h };
-			const result = math.evaluate(formula, scope);
+			const result = evaluate(formula, scope);
 
 			// Validation checks
 			if (!Number.isFinite(result)) {
