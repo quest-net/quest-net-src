@@ -13,7 +13,7 @@ import {
 	createBitset,
 	isBitSet,
 	setBit,
-} from "../data/VoxelBitsetUtils";
+} from "../../BitsetUtils";
 import { decodeVoxels, encodeVoxels } from "../data/VoxelDataUtils";
 import type { VoxelTerrainIndex } from "../data/VoxelTerrainIndex";
 import type { VoxelColorGrid } from "./VoxelTerrainSelectionUtils";
@@ -35,6 +35,19 @@ export function editGridIndex(
 	vL: number,
 ): number {
 	return vx + vz * vW + vy * vW * vL;
+}
+
+/**
+ * Bounds test for the draft edit grid. The grid layer is deliberately decoupled
+ * from VoxelTerrainIndex (it mutates a raw buffer keyed by shape, not a committed
+ * terrain), so this takes the shape dims directly rather than an index. This is
+ * the draft-layer counterpart to `index.inVoxelBounds`.
+ */
+export function inGridBounds(
+	vx: number, vy: number, vz: number,
+	vW: number, vH: number, vL: number,
+): boolean {
+	return vx >= 0 && vx < vW && vy >= 0 && vy < vH && vz >= 0 && vz < vL;
 }
 
 export function createEditGrid(length: number): EditGrid {
@@ -68,7 +81,7 @@ export function editGridHasVoxel(
 	vx: number, vy: number, vz: number,
 	vW: number, vH: number, vL: number,
 ): boolean {
-	if (vx < 0 || vx >= vW || vy < 0 || vy >= vH || vz < 0 || vz >= vL) return false;
+	if (!inGridBounds(vx, vy, vz, vW, vH, vL)) return false;
 	return editGridHasVoxelAtIndex(grid, editGridIndex(vx, vy, vz, vW, vL));
 }
 
@@ -77,7 +90,7 @@ export function editGridGetColor(
 	vx: number, vy: number, vz: number,
 	vW: number, vH: number, vL: number,
 ): number | null {
-	if (vx < 0 || vx >= vW || vy < 0 || vy >= vH || vz < 0 || vz >= vL) return null;
+	if (!inGridBounds(vx, vy, vz, vW, vH, vL)) return null;
 	const index = editGridIndex(vx, vy, vz, vW, vL);
 	return editGridHasVoxelAtIndex(grid, index) ? grid.colors[index] : null;
 }
@@ -111,7 +124,7 @@ export function buildEditGrid(voxels: string, index: VoxelTerrainIndex): EditGri
 	const { voxelWidth: vW, voxelHeight: vH, voxelLength: vL } = index;
 	const grid = createEditGrid(vW * vH * vL);
 	for (const v of decodeVoxels(voxels)) {
-		if (v.x < 0 || v.x >= vW || v.y < 0 || v.y >= vH || v.z < 0 || v.z >= vL) continue;
+		if (!inGridBounds(v.x, v.y, v.z, vW, vH, vL)) continue;
 		const idx = editGridIndex(v.x, v.y, v.z, vW, vL);
 		grid.colors[idx] = normalizeVoxelPaletteIndex(v.color);
 		editGridSetOccupiedAtIndex(grid, idx, true);

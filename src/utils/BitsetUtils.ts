@@ -1,3 +1,6 @@
+// Generic packed-bit set over a Uint8Array. No terrain/voxel knowledge -- just
+// bit offsets -- so it lives in src/utils/ proper rather than under terrain/.
+
 const BITSET_BITS_PER_BYTE = 8;
 
 const BYTE_POPCOUNT = new Uint8Array(256);

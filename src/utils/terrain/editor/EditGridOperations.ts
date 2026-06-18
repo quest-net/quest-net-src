@@ -27,6 +27,7 @@ import {
 	editGridIndex,
 	editGridSetOccupiedAtIndex,
 	getColumnTopInRange,
+	inGridBounds,
 	type EditGrid,
 } from "./EditGridUtils";
 import {
@@ -81,7 +82,7 @@ export function applyStampToGrid(
 		const x = anchor.x + offset.x;
 		const y = anchor.y + offset.y;
 		const z = anchor.z + offset.z;
-		if (x < 0 || x >= vW || y < 0 || y >= vH || z < 0 || z >= vL) continue;
+		if (!inGridBounds(x, y, z, vW, vH, vL)) continue;
 
 		const gIdx = editGridIndex(x, y, z, vW, vL);
 		const next = normalizeVoxelPaletteIndex(offset.color);
@@ -128,7 +129,7 @@ export function applyVoxelEdit(
 	let countDelta = 0;
 
 	for (const { x, y, z } of coords) {
-		if (x < 0 || x >= vW || y < 0 || y >= vH || z < 0 || z >= vL) continue;
+		if (!inGridBounds(x, y, z, vW, vH, vL)) continue;
 		const gIdx = editGridIndex(x, y, z, vW, vL);
 
 		if (tool === "erase") {
@@ -201,7 +202,7 @@ export function applySelectionEdit(
 	};
 
 	for (const { x, y, z } of iterateVoxelSelectionSpace(selection, dims)) {
-		if (x < 0 || x >= vW || y < 0 || y >= vH || z < 0 || z >= vL) continue;
+		if (!inGridBounds(x, y, z, vW, vH, vL)) continue;
 
 		const gIdx = editGridIndex(x, y, z, vW, vL);
 		const occupied = editGridHasVoxelAtIndex(grid, gIdx);

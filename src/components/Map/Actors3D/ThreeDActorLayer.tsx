@@ -5,7 +5,7 @@ import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { useActionService } from "../../../services/Actions/ActionServiceProvider";
-import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import { tileKey, type VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	canStandVoxel,
 	getMaxActorHeight,
@@ -839,7 +839,7 @@ function getActorHeightRange(
 	max: number;
 } {
 	const surfaces =
-		terrainIndex.allSurfaces.get(`${actor.position.x},${actor.position.y}`) ??
+		terrainIndex.allSurfaces.get(tileKey(actor.position.x, actor.position.y)) ??
 		[];
 	const min = surfaces[0] ?? 0;
 	const max = getMaxActorHeight(terrain, terrainIndex);

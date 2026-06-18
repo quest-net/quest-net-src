@@ -5,7 +5,7 @@
 // voxel coordinates a brush stroke should affect.
 
 import type * as THREE from "three";
-import type { VoxelTerrainIndex } from "../data/VoxelTerrainIndex";
+import { tileKey, type VoxelTerrainIndex } from "../data/VoxelTerrainIndex";
 import {
 	normalizeVoxelSelectionBounds,
 	type VoxelCoord,
@@ -48,7 +48,7 @@ export function pickToTacticalAnchor(
 		? 0
 		: Math.floor((pick.voxel.y + (pick.normal.y > 0 ? 1 : 0)) / index.resolution);
 
-	const columnSurfaces = index.allSurfaces.get(`${x},${y}`) ?? [];
+	const columnSurfaces = index.allSurfaces.get(tileKey(x, y)) ?? [];
 	let h = pick.ground ? 0 : pickedTactical;
 	if (columnSurfaces.length > 0) {
 		let best = columnSurfaces[0];
@@ -64,14 +64,6 @@ export function pickToTacticalAnchor(
 	}
 
 	return { x, y, h };
-}
-
-export function isVoxelInBounds(index: VoxelTerrainIndex, coord: VoxelCoord): boolean {
-	return (
-		coord.x >= 0 && coord.x < index.voxelWidth &&
-		coord.y >= 0 && coord.y < index.voxelHeight &&
-		coord.z >= 0 && coord.z < index.voxelLength
-	);
 }
 
 export function pointToVoxelCoord(
@@ -165,7 +157,7 @@ export function getTacticalBlockCoords(
 		for (let y = startY; y < startY + index.resolution; y++) {
 			for (let x = startX; x < startX + index.resolution; x++) {
 				const coord = { x, y, z };
-				if (isVoxelInBounds(index, coord)) coords.push(coord);
+				if (index.inVoxelBounds(x, y, z)) coords.push(coord);
 			}
 		}
 	}
@@ -219,7 +211,7 @@ export function collectAffectedCoords(
 				: pick.voxel;
 		const normal = pick.ground ? { x: 0, y: 1, z: 0 } : pick.normal;
 		return getPlaneBrushCoords(origin, normal, brushSize).filter((c) =>
-			isVoxelInBounds(index, c)
+			index.inVoxelBounds(c.x, c.y, c.z)
 		);
 	}
 

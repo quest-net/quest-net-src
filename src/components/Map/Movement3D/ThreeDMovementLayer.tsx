@@ -4,11 +4,14 @@ import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
 import { isItemEntity } from "../../../domains/Item/ItemDropUtils";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import {
+	tileKey,
+	tileHeightKey,
+	type VoxelTerrainIndex,
+} from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	canOccupyVoxelTile,
 	canStandVoxel,
-	getVoxelTileHeightKey,
 	type VoxelMovementTile,
 } from "../../../domains/VoxelTerrain/VoxelMovementUtilities";
 import type { HoveredTile, SelectedActor } from "../MapStateProvider";
@@ -59,7 +62,7 @@ interface ThreeDMovementLayerProps {
 function toTileMap(tiles: VoxelMovementTile[]): Map<string, VoxelMovementTile> {
 	const map = new Map<string, VoxelMovementTile>();
 	for (const tile of tiles) {
-		map.set(getVoxelTileHeightKey(tile.x, tile.y, tile.h), tile);
+		map.set(tileHeightKey(tile.x, tile.y, tile.h), tile);
 	}
 	return map;
 }
@@ -133,7 +136,7 @@ function getTileFromPointerEvent(
 	if (x < 0 || x >= terrain.Width || y < 0 || y >= terrain.Length) {
 		return null;
 	}
-	if (terrainIndex.allSurfaces.get(`${x},${y}`)?.includes(0)) {
+	if (terrainIndex.allSurfaces.get(tileKey(x, y))?.includes(0)) {
 		return null;
 	}
 
@@ -152,7 +155,7 @@ function resolveMoveTargetHeight(
 
 	const originH = Math.round(actorObject.Position.h);
 	const surfaces =
-		terrainIndex.allSurfaces.get(`${tile.x},${tile.y}`) ??
+		terrainIndex.allSurfaces.get(tileKey(tile.x, tile.y)) ??
 		[];
 	const hasTerrainAtOrAboveOrigin = surfaces.some((surfaceH) => surfaceH >= originH);
 
@@ -165,7 +168,7 @@ function isVirtualGroundHighlightTile(
 ): boolean {
 	if (tile.h !== 0) return false;
 	return !(
-		terrainIndex.allSurfaces.get(`${tile.x},${tile.y}`) ??
+		terrainIndex.allSurfaces.get(tileKey(tile.x, tile.y)) ??
 		[]
 	).includes(0);
 }
@@ -434,7 +437,7 @@ export function ThreeDMovementLayer({
 
 		// Look up the movement tile at the exact (x, y, h) position.
 		const getAllowedTile = (tile: HoveredTile): VoxelMovementTile | null => {
-			const key = getVoxelTileHeightKey(tile.x, tile.y, tile.h);
+			const key = tileHeightKey(tile.x, tile.y, tile.h);
 			if (!restrictMovementToRangeRef.current) {
 				return (
 					remainingRangeMapRef.current?.get(key) ??

@@ -35,7 +35,6 @@ import {
 import {
 	collectAffectedCoords,
 	getPickSelectionBounds,
-	isVoxelInBounds,
 	pickToTacticalAnchor,
 	type EditGranularity,
 	type PickInfo,
@@ -167,7 +166,7 @@ function createPlaceGhostGeometry(
 	const ghostKeys = new Set<number>();
 
 	for (const coord of coords) {
-		if (!isVoxelInBounds(index, coord)) continue;
+		if (!index.inVoxelBounds(coord.x, coord.y, coord.z)) continue;
 		if (editGridHasVoxel(grid, coord.x, coord.y, coord.z, vW, vH, vL)) continue;
 		ghostKeys.add(packVoxelKey(coord.x, coord.y, coord.z));
 	}

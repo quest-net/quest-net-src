@@ -23,7 +23,6 @@ import {
 import { raycastVoxelGrid } from "../../../utils/terrain/raycast/VoxelRaycast";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import {
-	isVoxelInBounds,
 	pointToVoxelCoord,
 	type PickInfo,
 } from "../../../utils/terrain/editor/VoxelBrushUtils";
@@ -130,7 +129,7 @@ export function createPicker(inputs: PickerInputs): Picker {
 			y: 0,
 			z: Math.floor((_pickCenter.z + index.length / 2) * index.resolution),
 		};
-		if (!isVoxelInBounds(index, voxel)) return null;
+		if (!index.inVoxelBounds(voxel.x, voxel.y, voxel.z)) return null;
 
 		return {
 			voxel,
@@ -165,7 +164,7 @@ export function createPicker(inputs: PickerInputs): Picker {
 				index,
 			);
 
-		if (!isVoxelInBounds(index, voxel)) return null;
+		if (!index.inVoxelBounds(voxel.x, voxel.y, voxel.z)) return null;
 
 		return {
 			voxel,

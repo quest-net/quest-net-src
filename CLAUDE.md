@@ -111,7 +111,7 @@ Each domain typically has a model file (`Domain.ts`), an actions file (`DomainAc
 Supporting files: `terrainEnvironment.ts` (apply lighting/background to scene), `shadowCameraBounds.ts`, `mapPostProcessing.ts`, `threeDMapConstants.ts` (camera, lighting, shadow, controls, and material tuning constants).
 
 Supporting utilities in `src/utils/terrain/`:
-- `data/` — `VoxelDataUtils` (SVO encode/decode entry points), `voxelCodecWasm` (accessor for the WASM SVO codec; the single source of truth lives in `wasm/voxel-mesher/src/svo.rs` — there is no JS fallback, and `initVoxelCodec()` is awaited at app startup in `index.tsx`), `VoxelTerrainIndex` (spatial index, coordinate primitives), `VoxelBitsetUtils`
+- `data/` — `VoxelDataUtils` (SVO encode/decode entry points), `voxelCodecWasm` (accessor for the WASM SVO codec; the single source of truth lives in `wasm/voxel-mesher/src/svo.rs` — there is no JS fallback, and `initVoxelCodec()` is awaited at app startup in `index.tsx`), `VoxelTerrainIndex` (spatial index, coordinate primitives — the canonical `tileKey`/`tileHeightKey` string keys and `inVoxelBounds`). The generic packed-bit helpers are in `src/utils/BitsetUtils.ts`; the draft edit-grid bounds test is `inGridBounds` in `editor/EditGridUtils.ts`.
 - `editor/` — `VoxelTerrainEditorUtils`, `VoxelStampUtils`, `VoxelTerrainSelectionUtils`
 - `import/` — `VoxImportUtils`
 - `materials/` — `terrainMaterialRules.ts` (data-layer material rules — passability + editor swatch colors, fed by the renderer via DI at startup)

@@ -15,11 +15,8 @@ import { CampaignUtils } from "../../../domains/Campaign/CampaignUtils";
 import { useQuestContext } from "../../../domains/Context/ContextProvider";
 import { usePeerTracking } from "../../../hooks/usePeerTracking";
 import { useActionService } from "../../../services/Actions/ActionServiceProvider";
-import {
-	getVoxelTileHeightKey,
-	normalizeVoxelPosition,
-	shouldRestrictPlayerMovementToRange,
-} from "../../../domains/VoxelTerrain/VoxelMovementUtilities";
+import { shouldRestrictPlayerMovementToRange } from "../../../domains/VoxelTerrain/VoxelMovementUtilities";
+import { roundVoxelPosition } from "../../../domains/VoxelTerrain/VoxelTerrainQueries";
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants";
 import { useMapState } from "../MapStateProvider";
 import {
@@ -35,7 +32,11 @@ import {
 	stepFirstPersonCapsuleController,
 	type FirstPersonCapsuleState,
 } from "./capsuleController";
-import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import {
+	tileKey,
+	tileHeightKey,
+	type VoxelTerrainIndex,
+} from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	FIRST_PERSON_CAMERA,
 	FIRST_PERSON_CONTROLS,
@@ -82,15 +83,15 @@ function getMovementCostFromLookup(
 	position: Position
 ): number | undefined {
 	const exact = lookup.get(
-		getVoxelTileHeightKey(position.x, position.y, position.h)
+		tileHeightKey(position.x, position.y, position.h)
 	);
 	if (exact !== undefined) return exact;
 
-	const surfaces = index.allSurfaces.get(`${position.x},${position.y}`) ?? [];
+	const surfaces = index.allSurfaces.get(tileKey(position.x, position.y)) ?? [];
 	let bestCost: number | undefined;
 	let bestDistance = Number.POSITIVE_INFINITY;
 	for (const surface of surfaces) {
-		const cost = lookup.get(getVoxelTileHeightKey(position.x, position.y, surface));
+		const cost = lookup.get(tileHeightKey(position.x, position.y, surface));
 		if (cost === undefined) continue;
 
 		const distance = Math.abs(position.h - surface);
@@ -328,7 +329,7 @@ export default function FirstPersonView({
 			return false;
 		}
 
-		const normalized = normalizeVoxelPosition(position);
+		const normalized = roundVoxelPosition(position);
 		const key = `${currentActor.kind}:${currentActor.id}:${normalized.x},${normalized.y},${normalized.h}`;
 		if (lastSentKeyRef.current === key) {
 			return true;
@@ -522,7 +523,7 @@ export default function FirstPersonView({
 			if (currentTerrain && currentActor && actorOnCurrentTerrain) {
 				const lastSent = lastSentPositionRef.current;
 				if (lastSent) {
-					const authoritative = normalizeVoxelPosition(currentActor.actor.Position);
+					const authoritative = roundVoxelPosition(currentActor.actor.Position);
 					const confirmed =
 						authoritative.x === lastSent.x &&
 						authoritative.y === lastSent.y &&
@@ -776,7 +777,7 @@ export default function FirstPersonView({
 			return;
 		}
 
-		const authoritative = normalizeVoxelPosition(actor.actor.Position);
+		const authoritative = roundVoxelPosition(actor.actor.Position);
 		const authoritativeState = createFirstPersonCapsuleState(actor, terrain);
 		const authoritativeRules = firstPersonCapsuleToRulesPosition(
 			terrain,

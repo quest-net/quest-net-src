@@ -1,3 +1,0 @@
-export const DEFAULT_TERRAIN_RESOLUTION = 1;
-
-export const FLYING_SPAWN_ELEVATION = 2;

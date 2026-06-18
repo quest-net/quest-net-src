@@ -6,8 +6,11 @@ import type { VoxelTerrain } from "./VoxelTerrain";
 import { isItemEntity } from "../Item/ItemDropUtils";
 import {
 	getVoxelTerrainIndex,
+	tileKey,
+	tileHeightKey,
 	type VoxelTerrainIndex,
 } from "../../utils/terrain/data/VoxelTerrainIndex";
+import { roundVoxelPosition } from "./VoxelTerrainQueries";
 import {
 	getVoxelMovementAdjacency,
 	isCellStandable,
@@ -96,19 +99,6 @@ class PriorityQueue<T> {
 	}
 }
 
-export function getVoxelTileHeightKey(x: number, y: number, h: number): string {
-	return `${x},${y},${h}`;
-}
-
-export function normalizeVoxelPosition(position: Position): Position {
-	return {
-		terrainId: position.terrainId,
-		x: Math.round(position.x),
-		y: Math.round(position.y),
-		h: Math.round(position.h),
-	};
-}
-
 export function isVoxelTileInBounds(
 	terrain: VoxelTerrain,
 	x: number,
@@ -171,7 +161,7 @@ function isFlyerStandableCell(
 	h: number
 ): boolean {
 	if (isCellStandable(index, x, y, h)) return true;
-	return (index.allSurfaces.get(`${x},${y}`) ?? []).includes(h);
+	return (index.allSurfaces.get(tileKey(x, y)) ?? []).includes(h);
 }
 
 /**
@@ -208,7 +198,7 @@ export function canStandVoxel(
 
 	// Non-flyer: feet must land on an exposed surface at this rules height. A
 	// detected surface is always standable -- no separate clearance gate.
-	return (index.allSurfaces.get(`${x},${y}`) ?? []).includes(h);
+	return (index.allSurfaces.get(tileKey(x, y)) ?? []).includes(h);
 }
 
 export function isVoxelTileOccupiedAtHeight(
@@ -221,7 +211,7 @@ export function isVoxelTileOccupiedAtHeight(
 ): boolean {
 	for (const character of characters) {
 		if (character.Id === excludeActorId) continue;
-		const position = normalizeVoxelPosition(character.Position);
+		const position = roundVoxelPosition(character.Position);
 		if (position.x === x && position.y === y && position.h === h) {
 			return true;
 		}
@@ -230,7 +220,7 @@ export function isVoxelTileOccupiedAtHeight(
 	for (const entity of entities) {
 		if (entity.Id === excludeActorId) continue;
 		if (isItemEntity(entity)) continue;
-		const position = normalizeVoxelPosition(entity.Position);
+		const position = roundVoxelPosition(entity.Position);
 		if (position.x === x && position.y === y && position.h === h) {
 			return true;
 		}
@@ -246,7 +236,7 @@ export function canOccupyVoxelTile(
 	entities: Entity[],
 	excludeActorId?: string
 ): boolean {
-	const normalized = normalizeVoxelPosition(position);
+	const normalized = roundVoxelPosition(position);
 	if (!isVoxelTileInBounds(terrain, normalized.x, normalized.y)) return false;
 
 	return !isVoxelTileOccupiedAtHeight(
@@ -280,7 +270,7 @@ export function calculateVoxelMovementRange(
 		"heightCostLookup" | "flyingIgnoresHeight"
 	>
 ): VoxelMovementRangeResult {
-	const start = normalizeVoxelPosition(from);
+	const start = roundVoxelPosition(from);
 	const budget = getMoveSpeedBudget(moveSpeed);
 	// costs and bestTiles are keyed by (x,y,h) so multiple heights per column
 	// (a flier's ladder, or stacked surfaces) are tracked independently.
@@ -301,7 +291,7 @@ export function calculateVoxelMovementRange(
 		: getVoxelMovementAdjacency(terrain);
 
 	const addBestTile = (x: number, y: number, h: number, cost: number) => {
-		const key = getVoxelTileHeightKey(x, y, h);
+		const key = tileHeightKey(x, y, h);
 		const existing = bestTiles.get(key);
 		if (!existing || cost < existing.cost) {
 			bestTiles.set(key, { x, y, h, cost });
@@ -317,15 +307,14 @@ export function calculateVoxelMovementRange(
 
 	const queue = new PriorityQueue<PathNode>();
 	const nodeCosts = new Map<string, number>();
-	const nodeKey = (x: number, y: number, h: number) => `${x},${y},${h}`;
 
-	const startKey = nodeKey(start.x, start.y, start.h);
+	const startKey = tileHeightKey(start.x, start.y, start.h);
 	nodeCosts.set(startKey, 0);
 	queue.enqueue({ x: start.x, y: start.y, h: start.h }, 0);
 
 	const relax = (nx: number, ny: number, nh: number, newCost: number) => {
 		if (newCost > budget) return;
-		const nextKey = nodeKey(nx, ny, nh);
+		const nextKey = tileHeightKey(nx, ny, nh);
 		const existingCost = nodeCosts.get(nextKey);
 		if (existingCost !== undefined && existingCost <= newCost) return;
 		nodeCosts.set(nextKey, newCost);
@@ -356,7 +345,7 @@ export function calculateVoxelMovementRange(
 	while (!queue.isEmpty()) {
 		const current = queue.dequeue()!;
 		const currentCost = nodeCosts.get(
-			nodeKey(current.x, current.y, current.h)
+			tileHeightKey(current.x, current.y, current.h)
 		)!;
 
 		if (canFly) {
@@ -441,7 +430,7 @@ export function calculateVoxelRemainingMovementRange(
 ): VoxelMovementRangeResult | null {
 	if (!turnStart) return null;
 
-	const normalizedCurrent = normalizeVoxelPosition(current);
+	const normalizedCurrent = roundVoxelPosition(current);
 	const startRange = calculateVoxelMovementRange(
 		terrain,
 		turnStart,
@@ -450,7 +439,7 @@ export function calculateVoxelRemainingMovementRange(
 		movementSettings
 	);
 	const spentCost = startRange.costs.get(
-		getVoxelTileHeightKey(normalizedCurrent.x, normalizedCurrent.y, normalizedCurrent.h)
+		tileHeightKey(normalizedCurrent.x, normalizedCurrent.y, normalizedCurrent.h)
 	);
 
 	if (spentCost === undefined) return null;
@@ -465,7 +454,7 @@ export function calculateVoxelRemainingMovementRange(
 				},
 			],
 			costs: new Map([[
-				getVoxelTileHeightKey(normalizedCurrent.x, normalizedCurrent.y, normalizedCurrent.h),
+				tileHeightKey(normalizedCurrent.x, normalizedCurrent.y, normalizedCurrent.h),
 				0,
 			]]),
 		};

@@ -16,8 +16,9 @@
 
 import {
 	DEFAULT_TERRAIN_RESOLUTION,
-} from "../../../domains/VoxelTerrain/voxelTerrainConstants";
-import type { Voxel, VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+	type Voxel,
+	type VoxelTerrain,
+} from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { isPassableMaterial } from "../materials/terrainMaterialRules";
 import { decodeVoxels } from "./VoxelDataUtils";
 import { resolveTerrainVoxels } from "./terrainPayloadStore";
@@ -70,6 +71,8 @@ export interface VoxelTerrainIndex {
 	// `allSurfaceHeights` -- exact sub-tactical heights, for rendering.
 	readonly allSurfaces: ReadonlyMap<string, readonly number[]>;
 	readonly allSurfaceHeights: ReadonlyMap<string, readonly number[]>;
+	/** Whether (vx, vy, vz) is inside the voxel grid. The single bounds authority. */
+	inVoxelBounds(vx: number, vy: number, vz: number): boolean;
 	hasVoxel(vx: number, vy: number, vz: number): boolean;
 	/**
 	 * Palette index (0..255) of the voxel at (vx, vy, vz), or null if no voxel
@@ -128,8 +131,16 @@ export function unpackVoxelKey(key: number): { x: number; y: number; z: number }
 	};
 }
 
-function tileKey(tileX: number, tileY: number): string {
+// Canonical string keys for the two coordinate shapes used across movement,
+// adjacency, validation, and surface lookups. These are the ONLY spellings:
+//   - tileKey(x, y)          -> `${x},${y}`        (per-tactical-tile, e.g. allSurfaces)
+//   - tileHeightKey(x, y, h) -> `${x},${y},${h}`   (a tile at a specific rules height)
+export function tileKey(tileX: number, tileY: number): string {
 	return `${tileX},${tileY}`;
+}
+
+export function tileHeightKey(tileX: number, tileY: number, h: number): string {
+	return `${tileX},${tileY},${h}`;
 }
 
 function voxelGridIndex(
@@ -263,6 +274,7 @@ export function buildVoxelTerrainIndex(
 		maxSurfaceHeight: voxelTopToTacticalHeight(maxVoxelY, resolution),
 		allSurfaces,
 		allSurfaceHeights,
+		inVoxelBounds,
 		hasVoxel(vx, vy, vz) {
 			if (!inVoxelBounds(vx, vy, vz)) return false;
 			const color = voxelColors[voxelGridIndex(

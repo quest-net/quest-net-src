@@ -10,6 +10,8 @@ import { LogActions } from "../Log/LogActions";
 import {
 	getVoxelTerrainById,
 	findTileFromCenter,
+	normalizePositionForValidation,
+	snapHeightToRules,
 } from "./VoxelTerrainQueries";
 import {
 	canStandVoxel,
@@ -18,6 +20,8 @@ import {
 } from "./VoxelMovementUtilities";
 import {
 	getVoxelTerrainIndex,
+	tileKey,
+	tileHeightKey,
 	type VoxelTerrainIndex,
 } from "../../utils/terrain/data/VoxelTerrainIndex";
 import { createFlatVoxelTerrain } from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
@@ -25,8 +29,6 @@ import { isStampTerrain } from "../../utils/terrain/editor/VoxelStampUtils";
 import type { EditableVoxelTerrain, VoxelTerrain } from "./VoxelTerrain";
 import { getScenarioTerrainIds } from "../Scenario/Scenario";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
-
-const POSITION_HEIGHT_EPSILON = 1e-6;
 
 type ActorPositionValidationResult =
 	| {
@@ -45,38 +47,13 @@ function getSurfaceHeights(
 	x: number,
 	y: number
 ): readonly number[] {
-	return index.allSurfaces.get(`${x},${y}`) ?? [];
+	return index.allSurfaces.get(tileKey(x, y)) ?? [];
 }
 
-function normalizeHeight(height: number): number {
-	const rounded = Math.round(height);
-	return Math.abs(height - rounded) <= POSITION_HEIGHT_EPSILON
-		? rounded
-		: height;
-}
-
-function normalizePositionForValidation(
-	position: Position,
-	terrain: VoxelTerrain
-): Position | null {
-	if (
-		!Number.isFinite(position.x) ||
-		!Number.isFinite(position.y) ||
-		!Number.isFinite(position.h)
-	) {
-		return null;
-	}
-
-	return {
-		terrainId: terrain.Id,
-		x: Math.round(position.x),
-		y: Math.round(position.y),
-		h: normalizeHeight(position.h),
-	};
-}
-
+// Occupancy key for an already-normalized position. Heights are epsilon-snapped
+// defensively in case a caller passes a raw (un-normalized) position.
 function positionKey(position: Position): string {
-	return `${position.x},${position.y},${normalizeHeight(position.h)}`;
+	return tileHeightKey(position.x, position.y, snapHeightToRules(position.h));
 }
 
 function validateActorPositionForTerrain(
@@ -483,7 +460,7 @@ export const VoxelTerrainUtils = {
 			const preferredH = Math.max(0, Math.min(maxHeight, normalizedCurrent.h));
 			const triedHeights = new Set<number>();
 			const tryHeight = (h: number): Position | null => {
-				const normalizedH = normalizeHeight(h);
+				const normalizedH = snapHeightToRules(h);
 				if (triedHeights.has(normalizedH)) return null;
 				triedHeights.add(normalizedH);
 				return isPositionAvailable(x, y, normalizedH);

@@ -30,7 +30,7 @@
 // -------------------------------------------------------------------------
 
 import * as THREE from 'three';
-import { isBitSet } from '../data/VoxelBitsetUtils';
+import { isBitSet } from '../../BitsetUtils';
 import type { VoxelTerrainIndex } from '../data/VoxelTerrainIndex';
 
 export interface VoxelRayHit {

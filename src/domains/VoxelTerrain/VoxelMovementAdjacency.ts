@@ -35,6 +35,8 @@ import type { VoxelTerrain } from "./VoxelTerrain";
 import {
 	createTerrainRevision,
 	getVoxelTerrainIndex,
+	tileKey,
+	tileHeightKey,
 	type VoxelTerrainIndex,
 } from "../../utils/terrain/data/VoxelTerrainIndex";
 
@@ -81,10 +83,6 @@ const EMPTY_NEIGHBORS_BY_DIRECTION: readonly (readonly VoxelMovementNeighbor[])[
 	Object.freeze(
 		VOXEL_MOVEMENT_DIRECTIONS.map(() => EMPTY_DIRECTION_BUCKET)
 	);
-
-function tileHeightKey(x: number, y: number, h: number): string {
-	return `${x},${y},${h}`;
-}
 
 /**
  * PASSAGE / clearance predicate: whether the tactical cell at rules-height `h`
@@ -185,7 +183,7 @@ export function buildVoxelMovementAdjacency(
 	): readonly (readonly VoxelMovementNeighbor[])[] | null => {
 		// Only actual surface tiles have outgoing edges. Dijkstra also probes
 		// the (possibly non-surface) start node, which lands here as a miss.
-		const surfaces = index.allSurfaces.get(`${x},${y}`);
+		const surfaces = index.allSurfaces.get(tileKey(x, y));
 		if (!surfaces || !surfaces.includes(h)) return null;
 
 		let buckets: VoxelMovementNeighbor[][] | null = null;
@@ -199,7 +197,7 @@ export function buildVoxelMovementAdjacency(
 				continue;
 			}
 
-			const neighborSurfaces = index.allSurfaces.get(`${nx},${ny}`) ?? [];
+			const neighborSurfaces = index.allSurfaces.get(tileKey(nx, ny)) ?? [];
 			if (neighborSurfaces.length === 0) continue;
 
 			for (const nh of neighborSurfaces) {

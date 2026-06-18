@@ -52,6 +52,15 @@ export interface VoxelTerrainSurroundings {
  */
 export const MAX_HEIGHT = 64;
 
+/**
+ * Voxels per tactical unit assumed when a terrain predates the resolution field
+ * (and the floor every terrain's resolution is clamped up to).
+ */
+export const DEFAULT_TERRAIN_RESOLUTION = 1;
+
+/** Tactical units above the surface a flyer spawns at. */
+export const FLYING_SPAWN_ELEVATION = 2;
+
 export const DEFAULT_VOXEL_TERRAIN_LIGHTING: VoxelTerrainLighting = {
 	Color: "#ffffff",
 	Intensity: 1.15,

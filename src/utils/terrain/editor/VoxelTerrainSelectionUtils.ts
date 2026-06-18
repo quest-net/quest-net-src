@@ -1,4 +1,4 @@
-import { isBitSet } from "../data/VoxelBitsetUtils";
+import { isBitSet } from "../../BitsetUtils";
 
 export interface VoxelCoord {
 	x: number;
