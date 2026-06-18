@@ -11,10 +11,10 @@ import {
 	FormField,
 	FormGrid,
 } from "../../components/Form/Form";
-import { TagEditor } from "../../components/inputs/TagEditor";
-import { ImagePicker } from "../../components/inputs/ImagePicker";
-import { AttributeEditor } from "../../components/inputs/AttributeEditor";
-import { ScriptingFields } from "../../components/inputs/ScriptingFields";
+import { TagEditor } from "../../components/editors/TagEditor";
+import { ImagePicker } from "../../components/pickers/ImagePicker";
+import { AttributeEditor } from "../../components/editors/AttributeEditor";
+import { ScriptingFields } from "../../components/editors/ScriptingFields";
 import { ACTOR_DEFAULT_COLORS } from "../Actor/Actor";
 import {
 	resolveStats,

@@ -5,7 +5,7 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { ImageDisplay } from "../Image/ImageDisplay";
-import { ActionBubbles } from "../../components/ActionBubbles/ActionBubbles";
+import { ActionBubbles } from "../../components/widgets/ActionBubbles";
 import { useMapState } from "../../components/Map/MapStateProvider";
 import {
 	ResolvedAction,

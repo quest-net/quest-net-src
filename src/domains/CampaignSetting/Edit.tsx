@@ -16,15 +16,15 @@ import {
 	FormGrid,
 	useFormReadOnly,
 } from "../../components/Form/Form";
-import { StatDefinitionsEditor } from "../../components/inputs/StatDefinitionEditor";
-import { ActionDefinitionEditor } from "../../components/inputs/ActionDefinitionEditor";
-import { AttributeDefinitionEditor } from "../../components/inputs/AttributeDefinitionEditor";
-import { SharedInventoriesEditor } from "../../components/inputs/SharedInventoriesEditor";
-import CalendarConfigEditor from "../../components/inputs/CalendarConfigEditor";
-import { MovementSettingsEditor } from "../../components/inputs/MovementSettingsEditor";
-import { InitiativeSettingsEditor } from "../../components/inputs/InitiativeSettingsEditor";
-import { ScriptingFields } from "../../components/inputs/ScriptingFields";
-import { SecretModeToggle } from "../../components/inputs/SecretModeToggle";
+import { StatDefinitionsEditor } from "../../components/editors/StatDefinitionEditor";
+import { ActionDefinitionEditor } from "../../components/editors/ActionDefinitionEditor";
+import { AttributeDefinitionEditor } from "../../components/editors/AttributeDefinitionEditor";
+import { SharedInventoriesEditor } from "../../components/editors/SharedInventoriesEditor";
+import CalendarConfigEditor from "../../components/editors/CalendarConfigEditor";
+import { MovementSettingsEditor } from "../../components/editors/MovementSettingsEditor";
+import { InitiativeSettingsEditor } from "../../components/editors/InitiativeSettingsEditor";
+import { ScriptingFields } from "../../components/editors/ScriptingFields";
+import { SecretModeToggle } from "../../components/editors/SecretModeToggle";
 import { CampaignStats } from "./CampaignStats";
 import { Campaign } from "../Campaign/Campaign";
 import {

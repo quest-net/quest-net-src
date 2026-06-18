@@ -26,7 +26,7 @@ import { Overview } from "./Overview";
 import { SkillCollection } from "../Skill/Collection";
 import { CombatDisplay } from "../Combat/CombatDisplay";
 import { StatusCollection } from "../Status/Collection";
-import { StickerPicker } from "../../components/Sticker/StickerPicker";
+import { StickerPicker } from "../../components/pickers/StickerPicker";
 import { SharedInventoryDisplay } from "../SharedInventory/SharedInventoryDisplay";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { findFirstPersonActor } from "../../components/Map/FirstPerson/actor";

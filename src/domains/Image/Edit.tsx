@@ -9,13 +9,13 @@ import {
 	FormField,
 	FormGrid,
 } from "../../components/Form/Form";
-import { TagEditor } from "../../components/inputs/TagEditor";
+import { TagEditor } from "../../components/editors/TagEditor";
 import {
 	UserPicker,
 	useConnectedUsers,
 	UNASSIGNED_OWNER_ID,
 	PickableUser,
-} from "../../components/inputs/UserPicker";
+} from "../../components/pickers/UserPicker";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 
 interface ImageEditProps {

@@ -8,7 +8,7 @@ import {
     FormField,
     FormGrid,
 } from "../../components/Form/Form";
-import { TagEditor } from "../../components/inputs/TagEditor";
+import { TagEditor } from "../../components/editors/TagEditor";
 import { EmptyState } from "../../components/ui/EmptyState";
 
 interface ScenarioEditProps {

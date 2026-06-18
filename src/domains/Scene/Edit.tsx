@@ -3,7 +3,7 @@
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
-import { ImagePicker } from "../../components/inputs/ImagePicker";
+import { ImagePicker } from "../../components/pickers/ImagePicker";
 
 export function SceneEdit() {
 	const context = useQuestContext();

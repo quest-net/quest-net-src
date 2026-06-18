@@ -55,10 +55,11 @@ src/
 │   ├── CollectionView/ # Grid/list display for items, skills, etc.
 │   ├── Map/            # Three.js 3D voxel map (MapScene, MapModeController, layer subdirs, terrain, first-person)
 │   ├── Dice/           # Dice roller UI
-│   ├── StatBar/        # Stat bar display
-│   ├── ActionBubbles/  # Combat action bubble overlay
-│   ├── AttributesSection/ # Actor attributes display
-│   └── inputs/         # Domain-specific inputs (ImagePicker, TagEditor, etc.)
+│   ├── ui/             # Presentational primitives (Modal, SectionCard, EmptyState, etc.)
+│   ├── widgets/        # Actor-data display widgets (StatBar, ActionBubbles, AttributesSection)
+│   ├── effects/        # Decorative visual/text effects (ASCIIText, CircularText, PixelBlast, TextType, Waves)
+│   ├── pickers/        # Modal selectors (ImagePicker, ObjectPicker, ActorPicker, UserPicker, ImpersonationPicker, TerrainPicker, StickerPicker)
+│   └── editors/        # Controlled value/field editors (TagEditor, ScriptingFields, stat/action/attribute definition + cost editors, VoxelTerrainEditor, etc.)
 ├── domains/            # Feature domains (model + actions + UI per domain)
 ├── services/           # Actions/, StateSync, ImageService, SoundEffectService,
 │                       #   TerrainStorageService, ImageGenerationService, etc.
@@ -135,9 +136,13 @@ Paginated table/list for browsing domain collections. Supports search, folder na
 
 Grid/list toggle for displaying rich items (with images, badges, descriptions, action menus). Used for inventory, skills, statuses, equipment, and similar slot-based collections.
 
-### Input Components (`src/components/inputs/`)
+### Pickers (`src/components/pickers/`)
 
-Specialized editors: `ImagePicker`, `ImageUpload`, `ImageGenerator` (AI image generation), `ActorPicker`, `ObjectPicker`, `ImpersonationPicker`, `TagEditor`, `StatDefinitionEditor`, `StatCostEditor`, `StatOverridesEditor`, `ActionDefinitionEditor`, `ActionCostEditor`, `AttributeDefinitionEditor`, `AttributeEditor`, `InitiativeSettingsEditor`, `CalendarConfigEditor`, `VoxelTerrainEditor`, `MovementSettingsEditor`, `RestoreRuleEditor`, `SharedInventoriesEditor`, `SecretModeToggle`.
+Modal selectors: `ImagePicker`, `ObjectPicker`, `ActorPicker`, `UserPicker`, `ImpersonationPicker`, `TerrainPicker`, `StickerPicker`.
+
+### Editors (`src/components/editors/`)
+
+Controlled value/field editors (value-in / onChange-out — no direct action dispatch): `TagEditor`, `SecretModeToggle`, `ImageUpload`, `ImageGenerator` (AI image generation), `ScriptingFields` / `ScriptEditor` / `ParametersEditor`, `StatDefinitionEditor`, `StatCostEditor`, `StatOverridesEditor`, `ActionDefinitionEditor`, `ActionCostEditor`, `AttributeDefinitionEditor`, `AttributeEditor`, `InitiativeSettingsEditor`, `CalendarConfigEditor`, `MovementSettingsEditor`, `RestoreRuleEditor`, `SharedInventoriesEditor`, `VoxelTerrainEditor`.
 
 `VoxelTerrainEditor` has two modes: **Normal** (tactical-tile paint/raise/lower/set via a 2D orthographic grid view) and **Sculpt** (voxel-level brush with shape, size, and depth range controls); supports 50-step undo history.
 
@@ -203,6 +208,6 @@ Keep these rules consistent — splitting a concept across folders is what breed
 
 **UI:**
 - Whole pages/layouts/views for a single domain (`Edit`, `Index`, `Display`, `Collection`, the `Main/*` panels) → `src/domains/<Domain>/`.
-- Reusable, presentation-only, or used by 2+ domains (the `ui/` primitives, `inputs/` editors, `IndexView`/`CollectionView` shells) → `src/components/`. Tiebreaker: dispatches actions / bound to one domain → domain page; takes props and renders → reusable component.
+- Reusable, presentation-only, or used by 2+ domains (the `ui/` primitives, `pickers/` selectors, `editors/` field editors, `widgets/` display widgets, `effects/`, `IndexView`/`CollectionView` shells) → `src/components/`. Tiebreaker: dispatches actions / bound to one domain → domain page; takes props and renders → reusable component.
 
 Avoid duplicate/colliding filenames across folders (e.g. two `VoxelTerrainUtils.ts`) — they make imports ambiguous and invite copy-paste drift. The wiki (pure documentation) lives at `src/wiki/`, not under `src/domains/`.

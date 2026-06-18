@@ -9,7 +9,7 @@ import {
 	getActiveOrder,
 	hasInitiativeSourceValue,
 } from "./InitiativeUtils";
-import { InitiativeSettingsEditor } from "../../components/inputs/InitiativeSettingsEditor";
+import { InitiativeSettingsEditor } from "../../components/editors/InitiativeSettingsEditor";
 import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
 import { Modal } from "../../components/ui/Modal";
 import { isItemEntity } from "../Item/ItemDropUtils";

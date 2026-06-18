@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { FormWrapper, useFormContext, useFormReadOnly } from "../../components/Form/Form";
-import { TagEditor } from "../../components/inputs/TagEditor";
+import { TagEditor } from "../../components/editors/TagEditor";
 import VoxelTerrainEditor, {
 	type ActorOverlayInfo,
 	type VoxelTerrainEditorHandle,
-} from "../../components/inputs/VoxelTerrainEditor";
+} from "../../components/editors/VoxelTerrainEditor";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import type {
 	EditableVoxelTerrain,

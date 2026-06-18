@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
-import { ImageUpload } from "../../components/inputs/ImageUpload";
+import { ImageUpload } from "../../components/editors/ImageUpload";
 import {
 	IndexView,
 	IndexViewItem,
@@ -16,7 +16,7 @@ import {
 	useConnectedUsers,
 	UNASSIGNED_OWNER_ID,
 	PickableUser,
-} from "../../components/inputs/UserPicker";
+} from "../../components/pickers/UserPicker";
 import { EmptyState } from "../../components/ui/EmptyState";
 
 export function ImageIndex() {

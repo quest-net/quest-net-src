@@ -5,7 +5,7 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { ImageDisplay } from "../Image/ImageDisplay";
-import { ImagePicker } from "../../components/inputs/ImagePicker";
+import { ImagePicker } from "../../components/pickers/ImagePicker";
 import { DetailDrawer } from "../../components/ui/DetailDrawer";
 import { SectionCard } from "../../components/ui/SectionCard";
 import { PropertyRow } from "../../components/ui/PropertyRow";

@@ -7,7 +7,7 @@ import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { CharacterEdit } from "./Edit";
 import { IndexView, IndexViewItem, SelectionAction } from "../../components/IndexView/IndexView";
 import { replacePathTag } from "../../utils/FolderUtils";
-import { ObjectPicker, ObjectTypeConfig } from "../../components/inputs/ObjectPicker";
+import { ObjectPicker, ObjectTypeConfig } from "../../components/pickers/ObjectPicker";
 import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
 
 export function CharacterIndex() {
