@@ -22,7 +22,7 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogUtils } from "./LogUtils";
-import { LogEntry } from "./LogEntry";
+import { LogEntry } from "./Log";
 import { isCritRoll, getCritRollValue } from "../../utils/DiceUtils";
 import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
 import { loadImageBlob } from "../Image/ImageLoading";

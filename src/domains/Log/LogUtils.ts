@@ -1,4 +1,4 @@
-import { LogEntry } from "./LogEntry";
+import { LogEntry } from "./Log";
 
 export const MAX_LOG_SIZE = 1000;
 

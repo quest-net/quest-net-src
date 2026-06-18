@@ -1,6 +1,6 @@
 // utils/DiceUtils.ts
 
-import type { LogEntry } from "../domains/Log/LogEntry";
+import type { LogEntry } from "../domains/Log/Log";
 
 const MAX_DICE_PER_GROUP = 20;  // Max dice in a single group (e.g., 100d20)
 const MAX_TOTAL_DICE = 20;       // Max total dice across all groups

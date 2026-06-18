@@ -1,9 +1,9 @@
-// components/display/SharedInventoryDisplay.tsx
+// domains/SharedInventory/SharedInventoryDisplay.tsx
 
 import { useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
-import { SharedInventory } from "../CampaignSetting/CampaignSetting";
+import { SharedInventory } from "./SharedInventory";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { StatBar } from "../../components/widgets/StatBar";
 import { ItemSlotDisplay } from "../Item/ItemSlotDisplay";

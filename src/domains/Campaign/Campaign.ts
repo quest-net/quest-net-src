@@ -2,7 +2,7 @@ import { Character } from "../Character/Character";
 import { Item } from "../Item/Item";
 import { Skill } from "../Skill/Skill";
 import { Image } from "../Image/Image";
-import { LogEntry } from "../Log/LogEntry";
+import { LogEntry } from "../Log/Log";
 import { Audio } from "../Audio/Audio";
 import { Status } from "../Status/Status";
 import { GameState } from "../GameState/GameState";

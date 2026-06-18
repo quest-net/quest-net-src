@@ -1,6 +1,7 @@
 // components/editors/StatDefinitionEditor.tsx
 import { useState } from "react";
-import { SharedInventory, StatDefinition } from "../../domains/CampaignSetting/CampaignSetting";
+import { StatDefinition } from "../../domains/CampaignSetting/CampaignSetting";
+import { SharedInventory } from "../../domains/SharedInventory/SharedInventory";
 import { useFormReadOnly } from "../Form/Form";
 import { RestoreRuleEditor } from "./RestoreRuleEditor";
 import { Modal } from "../ui/Modal";

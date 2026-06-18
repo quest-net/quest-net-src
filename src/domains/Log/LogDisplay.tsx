@@ -11,7 +11,7 @@ import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
-import { LogEntry, LogCategory } from "./LogEntry";
+import { LogEntry, LogCategory } from "./Log";
 import { LogUtils } from "./LogUtils";
 import { getMentionTargets, parseMentions } from "./MentionUtils";
 import { EmptyState } from "../../components/ui/EmptyState";

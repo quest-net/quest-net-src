@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
-import { LogEntry } from "./LogEntry";
+import { LogEntry } from "./Log";
 import { LogUtils } from "./LogUtils";
 import { DM_MENTION_ID } from "./MentionUtils";
 import { isDiceRoll, isCritRoll, isFumbleRoll } from "../../utils/DiceUtils";

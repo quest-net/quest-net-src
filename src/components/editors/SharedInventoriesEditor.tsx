@@ -1,6 +1,6 @@
 // components/editors/SharedInventoriesEditor.tsx
 import { useState } from "react";
-import { SharedInventory } from "../../domains/CampaignSetting/CampaignSetting";
+import { SharedInventory } from "../../domains/SharedInventory/SharedInventory";
 import { useFormReadOnly } from "../Form/Form";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";

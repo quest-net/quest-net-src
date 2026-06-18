@@ -1,4 +1,4 @@
-// LogEntry.ts - Updated
+// domains/Log/Log.ts
 export interface LogEntry {
 	Id: string;
 	Timestamp: number;

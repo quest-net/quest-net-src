@@ -1,5 +1,5 @@
 // domains/CampaignSetting/CampaignSetting.ts
-import { InventorySlot } from "../Actor/Actor";
+import { SharedInventory } from "../SharedInventory/SharedInventory";
 import {
 	createDefaultVoxelTerrainEnvironmentPresets,
 	type VoxelTerrainEnvironmentPreset,
@@ -65,13 +65,6 @@ export type InitiativeSource =
 	| { kind: "stat"; statId: string }
 	| { kind: "attribute"; attributeId: string }
 	| { kind: "moveSpeed" };
-
-export interface SharedInventory {
-	Id: string;
-	Name: string;
-	Stats: import("../Actor/Actor").StatSlot[];
-	Inventory: InventorySlot[];
-}
 
 /**
  * StatDefinition is a campaign-wide template that defines a stat type.

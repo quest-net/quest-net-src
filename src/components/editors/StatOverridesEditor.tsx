@@ -1,10 +1,8 @@
 // components/editors/StatOverridesEditor.tsx
 
 import { StatSlot } from "../../domains/Actor/Actor";
-import {
-	StatDefinition,
-	SharedInventory,
-} from "../../domains/CampaignSetting/CampaignSetting";
+import { StatDefinition } from "../../domains/CampaignSetting/CampaignSetting";
+import { SharedInventory } from "../../domains/SharedInventory/SharedInventory";
 import { RestoreRuleEditor } from "./RestoreRuleEditor";
 import { useFormReadOnly } from "../Form/Form";
 

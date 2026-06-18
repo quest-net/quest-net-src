@@ -4,7 +4,7 @@ import {
 	LogCategory,
 	LogLevel,
 	LogVisibility,
-} from "../Log/LogEntry";
+} from "../Log/Log";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { MAX_LOG_SIZE } from "./LogUtils";
 
