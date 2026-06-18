@@ -1,8 +1,10 @@
 // hooks/usePeerTracking.ts
 import { useEffect } from "react";
+import { useSnapshot } from "valtio";
 import { selfId } from "trystero";
 import { useActionService } from "../services/Actions/ActionServiceProvider";
 import { useQuestContext } from "../domains/Context/ContextProvider";
+import { presenceStore } from "../domains/Context/contextStore";
 import { User } from "../domains/User/User";
 
 export interface PeerInfo {
@@ -41,6 +43,13 @@ export function usePeerTracking(): PeerTrackingData {
 	const context = useQuestContext();
 	const campaign = context.ActiveCampaign;
 	const roomCode = campaign?.RoomCode;
+
+	// Peer presence + pings live on the ActionService instance (transient, never
+	// persisted), and ActionService bumps presenceStore.version whenever they
+	// change. Subscribing here re-renders this hook on each change so the peer
+	// list/pings below stay current.
+	const { version: presenceVersion } = useSnapshot(presenceStore);
+	void presenceVersion;
 
 	// Re-broadcast our User whenever it changes (character selection, etc.).
 	// ActionService dedupes against the last broadcast, so calling this from

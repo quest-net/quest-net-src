@@ -1,6 +1,7 @@
 // domains/Main/Main.tsx - Updated
 
-import { useQuestContext, triggerContextUpdate } from "../Context/ContextProvider";
+import { useQuestContext } from "../Context/ContextProvider";
+import { forceContextRerender } from "../Context/contextStore";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import MapScene, { type CameraPreference } from "../../components/Map/MapScene";
@@ -281,7 +282,7 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 		);
 		if (terrain && !TerrainStorageService.isHydrated(terrain)) {
 			void TerrainStorageService.hydrateTerrain(campaign, renderedTerrainId).then(
-				() => triggerContextUpdate()
+				() => forceContextRerender()
 			);
 		}
 	}, [renderedTerrainId, campaign]);

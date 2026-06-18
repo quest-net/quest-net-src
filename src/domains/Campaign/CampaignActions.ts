@@ -1,6 +1,5 @@
 import { Context } from "../Context/Context";
 import { Campaign } from "./Campaign";
-import { ContextService } from "../Context/ContextService";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 import { assertUsableRoomCode } from "./CampaignUtils";
 
@@ -53,7 +52,5 @@ export const CampaignActions = {
 		info.CharacterCount =
 			(campaign.CharacterRoster?.length ?? 0) +
 			(campaign.GameState?.Characters?.length ?? 0);
-
-		ContextService.save(context);
 	},
 };

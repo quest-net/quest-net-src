@@ -1,10 +1,8 @@
 // domains/Character/CharacterSelect.tsx
 
 import { useState } from "react";
-import {
-	useQuestContext,
-	triggerContextUpdate,
-} from "../Context/ContextProvider";
+import { useQuestContext } from "../Context/ContextProvider";
+import { contextStore } from "../Context/contextStore";
 import { PeerInfo } from "../../hooks/usePeerTracking";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { UserUtils } from "../User/UserUtils";
@@ -44,9 +42,8 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 				campaignId: campaign.RoomCode,
 				characterId: character.Id,
 			},
-			context
+			contextStore
 		);
-		triggerContextUpdate();
 	};
 
 	const handleOpenCreate = () => {

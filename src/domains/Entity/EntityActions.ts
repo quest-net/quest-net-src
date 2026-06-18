@@ -8,6 +8,7 @@ import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
 import { getVoxelSpawnPosition, getVoxelTerrainById } from "../VoxelTerrain/VoxelTerrainQueries";
 import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
 import { EntityUtils } from "./EntityUtils";
+import { toPlain } from "../../utils/toPlain";
 
 /**
  * Entity action handlers
@@ -122,9 +123,11 @@ export const EntityActions = {
 			});
 		}
 
-		// CLONE: Create new instance with new ID.
+		// CLONE: Create new instance with new ID. toPlain unwraps the Valtio proxy
+		// (structuredClone throws on proxies); structuredClone then gives a fully
+		// independent, mutable deep copy isolated from the template.
 		const instance: Entity = {
-			...structuredClone(template),
+			...structuredClone(toPlain(template)),
 			Id: params.instanceId ?? crypto.randomUUID(), // New ID for the instance
 			Color: template.Color ?? ACTOR_DEFAULT_COLORS.ENTITY,
 		};

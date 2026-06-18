@@ -2,10 +2,8 @@
 
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  useQuestContext,
-  triggerContextUpdate,
-} from "../Context/ContextProvider";
+import { useQuestContext } from "../Context/ContextProvider";
+import { contextStore } from "../Context/contextStore";
 import { useIsOffscreen, FloatingActionBar } from "../../components/Form/Form";
 import { AppSettingUtils } from "./AppSettingUtils";
 import { ToggleButton } from "../../components/ui/ToggleButton";
@@ -92,35 +90,41 @@ export function AppSettingEdit() {
   const handleSave = () => {
     setIsSaving(true);
 
-    // General
-    AppSettingUtils.setTheme({ theme }, context);
-    AppSettingUtils.setPlayerVolume({ volume: volumePercent / 100 }, context);
+    // General — writes target the proxy store (Valtio re-renders consumers).
+    AppSettingUtils.setTheme({ theme }, contextStore);
+    AppSettingUtils.setPlayerVolume(
+      { volume: volumePercent / 100 },
+      contextStore
+    );
     AppSettingUtils.setSfxVolume({ volume: sfxVolumePercent / 100 });
     AppSettingUtils.setPreserveFlyingHeightOnTileMove(
       { preserve: preserveFlyingHeightOnTileMove },
-      context
+      contextStore
     );
-    AppSettingUtils.setPerformanceMode({ enabled: performanceMode }, context);
+    AppSettingUtils.setPerformanceMode(
+      { enabled: performanceMode },
+      contextStore
+    );
     AppSettingUtils.setCritSplashEnabled(
       { enabled: critSplashEnabled },
-      context
+      contextStore
     );
 
     // Image service selection
-    AppSettingUtils.setImageService({ providerId: imageService }, context);
+    AppSettingUtils.setImageService({ providerId: imageService }, contextStore);
 
     // Save ALL entered keys (so switching back to a provider doesn't lose its key)
     for (const provider of PROVIDER_REGISTRY) {
       const key = apiKeys[provider.id]?.trim();
       AppSettingUtils.setProviderApiKey(
         { providerId: provider.id, apiKey: key || undefined },
-        context
+        contextStore
       );
       if (provider.requiresSecret) {
         const secret = apiSecrets[provider.id]?.trim();
         AppSettingUtils.setProviderApiSecret(
           { providerId: provider.id, apiSecret: secret || undefined },
-          context
+          contextStore
         );
       }
     }
@@ -128,10 +132,9 @@ export function AppSettingEdit() {
     // Prompt template
     AppSettingUtils.setImagePromptTemplate(
       { template: imagePromptTemplate },
-      context
+      contextStore
     );
 
-    triggerContextUpdate();
     setIsSaving(false);
     navigate("/");
   };

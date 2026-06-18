@@ -9,6 +9,7 @@ import {
 } from "../utils/IndexedDBUtilities";
 import { getMostCommonVoxelTerrainColor } from "../utils/terrain/editor/VoxelTerrainEditorUtils";
 import { getVoxelCount, hashVoxels } from "../utils/terrain/data/VoxelDataUtils";
+import { toPlain } from "../utils/toPlain";
 import {
 	dropTerrainVoxels,
 	getMaterializedContentHash,
@@ -456,7 +457,9 @@ export class TerrainStorageService {
 	 * contained payload is required.
 	 */
 	static async hydrateAllTerrains(campaign: Campaign): Promise<Campaign> {
-		const clone = structuredClone(campaign);
+		// campaign may be the live Valtio proxy; toPlain unwraps it (structuredClone
+		// throws on proxies), then structuredClone gives a mutable deep copy.
+		const clone = structuredClone(toPlain(campaign));
 		for (const terrain of clone.VoxelTerrains ?? []) {
 			const voxels =
 				(getTerrainVoxels(terrain.Id) ||

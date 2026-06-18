@@ -1,8 +1,6 @@
 import { AppSettingUtils } from "../../domains/AppSetting/AppSettingUtils";
-import {
-	triggerContextUpdate,
-	useQuestContext,
-} from "../../domains/Context/ContextProvider";
+import { useQuestContext } from "../../domains/Context/ContextProvider";
+import { contextStore } from "../../domains/Context/contextStore";
 
 interface ThemeToggleProps {
 	size?: "sm" | "md";
@@ -18,8 +16,7 @@ export function ThemeToggle({ size = "md" }: ThemeToggleProps) {
 	const translateClass = size === "sm" ? "translate-x-10" : "translate-x-12";
 
 	const handleToggle = () => {
-		AppSettingUtils.setTheme({ theme: nextTheme }, context);
-		triggerContextUpdate();
+		AppSettingUtils.setTheme({ theme: nextTheme }, contextStore);
 	};
 
 	return (

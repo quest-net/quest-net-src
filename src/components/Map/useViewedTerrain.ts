@@ -14,10 +14,8 @@
 // character), but calling the hook from shared components is harmless — writes
 // just sit in local Context state.
 
-import {
-	useQuestContext,
-	triggerContextUpdate,
-} from "../../domains/Context/ContextProvider";
+import { useQuestContext } from "../../domains/Context/ContextProvider";
+import { contextStore } from "../../domains/Context/contextStore";
 import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import type { Campaign } from "../../domains/Campaign/Campaign";
 
@@ -102,9 +100,8 @@ export function useViewedTerrain(): ViewedTerrainState {
 		viewedTerrainIds[0] ?? inferDefaultTerrainId(campaign);
 
 	const writeList = (next: string[]) => {
-		if (!context.ViewedTerrains) context.ViewedTerrains = {};
-		context.ViewedTerrains[campaign.Id] = next;
-		triggerContextUpdate();
+		if (!contextStore.ViewedTerrains) contextStore.ViewedTerrains = {};
+		contextStore.ViewedTerrains[campaign.Id] = next;
 	};
 
 	const setViewedTerrain = (terrainId: string) => {

@@ -275,10 +275,10 @@ export const ContextService = {
 	},
 
 	/**
-	 * Debounced persistence path used by triggerContextUpdate. Writes the active
-	 * terrain's voxels to IndexedDB (only when they changed) and persists a
-	 * voxel-stubbed Context to localStorage, keeping the large terrain blob off
-	 * the per-action serialization path.
+	 * Debounced persistence path driven by ContextProvider's Valtio subscription.
+	 * Writes the active terrain's voxels to IndexedDB (only when they changed) and
+	 * persists a voxel-stubbed Context to localStorage, keeping the large terrain
+	 * blob off the per-action serialization path.
 	 */
 	async flush(context: Context): Promise<void> {
 		await writeHydratedTerrainsThroughIfChanged(context);

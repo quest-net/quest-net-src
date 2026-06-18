@@ -9,6 +9,7 @@ import type {
 	VoxelTerrainOccupancy,
 } from "../geometry/VoxelTerrainGeometryUtils";
 import { createTerrainRevision } from "../../../../utils/terrain/data/VoxelTerrainIndex";
+import { toPlain } from "../../../../utils/toPlain";
 
 // ---------------------------------------------------------------------------
 // Worker protocol types
@@ -277,7 +278,10 @@ export function useVoxelTerrainGeometryWorker(
 		});
 
 		try {
-			worker.postMessage({ buildId, terrain, voxels });
+			// `terrain` comes from useQuestContext() (a Valtio tracking proxy) —
+			// postMessage's structured clone throws on proxies, so unwrap to plain.
+			// `voxels` is already a base64 string.
+			worker.postMessage({ buildId, terrain: toPlain(terrain), voxels });
 		} catch (postError) {
 			const handler = pendingBuildHandlers.get(buildId);
 			pendingBuildHandlers.delete(buildId);

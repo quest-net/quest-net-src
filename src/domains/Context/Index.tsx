@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useQuestContext, triggerContextUpdate } from "./ContextProvider";
+import { useQuestContext } from "./ContextProvider";
+import { contextStore } from "./contextStore";
 import { useNavigate } from "react-router-dom";
 import { UserUtils } from "../User/UserUtils";
 import ASCIIText from "../../components/effects/ASCIIText";
@@ -29,8 +30,7 @@ export function Home() {
 		const trimmed = value.trim();
 		if (!trimmed) return;
 		setName(trimmed);
-		UserUtils.setName({ name: trimmed }, context);
-		triggerContextUpdate();
+		UserUtils.setName({ name: trimmed }, contextStore);
 	};
 
 	return (

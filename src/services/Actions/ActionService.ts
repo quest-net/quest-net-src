@@ -7,7 +7,8 @@ import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { StateSync } from "../StateSync";
 import { ImageService } from "../ImageService";
 import { Room, type ActionSend } from "../../domains/Room/Room";
-import { triggerContextUpdate } from "../../domains/Context/ContextProvider";
+import { bumpPresence } from "../../domains/Context/contextStore";
+import { snapshot } from "valtio";
 import { RoomService } from "../../domains/Room/RoomService";
 import { LogUtils } from "../../domains/Log/LogUtils";
 import { User } from "../../domains/User/User";
@@ -102,8 +103,8 @@ export class ActionService {
 			: false;
 
 		if (didChangeUser || didChangeConnection) {
-			// Presence-only: re-render, but don't re-serialize the campaign.
-			triggerContextUpdate(undefined, { persist: false });
+			// Presence-only re-render (transient, separate non-persisted store).
+			bumpPresence();
 		}
 	}
 
@@ -116,8 +117,8 @@ export class ActionService {
 		this.stopPinging(peerId);
 		this.actorPoseService.clearForPeer(peerId);
 		if (hadConnection || hadUser) {
-			// Presence-only: re-render, but don't re-serialize the campaign.
-			triggerContextUpdate(undefined, { persist: false });
+			// Presence-only re-render (transient, separate non-persisted store).
+			bumpPresence();
 		}
 	}
 
@@ -175,8 +176,8 @@ export class ActionService {
 					: false;
 
 				if (didChangeUser || didChangeConnection) {
-					// Presence-only: re-render, but don't re-serialize the campaign.
-					triggerContextUpdate(undefined, { persist: false });
+					// Presence-only re-render (transient, separate non-persisted store).
+					bumpPresence();
 				}
 			}
 		};
@@ -204,56 +205,39 @@ export class ActionService {
 
 	private async applyPlayerStateUpdate(campaign: Campaign): Promise<void> {
 		// ISOLATION: clone so the UI can mutate optimistically without
-		// polluting StateSync's internal baseline.
+		// polluting StateSync's internal baseline. Prepare the plain clone
+		// before it lands on the proxy so terrain hydration doesn't pay the
+		// proxy-tracking cost.
 		const isolatedCampaign = structuredClone(campaign);
 		await TerrainStorageService.prepareCampaignAfterLoad(isolatedCampaign);
 		const refreshedInfo =
 			CampaignLoadingService.buildPlayerInfo(isolatedCampaign);
 
-		// Keep the captured context in lockstep with React state. The mutator
-		// below lands the new ActiveCampaign on the live React state, but
-		// action handlers invoked via runDomainAction read from this.context.
-		// Without this direct assignment, a player who joins a campaign for
-		// the first time while another campaign was previously active ends up
-		// with a stale this.context.ActiveCampaign === null, and every
-		// subsequent action throws "No active campaign for identifier: ...".
-		// (Inner-reference fields like Campaigns[] propagate automatically
-		// through the shallow spread, so only top-level reassignments need
-		// this extra step.)
+		// Land the new authoritative campaign + refreshed metadata directly on
+		// the proxy store (this.context). Valtio re-renders the components that
+		// read these fields — no manual trigger, and no captured-reference
+		// staleness, because the proxy is the single source of truth.
 		this.context.ActiveCampaign = isolatedCampaign;
 
-		// Use the mutator form of triggerContextUpdate so that reassigning the
-		// top-level ActiveCampaign field lands on the live React state rather
-		// than the stale context object we captured at construction.
-		const applyUpdate = () => {
-			if (this.onFirstUpdateCallback) {
-				this.onFirstUpdateCallback();
-				this.onFirstUpdateCallback = undefined;
-			}
-		};
-
-		triggerContextUpdate((ctx) => {
-			ctx.ActiveCampaign = isolatedCampaign;
-
-			const idx = ctx.Campaigns.findIndex(
-				(c) => c.Id === refreshedInfo.Id
-			);
-			if (idx !== -1) {
-				ctx.Campaigns[idx] = refreshedInfo;
-			} else {
-				ctx.Campaigns.push(refreshedInfo);
-			}
-		});
+		const idx = this.context.Campaigns.findIndex(
+			(c) => c.Id === refreshedInfo.Id
+		);
+		if (idx !== -1) {
+			this.context.Campaigns[idx] = refreshedInfo;
+		} else {
+			this.context.Campaigns.push(refreshedInfo);
+		}
 
 		// Live actor poses are deliberately NOT cleared here. Poses self-expire
 		// (ACTOR_POSE_TIMEOUT_MS) and are pruned on peer loss; wiping them all on
 		// every incoming broadcast made walking tokens lurch back toward their
 		// last committed tile whenever ANY action landed.
 
-		// Resolve the first-update promise after the React update has been
-		// queued so CampaignView's setState({ status: "ready" }) batches with
-		// our setContext.
-		applyUpdate();
+		// Promote CampaignView to "ready" on the first state we receive.
+		if (this.onFirstUpdateCallback) {
+			this.onFirstUpdateCallback();
+			this.onFirstUpdateCallback = undefined;
+		}
 	}
 
 	private setupPeerHandlers() {
@@ -267,8 +251,8 @@ export class ActionService {
 			}
 
 			if (didChangeConnection) {
-				// Presence-only: re-render, but don't re-serialize the campaign.
-				triggerContextUpdate(undefined, { persist: false });
+				// Presence-only re-render (transient, separate non-persisted store).
+				bumpPresence();
 			}
 		};
 
@@ -337,8 +321,8 @@ export class ActionService {
 		}
 
 		if (didChange) {
-			// Presence-only: re-render, but don't re-serialize the campaign.
-			triggerContextUpdate(undefined, { persist: false });
+			// Presence-only re-render (transient, separate non-persisted store).
+			bumpPresence();
 		}
 	}
 
@@ -354,8 +338,8 @@ export class ActionService {
 				const ms = await this.pingWithTimeout(peerId);
 				this.peerPings.set(peerId, ms);
 				this.pingFailures.delete(peerId);
-				// Presence-only: re-render, but don't re-serialize the campaign.
-				triggerContextUpdate(undefined, { persist: false });
+				// Presence-only re-render (transient, separate non-persisted store).
+				bumpPresence();
 			} catch {
 				// Count consecutive failures; a sustained run means the
 				// connection is dead even if Trystero hasn't noticed.
@@ -477,7 +461,6 @@ export class ActionService {
 		await producer();
 		const campaign = CampaignUtils.getActiveCampaign(this.context);
 		await TerrainStorageService.packInactiveTerrains(campaign);
-		this.bumpCampaignRefs(campaign);
 		this.commitActiveCampaign(campaign);
 		return campaign;
 	}
@@ -487,28 +470,35 @@ export class ActionService {
 		const campaign = CampaignUtils.getActiveCampaign(this.context);
 		const isSecret = this.context.SecretModes?.[campaign.Id];
 		if (isSecret) return;
+		// Pack inactive terrains on the live proxy first, then broadcast a plain
+		// snapshot so no proxy leaks into StateSync's diffing/transport.
 		await TerrainStorageService.packInactiveTerrains(campaign);
-		this.stateSync.broadcastFull(campaign);
+		this.stateSync.broadcastFull(this.snapshotActiveCampaign());
 	}
 
 	/**
-	 * Writes a new ActiveCampaign reference to BOTH this.context (the object
-	 * ActionService captured at construction) AND the live React state. They
-	 * are different objects after the first triggerContextUpdate -- the
-	 * ContextProvider's `{...current}` spread creates a fresh top-level
-	 * Context, so this.context becomes a captured-but-stale wrapper around
-	 * the same inner fields.
-	 *
-	 * This is the same pattern used by applyPlayerStateUpdate. It is still
-	 * useful in the in-place mutation regime because ActionService holds a
-	 * captured top-level Context object, while React owns the live top-level
-	 * Context object after the first triggerContextUpdate() spread.
+	 * Pins the active campaign onto the proxy store. Domain actions mutate the
+	 * campaign in place (which Valtio already tracks); this also covers the rare
+	 * action that REPLACES context.ActiveCampaign wholesale. `this.context` is
+	 * the proxy itself, so there is no longer a stale captured-reference problem
+	 * to reconcile — and persistence is handled by ContextProvider's
+	 * subscription, not here.
 	 */
 	private commitActiveCampaign(campaign: Campaign): void {
 		this.context.ActiveCampaign = campaign;
-		triggerContextUpdate((ctx) => {
-			ctx.ActiveCampaign = campaign;
-		});
+	}
+
+	/**
+	 * A plain, deeply-immutable copy of the active campaign for StateSync /
+	 * network use. Snapshotting at this boundary guarantees no live Valtio proxy
+	 * leaks into JSON-patch diffing, compression, or the wire.
+	 */
+	private snapshotActiveCampaign(): Campaign {
+		const active = this.context.ActiveCampaign;
+		if (!active) {
+			throw new Error("[ActionService] No active campaign to broadcast");
+		}
+		return snapshot(active) as unknown as Campaign;
 	}
 
 	/**
@@ -532,7 +522,7 @@ export class ActionService {
 
 		const isSecret = this.context.SecretModes?.[campaign.Id];
 		if (!isSecret) {
-			this.stateSync.broadcast(campaign);
+			this.stateSync.broadcast(this.snapshotActiveCampaign());
 		}
 
 		this.actorPoseService.clearForAuthoritativeAction(actionKey, params);
@@ -623,11 +613,11 @@ export class ActionService {
 			// We continue to broadcast below to force a reset if needed
 		}
 
-		// Broadcast updated campaign to all players. Re-read because the
-		// mutateCampaign above may have thrown, in which case we want to
-		// broadcast the pre-mutation state to reset the player's optimistic
-		// update.
-		const campaign = CampaignUtils.getActiveCampaign(this.context);
+		// Broadcast updated campaign to all players. Snapshot the current proxy
+		// state (post-attempt) — if the mutateCampaign above threw, this is the
+		// pre-mutation state, which is exactly what resets the player's
+		// optimistic update.
+		const campaign = this.snapshotActiveCampaign();
 
 		if (LogUtils.isCommand(data.params, "/REQUEST_FULL_SYNC")) {
 			this.stateSync.broadcastFull(campaign);
@@ -681,8 +671,8 @@ export class ActionService {
 		if (this.context.User.Role === "dm") {
 			// Empty producer: mutateCampaign still serializes against in-flight
 			// actions and packs inactive terrains before we broadcast.
-			const campaign = await this.mutateCampaign(async () => {});
-			this.stateSync.broadcastFull(campaign);
+			await this.mutateCampaign(async () => {});
+			this.stateSync.broadcastFull(this.snapshotActiveCampaign());
 		}
 	}
 
@@ -702,36 +692,6 @@ export class ActionService {
 		if (this.room) {
 			RoomService.leave(this.room);
 		}
-	}
-
-	/**
-	 * Make new references for collections commonly used as memo dependencies.
-	 * Domain actions still mutate in place; the context update re-renders the
-	 * tree, and these shallow bumps keep useMemo/useEffect deps from going stale.
-	 */
-	private bumpCampaignRefs(campaign: Campaign): void {
-		campaign.CharacterRoster = [...campaign.CharacterRoster];
-		campaign.ItemTemplates = [...campaign.ItemTemplates];
-		campaign.SkillTemplates = [...campaign.SkillTemplates];
-		campaign.StatusTemplates = [...campaign.StatusTemplates];
-		campaign.EntityTemplates = [...campaign.EntityTemplates];
-		campaign.VoxelTerrains = [...campaign.VoxelTerrains];
-		campaign.Audios = [...campaign.Audios];
-		campaign.Images = [...campaign.Images];
-		campaign.Scenarios = [...campaign.Scenarios];
-		campaign.TerrainLinks = [...(campaign.TerrainLinks ?? [])];
-		campaign.Log = [...campaign.Log];
-		campaign.GameState = {
-			...campaign.GameState,
-			Characters: [...campaign.GameState.Characters],
-			Entities: [...campaign.GameState.Entities],
-		};
-		campaign.Settings = {
-			...campaign.Settings,
-			SharedInventories: campaign.Settings.SharedInventories
-				? [...campaign.Settings.SharedInventories]
-				: campaign.Settings.SharedInventories,
-		};
 	}
 
 }

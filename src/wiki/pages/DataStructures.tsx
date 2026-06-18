@@ -69,9 +69,13 @@ export const dataStructuresPage: WikiPage = {
 				<div className="space-y-4">
 					<p>
 						<Code>Context</Code> is defined in <Code>src/domains/Context/Context.ts</Code>.
-						It is persisted by <Code>ContextService.save</Code> and refreshed
-						through <Code>triggerContextUpdate</Code>. Most nested mutations rely on
-						a shallow context spread to re-render the UI.
+						It lives in a <WikiHighlight tone="primary">Valtio proxy</WikiHighlight>{" "}
+						(<Code>src/domains/Context/contextStore.ts</Code>) that is the single
+						source of truth. Components read it through{" "}
+						<Code>useQuestContext()</Code> (a Valtio snapshot, so each component
+						re-renders only when a field it actually reads changes) and write by
+						mutating <Code>contextStore</Code> directly. Persistence is handled by a
+						debounced subscription in <Code>ContextProvider</Code>.
 					</p>
 					<FieldGrid
 						items={[
@@ -115,10 +119,10 @@ export const dataStructuresPage: WikiPage = {
 					/>
 					<Callout tone="warning" title="Developer guardrail">
 						<p>
-							When reassigning a top-level field such as{" "}
-							<Code>ActiveCampaign</Code>, use the mutator form of{" "}
-							<Code>triggerContextUpdate</Code>. Directly changing a stale captured
-							context object can leave React state behind.
+							Mutate <Code>contextStore</Code> (or anything reached through it) —
+							never the value returned by <Code>useQuestContext()</Code>, which is
+							a frozen Valtio snapshot and throws on write. Reads in render go
+							through the snapshot; writes go through the proxy.
 						</p>
 					</Callout>
 				</div>

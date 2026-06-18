@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import {
-	triggerContextUpdate,
-	useQuestContext,
-} from "../Context/ContextProvider";
+import { useQuestContext } from "../Context/ContextProvider";
+import { contextStore } from "../Context/contextStore";
 import { AppSettingUtils } from "./AppSettingUtils";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 
@@ -68,8 +66,7 @@ export function AppSettingsDisplay() {
 
 	const handleThemeChange = (nextTheme: "light" | "dark") => {
 		setTheme(nextTheme);
-		AppSettingUtils.setTheme({ theme: nextTheme }, context);
-		triggerContextUpdate();
+		AppSettingUtils.setTheme({ theme: nextTheme }, contextStore);
 	};
 
 	const handleSfxVolumeChange = (nextVolumePercent: number) => {
@@ -87,22 +84,19 @@ export function AppSettingsDisplay() {
 		setPreserveFlyingHeightOnTileMove(preserve);
 		AppSettingUtils.setPreserveFlyingHeightOnTileMove(
 			{ preserve },
-			context
+			contextStore
 		);
-		triggerContextUpdate();
 	};
 
 	const handlePerformanceModeChange = (enabled: boolean) => {
 		setPerformanceMode(enabled);
 		setPerformanceModeChanged(true);
-		AppSettingUtils.setPerformanceMode({ enabled }, context);
-		triggerContextUpdate();
+		AppSettingUtils.setPerformanceMode({ enabled }, contextStore);
 	};
 
 	const handleCritSplashChange = (enabled: boolean) => {
 		setCritSplashEnabled(enabled);
-		AppSettingUtils.setCritSplashEnabled({ enabled }, context);
-		triggerContextUpdate();
+		AppSettingUtils.setCritSplashEnabled({ enabled }, contextStore);
 	};
 
 	return (

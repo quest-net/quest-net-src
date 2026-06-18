@@ -11,6 +11,7 @@ import { TerrainStorageService } from "./TerrainStorageService";
 import { runMigrations } from "../migrations/runMigrations";
 import { campaignMigrations } from "../migrations/campaignMigrations";
 import { addMissingDefaultVoxelStamps } from "../data/defaultVoxelStamps";
+import { toPlain } from "../utils/toPlain";
 
 /**
  * CampaignLoadingService
@@ -37,7 +38,9 @@ export class CampaignLoadingService {
 		const record = {
 			Id: campaign.Id,
 			Version: APP_VERSION,
-			Campaign: campaign,
+			// campaign may be the live Valtio proxy; IndexedDB's structured clone
+			// throws on proxies, so store a plain snapshot.
+			Campaign: toPlain(campaign),
 			SavedAt: Date.now(),
 		};
 

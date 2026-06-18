@@ -2,7 +2,6 @@ import { Context } from "../Context/Context";
 import { Campaign } from "./Campaign";
 import { CampaignInfo } from "./CampaignInfo";
 import { getUrlIdentifier, isReservedRouteKeyword } from "../../utils/UrlParser";
-import { ContextService } from "../Context/ContextService";
 import { CampaignSettingUtils } from "../CampaignSetting/CampaignSettingUtils";
 import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 import { APP_VERSION, type VersionString } from "../../version";
@@ -261,7 +260,6 @@ export const CampaignUtils = {
 
 		const info = CampaignLoadingService.buildInfo(campaign);
 		context.Campaigns.push(info);
-		ContextService.save(context);
 
 		return info;
 	},
@@ -354,8 +352,6 @@ export const CampaignUtils = {
 		} catch (e) {
 			console.error("[CampaignActions] Failed to delete terrain payloads:", e);
 		}
-
-		ContextService.save(context);
 	},
 
 	/**
@@ -568,7 +564,6 @@ export const CampaignUtils = {
 			await CampaignLoadingService.saveCampaign(campaign);
 			const info = CampaignLoadingService.buildInfo(campaign);
 			context.Campaigns.push(info);
-			ContextService.save(context);
 
 			onProgress?.({
 				current: totalSteps,

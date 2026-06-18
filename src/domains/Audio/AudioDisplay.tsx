@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
+import { contextStore } from "../Context/contextStore";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
@@ -138,7 +139,7 @@ export function AudioDisplay() {
 		} else {
 			// Player volume is a local-only AppSetting (no peer sync), so it can
 			// commit immediately for continuous feedback.
-			AppSettingUtils.setPlayerVolume({ volume: normalizedVolume }, context);
+			AppSettingUtils.setPlayerVolume({ volume: normalizedVolume }, contextStore);
 		}
 	};
 

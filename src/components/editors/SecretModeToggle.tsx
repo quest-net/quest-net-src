@@ -1,7 +1,8 @@
 // components/editors/SecretModeToggle.tsx
 // DM-only toggle for secret mode where changes are not broadcasted.
 
-import { useQuestContext, triggerContextUpdate } from "../../domains/Context/ContextProvider";
+import { useQuestContext } from "../../domains/Context/ContextProvider";
+import { contextStore } from "../../domains/Context/contextStore";
 import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 
@@ -19,13 +20,12 @@ export function SecretModeToggle({ variant = "compact" }: SecretModeToggleProps 
 	const isSecret = context.SecretModes?.[campaign.Id] || false;
 
 	const toggleSecretMode = () => {
-		if (!context.SecretModes) context.SecretModes = {};
-		context.SecretModes[campaign.Id] = !isSecret;
+		if (!contextStore.SecretModes) contextStore.SecretModes = {};
+		contextStore.SecretModes[campaign.Id] = !isSecret;
 
-		if (!context.SecretModes[campaign.Id] && actionService) {
+		if (!contextStore.SecretModes[campaign.Id] && actionService) {
 			actionService.forceSync();
 		}
-		triggerContextUpdate();
 	};
 
 	if (variant === "panel") {

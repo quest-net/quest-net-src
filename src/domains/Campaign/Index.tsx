@@ -2,10 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
-import { triggerContextUpdate } from "../Context/ContextProvider";
+import { contextStore } from "../Context/contextStore";
 import { CampaignActions } from "./CampaignActions";
 import { CampaignUtils, type ExportProgress } from "./CampaignUtils";
-import { ContextService } from "../Context/ContextService";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 import { useNavigate } from "react-router-dom";
 import CircularText from "../../components/effects/CircularText";
@@ -60,9 +59,7 @@ export function CampaignIndex() {
 			cur.CharacterCount === refreshed.CharacterCount;
 		if (unchanged) return;
 
-		context.Campaigns[idx] = refreshed;
-		ContextService.save(context);
-		triggerContextUpdate();
+		contextStore.Campaigns[idx] = refreshed;
 		// Mount-only on purpose — this is "refresh on entry to the index".
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
@@ -99,10 +96,7 @@ export function CampaignIndex() {
 		const info = await CampaignUtils.create({
 			name: campaignName,
 			roomCode: roomCode || undefined,
-		}, context);
-
-		// Manually trigger update
-		triggerContextUpdate();
+		}, contextStore);
 
 		setCampaignName("");
 		setCustomRoomCode("");
@@ -132,10 +126,7 @@ export function CampaignIndex() {
 		}
 
 		// Domain action removes CampaignInfo + IndexedDB payload
-		await CampaignUtils.delete({ campaignId }, context);
-
-		// Manually trigger update
-		triggerContextUpdate();
+		await CampaignUtils.delete({ campaignId }, contextStore);
 	};
 
 	const handleEditRoomCodeClick = (campaignId: string, currentRoomCode: string) => {
@@ -180,9 +171,8 @@ export function CampaignIndex() {
 		// Save (awaited because it may need to load from IndexedDB)
 		await CampaignActions.edit(
 			{ campaignId, updates: { RoomCode: roomCode } },
-			context
+			contextStore
 		);
-		triggerContextUpdate();
 
 		// Close modal
 		setEditingCampaignId(null);
@@ -212,12 +202,9 @@ export function CampaignIndex() {
 		try {
 			const campaign = await CampaignUtils.importFromFile(
 				{ file },
-				context,
+				contextStore,
 				setImportProgress
 			);
-
-			// Manually trigger update
-			triggerContextUpdate();
 
 			// Show success for a moment
 			setTimeout(() => {
@@ -493,8 +480,8 @@ export function CampaignIndex() {
 															<button
 																onClick={(e) => {
 																	e.stopPropagation();
-																	if (!context.SecretModes) context.SecretModes = {};
-																	context.SecretModes[info.Id] = true;
+																	if (!contextStore.SecretModes) contextStore.SecretModes = {};
+																	contextStore.SecretModes[info.Id] = true;
 																	navigate(`/${info.Id}`);
 																}}
 																className="btn btn-neutral btn-sm gap-1"

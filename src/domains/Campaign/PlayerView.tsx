@@ -2,10 +2,8 @@
 
 import { useNavigate } from "react-router-dom";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import {
-	useQuestContext,
-	triggerContextUpdate,
-} from "../Context/ContextProvider";
+import { useQuestContext } from "../Context/ContextProvider";
+import { contextStore } from "../Context/contextStore";
 import { UserUtils } from "../User/UserUtils";
 import { LogAlerts } from "../Log/LogAlerts";
 import { CritSplash } from "../Log/CritSplash";
@@ -50,9 +48,8 @@ export function PlayerView() {
 				campaignId: campaign.RoomCode, // Use RoomCode for consistency
 				characterId: null,
 			},
-			context
+			contextStore
 		);
-		triggerContextUpdate();
 	};
 
 	return (

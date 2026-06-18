@@ -1,96 +1,55 @@
 // domains/Context/ContextProvider.tsx
+//
+// Hosts the Valtio-backed global state (see contextStore.ts). The provider's job
+// is now purely lifecycle:
+//   1. load the persisted Context once and hydrate the proxy,
+//   2. gate the tree until that load completes,
+//   3. persist (debounced) + apply the theme whenever the proxy changes.
+//
+// State itself is a module singleton (`contextStore`), so reads/writes don't go
+// through React context. Components READ via `useQuestContext()` (a Valtio
+// snapshot, which gives per-field re-render granularity) and WRITE by mutating
+// `contextStore` directly.
 
-import {
-	createContext,
-	useContext,
-	useState,
-	useEffect,
-	useCallback,
-	useRef,
-	ReactNode,
-} from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { subscribe, useSnapshot } from "valtio";
 import { Context } from "./Context";
 import { ContextService } from "./ContextService";
+import { contextStore, hydrateContextStore, renderTick } from "./contextStore";
 import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
 
-const ContextContext = createContext<Context | null>(null);
-
 // Trailing-debounce window for persisting the context to localStorage. Re-renders
-// are immediate; only the (potentially expensive) serialize + write is deferred
-// so a burst of actions collapses into a single write.
+// are immediate (Valtio); only the (potentially expensive) serialize + write is
+// deferred so a burst of mutations collapses into a single write.
 const PERSIST_DEBOUNCE_MS = 400;
 
-type ContextMutator = (ctx: Context) => void;
-export interface TriggerUpdateOptions {
-	/**
-	 * Whether this update should be persisted to storage. Defaults to true.
-	 * Pass false for transient, non-persistent changes (peer presence, ping
-	 * latency, etc.) that only need a re-render — none of that data lives in
-	 * Context, so persisting it just re-serializes the whole campaign for
-	 * nothing.
-	 */
-	persist?: boolean;
-}
-
-let globalTriggerUpdate:
-	| ((mutate?: ContextMutator, options?: TriggerUpdateOptions) => void)
-	| null = null;
-
-/**
- * Forces a context-driven re-render. The optional `mutate` callback runs
- * against the *latest* committed React state before the new context is
- * spread out, which is how callers that need to reassign a TOP-LEVEL
- * property (e.g. context.ActiveCampaign) safely target the live context
- * rather than a stale captured reference. Inner-reference mutations (array
- * push, nested field assignment) are propagated automatically by the
- * shallow spread and don't need the mutator.
- *
- * Persistence is debounced and decoupled from rendering — see
- * TriggerUpdateOptions.persist.
- */
-export function triggerContextUpdate(
-	mutate?: ContextMutator,
-	options?: TriggerUpdateOptions
-) {
-	if (!globalTriggerUpdate) {
-		console.warn(
-			"[Context] triggerContextUpdate called before provider mounted"
-		);
-		return;
-	}
-	globalTriggerUpdate(mutate, options);
+function applyTheme(): void {
+	document.documentElement.setAttribute(
+		"data-theme",
+		AppSettingUtils.getTheme(contextStore)
+	);
 }
 
 export function ContextProvider({ children }: { children: ReactNode }) {
-	const [context, setContext] = useState<Context | null>(null);
+	const [ready, setReady] = useState(false);
 
-	// Mirror the latest committed context so the debounced flush (and the
-	// unload net) can persist it without capturing a stale closure value.
-	const latestContextRef = useRef<Context | null>(null);
-	const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-	useEffect(() => {
-		latestContextRef.current = context;
-	}, [context]);
-
+	// Load the persisted context once and hydrate the proxy.
 	useEffect(() => {
 		let cancelled = false;
 
 		(async () => {
-			let loadedContext = await ContextService.load();
-
-			if (!loadedContext) {
-				loadedContext = ContextService.create();
-			}
-
-			if (!cancelled) {
-				setContext(loadedContext);
-			}
+			const loaded =
+				(await ContextService.load()) ?? ContextService.create();
+			if (cancelled) return;
+			hydrateContextStore(loaded);
+			applyTheme();
+			setReady(true);
 		})().catch((error) => {
 			console.error("[Context] Failed to load context:", error);
-			if (!cancelled) {
-				setContext(ContextService.create());
-			}
+			if (cancelled) return;
+			hydrateContextStore(ContextService.create());
+			applyTheme();
+			setReady(true);
 		});
 
 		return () => {
@@ -98,116 +57,66 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 		};
 	}, []);
 
-	const schedulePersist = useCallback(() => {
-		// Trailing debounce: a burst of actions collapses into one flush ~400ms
-		// after the last one. Each trigger refreshes the timer so the most
-		// recent state is what eventually lands.
-		if (persistTimerRef.current) {
-			clearTimeout(persistTimerRef.current);
-		}
-		persistTimerRef.current = setTimeout(() => {
-			persistTimerRef.current = null;
-			const ctx = latestContextRef.current;
-			if (ctx) {
-				void ContextService.flush(ctx).catch((e) =>
+	// Persist (debounced) and re-apply the theme on any proxy change. Module-level
+	// `subscribe` does NOT re-render this provider, so children keep their
+	// per-field Valtio granularity. Presence changes never reach here — they live
+	// in a separate, non-persisted store.
+	useEffect(() => {
+		if (!ready) return;
+
+		let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+		const flushNow = () => {
+			if (persistTimer) {
+				clearTimeout(persistTimer);
+				persistTimer = null;
+			}
+			// Synchronous full save (voxels inline) so a crash/close can never drop
+			// the active terrain — the next load migrates it back into IndexedDB.
+			ContextService.save(contextStore);
+		};
+
+		const unsubscribe = subscribe(contextStore, () => {
+			applyTheme();
+			if (persistTimer) clearTimeout(persistTimer);
+			persistTimer = setTimeout(() => {
+				persistTimer = null;
+				void ContextService.flush(contextStore).catch((e) =>
 					console.error("[Context] Failed to flush context:", e)
 				);
-			}
-		}, PERSIST_DEBOUNCE_MS);
-	}, []);
-
-	const triggerUpdate = useCallback(
-		(mutate?: ContextMutator, options?: TriggerUpdateOptions) => {
-			const shouldPersist = options?.persist !== false;
-
-			setContext((current) => {
-				if (!current) {
-					console.warn("[Context] triggerUpdate called with no context");
-					return current;
-				}
-
-				// Run the optional mutator against the latest committed state so
-				// callers can reassign top-level fields (e.g. ActiveCampaign)
-				// without worrying about stale references they captured earlier.
-				if (mutate) {
-					try {
-						mutate(current);
-					} catch (e) {
-						console.error("[Context] triggerUpdate mutator threw:", e);
-					}
-				}
-
-				latestContextRef.current = current;
-
-				return { ...current };
-			});
-
-			// Persistence is decoupled from rendering: transient updates
-			// (presence/ping) re-render without re-serializing the campaign.
-			if (shouldPersist) {
-				schedulePersist();
-			}
-		},
-		[schedulePersist]
-	);
-
-	useEffect(() => {
-		globalTriggerUpdate = triggerUpdate;
-
-		return () => {
-			globalTriggerUpdate = null;
-		};
-	}, [triggerUpdate]);
-
-	// Safety net: on tab close / reload (and on unmount), flush any pending
-	// debounced write synchronously. Uses the full save (voxels inline) so a
-	// crash or fast close can never drop the active terrain — the next load
-	// migrates the inline payload back into IndexedDB.
-	useEffect(() => {
-		const flushNow = () => {
-			if (persistTimerRef.current) {
-				clearTimeout(persistTimerRef.current);
-				persistTimerRef.current = null;
-			}
-			const ctx = latestContextRef.current;
-			if (ctx) {
-				ContextService.save(ctx);
-			}
-		};
+			}, PERSIST_DEBOUNCE_MS);
+		});
 
 		window.addEventListener("beforeunload", flushNow);
+
 		return () => {
+			unsubscribe();
 			window.removeEventListener("beforeunload", flushNow);
 			flushNow();
 		};
-	}, []);
+	}, [ready]);
 
-	// Apply theme to document element whenever context changes
-	useEffect(() => {
-		if (!context) return;
-
-		const theme = AppSettingUtils.getTheme(context);
-
-		// Set the data-theme attribute on the html element
-		document.documentElement.setAttribute("data-theme", theme);
-
-	}, [context]);
-
-	if (!context) {
+	if (!ready) {
 		return <div>Loading...</div>;
 	}
 
-	return (
-		<ContextContext.Provider value={context}>
-			{children}
-		</ContextContext.Provider>
-	);
+	return <>{children}</>;
 }
 
-export function useQuestContext() {
-	const value = useContext(ContextContext);
-	if (!value) {
-		throw new Error("useQuestContext must be used within ContextProvider");
-	}
-	return value;
+/**
+ * Reactive read of the global context. Returns a Valtio snapshot: reading a
+ * field here subscribes the calling component to that field, so it re-renders
+ * only when something it actually read changes.
+ *
+ * The snapshot is deeply READONLY at runtime (frozen). To change state, mutate
+ * `contextStore` (imported from ./contextStore), never the value returned here.
+ * The cast preserves the historical `Context` call-site ergonomics across the
+ * ~70 read-only consumers.
+ */
+export function useQuestContext(): Context {
+	// Subscribe to the side-channel render signal (terrain voxel payloads and
+	// other out-of-proxy data). Normal state changes re-render via the snapshot's
+	// per-field tracking below; this covers the rare changes Valtio can't see.
+	void useSnapshot(renderTick).tick;
+	return useSnapshot(contextStore) as unknown as Context;
 }

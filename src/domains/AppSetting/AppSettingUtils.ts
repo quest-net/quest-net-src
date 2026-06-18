@@ -2,7 +2,6 @@
 
 import { isDmAccess } from "../../utils/UrlParser";
 import { Context } from "../Context/Context";
-import { ContextService } from "../Context/ContextService";
 import { AppSettings, DEFAULT_IMAGE_PROMPT } from "./AppSetting";
 import { SoundEffectService } from "../../services/SoundEffectService";
 import { DEFAULT_PROVIDER_ID } from "../../services/ImageGenerationService";
@@ -46,7 +45,6 @@ export const AppSettingUtils = {
   setPlayerVolume(params: { volume: number }, context: Context): void {
     const volume = Math.max(0, Math.min(1, params.volume));
     context.AppSettings.volume = volume.toString();
-    ContextService.save(context);
   },
 
   /**
@@ -63,7 +61,6 @@ export const AppSettingUtils = {
 
   setTheme(params: { theme: "light" | "dark" }, context: Context): void {
     context.AppSettings.theme = params.theme;
-    ContextService.save(context);
   },
 
   getTheme(context: Context): "light" | "dark" {
@@ -79,7 +76,6 @@ export const AppSettingUtils = {
     context.AppSettings.preserveFlyingHeightOnTileMove = params.preserve
       ? "true"
       : "false";
-    ContextService.save(context);
   },
 
   getPreserveFlyingHeightOnTileMove(context: Context): boolean {
@@ -91,7 +87,6 @@ export const AppSettingUtils = {
     context: Context
   ): void {
     context.AppSettings.performanceMode = params.enabled ? "true" : "false";
-    ContextService.save(context);
   },
 
   getPerformanceMode(context: Context): boolean {
@@ -103,7 +98,6 @@ export const AppSettingUtils = {
     context: Context
   ): void {
     context.AppSettings.critSplashEnabled = params.enabled ? "true" : "false";
-    ContextService.save(context);
   },
 
   /** Defaults to enabled when the setting has never been set. */
@@ -121,7 +115,6 @@ export const AppSettingUtils = {
 
   setImageService(params: { providerId: string }, context: Context): void {
     context.AppSettings.imageService = params.providerId;
-    ContextService.save(context);
   },
 
   // ---------------------------------------------------------------------------
@@ -144,7 +137,6 @@ export const AppSettingUtils = {
       delete map[params.providerId];
     }
     setJson(context, "imageApiKeys", map);
-    ContextService.save(context);
   },
 
   getProviderApiSecret(
@@ -167,7 +159,6 @@ export const AppSettingUtils = {
       delete map[params.providerId];
     }
     setJson(context, "imageApiSecrets", map);
-    ContextService.save(context);
   },
 
   // ---------------------------------------------------------------------------
@@ -181,7 +172,6 @@ export const AppSettingUtils = {
   setImagePromptTemplate(params: { template: string }, context: Context): void {
     const trimmed = params.template.trim();
     context.AppSettings.imagePromptTemplate = trimmed || DEFAULT_IMAGE_PROMPT;
-    ContextService.save(context);
   },
 
   // ---------------------------------------------------------------------------

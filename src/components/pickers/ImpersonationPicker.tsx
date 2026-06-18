@@ -1,7 +1,8 @@
 // components/pickers/ImpersonationPicker.tsx
 // DM-only dropdown for selecting an actor to impersonate.
 
-import { useQuestContext, triggerContextUpdate } from "../../domains/Context/ContextProvider";
+import { useQuestContext } from "../../domains/Context/ContextProvider";
+import { contextStore } from "../../domains/Context/contextStore";
 import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { UserUtils } from "../../domains/User/UserUtils";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
@@ -23,9 +24,8 @@ export function ImpersonationPicker() {
 	const handleImpersonate = (actorId: string | null) => {
 		UserUtils.impersonate(
 			{ campaignId: campaign.RoomCode, actorId },
-			context
+			contextStore
 		);
-		triggerContextUpdate();
 	};
 
 	return (

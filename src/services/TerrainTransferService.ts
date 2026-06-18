@@ -22,7 +22,7 @@
 
 import type { Room, ActionRequest, ActionSend } from "../domains/Room/Room";
 import type { Campaign } from "../domains/Campaign/Campaign";
-import { triggerContextUpdate } from "../domains/Context/ContextProvider";
+import { forceContextRerender } from "../domains/Context/contextStore";
 import {
 	TerrainStorageService,
 	type TerrainEditDelta,
@@ -338,7 +338,7 @@ export class TerrainTransferService {
 		// a mismatch and could spuriously trigger a full fetch. When the patch
 		// lands first (or together), it drives its own re-render.
 		if (terrain.ContentHash === newHash) {
-			triggerContextUpdate();
+			forceContextRerender();
 		}
 	}
 

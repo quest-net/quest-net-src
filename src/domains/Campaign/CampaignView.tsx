@@ -2,10 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import {
-	useQuestContext,
-	triggerContextUpdate,
-} from "../Context/ContextProvider";
+import { contextStore } from "../Context/contextStore";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { useAutoReconnect } from "../../hooks/useAutoReconnect";
 import { useRelayWatchdog } from "../../hooks/useRelayWatchdog";
@@ -47,7 +44,11 @@ const PLAYER_JOIN_TIMEOUT_MS = 20000;
 export function CampaignView() {
 	const { identifier } = useParams<{ identifier: string }>();
 	const navigate = useNavigate();
-	const context = useQuestContext();
+	// Writable proxy: this view mutates context (pack/unpack, role, selected
+	// character) and hands the same proxy to ActionService as the single source
+	// of truth. Reads happen in effects/callbacks, not render, so no snapshot
+	// is needed here.
+	const context = contextStore;
 	const { setActionService } = useActionService();
 	const [reconnectTrigger, setReconnectTrigger] = useState(0);
 	const isDMRoute = !!identifier && isGUID(identifier);
@@ -189,9 +190,9 @@ export function CampaignView() {
 							await CampaignUtils.packActive(context);
 						}
 					}
-					// Persist the reshape (active campaign + metadata refresh).
-					ContextService.save(context);
-					triggerContextUpdate();
+					// The reshape (active campaign + metadata refresh) persists on
+					// its own: mutating the proxy re-renders consumers, and
+					// ContextProvider's subscription flushes the change.
 				}
 
 				// Refresh info reference now that the active campaign has been
@@ -201,10 +202,8 @@ export function CampaignView() {
 				// Set user role if not already set.
 				if (isDM && context.User.Role !== "dm") {
 					ContextService.setUserRole({ role: "dm" }, context);
-					triggerContextUpdate();
 				} else if (!isDM && context.User.Role !== "player") {
 					ContextService.setUserRole({ role: "player" }, context);
-					triggerContextUpdate();
 				}
 
 				if (isDM) {
@@ -225,8 +224,6 @@ export function CampaignView() {
 							{ campaignId: activeCampaign.RoomCode },
 							context
 						);
-						ContextService.save(context);
-						triggerContextUpdate();
 					}
 				}
 
