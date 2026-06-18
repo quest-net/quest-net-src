@@ -126,8 +126,6 @@ function lavaCommonVertexHeader(): string[] {
 	return [
 		'attribute float surfaceDeformStrength;',
 		...VOXEL_AO_VERTEX_HEADER,
-		'varying vec3 vLavaWorldPosition;',
-		'varying vec3 vLavaWorldNormal;',
 		'uniform float uLavaTime;',
 	];
 }
@@ -140,13 +138,14 @@ function lavaCommonVertexBegin(performanceMode: boolean): string[] {
 	// (surfaceDeformStrength == 0 on sides/bottom), recompute world position
 	// after displacement so the fragment shader sees the deformed surface.
 	return [
-		'vLavaWorldNormal = normalize(mat3(modelMatrix) * normal);',
 		'vec3 lavaWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;',
 		`float lavaRippleA = sin(lavaWorld.x * ${LAVA_RIPPLE_FREQUENCY.toFixed(3)} + uLavaTime * ${LAVA_RIPPLE_TIME_SCALE.toFixed(3)});`,
 		`float lavaRippleB = cos(lavaWorld.z * ${LAVA_RIPPLE_FREQUENCY.toFixed(3)} * 1.17 + uLavaTime * ${LAVA_RIPPLE_TIME_SCALE.toFixed(3)} * 0.83);`,
 		`float lavaDisplacement = (lavaRippleA + lavaRippleB) * 0.5 * ${rippleAmplitude.toFixed(4)} * surfaceDeformStrength;`,
 		'transformed.y += lavaDisplacement;',
-		'vLavaWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+		// World position for the fragment shader comes from the shared AO varying,
+		// spread below: it is recomputed from `transformed` AFTER the displacement,
+		// so the pattern follows the deformed surface.
 		...VOXEL_AO_VERTEX_BEGIN,
 	];
 }
@@ -154,8 +153,6 @@ function lavaCommonVertexBegin(performanceMode: boolean): string[] {
 function lavaCommonFragmentHeader(performanceMode: boolean): string[] {
 	const header = [
 		...getVoxelAoFragmentHeader(performanceMode),
-		'varying vec3 vLavaWorldPosition;',
-		'varying vec3 vLavaWorldNormal;',
 		'uniform float uLavaTime;',
 		`const vec3 L_CRUST  = vec3(${LAVA_CRUST_COLOR[0].toFixed(3)}, ${LAVA_CRUST_COLOR[1].toFixed(3)}, ${LAVA_CRUST_COLOR[2].toFixed(3)});`,
 		`const vec3 L_MID    = vec3(${LAVA_MID_COLOR[0].toFixed(3)}, ${LAVA_MID_COLOR[1].toFixed(3)}, ${LAVA_MID_COLOR[2].toFixed(3)});`,
@@ -170,7 +167,7 @@ function lavaColorFragment(performanceMode: boolean): string[] {
 		// Performance path: no Voronoi -- use cheap sin waves for the glow
 		// pattern. Bottom is a flat dark red.
 		return [
-			'vec3 lNrm = normalize(vLavaWorldNormal);',
+			'vec3 lNrm = normalize(vVoxelAoWorldNormal);',
 			'bool lIsTop    = lNrm.y >  0.5;',
 			'bool lIsBottom = lNrm.y < -0.5;',
 			'if (lIsBottom) {',
@@ -178,11 +175,11 @@ function lavaColorFragment(performanceMode: boolean): string[] {
 			'} else {',
 			'float lGlow = 0.0;',
 			'if (lIsTop) {',
-			'	vec2 lUv = vLavaWorldPosition.xz;',
+			'	vec2 lUv = vVoxelAoWorldPosition.xz;',
 			'	lGlow = 0.5 + 0.5 * sin(lUv.x * 2.8 + uLavaTime * 0.5 + cos(lUv.y * 1.6 + uLavaTime * 0.35));',
 			'} else {',
-			'	float lFallH = (abs(lNrm.x) > abs(lNrm.z)) ? vLavaWorldPosition.z : vLavaWorldPosition.x;',
-			`	vec2 lFallUv = vec2(lFallH / ${LAVA_FALL_RIPPLE_WIDTH.toFixed(3)}, vLavaWorldPosition.y / ${LAVA_FALL_RIPPLE_HEIGHT.toFixed(3)} + uLavaTime * ${LAVA_FALL_RIPPLE_SPEED.toFixed(3)});`,
+			'	float lFallH = (abs(lNrm.x) > abs(lNrm.z)) ? vVoxelAoWorldPosition.z : vVoxelAoWorldPosition.x;',
+			`	vec2 lFallUv = vec2(lFallH / ${LAVA_FALL_RIPPLE_WIDTH.toFixed(3)}, vVoxelAoWorldPosition.y / ${LAVA_FALL_RIPPLE_HEIGHT.toFixed(3)} + uLavaTime * ${LAVA_FALL_RIPPLE_SPEED.toFixed(3)});`,
 			'	float lFallA = 0.5 + 0.5 * sin(lFallUv.y * 5.2 + lFallUv.x * 1.8);',
 			'	float lFallB = 0.5 + 0.5 * sin(lFallUv.y * 9.0 + uLavaTime * 0.4);',
 			'	lGlow = clamp(lFallA * 0.65 + lFallB * 0.35, 0.0, 1.0);',
@@ -200,7 +197,7 @@ function lavaColorFragment(performanceMode: boolean): string[] {
 	// water: Voronoi returns near-0 at cell edges and larger values at centers,
 	// so edges become crust (dark) and interiors become glow (bright/hot).
 	return [
-		'vec3 lNrm = normalize(vLavaWorldNormal);',
+		'vec3 lNrm = normalize(vVoxelAoWorldNormal);',
 		'bool lIsTop    = lNrm.y >  0.5;',
 		'bool lIsBottom = lNrm.y < -0.5;',
 		'float lGlowMask  = 0.0;',
@@ -212,8 +209,8 @@ function lavaColorFragment(performanceMode: boolean): string[] {
 		// Top: two overlapping Voronoi fields in world XZ. The large field
 		// (crust) defines the plate crack network. The smaller field (glow)
 		// drives the interior brightness variation. Both warped slowly.
-		`	vec2 lUvCrust = vLavaWorldPosition.xz / ${LAVA_CRUST_CELL_SIZE.toFixed(3)};`,
-		`	vec2 lUvGlow  = vLavaWorldPosition.xz / ${LAVA_GLOW_CELL_SIZE.toFixed(3)};`,
+		`	vec2 lUvCrust = vVoxelAoWorldPosition.xz / ${LAVA_CRUST_CELL_SIZE.toFixed(3)};`,
+		`	vec2 lUvGlow  = vVoxelAoWorldPosition.xz / ${LAVA_GLOW_CELL_SIZE.toFixed(3)};`,
 		'	vec2 lUvCrustW = lUvCrust + vec2(',
 		'		sin(uLavaTime * 0.28 + lUvCrust.y * 3.1) * 0.11,',
 		'		cos(uLavaTime * 0.23 + lUvCrust.x * 2.8) * 0.11',
@@ -236,8 +233,8 @@ function lavaColorFragment(performanceMode: boolean): string[] {
 		// per face so streaks are continuous across adjacent voxels on the same
 		// wall. The scroll direction is -Y (lava falls). Glow lights up the
 		// channel interiors; thin crust lines remain at the edges.
-		'	float lFallH = (abs(lNrm.x) > abs(lNrm.z)) ? vLavaWorldPosition.z : vLavaWorldPosition.x;',
-		'	float lFallV = vLavaWorldPosition.y;',
+		'	float lFallH = (abs(lNrm.x) > abs(lNrm.z)) ? vVoxelAoWorldPosition.z : vVoxelAoWorldPosition.x;',
+		'	float lFallV = vVoxelAoWorldPosition.y;',
 		`	vec2 lFallUv = vec2(lFallH / ${LAVA_FALL_RIPPLE_WIDTH.toFixed(3)}, lFallV / ${LAVA_FALL_RIPPLE_HEIGHT.toFixed(3)} + uLavaTime * ${LAVA_FALL_RIPPLE_SPEED.toFixed(3)});`,
 		'	vec2 lFallUvW = lFallUv + vec2(',
 		'		cos(lFallUv.y * 3.2 + uLavaTime * 0.55) * 0.07,',
@@ -362,7 +359,7 @@ const lava245Material: TerrainMaterial = {
 	// stays hollow), but lava emits faces against solid terrain so the surface
 	// renders where it meets rock walls and floors.
 	occlusionGroup: 'lava_245',
-	shaderVersion: 1,
+	shaderVersion: 2,
 	geometry: {
 		vertexColors: false,
 		// Preserve per-voxel faces so terrain resolution controls mesh density

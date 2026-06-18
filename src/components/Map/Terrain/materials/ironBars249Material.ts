@@ -109,24 +109,18 @@ function getIronBarsTexture(performanceMode: boolean): THREE.Texture {
 function ironBarsVertexHeader(): string[] {
 	return [
 		...VOXEL_AO_VERTEX_HEADER,
-		'varying vec3 vIronBarsWorldPosition;',
-		'varying vec3 vIronBarsWorldNormal;',
 	];
 }
 
 function ironBarsBeginVertex(): string[] {
 	return [
 		...VOXEL_AO_VERTEX_BEGIN,
-		'vIronBarsWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
-		'vIronBarsWorldNormal = normalize(mat3(modelMatrix) * normal);',
 	];
 }
 
 function ironBarsFragmentHeader(performanceMode: boolean): string[] {
 	return [
 		...getVoxelAoFragmentHeader(performanceMode),
-		'varying vec3 vIronBarsWorldPosition;',
-		'varying vec3 vIronBarsWorldNormal;',
 		'uniform sampler2D ironBarsMap;',
 		'vec2 getIronBarsUv(vec3 worldPosition, vec3 worldNormal) {',
 		'	vec3 n = abs(normalize(worldNormal));',
@@ -143,7 +137,7 @@ function ironBarsFragmentHeader(performanceMode: boolean): string[] {
 function ironBarsColorFragment(): string[] {
 	return [
 		'#include <color_fragment>',
-		`vec2 ironBarsUv = getIronBarsUv(vIronBarsWorldPosition, vIronBarsWorldNormal) * ${IRON_BARS_TEXTURE_REPEAT.toFixed(1)};`,
+		`vec2 ironBarsUv = getIronBarsUv(vVoxelAoWorldPosition, vVoxelAoWorldNormal) * ${IRON_BARS_TEXTURE_REPEAT.toFixed(1)};`,
 		'vec4 ironBarsTexel = texture2D(ironBarsMap, ironBarsUv);',
 		'diffuseColor.rgb *= ironBarsTexel.rgb;',
 		'diffuseColor.a *= ironBarsTexel.a;',
@@ -230,7 +224,7 @@ const ironBars249Material: TerrainMaterial = {
 	// face. The gaps in the bars mean you can see through to the other side, so
 	// shared faces must be emitted rather than discarded.
 	occlusionGroup: 'ironbars_249',
-	shaderVersion: 1,
+	shaderVersion: 2,
 	geometry: {
 		vertexColors: false,
 	},

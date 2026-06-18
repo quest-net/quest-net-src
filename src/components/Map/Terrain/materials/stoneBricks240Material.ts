@@ -80,24 +80,18 @@ function getStoneBricksTexture(performanceMode: boolean): THREE.Texture {
 function stoneBricksShaderHeader(): string[] {
 	return [
 		...VOXEL_AO_VERTEX_HEADER,
-		'varying vec3 vStoneBricksWorldPosition;',
-		'varying vec3 vStoneBricksWorldNormal;',
 	];
 }
 
 function stoneBricksBeginVertex(): string[] {
 	return [
 		...VOXEL_AO_VERTEX_BEGIN,
-		'vStoneBricksWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
-		'vStoneBricksWorldNormal = normalize(mat3(modelMatrix) * normal);',
 	];
 }
 
 function stoneBricksFragmentHeader(performanceMode: boolean): string[] {
 	return [
 		...getVoxelAoFragmentHeader(performanceMode),
-		'varying vec3 vStoneBricksWorldPosition;',
-		'varying vec3 vStoneBricksWorldNormal;',
 		'uniform sampler2D stoneBricksMap;',
 		'vec2 getStoneBricksUv(vec3 worldPosition, vec3 worldNormal) {',
 		'	vec3 n = abs(normalize(worldNormal));',
@@ -111,7 +105,7 @@ function stoneBricksFragmentHeader(performanceMode: boolean): string[] {
 function stoneBricksColorFragment(): string[] {
 	return [
 		'#include <color_fragment>',
-		`vec2 stoneBricksUv = getStoneBricksUv(vStoneBricksWorldPosition, vStoneBricksWorldNormal) * ${STONE_BRICKS_TEXTURE_REPEAT.toFixed(1)};`,
+		`vec2 stoneBricksUv = getStoneBricksUv(vVoxelAoWorldPosition, vVoxelAoWorldNormal) * ${STONE_BRICKS_TEXTURE_REPEAT.toFixed(1)};`,
 		'vec4 stoneBricksTexel = texture2D(stoneBricksMap, stoneBricksUv);',
 		'diffuseColor.rgb *= stoneBricksTexel.rgb;',
 		'diffuseColor.a *= stoneBricksTexel.a;',
@@ -173,7 +167,7 @@ export const createStoneBricks240Material: MaterialFactory = (
 const stoneBricks240Material: TerrainMaterial = {
 	bucketKey: 'stonebricks_240',
 	occlusionGroup: 'solid',
-	shaderVersion: 2,
+	shaderVersion: 3,
 	geometry: {
 		vertexColors: false,
 	},

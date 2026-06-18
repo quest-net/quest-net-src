@@ -134,15 +134,11 @@ const GOLD_PATTERN_GLSL: string = [
 function goldCommonVertexHeader(): string[] {
 	return [
 		...VOXEL_AO_VERTEX_HEADER,
-		'varying vec3 vGoldWorldPosition;',
-		'varying vec3 vGoldWorldNormal;',
 	];
 }
 
 function goldCommonVertexBegin(): string[] {
 	return [
-		'vGoldWorldNormal = normalize(mat3(modelMatrix) * normal);',
-		'vGoldWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
 		...VOXEL_AO_VERTEX_BEGIN,
 	];
 }
@@ -150,8 +146,6 @@ function goldCommonVertexBegin(): string[] {
 function goldCommonFragmentHeader(performanceMode: boolean): string[] {
 	return [
 		...getVoxelAoFragmentHeader(performanceMode),
-		'varying vec3 vGoldWorldPosition;',
-		'varying vec3 vGoldWorldNormal;',
 		GOLD_PATTERN_GLSL,
 		`const vec3 G_COL1 = vec3(${GOLD_COL1[0].toFixed(3)}, ${GOLD_COL1[1].toFixed(3)}, ${GOLD_COL1[2].toFixed(3)});`,
 		`const vec3 G_COL2 = vec3(${GOLD_COL2[0].toFixed(3)}, ${GOLD_COL2[1].toFixed(3)}, ${GOLD_COL2[2].toFixed(3)});`,
@@ -162,16 +156,16 @@ function goldColorFragment(performanceMode: boolean): string[] {
 	// UV projection: choose the two most planar world axes per face normal so
 	// the pattern wraps around block corners without stretching.
 	const uvSetup = [
-		'vec3 gNrm = normalize(vGoldWorldNormal);',
+		'vec3 gNrm = normalize(vVoxelAoWorldNormal);',
 		'bool gIsBottom = gNrm.y < -0.5;',
 		'vec2 gUv = vec2(0.0);',
 		'if (!gIsBottom) {',
 		'	if (abs(gNrm.x) > abs(gNrm.z) && abs(gNrm.x) > abs(gNrm.y)) {',
-		`		gUv = vGoldWorldPosition.zy * ${GOLD_UV_SCALE.toFixed(3)};`,
+		`		gUv = vVoxelAoWorldPosition.zy * ${GOLD_UV_SCALE.toFixed(3)};`,
 		'	} else if (abs(gNrm.z) > abs(gNrm.y)) {',
-		`		gUv = vGoldWorldPosition.xy * ${GOLD_UV_SCALE.toFixed(3)};`,
+		`		gUv = vVoxelAoWorldPosition.xy * ${GOLD_UV_SCALE.toFixed(3)};`,
 		'	} else {',
-		`		gUv = vGoldWorldPosition.xz * ${GOLD_UV_SCALE.toFixed(3)};`,
+		`		gUv = vVoxelAoWorldPosition.xz * ${GOLD_UV_SCALE.toFixed(3)};`,
 		'	}',
 		'}',
 	];
@@ -281,7 +275,7 @@ const gold247Material: TerrainMaterial = {
 	bucketKey: 'gold_247',
 	// Solid group: culls shared faces with default terrain and other solids.
 	occlusionGroup: 'solid',
-	shaderVersion: 2,
+	shaderVersion: 3,
 	geometry: {
 		vertexColors: false,
 		// Greedy merge safe -- UVs are world-projected in the shader.

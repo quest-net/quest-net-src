@@ -114,31 +114,23 @@ function getGrassAoTexture(): THREE.Texture {
 function grassShaderHeader(): string[] {
 	return [
 		...VOXEL_AO_VERTEX_HEADER,
-		'varying vec3 vGrassWorldPosition;',
-		'varying vec3 vGrassWorldNormal;',
 	];
 }
 
 function grassBeginVertex(): string[] {
 	return [
 		...VOXEL_AO_VERTEX_BEGIN,
-		'vGrassWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
-		'vGrassWorldNormal = normalize(mat3(modelMatrix) * normal);',
 	];
 }
 
 function grassFragmentHeader(performanceMode: boolean): string[] {
 	const header = [
 		...getVoxelAoFragmentHeader(false),
-		'varying vec3 vGrassWorldPosition;',
-		'varying vec3 vGrassWorldNormal;',
 		'uniform sampler2D grassMap;',
 	];
 	if (performanceMode) {
 		return [
 			...getVoxelAoFragmentHeader(true),
-			'varying vec3 vGrassWorldPosition;',
-			'varying vec3 vGrassWorldNormal;',
 			'uniform sampler2D grassMap;',
 			'vec2 getGrassUv(vec3 worldPosition, vec3 worldNormal) {',
 			'	vec3 n = abs(normalize(worldNormal));',
@@ -179,7 +171,7 @@ function grassFragmentHeader(performanceMode: boolean): string[] {
 function grassColorFragment(performanceMode: boolean): string[] {
 	const lines = [
 		'#include <color_fragment>',
-		`vec2 grassUv = getGrassUv(vGrassWorldPosition, vGrassWorldNormal) * ${GRASS_TEXTURE_REPEAT.toFixed(2)};`,
+		`vec2 grassUv = getGrassUv(vVoxelAoWorldPosition, vVoxelAoWorldNormal) * ${GRASS_TEXTURE_REPEAT.toFixed(2)};`,
 		'vec4 grassTexel = texture2D(grassMap, grassUv);',
 		'diffuseColor.rgb *= grassTexel.rgb;',
 		'diffuseColor.a *= grassTexel.a;',
@@ -199,7 +191,7 @@ function grassColorFragment(performanceMode: boolean): string[] {
 function grassRoughnessFragment(): string[] {
 	return [
 		'#include <roughnessmap_fragment>',
-		`vec2 grassRoughnessUv = getGrassUv(vGrassWorldPosition, vGrassWorldNormal) * ${GRASS_TEXTURE_REPEAT.toFixed(2)};`,
+		`vec2 grassRoughnessUv = getGrassUv(vVoxelAoWorldPosition, vVoxelAoWorldNormal) * ${GRASS_TEXTURE_REPEAT.toFixed(2)};`,
 		'float grassRoughnessSample = texture2D(grassRoughnessMap, grassRoughnessUv).g;',
 		`roughnessFactor = clamp(mix(${GRASS_ROUGHNESS_MIN.toFixed(2)}, ${GRASS_ROUGHNESS_MAX.toFixed(2)}, grassRoughnessSample), ${GRASS_ROUGHNESS_MIN.toFixed(2)}, ${GRASS_ROUGHNESS_MAX.toFixed(2)});`,
 	];
@@ -207,7 +199,7 @@ function grassRoughnessFragment(): string[] {
 
 function grassNormalFragment(): string[] {
 	return [
-		`vec2 grassNormalUv = getGrassUv(vGrassWorldPosition, vGrassWorldNormal) * ${GRASS_TEXTURE_REPEAT.toFixed(2)};`,
+		`vec2 grassNormalUv = getGrassUv(vVoxelAoWorldPosition, vVoxelAoWorldNormal) * ${GRASS_TEXTURE_REPEAT.toFixed(2)};`,
 		'vec3 grassMapNormal = texture2D(grassNormalMap, grassNormalUv).xyz * 2.0 - 1.0;',
 		`grassMapNormal.xy *= ${GRASS_NORMAL_STRENGTH.toFixed(2)};`,
 		'normal = normalize(grassGetTangentFrame(-vViewPosition, normal, grassNormalUv) * normalize(grassMapNormal));',
@@ -289,7 +281,7 @@ export const createGrass242Material: MaterialFactory = (
 const grass242Material: TerrainMaterial = {
 	bucketKey: 'grass_242',
 	occlusionGroup: 'solid',
-	shaderVersion: 3,
+	shaderVersion: 4,
 	geometry: {
 		vertexColors: false,
 	},

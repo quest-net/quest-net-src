@@ -178,8 +178,6 @@ const FLESH_GLSL_FUNCTIONS = [
 function fleshVertexHeader(): string[] {
 	return [
 		...VOXEL_AO_VERTEX_HEADER,
-		'varying vec3 vFleshWorldPosition;',
-		'varying vec3 vFleshWorldNormal;',
 		'uniform float uFleshTime;',
 	];
 }
@@ -187,8 +185,6 @@ function fleshVertexHeader(): string[] {
 function fleshBeginVertex(): string[] {
 	return [
 		...VOXEL_AO_VERTEX_BEGIN,
-		'vFleshWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
-		'vFleshWorldNormal = normalize(mat3(modelMatrix) * normal);',
 	];
 }
 
@@ -199,8 +195,6 @@ function fleshBeginVertex(): string[] {
 function fleshFragmentHeader(performanceMode: boolean): string[] {
 	return [
 		...getVoxelAoFragmentHeader(performanceMode),
-		'varying vec3 vFleshWorldPosition;',
-		'varying vec3 vFleshWorldNormal;',
 		'uniform float uFleshTime;',
 		'uniform sampler2D uFleshNoise;',
 		'vec2 getFleshUv(vec3 worldPos, vec3 worldNormal) {',
@@ -231,7 +225,7 @@ function fleshColorFragment(performanceMode: boolean): string[] {
 		// World-projected UV scaled to a reasonable FBM input range.
 		// No fract() here -- passing continuous world UV keeps the FBM seamless
 		// across voxel face boundaries. fract() was the source of hard seams.
-		`vec2 fleshUvWorld = getFleshUv(vFleshWorldPosition, vFleshWorldNormal) * ${uvScale};`,
+		`vec2 fleshUvWorld = getFleshUv(vVoxelAoWorldPosition, vVoxelAoWorldNormal) * ${uvScale};`,
 
 		// FBM: originalNoise may be outside [0,1]
 		`float fleshOriginalNoise = fleshFBM(fleshUvWorld, uFleshTime, ${performanceMode ? 'false' : 'true'});`,
@@ -393,7 +387,7 @@ const flesh250Material: TerrainMaterial = {
 	// Flesh-to-flesh shared faces are culled so a solid flesh block is hollow
 	// inside. Flesh against solid terrain emits faces normally.
 	occlusionGroup: 'flesh_250',
-	shaderVersion: 3,
+	shaderVersion: 4,
 	geometry: {
 		vertexColors: false,
 	},

@@ -80,24 +80,18 @@ function getWoodTexture(performanceMode: boolean): THREE.Texture {
 function woodShaderHeader(): string[] {
 	return [
 		...VOXEL_AO_VERTEX_HEADER,
-		'varying vec3 vWoodWorldPosition;',
-		'varying vec3 vWoodWorldNormal;',
 	];
 }
 
 function woodBeginVertex(): string[] {
 	return [
 		...VOXEL_AO_VERTEX_BEGIN,
-		'vWoodWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
-		'vWoodWorldNormal = normalize(mat3(modelMatrix) * normal);',
 	];
 }
 
 function woodFragmentHeader(performanceMode: boolean): string[] {
 	return [
 		...getVoxelAoFragmentHeader(performanceMode),
-		'varying vec3 vWoodWorldPosition;',
-		'varying vec3 vWoodWorldNormal;',
 		'uniform sampler2D woodMap;',
 		'vec2 getWoodUv(vec3 worldPosition, vec3 worldNormal) {',
 		'	vec3 n = abs(normalize(worldNormal));',
@@ -111,7 +105,7 @@ function woodFragmentHeader(performanceMode: boolean): string[] {
 function woodColorFragment(): string[] {
 	return [
 		'#include <color_fragment>',
-		`vec2 woodUv = getWoodUv(vWoodWorldPosition, vWoodWorldNormal) * ${WOOD_TEXTURE_REPEAT.toFixed(1)};`,
+		`vec2 woodUv = getWoodUv(vVoxelAoWorldPosition, vVoxelAoWorldNormal) * ${WOOD_TEXTURE_REPEAT.toFixed(1)};`,
 		'vec4 woodTexel = texture2D(woodMap, woodUv);',
 		'diffuseColor.rgb *= woodTexel.rgb;',
 		'diffuseColor.a *= woodTexel.a;',
@@ -173,7 +167,7 @@ export const createWood244Material: MaterialFactory = (
 const wood244Material: TerrainMaterial = {
 	bucketKey: 'wood_244',
 	occlusionGroup: 'solid',
-	shaderVersion: 1,
+	shaderVersion: 2,
 	geometry: {
 		vertexColors: false,
 	},

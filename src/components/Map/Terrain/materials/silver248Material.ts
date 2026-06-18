@@ -116,15 +116,11 @@ const SILVER_PATTERN_GLSL: string = [
 function silverCommonVertexHeader(): string[] {
 	return [
 		...VOXEL_AO_VERTEX_HEADER,
-		'varying vec3 vSilverWorldPosition;',
-		'varying vec3 vSilverWorldNormal;',
 	];
 }
 
 function silverCommonVertexBegin(): string[] {
 	return [
-		'vSilverWorldNormal = normalize(mat3(modelMatrix) * normal);',
-		'vSilverWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
 		...VOXEL_AO_VERTEX_BEGIN,
 	];
 }
@@ -132,8 +128,6 @@ function silverCommonVertexBegin(): string[] {
 function silverCommonFragmentHeader(performanceMode: boolean): string[] {
 	return [
 		...getVoxelAoFragmentHeader(performanceMode),
-		'varying vec3 vSilverWorldPosition;',
-		'varying vec3 vSilverWorldNormal;',
 		SILVER_PATTERN_GLSL,
 		`const vec3 S_COL1 = vec3(${SILVER_COL1[0].toFixed(3)}, ${SILVER_COL1[1].toFixed(3)}, ${SILVER_COL1[2].toFixed(3)});`,
 		`const vec3 S_COL2 = vec3(${SILVER_COL2[0].toFixed(3)}, ${SILVER_COL2[1].toFixed(3)}, ${SILVER_COL2[2].toFixed(3)});`,
@@ -142,16 +136,16 @@ function silverCommonFragmentHeader(performanceMode: boolean): string[] {
 
 function silverColorFragment(performanceMode: boolean): string[] {
 	const uvSetup = [
-		'vec3 sNrm = normalize(vSilverWorldNormal);',
+		'vec3 sNrm = normalize(vVoxelAoWorldNormal);',
 		'bool sIsBottom = sNrm.y < -0.5;',
 		'vec2 sUv = vec2(0.0);',
 		'if (!sIsBottom) {',
 		'	if (abs(sNrm.x) > abs(sNrm.z) && abs(sNrm.x) > abs(sNrm.y)) {',
-		`		sUv = vSilverWorldPosition.zy * ${SILVER_UV_SCALE.toFixed(3)};`,
+		`		sUv = vVoxelAoWorldPosition.zy * ${SILVER_UV_SCALE.toFixed(3)};`,
 		'	} else if (abs(sNrm.z) > abs(sNrm.y)) {',
-		`		sUv = vSilverWorldPosition.xy * ${SILVER_UV_SCALE.toFixed(3)};`,
+		`		sUv = vVoxelAoWorldPosition.xy * ${SILVER_UV_SCALE.toFixed(3)};`,
 		'	} else {',
-		`		sUv = vSilverWorldPosition.xz * ${SILVER_UV_SCALE.toFixed(3)};`,
+		`		sUv = vVoxelAoWorldPosition.xz * ${SILVER_UV_SCALE.toFixed(3)};`,
 		'	}',
 		'}',
 	];
@@ -256,7 +250,7 @@ export const createSilver248Material: MaterialFactory = (
 const silver248Material: TerrainMaterial = {
 	bucketKey: 'silver_248',
 	occlusionGroup: 'solid',
-	shaderVersion: 2,
+	shaderVersion: 3,
 	geometry: {
 		vertexColors: false,
 		preserveVoxelFaces: false,

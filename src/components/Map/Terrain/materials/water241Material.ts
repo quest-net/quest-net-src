@@ -127,8 +127,6 @@ function waterCommonVertexHeader(): string[] {
 	return [
 		'attribute float surfaceDeformStrength;',
 		...VOXEL_AO_VERTEX_HEADER,
-		'varying vec3 vWaterWorldPosition;',
-		'varying vec3 vWaterWorldNormal;',
 		'uniform float uWaterTime;',
 	];
 }
@@ -143,15 +141,14 @@ function waterCommonVertexBegin(performanceMode: boolean): string[] {
 	// surface (top faces + exposed top edges of side faces). Sides below the
 	// rippling top stay rigid so the water never tears off its walls.
 	return [
-		'vWaterWorldNormal = normalize(mat3(modelMatrix) * normal);',
 		'vec3 waterWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;',
 		`float waterRippleA = sin(waterWorld.x * ${WATER_RIPPLE_FREQUENCY.toFixed(3)} + uWaterTime * ${WATER_RIPPLE_TIME_SCALE.toFixed(3)});`,
 		`float waterRippleB = cos(waterWorld.z * ${WATER_RIPPLE_FREQUENCY.toFixed(3)} * 1.13 + uWaterTime * ${WATER_RIPPLE_TIME_SCALE.toFixed(3)} * 0.87);`,
 		`float waterDisplacement = (waterRippleA + waterRippleB) * 0.5 * ${rippleAmplitude.toFixed(4)} * surfaceDeformStrength;`,
 		'transformed.y += waterDisplacement;',
-		// World position used by the fragment shader for Voronoi UVs: recompute
-		// after displacement so the pattern follows the rippling surface.
-		'vWaterWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+		// World position used by the fragment shader for Voronoi UVs comes from
+		// the shared AO varying, spread below: it is recomputed from `transformed`
+		// AFTER the displacement, so the pattern follows the rippling surface.
 		...VOXEL_AO_VERTEX_BEGIN,
 	];
 }
@@ -159,8 +156,6 @@ function waterCommonVertexBegin(performanceMode: boolean): string[] {
 function waterCommonFragmentHeader(performanceMode: boolean): string[] {
 	const header = [
 		...getVoxelAoFragmentHeader(performanceMode),
-		'varying vec3 vWaterWorldPosition;',
-		'varying vec3 vWaterWorldNormal;',
 		'uniform float uWaterTime;',
 		`const vec3 W_FOAM = vec3(${WATER_FOAM_COLOR[0].toFixed(3)}, ${WATER_FOAM_COLOR[1].toFixed(3)}, ${WATER_FOAM_COLOR[2].toFixed(3)});`,
 		`const vec3 W_MAIN = vec3(${WATER_MAIN_BLUE[0].toFixed(3)}, ${WATER_MAIN_BLUE[1].toFixed(3)}, ${WATER_MAIN_BLUE[2].toFixed(3)});`,
@@ -173,7 +168,7 @@ function waterCommonFragmentHeader(performanceMode: boolean): string[] {
 function waterColorFragment(performanceMode: boolean): string[] {
 	if (performanceMode) {
 		return [
-			'vec3 wNrm = normalize(vWaterWorldNormal);',
+			'vec3 wNrm = normalize(vVoxelAoWorldNormal);',
 			'bool wIsTopSurface = wNrm.y > 0.5;',
 			'bool wIsBottomSurface = wNrm.y < -0.5;',
 			'if (wIsBottomSurface) {',
@@ -182,12 +177,12 @@ function waterColorFragment(performanceMode: boolean): string[] {
 			'float wWave = 0.0;',
 			'float wFoamMask = 0.0;',
 			'if (wIsTopSurface) {',
-			'	vec2 wUv = vWaterWorldPosition.xz;',
+			'	vec2 wUv = vVoxelAoWorldPosition.xz;',
 			'	wWave = 0.5 + 0.5 * sin(wUv.x * 4.0 + uWaterTime * 1.7 + cos(wUv.y * 2.0));',
 			'	wFoamMask = smoothstep(0.88, 1.0, wWave);',
 			'} else {',
-			'	float wFallH = (abs(wNrm.x) > abs(wNrm.z)) ? vWaterWorldPosition.z : vWaterWorldPosition.x;',
-			`	vec2 wFallUv = vec2(wFallH / ${WATER_FALL_RIPPLE_WIDTH.toFixed(3)}, vWaterWorldPosition.y / ${WATER_FALL_RIPPLE_HEIGHT.toFixed(3)} + uWaterTime * ${WATER_FALL_RIPPLE_SPEED.toFixed(3)});`,
+			'	float wFallH = (abs(wNrm.x) > abs(wNrm.z)) ? vVoxelAoWorldPosition.z : vVoxelAoWorldPosition.x;',
+			`	vec2 wFallUv = vec2(wFallH / ${WATER_FALL_RIPPLE_WIDTH.toFixed(3)}, vVoxelAoWorldPosition.y / ${WATER_FALL_RIPPLE_HEIGHT.toFixed(3)} + uWaterTime * ${WATER_FALL_RIPPLE_SPEED.toFixed(3)});`,
 			'	float wFallColumn = sin(wFallUv.x * 6.283);',
 			'	float wFallA = 0.5 + 0.5 * sin(wFallUv.y * 6.283 + wFallColumn * 1.1);',
 			'	float wFallB = 0.5 + 0.5 * sin(wFallUv.y * 11.0 + wFallUv.x * 2.3);',
@@ -210,7 +205,7 @@ function waterColorFragment(performanceMode: boolean): string[] {
 	// Each branch computes exactly what it needs -- nothing is computed
 	// then discarded.
 	return [
-		'vec3 wNrm = normalize(vWaterWorldNormal);',
+		'vec3 wNrm = normalize(vVoxelAoWorldNormal);',
 		'bool wIsTopSurface = wNrm.y > 0.5;',
 		'bool wIsBottomSurface = wNrm.y < -0.5;',
 		'float wRippleMask = 0.0;',
@@ -222,8 +217,8 @@ function waterColorFragment(performanceMode: boolean): string[] {
 		'if (wIsTopSurface) {',
 		// Top: omnidirectional world-XZ pattern with time-driven warp on both
 		// UV axes (matches the source Shadertoy's adapted to world space).
-		`	vec2 wUvFoam   = vWaterWorldPosition.xz / ${WATER_FOAM_CELL_SIZE.toFixed(3)};`,
-		`	vec2 wUvRipple = vWaterWorldPosition.xz / ${WATER_RIPPLE_CELL_SIZE.toFixed(3)};`,
+		`	vec2 wUvFoam   = vVoxelAoWorldPosition.xz / ${WATER_FOAM_CELL_SIZE.toFixed(3)};`,
+		`	vec2 wUvRipple = vVoxelAoWorldPosition.xz / ${WATER_RIPPLE_CELL_SIZE.toFixed(3)};`,
 		'	vec2 wUvFoamD = wUvFoam + vec2(',
 		'		sin(uWaterTime * 2.0 + wUvFoam.y * 5.0) * 0.10,',
 		'		cos(uWaterTime * 2.0 + wUvFoam.x * 5.0) * 0.10',
@@ -245,8 +240,8 @@ function waterColorFragment(performanceMode: boolean): string[] {
 		// adjacent water voxels on the same face. V scrolls with time: the
 		// same UV value lands at a LOWER worldY each frame, which the eye
 		// reads as the pattern falling.
-		'	float wFallH = (abs(wNrm.x) > abs(wNrm.z)) ? vWaterWorldPosition.z : vWaterWorldPosition.x;',
-		'	float wFallV = vWaterWorldPosition.y;',
+		'	float wFallH = (abs(wNrm.x) > abs(wNrm.z)) ? vVoxelAoWorldPosition.z : vVoxelAoWorldPosition.x;',
+		'	float wFallV = vVoxelAoWorldPosition.y;',
 		`	vec2 wUvRipple = vec2(wFallH / ${WATER_FALL_RIPPLE_WIDTH.toFixed(3)}, wFallV / ${WATER_FALL_RIPPLE_HEIGHT.toFixed(3)} + uWaterTime * ${WATER_FALL_RIPPLE_SPEED.toFixed(3)});`,
 		// Domain warp: small horizontal magnitude (no sideways sway) and a
 		// larger vertical magnitude (turbulence — individual streaks ride
@@ -364,7 +359,7 @@ const water241Material: TerrainMaterial = {
 	// so the surface still renders where it meets the bank/floor.
 	occlusionGroup: 'water_241',
 	// Bump on shader-source change to invalidate the program cache.
-	shaderVersion: 7,
+	shaderVersion: 8,
 	geometry: {
 		vertexColors: false,
 		// Preserve voxel faces so terrain resolution controls the water mesh
