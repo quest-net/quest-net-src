@@ -42,6 +42,13 @@ import {
 	VOXEL_AO_VERTEX_HEADER,
 	type VoxelAoTexture,
 } from '../shaders/voxelAoShader';
+import {
+	applyMovementHighlightUniforms,
+	MOVEMENT_HIGHLIGHT_DITHERING,
+	MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER,
+	MOVEMENT_HIGHLIGHT_VERTEX_BEGIN,
+	MOVEMENT_HIGHLIGHT_VERTEX_HEADER,
+} from '../shaders/movementHighlightShader';
 
 // ---------------------------------------------------------------------------
 // Tuning knobs
@@ -293,75 +300,43 @@ const FLESH_DITHERING_EXTRA = [
 	'gl_FragColor.rgb += vec3(1.0, 0.05, 0.2) * 0.02;',
 ].join('\n');
 
-// ---------------------------------------------------------------------------
-// Movement-highlight block (identical to other materials)
-// ---------------------------------------------------------------------------
-
-const FLESH_MOVEMENT_HIGHLIGHT_FRAGMENT = [
-	'vec3 fleshMovOwner = vMovementWorldPosition - vMovementWorldNormal * 0.002;',
-	'vec2 fleshMovTile = clamp(',
-	'    floor(fleshMovOwner.xz + movementHighlightSize * 0.5),',
-	'    vec2(0.0),',
-	'    movementHighlightSize - vec2(1.0)',
-	');',
-	'float fleshMovTileH = clamp(vMovementHighlightHeight, 0.0, movementHighlightHeightLevels - 1.0);',
-	'vec3 fleshMovUvw = vec3(',
-	'    (fleshMovTile.x + 0.5) / movementHighlightSize.x,',
-	'    (fleshMovTileH + 0.5) / movementHighlightHeightLevels,',
-	'    (fleshMovTile.y + 0.5) / movementHighlightSize.y',
-	');',
-	'vec4 fleshMovHL = texture(movementHighlightMap, fleshMovUvw);',
-	'if (fleshMovHL.a > 0.0 && vMovementHighlightStrength > 0.0) {',
-	'    vec3 fBase = gl_FragColor.rgb;',
-	'    float fLuma = dot(fBase, vec3(0.2126, 0.7152, 0.0722));',
-	'    vec2 fTileLoc = fract(fleshMovOwner.xz + movementHighlightSize * 0.5);',
-	'    float fEdgeDist = min(min(fTileLoc.x, 1.0 - fTileLoc.x), min(fTileLoc.y, 1.0 - fTileLoc.y));',
-	'    float fEdgeBand = 1.0 - smoothstep(0.025, 0.11, fEdgeDist);',
-	'    float fMark = clamp(fleshMovHL.a * (1.35 + fEdgeBand * 0.75) * vMovementHighlightStrength, 0.0, 0.92);',
-	'    vec3 fScreen = 1.0 - (1.0 - fBase) * (1.0 - fleshMovHL.rgb * 0.85);',
-	'    vec3 fMarked = mix(fBase, fScreen, fMark);',
-	'    fMarked = max(fMarked, fleshMovHL.rgb * fleshMovHL.a * (0.65 + 0.55 * vMovementHighlightStrength));',
-	'    vec3 fContrast = mix(vec3(1.0), vec3(0.035), step(0.58, fLuma));',
-	'    vec3 fEdgeCol = mix(fleshMovHL.rgb, fContrast, 0.45);',
-	'    gl_FragColor.rgb = mix(fMarked, fEdgeCol, fEdgeBand * fleshMovHL.a * 0.7 * vMovementHighlightStrength);',
-	'}',
-	'#include <dithering_fragment>',
-].join('\n');
-
-function fleshDitheringFragment(withHighlight: boolean): string {
-	if (!withHighlight) {
-		return FLESH_DITHERING_EXTRA + '\n#include <dithering_fragment>';
-	}
-	return FLESH_DITHERING_EXTRA + '\n' + FLESH_MOVEMENT_HIGHLIGHT_FRAGMENT;
+// Flesh's own additive lighting (specular / Fresnel / ambient) runs first, then
+// the shared movement-highlight overlay -- which also emits the real
+// #include <dithering_fragment>. The overlay is gated by uHighlightEnabled, so
+// the first-person view and surroundings share this one program with it off.
+function fleshDitheringFragment(): string {
+	return FLESH_DITHERING_EXTRA + '\n' + MOVEMENT_HIGHLIGHT_DITHERING.join('\n');
 }
 
 // ---------------------------------------------------------------------------
 // Shader installation
 // ---------------------------------------------------------------------------
 
-function installFleshAoShader(
+function installFlesh250Shader(
 	material: THREE.MeshStandardMaterial,
 	texture: THREE.Texture,
 	timeUniform: { value: number },
 	voxelAo: VoxelAoTexture,
+	movementHighlight: MovementHighlightTexture | undefined,
 	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
 		shader.uniforms.uFleshTime = timeUniform;
 		shader.uniforms.uFleshNoise = { value: texture };
+		applyMovementHighlightUniforms(shader, movementHighlight);
 
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
-			['#include <common>', ...fleshVertexHeader()].join('\n')
+			['#include <common>', ...fleshVertexHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER].join('\n')
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...fleshBeginVertex()].join('\n')
+			['#include <begin_vertex>', ...fleshBeginVertex(), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...fleshFragmentHeader(performanceMode)].join('\n')
+			['#include <common>', ...fleshFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
@@ -369,76 +344,7 @@ function installFleshAoShader(
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <dithering_fragment>',
-			fleshDitheringFragment(false)
-		);
-	};
-}
-
-function installFleshHighlightShader(
-	material: THREE.MeshStandardMaterial,
-	texture: THREE.Texture,
-	timeUniform: { value: number },
-	highlight: MovementHighlightTexture,
-	voxelAo: VoxelAoTexture,
-	performanceMode: boolean
-): void {
-	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
-	const heightLevels = highlight.heightLevels;
-
-	material.onBeforeCompile = (shader) => {
-		applyVoxelAoUniforms(shader, voxelAo);
-		shader.uniforms.uFleshTime = timeUniform;
-		shader.uniforms.uFleshNoise = { value: texture };
-		shader.uniforms.movementHighlightMap = { value: highlight.texture };
-		shader.uniforms.movementHighlightSize = { value: highlightSize };
-		shader.uniforms.movementHighlightHeightLevels = { value: heightLevels };
-
-		shader.vertexShader = shader.vertexShader.replace(
-			'#include <common>',
-			[
-				'#include <common>',
-				...fleshVertexHeader(),
-				'uniform vec2 movementHighlightSize;',
-				'attribute float tileHeight;',
-				'attribute float highlightStrength;',
-				'varying float vMovementHighlightHeight;',
-				'varying float vMovementHighlightStrength;',
-				'varying vec3 vMovementWorldPosition;',
-				'varying vec3 vMovementWorldNormal;',
-			].join('\n')
-		);
-		shader.vertexShader = shader.vertexShader.replace(
-			'#include <begin_vertex>',
-			[
-				'#include <begin_vertex>',
-				...fleshBeginVertex(),
-				'vMovementHighlightHeight = tileHeight;',
-				'vMovementHighlightStrength = highlightStrength;',
-				'vMovementWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
-				'vMovementWorldNormal = normalize(mat3(modelMatrix) * normal);',
-			].join('\n')
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <common>',
-			[
-				'#include <common>',
-				...fleshFragmentHeader(performanceMode),
-				'uniform highp sampler3D movementHighlightMap;',
-				'uniform vec2 movementHighlightSize;',
-				'uniform float movementHighlightHeightLevels;',
-				'varying float vMovementHighlightHeight;',
-				'varying float vMovementHighlightStrength;',
-				'varying vec3 vMovementWorldPosition;',
-				'varying vec3 vMovementWorldNormal;',
-			].join('\n')
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <color_fragment>',
-			fleshColorFragment(performanceMode).join('\n')
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <dithering_fragment>',
-			fleshDitheringFragment(true)
+			fleshDitheringFragment()
 		);
 	};
 }
@@ -450,7 +356,7 @@ function installFleshHighlightShader(
 export const createFlesh250Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { acceptsMovementHighlight, movementHighlight, voxelAo, performanceMode = false } = params;
+	const { movementHighlight, voxelAo, performanceMode = false } = params;
 
 	const noiseTexture = getFleshNoiseTexture();
 	const timeUniform = { value: 0 };
@@ -463,11 +369,7 @@ export const createFlesh250Material: MaterialFactory = (
 		depthWrite: true,
 	});
 
-	if (acceptsMovementHighlight && movementHighlight) {
-		installFleshHighlightShader(material, noiseTexture, timeUniform, movementHighlight, voxelAo, performanceMode);
-	} else {
-		installFleshAoShader(material, noiseTexture, timeUniform, voxelAo, performanceMode);
-	}
+	installFlesh250Shader(material, noiseTexture, timeUniform, voxelAo, movementHighlight, performanceMode);
 
 	const onAnimationFrame = (timeMs: number) => {
 		timeUniform.value = timeMs * 0.001;

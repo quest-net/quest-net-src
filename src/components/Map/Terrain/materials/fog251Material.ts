@@ -15,40 +15,15 @@
 //
 // This file therefore carries only METADATA now: the palette index, editor
 // swatch, the `passable` flag (actors/raycasts pass through), and the
-// `volumetric` flag (excluded from surface meshing). The `factory` is a minimal
-// placeholder -- it is never used to draw terrain (no fog render bucket is ever
-// emitted); it exists only to satisfy the registry/pre-warm contract. The fog
-// look (color, density shaping, animation) lives in the volumetric pass.
+// `volumetric` flag (excluded from surface meshing). It has no `factory` -- fog
+// never emits a render bucket, so it is never instantiated as a surface mesh nor
+// shader pre-warmed (the registry omits factory-less materials). The fog look
+// (color, density shaping, animation) lives in the volumetric pass.
 
-import * as THREE from 'three';
-import type {
-	MaterialFactory,
-	MaterialFactoryParams,
-	MaterialFactoryResult,
-	TerrainMaterial,
-} from './materialTypes';
+import type { TerrainMaterial } from './materialTypes';
 
 /** Editor swatch + the tint the volumetric pass uses as a starting point. */
 const FOG_SWATCH = '#cfd4dc';
-
-// Placeholder factory. Never drives real terrain (fog has no render bucket);
-// only the pre-warm step instantiates it. Kept trivial on purpose.
-export const createFog251Material: MaterialFactory = (
-	_params: MaterialFactoryParams
-): MaterialFactoryResult => {
-	const material = new THREE.MeshStandardMaterial({
-		color: FOG_SWATCH,
-		transparent: true,
-		opacity: 0,
-		depthWrite: false,
-		vertexColors: false,
-	});
-	return {
-		material,
-		castShadow: false,
-		receiveShadow: false,
-	};
-};
 
 const fog251Material: TerrainMaterial = {
 	bucketKey: 'fog_251',
@@ -62,7 +37,6 @@ const fog251Material: TerrainMaterial = {
 	passable: true,
 	// Rendered by the volumetric fog pass, not as a surface mesh.
 	volumetric: true,
-	factory: createFog251Material,
 	special: {
 		paletteIndex: 251,
 		label: 'Fog',

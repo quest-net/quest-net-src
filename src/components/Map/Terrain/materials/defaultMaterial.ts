@@ -1,10 +1,10 @@
 // Default material (bucket 'default') -- opaque vertex-coloured terrain with
-// per-fragment voxel AO and optional movement-highlight overlay.
+// per-fragment voxel AO and the movement-highlight overlay.
 //
 // This file is one of the per-material definition files collected by
 // materials/index.ts. The default export is the TerrainMaterial record; the
 // registry wraps `factory` to install a stable customProgramCacheKey derived
-// from bucketKey + shaderVersion + highlight flag.
+// from bucketKey + shaderVersion + performance mode.
 
 import * as THREE from 'three';
 import { THREE_D_TERRAIN_MATERIAL } from '../../threeDMapConstants';
@@ -16,7 +16,6 @@ import type {
 	TerrainMaterial,
 } from './materialTypes';
 import {
-	applyVoxelAoPatch,
 	applyVoxelAoUniforms,
 	getVoxelAoFragmentHeader,
 	VOXEL_AO_CALL,
@@ -24,92 +23,41 @@ import {
 	VOXEL_AO_VERTEX_HEADER,
 	type VoxelAoTexture,
 } from '../shaders/voxelAoShader';
+import {
+	applyMovementHighlightUniforms,
+	MOVEMENT_HIGHLIGHT_DITHERING,
+	MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER,
+	MOVEMENT_HIGHLIGHT_VERTEX_BEGIN,
+	MOVEMENT_HIGHLIGHT_VERTEX_HEADER,
+} from '../shaders/movementHighlightShader';
 
 // ---------------------------------------------------------------------------
-// AO-only variant (FP view, no highlight)
+// Shader installation -- AO + movement-highlight overlay (the overlay is gated
+// by the uHighlightEnabled uniform set in applyMovementHighlightUniforms, so a
+// single program serves world view, first-person, and the surroundings skirt).
 // ---------------------------------------------------------------------------
 
-/**
- * Sets material.onBeforeCompile for the AO-only (no movement highlight) variant.
- * Used by the FP-view default material.
- */
-function installDefaultAoShader(
+function installDefaultShader(
 	material: THREE.MeshStandardMaterial,
 	voxelAo: VoxelAoTexture,
+	movementHighlight: MovementHighlightTexture | undefined,
 	performanceMode: boolean
 ): void {
-	material.onBeforeCompile = (shader) => {
-		applyVoxelAoPatch(shader, voxelAo, performanceMode);
-	};
-}
-
-// ---------------------------------------------------------------------------
-// AO + movement-highlight combined variant (world view)
-// ---------------------------------------------------------------------------
-
-/**
- * Sets material.onBeforeCompile for the AO + movement-highlight combined variant.
- * Used by the world-view default material.
- *
- * The AO and highlight patches both modify #include <common> in the vertex and
- * fragment shaders, so they must be combined in a single onBeforeCompile call
- * rather than chained (String.replace only replaces the first occurrence).
- */
-function installDefaultHighlightShader(
-	material: THREE.MeshStandardMaterial,
-	highlight: MovementHighlightTexture,
-	voxelAo: VoxelAoTexture,
-	performanceMode: boolean
-): void {
-	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
-	const heightLevels = highlight.heightLevels;
-
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
-		shader.uniforms.movementHighlightMap          = { value: highlight.texture };
-		shader.uniforms.movementHighlightSize         = { value: highlightSize };
-		shader.uniforms.movementHighlightHeightLevels = { value: heightLevels };
+		applyMovementHighlightUniforms(shader, movementHighlight);
 
-		// AO + highlight declarations combined into the same #include <common>
-		// replacement so the include appears only once in the final source.
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
-			[
-				'#include <common>',
-				...VOXEL_AO_VERTEX_HEADER,
-				'uniform vec2 movementHighlightSize;',
-				'attribute float tileHeight;',
-				'attribute float highlightStrength;',
-				'varying float vMovementHighlightHeight;',
-				'varying float vMovementHighlightStrength;',
-				'varying vec3 vMovementWorldPosition;',
-				'varying vec3 vMovementWorldNormal;',
-			].join('\n')
+			['#include <common>', ...VOXEL_AO_VERTEX_HEADER, ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER].join('\n')
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <begin_vertex>',
-			[
-				'#include <begin_vertex>',
-				...VOXEL_AO_VERTEX_BEGIN,
-				'vMovementHighlightHeight = tileHeight;',
-				'vMovementHighlightStrength = highlightStrength;',
-				'vMovementWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
-				'vMovementWorldNormal = normalize(mat3(modelMatrix) * normal);',
-			].join('\n')
+			['#include <begin_vertex>', ...VOXEL_AO_VERTEX_BEGIN, ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			[
-				'#include <common>',
-				...getVoxelAoFragmentHeader(performanceMode),
-				'uniform highp sampler3D movementHighlightMap;',
-				'uniform vec2 movementHighlightSize;',
-				'uniform float movementHighlightHeightLevels;',
-				'varying float vMovementHighlightHeight;',
-				'varying float vMovementHighlightStrength;',
-				'varying vec3 vMovementWorldPosition;',
-				'varying vec3 vMovementWorldNormal;',
-			].join('\n')
+			['#include <common>', ...getVoxelAoFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
@@ -117,36 +65,7 @@ function installDefaultHighlightShader(
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <dithering_fragment>',
-			[
-				'vec3 movementOwnerPosition = vMovementWorldPosition - vMovementWorldNormal * 0.002;',
-				'vec2 movementTileCoord = clamp(',
-				'	floor(movementOwnerPosition.xz + movementHighlightSize * 0.5),',
-				'	vec2(0.0),',
-				'	movementHighlightSize - vec2(1.0)',
-				');',
-				'float movementTileHeight = clamp(vMovementHighlightHeight, 0.0, movementHighlightHeightLevels - 1.0);',
-				'vec3 movementHighlightUvw = vec3(',
-				'	(movementTileCoord.x + 0.5) / movementHighlightSize.x,',
-				'	(movementTileHeight + 0.5) / movementHighlightHeightLevels,',
-				'	(movementTileCoord.y + 0.5) / movementHighlightSize.y',
-				');',
-				'vec4 movementHighlight = texture(movementHighlightMap, movementHighlightUvw);',
-				'if (movementHighlight.a > 0.0 && vMovementHighlightStrength > 0.0) {',
-				'	vec3 baseColor = gl_FragColor.rgb;',
-				'	float baseLuma = dot(baseColor, vec3(0.2126, 0.7152, 0.0722));',
-				'	vec2 tileLocal = fract(movementOwnerPosition.xz + movementHighlightSize * 0.5);',
-				'	float edgeDistance = min(min(tileLocal.x, 1.0 - tileLocal.x), min(tileLocal.y, 1.0 - tileLocal.y));',
-				'	float edgeBand = 1.0 - smoothstep(0.025, 0.11, edgeDistance);',
-				'	float markAlpha = clamp(movementHighlight.a * (1.35 + edgeBand * 0.75) * vMovementHighlightStrength, 0.0, 0.92);',
-				'	vec3 screened = 1.0 - (1.0 - baseColor) * (1.0 - movementHighlight.rgb * 0.85);',
-				'	vec3 marked = mix(baseColor, screened, markAlpha);',
-				'	marked = max(marked, movementHighlight.rgb * movementHighlight.a * (0.65 + 0.55 * vMovementHighlightStrength));',
-				'	vec3 contrastEdge = mix(vec3(1.0), vec3(0.035), step(0.58, baseLuma));',
-				'	vec3 edgeColor = mix(movementHighlight.rgb, contrastEdge, 0.45);',
-				'	gl_FragColor.rgb = mix(marked, edgeColor, edgeBand * movementHighlight.a * 0.7 * vMovementHighlightStrength);',
-				'}',
-				'#include <dithering_fragment>',
-			].join('\n')
+			MOVEMENT_HIGHLIGHT_DITHERING.join('\n')
 		);
 	};
 }
@@ -156,7 +75,7 @@ function installDefaultHighlightShader(
 // ---------------------------------------------------------------------------
 
 export const createDefaultMaterial: MaterialFactory = (params: MaterialFactoryParams): MaterialFactoryResult => {
-	const { acceptsMovementHighlight, movementHighlight, voxelAo, performanceMode = false } = params;
+	const { movementHighlight, voxelAo, performanceMode = false } = params;
 
 	const material = new THREE.MeshStandardMaterial({
 		roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
@@ -164,11 +83,7 @@ export const createDefaultMaterial: MaterialFactory = (params: MaterialFactoryPa
 		vertexColors: true,
 	});
 
-	if (acceptsMovementHighlight && movementHighlight) {
-		installDefaultHighlightShader(material, movementHighlight, voxelAo, performanceMode);
-	} else {
-		installDefaultAoShader(material, voxelAo, performanceMode);
-	}
+	installDefaultShader(material, voxelAo, movementHighlight, performanceMode);
 	// customProgramCacheKey is set by the registry wrapper.
 
 	return { material, castShadow: true, receiveShadow: true };

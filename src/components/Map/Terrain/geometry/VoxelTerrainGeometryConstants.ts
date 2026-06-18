@@ -1,9 +1,8 @@
 // Ambient occlusion is no longer baked at mesh-build time. It is computed per
 // fragment by sampling the voxel-occupancy 3D texture (see
-// `VoxelTerrainOccupancy` in VoxelTerrainGeometryUtils.ts and the
-// `applyVoxelAoPatch` helper in Terrain/shaders/voxelAoShader.ts). This file now
-// only contains the per-face geometry definitions consumed by the greedy
-// mesher.
+// `VoxelTerrainOccupancy` in VoxelTerrainGeometryUtils.ts and the AO shader
+// chunks in Terrain/shaders/voxelAoShader.ts). This file now only contains the
+// per-face geometry definitions consumed by the greedy mesher.
 
 export interface VoxelFaceDefinition {
 	normal: [number, number, number];

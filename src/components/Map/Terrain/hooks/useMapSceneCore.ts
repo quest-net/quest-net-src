@@ -230,10 +230,13 @@ export function useMapSceneCore(
 			setDepthOfFieldFocus: postProcessing.setDepthOfFieldFocus,
 		};
 
-		// Pre-warm: compile every registered shader variant before exposing the
+		// Pre-warm: compile every registered shader program before exposing the
 		// scene to the rest of the app, so there is no stutter when terrain first
-		// appears. Both movement-highlight variants are warmed (the world view
-		// paints range onto the highlight-capable terrain shader).
+		// appears. One program per material now covers both views -- the overlay
+		// is gated by a uniform, not a separate compiled variant -- so a single
+		// pass warms the highlight-capable shader the world view, FP view, and
+		// surroundings all share. (Volumetric materials like fog are absent from
+		// the registry and so are never warmed.)
 		let cancelled = false;
 		void (async () => {
 			const dummyGeo = createDummyTerrainGeometry();
@@ -241,17 +244,14 @@ export function useMapSceneCore(
 			const dummyVoxelAo = createPlaceholderVoxelAoTexture();
 			const warmMeshes: THREE.Mesh[] = [];
 			for (const [, factory] of TERRAIN_MATERIAL_REGISTRY) {
-				for (const acceptsMovementHighlight of [false, true]) {
-					const result = factory({
-						acceptsMovementHighlight,
-						performanceMode,
-						movementHighlight: acceptsMovementHighlight ? dummyHighlight : undefined,
-						voxelAo: dummyVoxelAo,
-					});
-					const warmMesh = new THREE.Mesh(dummyGeo, result.material);
-					scene.add(warmMesh);
-					warmMeshes.push(warmMesh);
-				}
+				const result = factory({
+					performanceMode,
+					movementHighlight: dummyHighlight,
+					voxelAo: dummyVoxelAo,
+				});
+				const warmMesh = new THREE.Mesh(dummyGeo, result.material);
+				scene.add(warmMesh);
+				warmMeshes.push(warmMesh);
 			}
 			warmMeshesRef.current = warmMeshes;
 			await renderer.compileAsync(scene, camera);

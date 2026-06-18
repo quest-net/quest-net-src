@@ -97,11 +97,12 @@ export function createPlaceholderVoxelAoTexture(): VoxelAoTexture {
 // ---------------------------------------------------------------------------
 // Shader chunks
 //
-// Materials whose color_fragment is "just multiply diffuseColor by the AO
-// factor" should call `applyVoxelAoPatch` and be done. Materials that already
-// override color_fragment for their own purposes (stone bricks, water) should
-// inline these chunks into their own combined onBeforeCompile and call
-// `applyVoxelAoUniforms` to install the uniforms.
+// Every terrain material inlines these chunks into its own combined
+// onBeforeCompile (alongside its color_fragment override and the shared
+// movement-highlight chunks) and calls `applyVoxelAoUniforms` to install the
+// uniforms. The world-position/normal varyings declared here (vVoxelAoWorld*)
+// are also what the movement-highlight overlay reads, so AO and highlight share
+// them.
 // ---------------------------------------------------------------------------
 
 /** Append after `#include <common>` in the vertex shader. */
@@ -209,33 +210,4 @@ export function applyVoxelAoUniforms(
 	shader.uniforms.voxelAoSize = { value: ao.size };
 	shader.uniforms.voxelAoRadius = { value: VOXEL_AO_FALLOFF_RADIUS };
 	shader.uniforms.voxelAoVoxelSize = { value: ao.voxelSize };
-}
-
-/**
- * AO-only patch. Installs uniforms, threads the world-position varyings, and
- * replaces `#include <color_fragment>` with the AO multiply. Use for materials
- * that don't otherwise override color_fragment.
- */
-export function applyVoxelAoPatch(
-	shader: THREE.WebGLProgramParametersWithUniforms,
-	ao: VoxelAoTexture,
-	performanceMode = false
-): void {
-	applyVoxelAoUniforms(shader, ao);
-	shader.vertexShader = shader.vertexShader.replace(
-		'#include <common>',
-		['#include <common>', ...VOXEL_AO_VERTEX_HEADER].join('\n')
-	);
-	shader.vertexShader = shader.vertexShader.replace(
-		'#include <begin_vertex>',
-		['#include <begin_vertex>', ...VOXEL_AO_VERTEX_BEGIN].join('\n')
-	);
-	shader.fragmentShader = shader.fragmentShader.replace(
-		'#include <common>',
-		['#include <common>', ...getVoxelAoFragmentHeader(performanceMode)].join('\n')
-	);
-	shader.fragmentShader = shader.fragmentShader.replace(
-		'#include <color_fragment>',
-		`#include <color_fragment>\ndiffuseColor.rgb *= ${VOXEL_AO_CALL};`
-	);
 }

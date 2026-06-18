@@ -144,8 +144,8 @@ export function useTerrainMeshes(
 				TERRAIN_MATERIAL_REGISTRY.get(bucketKey) ??
 				TERRAIN_MATERIAL_REGISTRY.get("default")!;
 			const result = factory({
-				acceptsMovementHighlight: wantHighlight,
 				performanceMode,
+				// Provided (world view) -> overlay enabled; null (FP) -> disabled.
 				movementHighlight: movementHighlight ?? undefined,
 				voxelAo,
 			});

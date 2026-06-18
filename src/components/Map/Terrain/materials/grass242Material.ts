@@ -22,6 +22,13 @@ import {
 	VOXEL_AO_VERTEX_HEADER,
 	type VoxelAoTexture,
 } from '../shaders/voxelAoShader';
+import {
+	applyMovementHighlightUniforms,
+	MOVEMENT_HIGHLIGHT_DITHERING,
+	MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER,
+	MOVEMENT_HIGHLIGHT_VERTEX_BEGIN,
+	MOVEMENT_HIGHLIGHT_VERTEX_HEADER,
+} from '../shaders/movementHighlightShader';
 
 const GRASS_TEXTURE_URL = '/materials/grass_242/grass_02_base_1k.png';
 const GRASS_NORMAL_TEXTURE_URL = '/materials/grass_242/grass_02_normal_gl_1k.png';
@@ -207,13 +214,14 @@ function grassNormalFragment(): string[] {
 	];
 }
 
-function installGrassAoShader(
+function installGrass242Shader(
 	material: THREE.MeshStandardMaterial,
 	texture: THREE.Texture,
 	normalTexture: THREE.Texture | null,
 	roughnessTexture: THREE.Texture | null,
 	aoTexture: THREE.Texture | null,
 	voxelAo: VoxelAoTexture,
+	movementHighlight: MovementHighlightTexture | undefined,
 	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
@@ -224,98 +232,19 @@ function installGrassAoShader(
 			shader.uniforms.grassRoughnessMap = { value: roughnessTexture };
 			shader.uniforms.grassAoMap = { value: aoTexture };
 		}
+		applyMovementHighlightUniforms(shader, movementHighlight);
+
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
-			['#include <common>', ...grassShaderHeader()].join('\n')
+			['#include <common>', ...grassShaderHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER].join('\n')
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...grassBeginVertex()].join('\n')
+			['#include <begin_vertex>', ...grassBeginVertex(), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...grassFragmentHeader(performanceMode)].join('\n')
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <color_fragment>',
-			grassColorFragment(performanceMode).join('\n')
-		);
-		if (!performanceMode) {
-			shader.fragmentShader = shader.fragmentShader.replace(
-				'#include <roughnessmap_fragment>',
-				grassRoughnessFragment().join('\n')
-			);
-			shader.fragmentShader = shader.fragmentShader.replace(
-				'#include <normal_fragment_maps>',
-				grassNormalFragment().join('\n')
-			);
-		}
-	};
-}
-
-function installGrassHighlightShader(
-	material: THREE.MeshStandardMaterial,
-	texture: THREE.Texture,
-	normalTexture: THREE.Texture | null,
-	roughnessTexture: THREE.Texture | null,
-	aoTexture: THREE.Texture | null,
-	highlight: MovementHighlightTexture,
-	voxelAo: VoxelAoTexture,
-	performanceMode: boolean
-): void {
-	const highlightSize = new THREE.Vector2(highlight.width, highlight.length);
-	const heightLevels = highlight.heightLevels;
-
-	material.onBeforeCompile = (shader) => {
-		applyVoxelAoUniforms(shader, voxelAo);
-		shader.uniforms.grassMap = { value: texture };
-		if (!performanceMode && normalTexture && roughnessTexture && aoTexture) {
-			shader.uniforms.grassNormalMap = { value: normalTexture };
-			shader.uniforms.grassRoughnessMap = { value: roughnessTexture };
-			shader.uniforms.grassAoMap = { value: aoTexture };
-		}
-		shader.uniforms.movementHighlightMap = { value: highlight.texture };
-		shader.uniforms.movementHighlightSize = { value: highlightSize };
-		shader.uniforms.movementHighlightHeightLevels = { value: heightLevels };
-
-		shader.vertexShader = shader.vertexShader.replace(
-			'#include <common>',
-			[
-				'#include <common>',
-				...grassShaderHeader(),
-				'uniform vec2 movementHighlightSize;',
-				'attribute float tileHeight;',
-				'attribute float highlightStrength;',
-				'varying float vMovementHighlightHeight;',
-				'varying float vMovementHighlightStrength;',
-				'varying vec3 vMovementWorldPosition;',
-				'varying vec3 vMovementWorldNormal;',
-			].join('\n')
-		);
-		shader.vertexShader = shader.vertexShader.replace(
-			'#include <begin_vertex>',
-			[
-				'#include <begin_vertex>',
-				...grassBeginVertex(),
-				'vMovementHighlightHeight = tileHeight;',
-				'vMovementHighlightStrength = highlightStrength;',
-				'vMovementWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
-				'vMovementWorldNormal = normalize(mat3(modelMatrix) * normal);',
-			].join('\n')
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <common>',
-			[
-				'#include <common>',
-				...grassFragmentHeader(performanceMode),
-				'uniform highp sampler3D movementHighlightMap;',
-				'uniform vec2 movementHighlightSize;',
-				'uniform float movementHighlightHeightLevels;',
-				'varying float vMovementHighlightHeight;',
-				'varying float vMovementHighlightStrength;',
-				'varying vec3 vMovementWorldPosition;',
-				'varying vec3 vMovementWorldNormal;',
-			].join('\n')
+			['#include <common>', ...grassFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
@@ -333,36 +262,7 @@ function installGrassHighlightShader(
 		}
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <dithering_fragment>',
-			[
-				'vec3 movementOwnerPosition = vMovementWorldPosition - vMovementWorldNormal * 0.002;',
-				'vec2 movementTileCoord = clamp(',
-				'	floor(movementOwnerPosition.xz + movementHighlightSize * 0.5),',
-				'	vec2(0.0),',
-				'	movementHighlightSize - vec2(1.0)',
-				');',
-				'float movementTileHeight = clamp(vMovementHighlightHeight, 0.0, movementHighlightHeightLevels - 1.0);',
-				'vec3 movementHighlightUvw = vec3(',
-				'	(movementTileCoord.x + 0.5) / movementHighlightSize.x,',
-				'	(movementTileHeight + 0.5) / movementHighlightHeightLevels,',
-				'	(movementTileCoord.y + 0.5) / movementHighlightSize.y',
-				');',
-				'vec4 movementHighlight = texture(movementHighlightMap, movementHighlightUvw);',
-				'if (movementHighlight.a > 0.0 && vMovementHighlightStrength > 0.0) {',
-				'	vec3 baseColor = gl_FragColor.rgb;',
-				'	float baseLuma = dot(baseColor, vec3(0.2126, 0.7152, 0.0722));',
-				'	vec2 tileLocal = fract(movementOwnerPosition.xz + movementHighlightSize * 0.5);',
-				'	float edgeDistance = min(min(tileLocal.x, 1.0 - tileLocal.x), min(tileLocal.y, 1.0 - tileLocal.y));',
-				'	float edgeBand = 1.0 - smoothstep(0.025, 0.11, edgeDistance);',
-				'	float markAlpha = clamp(movementHighlight.a * (1.35 + edgeBand * 0.75) * vMovementHighlightStrength, 0.0, 0.92);',
-				'	vec3 screened = 1.0 - (1.0 - baseColor) * (1.0 - movementHighlight.rgb * 0.85);',
-				'	vec3 marked = mix(baseColor, screened, markAlpha);',
-				'	marked = max(marked, movementHighlight.rgb * movementHighlight.a * (0.65 + 0.55 * vMovementHighlightStrength));',
-				'	vec3 contrastEdge = mix(vec3(1.0), vec3(0.035), step(0.58, baseLuma));',
-				'	vec3 edgeColor = mix(movementHighlight.rgb, contrastEdge, 0.45);',
-				'	gl_FragColor.rgb = mix(marked, edgeColor, edgeBand * movementHighlight.a * 0.7 * vMovementHighlightStrength);',
-				'}',
-				'#include <dithering_fragment>',
-			].join('\n')
+			MOVEMENT_HIGHLIGHT_DITHERING.join('\n')
 		);
 	};
 }
@@ -370,7 +270,7 @@ function installGrassHighlightShader(
 export const createGrass242Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { acceptsMovementHighlight, movementHighlight, voxelAo, performanceMode = false } = params;
+	const { movementHighlight, voxelAo, performanceMode = false } = params;
 	const texture = getGrassTexture(performanceMode);
 	const normalTexture = performanceMode ? null : getGrassNormalTexture();
 	const roughnessTexture = performanceMode ? null : getGrassRoughnessTexture();
@@ -381,11 +281,7 @@ export const createGrass242Material: MaterialFactory = (
 		vertexColors: false,
 	});
 
-	if (acceptsMovementHighlight && movementHighlight) {
-		installGrassHighlightShader(material, texture, normalTexture, roughnessTexture, aoTexture, movementHighlight, voxelAo, performanceMode);
-	} else {
-		installGrassAoShader(material, texture, normalTexture, roughnessTexture, aoTexture, voxelAo, performanceMode);
-	}
+	installGrass242Shader(material, texture, normalTexture, roughnessTexture, aoTexture, voxelAo, movementHighlight, performanceMode);
 
 	return { material, castShadow: true, receiveShadow: true };
 };

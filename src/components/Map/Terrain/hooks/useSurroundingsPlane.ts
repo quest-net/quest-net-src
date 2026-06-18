@@ -598,8 +598,9 @@ export function useSurroundingsPlane(
 			: TERRAIN_MATERIAL_REGISTRY.get(getMaterialBucket(surroundingsColorIndex)) ??
 				TERRAIN_MATERIAL_REGISTRY.get("default")!;
 		const voxelAo = createPlaceholderVoxelAoTexture();
+		// No movementHighlight -> the skirt shares the terrain program with the
+		// overlay disabled.
 		const result = factory({
-			acceptsMovementHighlight: false,
 			performanceMode,
 			voxelAo,
 		});

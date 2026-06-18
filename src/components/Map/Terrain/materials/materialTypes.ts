@@ -18,15 +18,15 @@ export interface MovementHighlightTexture {
 // ---------------------------------------------------------------------------
 
 export interface MaterialFactoryParams {
-	/**
-	 * True for world-view meshes (movement highlight overlay applied).
-	 * False for first-person-view meshes (AO only, no highlight).
-	 * Must match the acceptsMovementHighlight flag used in customProgramCacheKey.
-	 */
-	acceptsMovementHighlight: boolean;
 	/** Enables lower-cost shader variants while preserving material semantics. */
 	performanceMode?: boolean;
-	/** Required when acceptsMovementHighlight is true. */
+	/**
+	 * World-view movement-range texture. When provided, the material's
+	 * movement-highlight overlay is enabled (uHighlightEnabled = 1). Omit for
+	 * first-person terrain and the surroundings skirt: the overlay still compiles
+	 * into the (single) program but stays disabled, so both views share one
+	 * shader program per material.
+	 */
 	movementHighlight?: MovementHighlightTexture;
 	/**
 	 * Voxel-occupancy sampler used by every material's per-fragment AO shader.
@@ -80,7 +80,7 @@ export interface TerrainMaterialGeometry {
 //
 // Factories MUST NOT set customProgramCacheKey themselves -- the registry
 // wraps the factory and sets a stable key derived from bucketKey, shaderVersion,
-// and the highlight flag. Bumping shaderVersion is how a designer invalidates
+// and performance mode. Bumping shaderVersion is how a designer invalidates
 // the program cache after editing a material's shader source.
 // ---------------------------------------------------------------------------
 
@@ -128,8 +128,12 @@ export interface TerrainMaterial {
 	 * Defaults to false.
 	 */
 	volumetric?: boolean;
-	/** Factory that builds the THREE.MeshStandardMaterial for this bucket. */
-	factory: MaterialFactory;
+	/**
+	 * Factory that builds the THREE.MeshStandardMaterial for this bucket. Omitted
+	 * for `volumetric` materials (fog), which never emit a render bucket and so
+	 * are never instantiated as a surface mesh or pre-warmed.
+	 */
+	factory?: MaterialFactory;
 	/**
 	 * Present iff this material is a special palette entry (240-255). The default
 	 * material has no palette index. Special materials show as a swatch in the

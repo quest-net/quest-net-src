@@ -23,8 +23,8 @@
 //   and shader pre-warm coverage are derived automatically.
 //
 // The registry wraps each factory and stamps a customProgramCacheKey of the
-// form `terrain-<bucketKey>-v<shaderVersion>-<hl|nh>`. Materials should NOT set
-// their own cache key. Bumping shaderVersion in the material file is the way
+// form `terrain-<bucketKey>-v<shaderVersion>-<perf|full>`. Materials should NOT
+// set their own cache key. Bumping shaderVersion in the material file is the way
 // to invalidate cached programs after editing shader source.
 
 import * as THREE from 'three';
@@ -388,7 +388,11 @@ export function isSpecialPaletteIndex(paletteIndex: number): boolean {
 // produces gets a stable customProgramCacheKey derived from:
 //   - bucketKey       (one program per material)
 //   - shaderVersion   (bump in the material file to force a recompile)
-//   - highlight flag  (world view vs FP view share neither program nor key)
+//   - performance mode (fixed per session -- requires a page reload to change)
+//
+// There is deliberately no movement-highlight dimension: the overlay is always
+// compiled in and toggled by the uHighlightEnabled uniform, so the world view,
+// first-person view, and surroundings skirt all share ONE program per material.
 //
 // This is the load-bearing detail for the edit-time-hitch fix in the refactor:
 // three.js's program cache hits across material instances that share a key, so
@@ -396,7 +400,9 @@ export function isSpecialPaletteIndex(paletteIndex: number): boolean {
 // triggers shader compilation.
 // ---------------------------------------------------------------------------
 
-function wrapFactoryWithCacheKey(material: TerrainMaterial): MaterialFactory {
+function wrapFactoryWithCacheKey(
+	material: TerrainMaterial & { factory: MaterialFactory }
+): MaterialFactory {
 	const { bucketKey, shaderVersion, factory } = material;
 	return (params: MaterialFactoryParams): MaterialFactoryResult => {
 		const result = factory(params);
@@ -404,7 +410,6 @@ function wrapFactoryWithCacheKey(material: TerrainMaterial): MaterialFactory {
 			'terrain',
 			bucketKey,
 			`v${shaderVersion}`,
-			params.acceptsMovementHighlight ? 'hl' : 'nh',
 			params.performanceMode ? 'perf' : 'full',
 		].join('-');
 		result.material.customProgramCacheKey = () => key;
@@ -436,8 +441,14 @@ function wrapFactoryWithCacheKey(material: TerrainMaterial): MaterialFactory {
 	}
 }
 
+// Volumetric materials (fog) never emit a render bucket -- they feed the
+// screen-space raymarch pass instead -- so they have no factory and are excluded
+// here. Nothing ever looks them up by bucketKey, and the pre-warm iterates this
+// registry, so excluding them also keeps fog out of shader pre-warming.
 export const TERRAIN_MATERIAL_REGISTRY: ReadonlyMap<string, MaterialFactory> = new Map(
-	TERRAIN_MATERIALS.map((m) => [m.bucketKey, wrapFactoryWithCacheKey(m)] as const)
+	TERRAIN_MATERIALS
+		.filter((m): m is TerrainMaterial & { factory: MaterialFactory } => m.factory !== undefined)
+		.map((m) => [m.bucketKey, wrapFactoryWithCacheKey(m)] as const)
 );
 
 // ---------------------------------------------------------------------------
