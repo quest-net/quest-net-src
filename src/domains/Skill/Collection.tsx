@@ -1,11 +1,14 @@
 // domains/Skill/Collection.tsx
 
-import { useState } from "react";
 import { CollectionView, CollectionViewItem } from "../../components/CollectionView/CollectionView";
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Actor, SkillSlot } from "../Actor/Actor";
+import { Skill } from "./Skill";
 import { SkillSlotDisplay } from "./SkillSlotDisplay";
+import { SkillEdit } from "./Edit";
+import { FormDrawer } from "../../components/ui/FormDrawer";
+import { useAnimatedDrawer } from "../../hooks/useAnimatedDrawer";
 import { formatActionCost, formatStatCost } from "../Actor/ActorCostUtils";
 
 interface SkillCollectionProps {
@@ -15,26 +18,14 @@ interface SkillCollectionProps {
 export function SkillCollection({ actor }: SkillCollectionProps) {
 	const context = useQuestContext();
 	const campaign = CampaignUtils.getActiveCampaign(context);
+	const isDm = context.User.Role === "dm";
 
-	// Drawer state
-	const [isDrawerOpen, setDrawerOpen] = useState(false);
-	const [selectedSlot, setSelectedSlot] = useState<SkillSlot | null>(null);
+	// Slot detail drawer (read-only) and DM template-edit drawer.
+	const slotDrawer = useAnimatedDrawer<SkillSlot>();
+	const editDrawer = useAnimatedDrawer<Skill>();
 
 	// Get the actor's skills
 	const slots = actor.Skills;
-
-	// Handle skill click - open drawer
-	const handleSkillClick = (slot: SkillSlot) => {
-		setSelectedSlot(slot);
-		setDrawerOpen(true);
-	};
-
-	// Handle drawer close
-	const handleCloseDrawer = () => {
-		setDrawerOpen(false);
-		// Small delay before clearing selected slot to avoid visual flash
-		setTimeout(() => setSelectedSlot(null), 300);
-	};
 
 	// Map slots to CollectionViewItem format
 	const items: CollectionViewItem[] = slots
@@ -63,13 +54,14 @@ export function SkillCollection({ actor }: SkillCollectionProps) {
 			].filter(Boolean).join(" • ");
 
 			return {
-				id: `${slot.Id}-${index}`, 
+				id: `${slot.Id}-${index}`,
 				label: skill.Name,
 				details: details,
 				description: skill.Description,
 				imageId: skill.Image,
 				badge: skill.DiceRoll,
-				onClick: () => handleSkillClick(slot),
+				onClick: () => slotDrawer.open(slot),
+				...(isDm ? { onEdit: () => editDrawer.open(skill) } : {}),
 			};
 		})
 		.filter(Boolean) as CollectionViewItem[];
@@ -86,13 +78,20 @@ export function SkillCollection({ actor }: SkillCollectionProps) {
 			/>
 
 			{/* Skill Slot Display Drawer */}
-			{selectedSlot && (
+			{slotDrawer.value && (
 				<SkillSlotDisplay
-					isOpen={isDrawerOpen}
-					onClose={handleCloseDrawer}
-					slot={selectedSlot}
+					isOpen={slotDrawer.isOpen}
+					onClose={slotDrawer.close}
+					slot={slotDrawer.value}
 					actor={actor}
 				/>
+			)}
+
+			{/* DM Template Edit Drawer */}
+			{editDrawer.value && (
+				<FormDrawer isOpen={editDrawer.isOpen} onClose={editDrawer.close}>
+					<SkillEdit skill={editDrawer.value} onClose={editDrawer.close} />
+				</FormDrawer>
 			)}
 		</>
 	);

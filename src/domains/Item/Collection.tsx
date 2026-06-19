@@ -1,11 +1,14 @@
 // domains/Item/Collection.tsx
 
-import { useState } from "react";
 import { CollectionView, CollectionViewItem } from "../../components/CollectionView/CollectionView";
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Actor, InventorySlot, EquipmentSlot } from "../Actor/Actor";
+import { Item } from "./Item";
 import { ItemSlotDisplay } from "./ItemSlotDisplay";
+import { ItemEdit } from "./Edit";
+import { FormDrawer } from "../../components/ui/FormDrawer";
+import { useAnimatedDrawer } from "../../hooks/useAnimatedDrawer";
 import { formatActionCost, formatStatCost } from "../Actor/ActorCostUtils";
 
 interface ItemCollectionProps {
@@ -16,30 +19,18 @@ interface ItemCollectionProps {
 export function ItemCollection({ actor, mode }: ItemCollectionProps) {
 	const context = useQuestContext();
 	const campaign = CampaignUtils.getActiveCampaign(context);
+	const isDm = context.User.Role === "dm";
 
-	// Drawer state
-	const [isDrawerOpen, setDrawerOpen] = useState(false);
-	const [selectedSlot, setSelectedSlot] = useState<InventorySlot | EquipmentSlot | null>(null);
+	// Slot detail drawer (read-only) and DM template-edit drawer.
+	const slotDrawer = useAnimatedDrawer<InventorySlot | EquipmentSlot>();
+	const editDrawer = useAnimatedDrawer<Item>();
 
 	// Get the appropriate slots based on mode
 	const slots = mode === "inventory" ? actor.Inventory : actor.Equipment;
 
-	// Handle item click - open drawer
-	const handleItemClick = (slot: InventorySlot | EquipmentSlot) => {
-		setSelectedSlot(slot);
-		setDrawerOpen(true);
-	};
-
-	// Handle drawer close
-	const handleCloseDrawer = () => {
-		setDrawerOpen(false);
-		// Small delay before clearing selected slot to avoid visual flash
-		setTimeout(() => setSelectedSlot(null), 300);
-	};
-
 	// Map slots to CollectionViewItem format
 	const items: CollectionViewItem[] = slots
-    .map((slot, index) => { 
+    .map((slot, index) => {
         const item = campaign.ItemTemplates.find((t) => t.Id === slot.Id);
         if (!item) return null;
 
@@ -67,7 +58,8 @@ export function ItemCollection({ actor, mode }: ItemCollectionProps) {
             description: item.Description,
             imageId: item.Image,
             badge: item.DiceRoll,
-            onClick: () => handleItemClick(slot),
+            onClick: () => slotDrawer.open(slot),
+            ...(isDm ? { onEdit: () => editDrawer.open(item) } : {}),
         };
     })
     .filter(Boolean) as CollectionViewItem[];
@@ -88,14 +80,21 @@ export function ItemCollection({ actor, mode }: ItemCollectionProps) {
 			/>
 
 			{/* Item Slot Display Drawer */}
-			{selectedSlot && (
+			{slotDrawer.value && (
 				<ItemSlotDisplay
-					isOpen={isDrawerOpen}
-					onClose={handleCloseDrawer}
-					slot={selectedSlot}
+					isOpen={slotDrawer.isOpen}
+					onClose={slotDrawer.close}
+					slot={slotDrawer.value}
 					actor={actor}
 					mode={mode}
 				/>
+			)}
+
+			{/* DM Template Edit Drawer */}
+			{editDrawer.value && (
+				<FormDrawer isOpen={editDrawer.isOpen} onClose={editDrawer.close}>
+					<ItemEdit item={editDrawer.value} onClose={editDrawer.close} />
+				</FormDrawer>
 			)}
 		</>
 	);

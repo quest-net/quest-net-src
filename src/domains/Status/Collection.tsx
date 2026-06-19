@@ -1,11 +1,14 @@
 // domains/Status/Collection.tsx
 
-import { useState } from "react";
 import { CollectionView, CollectionViewItem } from "../../components/CollectionView/CollectionView";
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Actor, StatusSlot } from "../Actor/Actor";
+import { Status } from "./Status";
 import { StatusSlotDisplay } from "./StatusSlotDisplay";
+import { StatusEdit } from "./Edit";
+import { FormDrawer } from "../../components/ui/FormDrawer";
+import { useAnimatedDrawer } from "../../hooks/useAnimatedDrawer";
 
 interface StatusCollectionProps {
 	actor: Actor;
@@ -14,30 +17,18 @@ interface StatusCollectionProps {
 export function StatusCollection({ actor }: StatusCollectionProps) {
 	const context = useQuestContext();
 	const campaign = CampaignUtils.getActiveCampaign(context);
+	const isDm = context.User.Role === "dm";
 
-	// Drawer state
-	const [isDrawerOpen, setDrawerOpen] = useState(false);
-	const [selectedSlot, setSelectedSlot] = useState<StatusSlot | null>(null);
+	// Slot detail drawer (read-only) and DM template-edit drawer.
+	const slotDrawer = useAnimatedDrawer<StatusSlot>();
+	const editDrawer = useAnimatedDrawer<Status>();
 
 	// Get the actor's statuses
 	const slots = actor.Statuses;
 
-	// Handle status click - open drawer
-	const handleStatusClick = (slot: StatusSlot) => {
-		setSelectedSlot(slot);
-		setDrawerOpen(true);
-	};
-
-	// Handle drawer close
-	const handleCloseDrawer = () => {
-		setDrawerOpen(false);
-		// Small delay before clearing selected slot to avoid visual flash
-		setTimeout(() => setSelectedSlot(null), 300);
-	};
-
 	// Map slots to CollectionViewItem format
 	const items: CollectionViewItem[] = slots
-    .map((slot, index) => { 
+    .map((slot, index) => {
         const status = campaign.StatusTemplates.find((t) => t.Id === slot.Id);
         if (!status) return null;
 
@@ -59,7 +50,8 @@ export function StatusCollection({ actor }: StatusCollectionProps) {
             details: durationText,
             description: status.Description,
             imageId: status.Image,
-            onClick: () => handleStatusClick(slot),
+            onClick: () => slotDrawer.open(slot),
+            ...(isDm ? { onEdit: () => editDrawer.open(status) } : {}),
         };
     })
     .filter(Boolean) as CollectionViewItem[];
@@ -76,13 +68,20 @@ export function StatusCollection({ actor }: StatusCollectionProps) {
 			/>
 
 			{/* Status Slot Display Drawer */}
-			{selectedSlot && (
+			{slotDrawer.value && (
 				<StatusSlotDisplay
-					isOpen={isDrawerOpen}
-					onClose={handleCloseDrawer}
-					slot={selectedSlot}
+					isOpen={slotDrawer.isOpen}
+					onClose={slotDrawer.close}
+					slot={slotDrawer.value}
 					actor={actor}
 				/>
+			)}
+
+			{/* DM Template Edit Drawer */}
+			{editDrawer.value && (
+				<FormDrawer isOpen={editDrawer.isOpen} onClose={editDrawer.close}>
+					<StatusEdit status={editDrawer.value} onClose={editDrawer.close} />
+				</FormDrawer>
 			)}
 		</>
 	);

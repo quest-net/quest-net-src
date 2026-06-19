@@ -23,6 +23,7 @@ export interface CollectionViewItem {
 	badgeColor?: string; // Badge color (DaisyUI classes: badge-primary, badge-success, etc.)
 	actions?: CollectionAction[];
 	onClick?: () => void; // Optional click handler for the item itself
+	onEdit?: () => void; // When set, renders a floating edit button (caller gates visibility)
 }
 
 interface CollectionAction {
@@ -208,6 +209,31 @@ export function CollectionView({
 }
 
 // ============================================================================
+// EDIT BUTTON (floating, top-right of an entry)
+// ============================================================================
+
+interface EditButtonProps {
+	onEdit: () => void;
+	label: string;
+}
+
+function EditButton({ onEdit, label }: EditButtonProps) {
+	return (
+		<button
+			onClick={(e) => {
+				e.stopPropagation();
+				onEdit();
+			}}
+			className="btn btn-xs btn-circle btn-neutral absolute top-2 right-2 z-10"
+			aria-label={`Edit ${label}`}
+			title="Edit"
+		>
+			<span className="icon-[mdi--pencil] w-4 h-4" />
+		</button>
+	);
+}
+
+// ============================================================================
 // COLLECTION CARD (Grid View)
 // ============================================================================
 
@@ -232,15 +258,24 @@ function CollectionCard({ item }: CollectionCardProps) {
 			onClick={item.onClick ? handleCardClick : undefined}
 		>
 			<figure className="px-4 pt-4 relative">
-				{/* Badge in top-right corner */}
+				{/* Badge — top-right normally, shifted left when the edit button claims the corner */}
 				{item.badge && (
-					<div className="absolute top-2 right-2 z-10">
+					<div
+						className={`absolute top-2 ${
+							item.onEdit ? "left-2" : "right-2"
+						} z-10`}
+					>
 						<span
 							className={`badge ${item.badgeColor || "badge-neutral"} badge-sm`}
 						>
 							{item.badge}
 						</span>
 					</div>
+				)}
+
+				{/* Floating edit button in top-right corner */}
+				{item.onEdit && (
+					<EditButton onEdit={item.onEdit} label={item.label} />
 				)}
 
 				{/* Square container with fixed aspect ratio */}
@@ -335,11 +370,16 @@ function CollectionRow({ item }: CollectionRowProps) {
 
 	return (
 		<div
-			className={`card card-side bg-base-100 border-2 border-base-300 p-4 ${
+			className={`card card-side bg-base-100 border-2 border-base-300 p-4 relative ${
 				item.onClick ? "cursor-pointer hover:border-primary transition-colors" : ""
 			}`}
 			onClick={item.onClick ? handleRowClick : undefined}
 		>
+			{/* Floating edit button in top-right corner */}
+			{item.onEdit && (
+				<EditButton onEdit={item.onEdit} label={item.label} />
+			)}
+
 			<div className="flex gap-4 flex-1 items-center">
 				{/* Image/Icon */}
 				<div className="w-32 h-32 bg-base-200 rounded-lg overflow-hidden flex items-center justify-center shrink-0">
