@@ -14,8 +14,36 @@ import type {
 	CampaignSettings,
 	StatCost,
 } from "../CampaignSetting/CampaignSetting";
+import type { User } from "../User/User";
 
 export const ActorUtils = {
+	/**
+	 * Whether `user` is allowed to target the actor named in `params` with
+	 * `actionKey`. The DM (and any non-player) is unrestricted. A player is gated
+	 * only on the shared `actor:*` surface — the one player-allowed path that can
+	 * carry an arbitrary actor id: they may act only on their own selected
+	 * Character. Since that selection always points at a Character they own, this
+	 * also blocks entities without resolving the actor's kind.
+	 *
+	 * This is the single home for the ownership rule. It runs in two places: the
+	 * player's optimistic pass (called with `context.User`, the player) and the
+	 * DM's authoritative re-check before applying a player request (called with the
+	 * requesting player). On the DM's own dispatch it is a no-op (DM is unrestricted).
+	 */
+	playerMayTarget(
+		user: User,
+		actionKey: string | undefined,
+		params: { actorId?: string },
+		context: Context
+	): boolean {
+		if (user.Role !== "player") return true;
+		if (actionKey === "actor:move" || actionKey === "actor:edit") {
+			const campaign = CampaignUtils.getActiveCampaign(context);
+			return user.SelectedCharacters?.[campaign.RoomCode] === params.actorId;
+		}
+		return true;
+	},
+
 	isValidPosition(position: Position): boolean {
 		return (
 			Number.isFinite(position.x) &&

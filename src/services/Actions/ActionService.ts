@@ -4,6 +4,7 @@ import { Context } from "../../domains/Context/Context";
 import { canPerformAction, ACTION_REGISTRY } from "./ActionRegistry";
 import type { Campaign } from "../../domains/Campaign/Campaign";
 import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
+import { ActorUtils } from "../../domains/Actor/ActorUtils";
 import { StateSync } from "../StateSync";
 import { ImageService } from "../ImageService";
 import { Room, type ActionSend } from "../../domains/Room/Room";
@@ -585,20 +586,32 @@ export class ActionService {
 			return;
 		}
 
+		// Authoritative ownership re-check. The DM already holds each player's
+		// selected characters (peerUsers, via requestingUser), so it validates the
+		// request against its own records here rather than running the action under
+		// the player's identity. The action itself then runs as the DM — we never
+		// write the player's identity onto the reactive store (doing so across the
+		// action's awaits would leak into the DM's UI and kick it out of
+		// first-person / hijack its map selection).
+		if (
+			!ActorUtils.playerMayTarget(
+				requestingUser,
+				data?.actionKey,
+				data?.params ?? {},
+				this.context
+			)
+		) {
+			console.warn(
+				`Player ${requestingUser.Id} cannot target ${data?.params?.actorId} with ${data?.actionKey}`
+			);
+			return;
+		}
+
 		try {
-			// Execute the domain action as the requesting player so
-			// domain-level player validations run in the same context as
-			// optimistic local execution.
 			await this.mutateCampaign(async () => {
 				// Snapshot script hosts before the action (so onRemove cleanup still binds).
 				const scriptSnapshot = ScriptEngine.beginAction(data.actionKey, this.context);
-				const originalUser = this.context.User;
-				try {
-					this.context.User = requestingUser;
-					await this.runDomainAction(data.actionKey, data.params);
-				} finally {
-					this.context.User = originalUser;
-				}
+				await this.runDomainAction(data.actionKey, data.params);
 				// Reactions run as the DM (authoritative), atomic with the request.
 				await ScriptEngine.onAction(
 					data.actionKey,

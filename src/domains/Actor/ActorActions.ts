@@ -31,23 +31,17 @@ export const ActorActions = {
 		params: { actorId: string; position: Position },
 		context: Context
 	): void {
-		// A player may only move their own selected Character. Since that selection
-		// only ever points at a Character the player owns, this single check also
-		// covers "players can't control Entities" (an entity id is never the
-		// player's selected character) without resolving the actor's kind.
-		if (context.User.Role === "player") {
-			const campaign = CampaignUtils.getActiveCampaign(context);
-			if (
-				context.User.SelectedCharacters?.[campaign.RoomCode] !== params.actorId
-			) {
-				console.warn(
-					`Player ${context.User.Id} cannot move actor: ${params.actorId}`
-				);
-				return;
-			}
-			// Movement-range restriction is enforced entirely client-side (world view
-			// blocks out-of-range clicks; first-person applies a soft pull-back). The
-			// DM trusts the requested position rather than re-validating range here.
+		// A player may only move their own selected Character (playerMayTarget also
+		// blocks entities). This gates the player's optimistic pass; the DM re-checks
+		// the same rule authoritatively before applying a player request.
+		// Movement-range restriction stays entirely client-side (world view blocks
+		// out-of-range clicks; first-person applies a soft pull-back) — the DM trusts
+		// the requested position rather than re-validating range here.
+		if (!ActorUtils.playerMayTarget(context.User, "actor:move", params, context)) {
+			console.warn(
+				`Player ${context.User.Id} cannot move actor: ${params.actorId}`
+			);
+			return;
 		}
 
 		ActorUtils.moveActor(
@@ -63,17 +57,15 @@ export const ActorActions = {
 		params: { actorId: string; updates: Partial<Actor> },
 		context: Context
 	): void {
-		// Players may edit Characters but never Entities. Kind only matters for this
-		// permission gate; editing itself is kind-agnostic. A not-found id falls
-		// through to editActor, which logs and no-ops.
-		if (context.User.Role === "player") {
-			const kind = ActorUtils.getActorKind(context, params.actorId);
-			if (kind === "entity") {
-				console.warn(
-					`Player ${context.User.Id} cannot edit entity: ${params.actorId}`
-				);
-				return;
-			}
+		// A player may only edit their own selected Character (playerMayTarget also
+		// blocks entities). The only UI path to the sheet is the player's own
+		// selected character; indirect cross-actor effects ride on other actions
+		// (item:transfer, actor:transferStat), not actor:edit.
+		if (!ActorUtils.playerMayTarget(context.User, "actor:edit", params, context)) {
+			console.warn(
+				`Player ${context.User.Id} cannot edit actor: ${params.actorId}`
+			);
+			return;
 		}
 
 		ActorUtils.editActor(
