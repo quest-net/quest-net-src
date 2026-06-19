@@ -292,21 +292,13 @@ const charactersAndEntitiesPage: WikiPageDefinition = {
 								detail:
 									"Optional per-actor override for how this stat is restored on short rest, long rest, or combat end.",
 							},
-							{
-								name: "Overflow Target (override)",
-								tone: "warning",
-								detail:
-									"Optional per-actor override for where surplus regen flows. Setting this to null on the slot explicitly disables overflow for this actor even if the template defines a target.",
-							},
 						]}
 					/>
 					<WikiCallout tone="info" title="Slot vs. definition precedence">
 						<p>
-							For regen, restore rules, and overflow target: if the slot has a
-							value, that value wins. If the slot field is{" "}
-							<WikiCode>undefined</WikiCode>, the campaign definition is used.
-							Only <WikiCode>OverflowTarget</WikiCode> can be explicitly set to{" "}
-							<WikiCode>null</WikiCode> to disable inheritance.
+							For regen and restore rules: if the slot has a value, that value
+							wins. If the slot field is <WikiCode>undefined</WikiCode>, the
+							campaign definition is used.
 						</p>
 					</WikiCallout>
 				</div>

@@ -1,7 +1,6 @@
 // components/editors/StatDefinitionEditor.tsx
 import { useState } from "react";
 import { StatDefinition } from "../../domains/CampaignSetting/CampaignSetting";
-import { SharedInventory } from "../../domains/SharedInventory/SharedInventory";
 import { useFormReadOnly } from "../Form/Form";
 import { RestoreRuleEditor } from "./RestoreRuleEditor";
 import { Modal } from "../ui/Modal";
@@ -9,24 +8,15 @@ import { EmptyState } from "../ui/EmptyState";
 
 interface StatDefinitionsEditorProps {
 	stats: StatDefinition[];
-	sharedInventories?: SharedInventory[];
-	/** Campaign stat templates needed to resolve shared inventory stat names */
-	statTemplates?: StatDefinition[];
 	onChange: (stats: StatDefinition[]) => void;
 	readOnly?: boolean;
 }
 
 export function StatDefinitionsEditor({
 	stats,
-	sharedInventories = [],
-	statTemplates,
 	onChange,
 	readOnly: readOnlyProp,
 }: StatDefinitionsEditorProps) {
-	// Build a map from stat Id → Name for resolving shared inventory stat names
-	const statNameMap = new Map(
-		(statTemplates ?? stats).map((s) => [s.Id, s.Name])
-	);
 	const contextReadOnly = useFormReadOnly();
 	const readOnly = readOnlyProp ?? contextReadOnly;
 
@@ -65,17 +55,11 @@ export function StatDefinitionsEditor({
 							<th>Max</th>
 							<th>Regen Rate</th>
 							<th>Restore Rules</th>
-							<th>Overflow Target</th>
 							{!readOnly && <th className="w-12"></th>}
 						</tr>
 					</thead>
 					<tbody>
 						{stats.map((stat) => {
-							// Determine current overflow selection
-							const overflowValue = stat.OverflowTarget
-								? `${stat.OverflowTarget.InventoryId}:${stat.OverflowTarget.StatId}`
-								: "";
-
 							return (
 								<tr key={stat.Id}>
 									<td>
@@ -150,35 +134,6 @@ export function StatDefinitionsEditor({
 											>None</button>
 										)}
 									</td>
-									<td>
-										<select
-											className="select select-bordered select-sm w-32"
-											value={overflowValue}
-											disabled={readOnly}
-											onChange={(e) => {
-												const val = e.target.value;
-												if (val === "") {
-													handleChange(stat.Id, { OverflowTarget: undefined });
-												} else {
-													const [invId, statId] = val.split(":");
-													handleChange(stat.Id, {
-														OverflowTarget: { InventoryId: invId, StatId: statId }
-													});
-												}
-											}}
-										>
-											<option value="">None</option>
-											{sharedInventories.map((inv) => (
-												<optgroup key={inv.Id} label={inv.Name}>
-													{inv.Stats.map((invStat) => (
-														<option key={invStat.Id} value={`${inv.Id}:${invStat.Id}`}>
-															{statNameMap.get(invStat.Id) ?? invStat.Id}
-														</option>
-													))}
-												</optgroup>
-											))}
-										</select>
-									</td>
 									{!readOnly && (
 										<td>
 											<button
@@ -196,7 +151,7 @@ export function StatDefinitionsEditor({
 						})}
 						{stats.length === 0 && (
 							<tr>
-								<td colSpan={readOnly ? 6 : 7}>
+								<td colSpan={readOnly ? 5 : 6}>
 									<EmptyState compact>No stats defined.</EmptyState>
 								</td>
 							</tr>

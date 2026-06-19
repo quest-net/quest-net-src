@@ -23,22 +23,16 @@ export function clearRoundCompleted(
 /**
  * Applies regen to all actors (characters and entities) with RegenRate.
  *
- * Per-actor overrides: RegenRate and OverflowTarget are read through
- * resolveStat so slot-level overrides (including a null OverflowTarget
- * meaning "explicitly disable overflow for this actor") take effect.
- *
- * Overflow scope: only Characters (party members) contribute their
- * surplus to shared inventory pools. Entities (NPCs/enemies) regen
- * normally but any excess beyond Max is simply discarded — they do
- * not feed the party's shared inventory.
+ * Per-actor overrides: RegenRate is read through resolveStat so slot-level
+ * overrides take effect. Regen is clamped between 0 and Max; any surplus
+ * beyond Max is simply discarded.
  *
  * @param multiplier 1 for normal regen, -1 for reversing regen
  */
 export function applyRegenToAllActors(campaign: any, multiplier: 1 | -1): void {
 	const statDefinitions = campaign.Settings.StatDefinitions;
-	const sharedInventories = campaign.Settings.SharedInventories || [];
 
-	const runForActors = (actors: Actor[], overflowAllowed: boolean) => {
+	const runForActors = (actors: Actor[]) => {
 		actors.forEach((actor) => {
 			actor.Stats.forEach((stat) => {
 				// Skip unset stats — actor doesn't have this stat, so no regen.
@@ -47,41 +41,12 @@ export function applyRegenToAllActors(campaign: any, multiplier: 1 | -1): void {
 				const definition = statDefinitions.find((d: any) => d.Id === stat.Id);
 				if (!definition) return;
 
-				// Resolve through slot so per-actor RegenRate / OverflowTarget
-				// overrides win (slot.null for OverflowTarget = explicitly disabled).
+				// Resolve through slot so per-actor RegenRate overrides win.
 				const resolved = resolveStat(stat, definition);
 				if (!resolved.RegenRate) return;
 
 				const regenAmount = resolved.RegenRate * multiplier;
 				const newValue = stat.Current + regenAmount;
-
-				// Handle overflow only for party members, only on positive regen,
-				// and only when the resolved target is defined.
-				if (
-					overflowAllowed
-					&& multiplier === 1
-					&& newValue > stat.Max
-					&& resolved.OverflowTarget
-				) {
-					const overflowAmount = newValue - stat.Max;
-					const targetInv = sharedInventories.find(
-						(inv: any) => inv.Id === resolved.OverflowTarget!.InventoryId
-					);
-
-					if (targetInv) {
-						const targetStat = targetInv.Stats.find(
-							(s: any) => s.Id === resolved.OverflowTarget!.StatId
-						);
-						// Skip overflow target if it's unset — don't silently
-						// materialize points into a stat the inventory doesn't track.
-						if (targetStat && targetStat.Current !== null) {
-							targetStat.Current = Math.min(
-								targetStat.Max,
-								targetStat.Current + overflowAmount
-							);
-						}
-					}
-				}
 
 				// Clamp between 0 and Max
 				stat.Current = Math.max(0, Math.min(newValue, stat.Max));
@@ -89,10 +54,8 @@ export function applyRegenToAllActors(campaign: any, multiplier: 1 | -1): void {
 		});
 	};
 
-	// Party members may contribute overflow to shared inventories.
-	runForActors(campaign.GameState.Characters, true);
-	// Entities regen normally but surplus is discarded (not overflowed).
-	runForActors(campaign.GameState.Entities, false);
+	runForActors(campaign.GameState.Characters);
+	runForActors(campaign.GameState.Entities);
 }
 
 /**
@@ -102,8 +65,7 @@ export function applyRegenToAllActors(campaign: any, multiplier: 1 | -1): void {
  * resolve each slot through its template — slot-level RegenRate wins, else
  * the template default is used. Unset stats (Current === null) are skipped.
  *
- * Shared inventory stats do NOT participate in overflow — they are the
- * terminal destination. If a pool regens past Max, the surplus is discarded.
+ * If a pool regens past Max, the surplus is discarded.
  *
  * @param multiplier 1 for normal regen, -1 for reversing regen
  */
@@ -123,7 +85,7 @@ export function applyRegenToSharedInventories(campaign: any, multiplier: 1 | -1)
 			if (!resolved.RegenRate) return;
 
 			const regenAmount = resolved.RegenRate * multiplier;
-			// Clamp between 0 and Max — shared pools never overflow anywhere.
+			// Clamp between 0 and Max — surplus is discarded.
 			stat.Current = Math.max(0, Math.min(stat.Current + regenAmount, stat.Max));
 		});
 	});

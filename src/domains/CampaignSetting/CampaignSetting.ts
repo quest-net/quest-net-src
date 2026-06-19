@@ -69,7 +69,7 @@ export type InitiativeSource =
 /**
  * StatDefinition is a campaign-wide template that defines a stat type.
  * Actors store StatSlots that reference these by Id.
- * Max/RegenRate/RestoreRule/OverflowTarget serve as defaults for new actors;
+ * Max/RegenRate/RestoreRule serve as defaults for new actors;
  * individual actors can override these in their StatSlot.
  */
 export interface StatDefinition {
@@ -79,10 +79,6 @@ export interface StatDefinition {
 	Max: number;
 	RegenRate?: number;
 	RestoreRule?: RestoreRule;
-	OverflowTarget?: {
-		InventoryId: string;
-		StatId: string;
-	};
 }
 
 /**

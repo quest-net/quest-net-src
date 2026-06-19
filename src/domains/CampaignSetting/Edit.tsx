@@ -361,7 +361,6 @@ function renderCategory(category: SettingsCategory, args: CategoryRenderArgs) {
 					>
 						<StatDefinitionsEditor
 							stats={settings.StatDefinitions}
-							sharedInventories={settings.SharedInventories}
 							onChange={(stats) => updateSettings({ StatDefinitions: stats })}
 						/>
 					</FormSection>

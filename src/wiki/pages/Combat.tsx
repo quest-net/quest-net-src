@@ -268,12 +268,11 @@ const combatPage: WikiPageDefinition = {
 						<WikiFlowStep number="1" title="Regen applied" tone="primary">
 							Every actor with a non-zero <strong>RegenRate</strong> on a stat has
 							that stat restored by the configured amount, clamped between 0 and
-							Max. Characters (party members) can overflow excess regen into a
-							configured shared inventory pool; entities discard any surplus.
+							Max. Any surplus beyond Max is discarded.
 						</WikiFlowStep>
 						<WikiFlowStep number="2" title="Shared inventory regen" tone="secondary">
-							Shared inventory pools with their own RegenRate also tick. Pool regen
-							does not overflow anywhere — surplus is discarded.
+							Shared inventory pools with their own RegenRate also tick, clamped
+							between 0 and Max; surplus is discarded.
 						</WikiFlowStep>
 						<WikiFlowStep number="3" title="Actions reset" tone="accent">
 							Every actor's action counts are restored to their Max value, so

@@ -314,7 +314,7 @@ export const dataStructuresPage: WikiPage = {
 							{
 								name: "StatSlot",
 								detail:
-									"References a StatDefinition. Stores Current, Max, optional regen, rest behavior, and overflow overrides.",
+									"References a StatDefinition. Stores Current, Max, and optional regen and rest behavior overrides.",
 								tone: "error",
 							},
 							{

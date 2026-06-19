@@ -101,20 +101,14 @@ const campaignSettingsPage: WikiPageDefinition = {
 								detail:
 									'How the stat is restored on short rest, long rest, or combat end. Options: restore by a fixed amount, restore to max, or set to an exact value. Leave empty for no automatic restoration.',
 							},
-							{
-								name: "Overflow Target",
-								tone: "warning",
-								detail:
-									"Optional. If a character's regen would push this stat past Max, the surplus is added to the specified shared inventory pool stat instead of being discarded.",
-							},
 						]}
 					/>
 					<WikiCallout tone="success" title="Per-actor overrides">
 						<p>
-							Max, RegenRate, and OverflowTarget on a stat definition are
-							defaults. An actor's stat slot can override any of them — useful for
-							characters with higher HP or custom regen rates. The slot value
-							always wins over the definition default.
+							Max and RegenRate on a stat definition are defaults. An actor's
+							stat slot can override either of them — useful for characters with
+							higher HP or custom regen rates. The slot value always wins over
+							the definition default.
 						</p>
 					</WikiCallout>
 				</div>
@@ -225,16 +219,6 @@ const campaignSettingsPage: WikiPageDefinition = {
 							},
 						]}
 					/>
-					<WikiCallout tone="warning" title="Overflow target">
-						<p>
-							A stat definition can send excess regen into a shared inventory
-							stat. For example, if a character's HP regen exceeds their Max,
-							the surplus can flow into a party healing pool instead of being
-							wasted. Configure this via{" "}
-							<WikiHighlight tone="warning">Overflow Target</WikiHighlight> on
-							the stat definition.
-						</p>
-					</WikiCallout>
 				</div>
 			),
 		},

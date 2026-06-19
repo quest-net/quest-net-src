@@ -68,11 +68,9 @@ export interface Actor {
  * this stat (hidden from UI, skipped by regen/restore). Max is retained
  * while unset so re-enabling the stat can restore a sensible cap.
  *
- * RegenRate / RestoreRule / OverflowTarget are optional slot-level overrides.
+ * RegenRate / RestoreRule are optional slot-level overrides.
  *   - undefined  → inherit the value from the StatDefinition template
  *   - a value    → override the template (including RegenRate = 0, etc.)
- *   - null       → (OverflowTarget only) explicitly disable overflow for this
- *                  slot even if the template defines a target
  */
 export interface StatSlot {
 	Id: string;
@@ -80,10 +78,6 @@ export interface StatSlot {
 	Max: number;
 	RegenRate?: number;
 	RestoreRule?: RestoreRule;
-	OverflowTarget?: {
-		InventoryId: string;
-		StatId: string;
-	} | null;
 }
 
 /**
