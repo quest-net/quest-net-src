@@ -270,6 +270,10 @@ export const CampaignSettingUtils = {
 					shortRestsPerDay: 2,
 					autoAdvanceDayOnLongRest: true,
 				},
+				InitiativeSettings: {
+					Sources: [{ kind: "moveSpeed" }],
+					Mode: "party",
+				},
 				MovementSettings: {
 					heightCostFormula: "h",
 					heightCostLookup: fallback.lookup!,
@@ -350,6 +354,10 @@ export const CampaignSettingUtils = {
 			RestSettings: {
 				shortRestsPerDay: 2,
 				autoAdvanceDayOnLongRest: true,
+			},
+			InitiativeSettings: {
+				Sources: [{ kind: "moveSpeed" }],
+				Mode: "party",
 			},
 			MovementSettings: {
 				heightCostFormula: defaultFormula,

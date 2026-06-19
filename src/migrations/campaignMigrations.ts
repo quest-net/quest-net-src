@@ -10,6 +10,8 @@ import { scenarioPlacementsV250Migration } from "./v2_5_0_scenarioPlacements";
 import { perActorTerrainV260Migration } from "./v2_6_0_perActorTerrain";
 import { terrainContentHashV270Migration } from "./v2_7_0_terrainContentHash";
 import { terrainLinksV280Migration } from "./v2_8_0_terrainLinks";
+import { defaultInitiativeV290Migration } from "./v2_9_0_defaultInitiative";
+import { removeStatOverflowV290Migration } from "./v2_9_0_removeStatOverflow";
 
 /**
  * Ordered list of campaign-level migrations, sorted ascending by version.
@@ -27,4 +29,6 @@ export const campaignMigrations: Migration[] = [
 	perActorTerrainV260Migration,
 	terrainContentHashV270Migration,
 	terrainLinksV280Migration,
+	defaultInitiativeV290Migration,
+	removeStatOverflowV290Migration,
 ];
