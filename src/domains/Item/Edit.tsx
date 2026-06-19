@@ -208,6 +208,36 @@ function ItemForm({ data, onChange }: ItemFormProps) {
 				</FormGrid>
 			</FormSection>
 
+			{/* Targeting */}
+			<FormSection
+				title="Targeting"
+				description="When enabled, using this item prompts for a target on the map"
+			>
+				<FormGrid cols={2}>
+					<FormField label="Can Target Actor">
+						<input
+							type="checkbox"
+							checked={!!data.CanTargetActor}
+							onChange={(e) =>
+								handleFieldChange("CanTargetActor", e.target.checked)
+							}
+							className="toggle toggle-primary"
+						/>
+					</FormField>
+
+					<FormField label="Can Target Position">
+						<input
+							type="checkbox"
+							checked={!!data.CanTargetPosition}
+							onChange={(e) =>
+								handleFieldChange("CanTargetPosition", e.target.checked)
+							}
+							className="toggle toggle-primary"
+						/>
+					</FormField>
+				</FormGrid>
+			</FormSection>
+
 			{/* Restore Rules */}
 			<FormSection
 				title="Restore Rules"

@@ -41,6 +41,7 @@ import {
 } from "./actorTokenPlacement";
 import { raycastTerrainDDA } from "../Movement3D/movement3DHelpers";
 import { disposeObject3D, setRaycasterFromPointer } from "../mapSceneUtils";
+import { targetingStore } from "../Targeting/targetingStore";
 
 // Live-pose tokens chase their latest target with exponential smoothing in the
 // rAF tick instead of restarting a fixed-duration ease per packet. The pose
@@ -1632,6 +1633,9 @@ export function ThreeDActorLayer({
 		const handlePointerDown = (event: PointerEvent) => {
 			if (event.button !== 0) return;
 			if (event.altKey) return;
+			// While the map is in item/skill targeting mode, the targeting layer
+			// consumes clicks (an actor click resolves a target, not a selection).
+			if (targetingStore.request) return;
 			const found = findActorUnderPointer(event);
 			if (!found) return;
 

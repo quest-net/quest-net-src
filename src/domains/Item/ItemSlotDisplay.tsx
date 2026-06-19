@@ -16,6 +16,7 @@ import {
 	SlotDisplayProperty,
 } from "../../components/SlotDisplay/SlotDisplay";
 import { Actor, InventorySlot, EquipmentSlot } from "../Actor/Actor";
+import { beginTargeting } from "../../components/Map/Targeting/targetingStore";
 import {
 	formatActionCost,
 	formatStatCost,
@@ -96,6 +97,8 @@ export function ItemSlotDisplay({
 	// actions (Drop / Discard) below a divider.
 	const actions: SlotDisplayAction[] = [];
 
+	const isTargetable = !!item.CanTargetActor || !!item.CanTargetPosition;
+
 	if (!isShared) {
 		actions.push({
 			key: "use",
@@ -103,11 +106,25 @@ export function ItemSlotDisplay({
 			icon: "icon-[mdi--play]",
 			variant: "primary",
 			disabled: !canUse || !actionService,
-			onRun: () =>
-				actionService?.execute("item:use", {
-					actorId: actor.Id,
-					itemId: slot.Id,
-				}),
+			// Targetable items close the drawer and enter map targeting mode; the
+			// resolved target is dispatched by the map. Non-targetable use fires now.
+			closeOnRun: isTargetable,
+			onRun: () => {
+				if (isTargetable) {
+					beginTargeting({
+						actionKey: "item:use",
+						baseParams: { actorId: actor.Id, itemId: slot.Id },
+						allowActor: !!item.CanTargetActor,
+						allowPosition: !!item.CanTargetPosition,
+						label: item.Name,
+					});
+				} else {
+					actionService?.execute("item:use", {
+						actorId: actor.Id,
+						itemId: slot.Id,
+					});
+				}
+			},
 		});
 	}
 

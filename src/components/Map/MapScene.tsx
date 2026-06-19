@@ -15,6 +15,7 @@
 // Addon imports use three/examples/jsm/ -- see CLAUDE.md for why.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSnapshot } from 'valtio';
 import * as THREE from 'three';
 import type { CameraRigConfig } from '../../utils/camera/CameraRig';
 import type { Character } from '../../domains/Character/Character';
@@ -39,6 +40,8 @@ import { ThreeDActorLayer } from './Actors3D/ThreeDActorLayer';
 import { ThreeDMovementLayer } from './Movement3D/ThreeDMovementLayer';
 import { ThreeDStickerLayer } from './Stickers3D/ThreeDStickerLayer';
 import { ThreeDPingLayer } from './Pings3D/ThreeDPingLayer';
+import { ThreeDTargetingLayer, type TargetResult } from './Targeting/ThreeDTargetingLayer';
+import { cancelTargeting, targetingStore } from './Targeting/targetingStore';
 import { ThreeDTerrainLinkLayer, type TerrainLinkInteractionFocus } from './TerrainLinks3D/ThreeDTerrainLinkLayer';
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from './Actors3D/actorTokenConstants';
 import { useActiveStickers } from './hooks/useActiveStickers';
@@ -557,6 +560,30 @@ export default function MapScene({
 		[actionService, pingActiveActorId, terrain]
 	);
 
+	// Resolve a click in item/skill targeting mode: merge the chosen target into
+	// the pending request's base params and dispatch its use action. The target
+	// has no mechanical effect yet -- it augments the action for scripting/logging.
+	const handleResolveTarget = useCallback(
+		(result: TargetResult) => {
+			const req = targetingStore.request;
+			if (!req || !actionService) return;
+			const targetParam =
+				result.kind === "actor"
+					? { targetActorId: result.actorId }
+					: {
+							targetPosition: {
+								terrainId: terrain?.Id ?? "",
+								x: result.x,
+								y: result.y,
+								h: result.h,
+							},
+					  };
+			actionService.execute(req.actionKey, { ...req.baseParams, ...targetParam });
+			cancelTargeting();
+		},
+		[actionService, terrain]
+	);
+
 	const canControlActor = useCallback(
 		(actor: { id: string; kind: "character" | "entity" }) =>
 			canAccessActor(actor.id),
@@ -682,6 +709,21 @@ export default function MapScene({
 	const hasTerrain =
 		sceneResources && terrain && terrainIndex && getVoxelCount(terrainVoxels) > 0;
 	const controller = controllerRef.current;
+	const { request: targetingRequest, hover: targetingHover } =
+		useSnapshot(targetingStore);
+
+	// Resolve the live hover into a human label for the targeting cue banner.
+	let targetingHoverText: string | null = null;
+	if (targetingRequest && targetingHover) {
+		if (targetingHover.kind === "actor") {
+			const hovered =
+				visibleCharacters.find((c) => c.Id === targetingHover.actorId) ??
+				visibleEntities.find((e) => e.Id === targetingHover.actorId);
+			targetingHoverText = hovered?.Name ?? "actor";
+		} else {
+			targetingHoverText = `(${targetingHover.x}, ${targetingHover.y}, ${targetingHover.h})`;
+		}
+	}
 
 	return (
 		<div className="relative w-full h-full">
@@ -741,6 +783,13 @@ export default function MapScene({
 						activePings={activePings}
 						onPingTile={handlePingTile}
 					/>
+					{isWorld && (
+						<ThreeDTargetingLayer
+							resources={sceneResources}
+							terrainIndex={terrainIndex}
+							onResolveTarget={handleResolveTarget}
+						/>
+					)}
 					<ThreeDTerrainLinkLayer
 						resources={sceneResources}
 						isWorld={isWorld}
@@ -757,6 +806,29 @@ export default function MapScene({
 						onFocusChange={setLinkFocus}
 					/>
 				</>
+			)}
+			{/* Item/skill targeting cue: shown while a use is waiting for a target.
+			    Sits above the DM map toolbar (z-40) and clear of its top bar. */}
+			{targetingRequest && (
+				<div className="pointer-events-none absolute inset-x-0 top-16 z-50 flex justify-center">
+					<div className="pointer-events-auto flex items-center gap-3 rounded-full bg-base-100/90 border border-base-300 px-4 py-2 text-sm font-semibold text-base-content shadow">
+						<span className="icon-[mdi--target] h-5 w-5 text-primary" />
+						<span>
+							Pick a target for {targetingRequest.label}
+							{targetingHoverText ? (
+								<span className="text-primary"> · {targetingHoverText}</span>
+							) : null}
+							<span className="opacity-70"> — Esc to cancel</span>
+						</span>
+						<button
+							type="button"
+							className="btn btn-ghost btn-xs"
+							onClick={() => cancelTargeting()}
+						>
+							Cancel
+						</button>
+					</div>
+				</div>
 			)}
 			{/* World-view link hover tooltip: follows the cursor, reveals destination. */}
 			{hasTerrain && isWorld && linkFocus?.screen && (

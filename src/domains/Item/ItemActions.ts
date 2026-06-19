@@ -7,7 +7,7 @@ import { Item } from "./Item";
 import { Actor, Position } from "../Actor/Actor";
 import { rollDiceFormula } from "../../utils/DiceUtils";
 import { syncItemSlotsAfterEdit } from "./ItemUtils";
-import { getAllActors, applyActionCost, applyStatCost } from "../Actor/ActorUtils";
+import { getAllActors, applyActionCost, applyStatCost, describeUseTarget } from "../Actor/ActorUtils";
 import { createItemEntity, createItemEntityFromTemplate, getItemDataFromEntity, isItemEntity } from "./ItemDropUtils";
 import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
 import {
@@ -328,7 +328,15 @@ export const ItemActions = {
 	 * Rolls dice if the item has a DiceRoll property
 	 * Works with any actor (characters or entities, in any location)
 	 */
-	use(params: { actorId: string; itemId: string }, context: Context): void {
+	use(
+		params: {
+			actorId: string;
+			itemId: string;
+			targetActorId?: string;
+			targetPosition?: Position;
+		},
+		context: Context
+	): void {
 		const campaign = CampaignUtils.getActiveCampaign(context);
 
 		// Find actor in all possible locations
@@ -380,6 +388,10 @@ export const ItemActions = {
 			applyStatCost(actor, itemTemplate.StatCost, campaign.Settings) +
 			applyActionCost(actor, itemTemplate.ActionCost, campaign.Settings);
 
+		// Append the chosen target (actor or position) to the log line. No
+		// mechanical effect yet -- the params are carried for the scripting system.
+		const targetText = describeUseTarget(campaign, params);
+
 		// Determine visibility based on the ACTOR TYPE, not who pressed the button
 		const visibilitySettings = campaign.Settings.VisibilitySettings;
 		let visibility: ("dm" | "player" | "owner" | "all")[];
@@ -406,7 +418,7 @@ export const ItemActions = {
 
 				LogActions.create(
 					{
-						action: `${actor.Name} used ${itemTemplate.Name} : ${rollResult.total}`,
+						action: `${actor.Name} used ${itemTemplate.Name}${targetText} : ${rollResult.total}`,
 						details: `${rollResult.formula} : ${rollResult.breakdown}${costDetails}`,
 						category: "dice",
 						level: "important",
@@ -424,7 +436,7 @@ export const ItemActions = {
 				// Log without dice roll if it fails
 				LogActions.create(
 					{
-						action: `${actor.Name} used ${itemTemplate.Name}`,
+						action: `${actor.Name} used ${itemTemplate.Name}${targetText}`,
 						details: `${costDetails}${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""
 							}`,
 						category: "item",
@@ -439,7 +451,7 @@ export const ItemActions = {
 			// No dice roll - just log the use
 			LogActions.create(
 				{
-					action: `${actor.Name} used ${itemTemplate.Name}`,
+					action: `${actor.Name} used ${itemTemplate.Name}${targetText}`,
 					details: `${costDetails}${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""
 						}`,
 					category: "item",

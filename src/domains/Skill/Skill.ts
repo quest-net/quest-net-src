@@ -13,6 +13,12 @@ export interface Skill {
 	ActionCost?: ActionCost;
 	MaxUses?: number;
 
+	// Targeting. When set, using the skill enters map "targeting mode" and the
+	// chosen target is threaded into the use action (no mechanical effect yet --
+	// consumed by the scripting system later). Both may be enabled independently.
+	CanTargetActor?: boolean;
+	CanTargetPosition?: boolean;
+
 	// Dice roll functionality
 	DiceRoll?: string; // "1d20+3", "4d6"
 	RestoreRule?: RestoreRule;

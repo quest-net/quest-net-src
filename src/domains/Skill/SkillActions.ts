@@ -4,10 +4,10 @@ import { Context } from "../Context/Context";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 import { Skill } from "./Skill";
-import { Actor } from "../Actor/Actor";
+import { Actor, Position } from "../Actor/Actor";
 import { rollDiceFormula } from "../../utils/DiceUtils";
 import { syncSkillSlotsAfterEdit } from "./SkillUtils";
-import { getAllActors, applyActionCost, applyStatCost } from "../Actor/ActorUtils";
+import { getAllActors, applyActionCost, applyStatCost, describeUseTarget } from "../Actor/ActorUtils";
 
 /**
  * Skill action handlers
@@ -215,7 +215,12 @@ export const SkillActions = {
 	 * Works with any actor (characters or entities, in any location)
 	 */
 	use(
-		params: { actorId: string; skillId: string },
+		params: {
+			actorId: string;
+			skillId: string;
+			targetActorId?: string;
+			targetPosition?: Position;
+		},
 		context: Context
 	): void {
 		const campaign = CampaignUtils.getActiveCampaign(context);
@@ -260,6 +265,10 @@ export const SkillActions = {
 			applyStatCost(actor, skillTemplate.StatCost, campaign.Settings) +
 			applyActionCost(actor, skillTemplate.ActionCost, campaign.Settings);
 
+		// Append the chosen target (actor or position) to the log line. No
+		// mechanical effect yet -- the params are carried for the scripting system.
+		const targetText = describeUseTarget(campaign, params);
+
 		// Determine visibility based on the ACTOR TYPE
 		const visibilitySettings = campaign.Settings.VisibilitySettings;
 		let visibility: ("dm" | "player" | "owner" | "all")[];
@@ -285,7 +294,7 @@ export const SkillActions = {
 
 				LogActions.create(
 					{
-						action: `${actor.Name} used ${skillTemplate.Name} : ${rollResult.total}`,
+						action: `${actor.Name} used ${skillTemplate.Name}${targetText} : ${rollResult.total}`,
 						details: `${rollResult.formula} : ${rollResult.breakdown}${costDetails}`,
 						category: "dice",
 						level: "important",
@@ -300,7 +309,7 @@ export const SkillActions = {
 				// Log without dice roll if it fails
 				LogActions.create(
 					{
-						action: `${actor.Name} used ${skillTemplate.Name}`,
+						action: `${actor.Name} used ${skillTemplate.Name}${targetText}`,
 						details: `${costDetails}${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""}`,
 						category: "skill",
 						level: "info",
@@ -314,7 +323,7 @@ export const SkillActions = {
 			// No dice roll - just log the use
 			LogActions.create(
 				{
-					action: `${actor.Name} used ${skillTemplate.Name}`,
+					action: `${actor.Name} used ${skillTemplate.Name}${targetText}`,
 					details: `${costDetails}${slot.UsesLeft !== undefined ? ` (${slot.UsesLeft} uses left)` : ""}`,
 					category: "skill",
 					level: "info",

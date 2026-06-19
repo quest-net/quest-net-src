@@ -362,3 +362,29 @@ export function applyActionCost(
 
 	return ` (-${Math.min(currentValue, cost.amount)} ${actionName})`;
 }
+
+/**
+ * Human-readable suffix describing the chosen target of an item/skill use, for
+ * the activity log. Returns "" when nothing was targeted. An actor target reads
+ * the actor's name; a position target reads its tile coords and terrain name.
+ */
+export function describeUseTarget(
+	campaign: any,
+	target: { targetActorId?: string; targetPosition?: Position }
+): string {
+	if (target.targetActorId) {
+		const actor = getAllActors(campaign).find(
+			(a) => a.Id === target.targetActorId
+		);
+		return ` -> ${actor?.Name ?? "unknown target"}`;
+	}
+	if (target.targetPosition) {
+		const { terrainId, x, y, h } = target.targetPosition;
+		const terrain = campaign.VoxelTerrains?.find(
+			(t: { Id: string }) => t.Id === terrainId
+		);
+		const terrainName = terrain?.Name ?? "terrain";
+		return ` -> (${x}, ${y}, ${h}) on ${terrainName}`;
+	}
+	return "";
+}

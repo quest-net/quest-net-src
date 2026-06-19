@@ -2,6 +2,8 @@ import * as THREE from "three";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import { raycastVoxelIndex } from "../../../utils/terrain/raycast/VoxelRaycast";
+import { ACTOR_TOKEN_OCCLUSION } from "../Actors3D/actorTokenConstants";
+import type { ActorKind } from "../Actors3D/actorTokenTypes";
 
 export interface PickedVoxelTile {
 	x: number;
@@ -89,6 +91,42 @@ export function raycastTerrainDDA(
  */
 export function terrainDDAHitToVoxelTile(hit: TerrainDDAHit): PickedVoxelTile {
 	return { x: hit.tileX, y: hit.tileZ, h: hit.tacticalHeight };
+}
+
+/**
+ * Precise actor pick under an already-aimed raycaster: returns the nearest actor
+ * pick mesh hit that isn't occluded by terrain (unless x-ray is on). This is the
+ * precise branch of ThreeDActorLayer's findActorUnderPointer, shared so other
+ * layers (targeting) can resolve "which actor was clicked" without the
+ * descriptor-aware proximity fallback that only the actor layer can do.
+ */
+export function pickActorUnderPointer(
+	raycaster: THREE.Raycaster,
+	actorPickTargets: THREE.Object3D[],
+	terrainIndex: VoxelTerrainIndex,
+	options?: { ignoreOcclusion?: boolean },
+): { actorId: string; kind: ActorKind } | null {
+	const actorHits = raycaster.intersectObjects(actorPickTargets, true);
+	if (actorHits.length === 0) return null;
+
+	const occlusionHit = options?.ignoreOcclusion
+		? null
+		: raycastTerrainDDA(raycaster.ray, terrainIndex);
+
+	for (const hit of actorHits) {
+		if (
+			occlusionHit &&
+			occlusionHit.distance < hit.distance - ACTOR_TOKEN_OCCLUSION.EPSILON
+		) {
+			continue;
+		}
+		const { actorId, kind } = (hit.object.userData ?? {}) as {
+			actorId?: string;
+			kind?: ActorKind;
+		};
+		if (actorId && kind) return { actorId, kind };
+	}
+	return null;
 }
 
 // ---------------------------------------------------------------------------

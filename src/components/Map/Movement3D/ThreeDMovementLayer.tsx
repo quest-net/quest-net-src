@@ -22,6 +22,7 @@ import {
 	terrainDDAHitToVoxelTile,
 } from "./movement3DHelpers";
 import { disposeObject3D, setRaycasterFromPointer } from "../mapSceneUtils";
+import { targetingStore } from "../Targeting/targetingStore";
 
 // Tolerance for "actor is in front of terrain" comparisons. Pick meshes are
 // transparent and disable depth testing, so we rely on raycaster distance.
@@ -518,6 +519,16 @@ export function ThreeDMovementLayer({
 			pendingPointerMove = null;
 			if (!event) return;
 
+			// In targeting mode the targeting layer owns the cursor; don't show the
+			// movement-range hover or override the crosshair.
+			if (targetingStore.request) {
+				if (hoveredTileRef.current) {
+					hoveredTileRef.current = null;
+					onHoveredTileChangeRef.current(null);
+				}
+				return;
+			}
+
 			if (resources.dragState.active) {
 				hoveredTileRef.current = null;
 				onHoveredTileChangeRef.current(null);
@@ -569,6 +580,12 @@ export function ThreeDMovementLayer({
 
 		const handlePointerDown = (event: PointerEvent) => {
 			if (event.button !== 0) return;
+			// While the map is in item/skill targeting mode, clicks resolve a
+			// target instead of moving the selected actor.
+			if (targetingStore.request) {
+				pendingClick = null;
+				return;
+			}
 			if (resources.dragState.active) {
 				pendingClick = null;
 				return;
