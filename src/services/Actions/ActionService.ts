@@ -1,7 +1,7 @@
 // services/Actions/ActionService.ts
 
 import { Context } from "../../domains/Context/Context";
-import { canPerformAction, ACTION_REGISTRY } from "./ActionRegistry";
+import { canPerformAction, ACTION_REGISTRY, normalizeActionParams } from "./ActionRegistry";
 import type { Campaign } from "../../domains/Campaign/Campaign";
 import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { ActorUtils } from "../../domains/Actor/ActorUtils";
@@ -666,7 +666,9 @@ export class ActionService {
 		}
 
 		try {
-			await action.handler(params, this.context);
+			// Hand the handler a fresh, mutable, plain copy of params so a frozen
+			// snapshot slice (DM-local dispatch) can't leak into the store proxy.
+			await action.handler(normalizeActionParams(params), this.context);
 		} catch (error) {
 			console.error(`[ActionService] Error executing ${actionKey}:`, error);
 			throw error;

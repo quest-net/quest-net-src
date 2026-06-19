@@ -2,6 +2,7 @@
 
 import { User } from "../../domains/User/User";
 import { Context } from "../../domains/Context/Context";
+import { toPlain } from "../../utils/toPlain";
 import { CharacterActions } from "../../domains/Character/CharacterActions";
 import { CampaignSettingActions } from "../../domains/CampaignSetting/CampaignSettingActions";
 import { LogActions } from "../../domains/Log/LogActions";
@@ -576,6 +577,25 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+/**
+ * Normalizes action params to a fresh, mutable, plain object before they enter
+ * a registry handler. Call this at every site that invokes `action.handler`.
+ *
+ * WHY: a handler may `Object.assign`/`push` a param object straight into the
+ * Valtio store proxy. If that object is a slice of a frozen useQuestContext()
+ * snapshot (e.g. an edit form's untouched nested field) or a live proxy (a
+ * script passing data read from the campaign), it must not land in the store
+ * as-is: Valtio neither proxies nor unfreezes a frozen object, so a later
+ * mutation throws "Cannot assign to read only property". `toPlain` unwraps any
+ * proxy (structuredClone throws on a Proxy); structuredClone then yields an
+ * unfrozen, independent deep copy. The player request path gets this guarantee
+ * for free via its JSON round-trip over Trystero — this gives the DM-local and
+ * script-cascade paths the same property.
+ */
+export function normalizeActionParams<T>(params: T): T {
+	return structuredClone(toPlain(params));
+}
 
 /**
  * Checks if a user can perform a given action

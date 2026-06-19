@@ -21,7 +21,11 @@ import type { Campaign } from "../../domains/Campaign/Campaign";
 import type { Context } from "../../domains/Context/Context";
 import type { Actor } from "../../domains/Actor/Actor";
 import type { Script, ScriptParam, ScriptValue, ScriptVars } from "../../domains/Script/Script";
-import { ACTION_REGISTRY, isScriptableAction } from "../Actions/ActionRegistry";
+import {
+	ACTION_REGISTRY,
+	isScriptableAction,
+	normalizeActionParams,
+} from "../Actions/ActionRegistry";
 import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { LogActions } from "../../domains/Log/LogActions";
 import { rollDiceFormula } from "../../utils/DiceUtils";
@@ -273,8 +277,10 @@ async function dispatch(
 	state.actionCount++;
 	// Capture hosts before the action so a removal still has a host to react with.
 	const pre = collectMatches(CampaignUtils.getActiveCampaign(context), key);
-	// Run the SAME handler the app uses against the live campaign.
-	await action.handler(params, context);
+	// Run the SAME handler the app uses against the live campaign. Normalize
+	// params first so a script passing a slice of the live proxy can't alias it
+	// into the store (same guarantee the app dispatch path gets).
+	await action.handler(normalizeActionParams(params), context);
 	// React to what this action just did (the cascade).
 	await runReactions(key, params, undefined, context, pre, state);
 }
