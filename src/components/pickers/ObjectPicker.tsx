@@ -34,6 +34,15 @@ interface ObjectPickerProps {
 	onConfirm: (selectedIds: string[], objectType: string, count: number) => void;
 	onCancel: () => void;
 	title?: string; // Optional custom title
+	/**
+	 * Optional extra footer action (e.g. "or pick on the map"). Receives the
+	 * current count; the picker closes itself after it runs.
+	 */
+	extraAction?: {
+		label: string;
+		icon?: string;
+		onClick: (count: number) => void;
+	};
 }
 
 const ITEMS_PER_PAGE = 12;
@@ -50,6 +59,7 @@ export function ObjectPicker({
 	onConfirm,
 	onCancel,
 	title = "Select Objects",
+	extraAction,
 }: ObjectPickerProps) {
 	const [activeTypeIndex, setActiveTypeIndex] = useState(defaultTypeIndex);
 	const [searchQuery, setSearchQuery] = useState("");
@@ -128,6 +138,11 @@ export function ObjectPicker({
 
 	const handleClear = () => {
 		setLocalSelectedIds([]);
+	};
+
+	const handleExtraAction = () => {
+		extraAction?.onClick(count);
+		handleCancel();
 	};
 
 	const handlePrevPage = () => {
@@ -277,8 +292,10 @@ export function ObjectPicker({
 							</div>
 						)}
 					</div>
-					{/* Count Input */}
-					{showCount && localSelectedIds.length > 0 && (
+					{/* Count Input. Shown once an item is selected, or whenever an
+					    extra action exists (so the amount can be set before picking
+					    on the map, which needs no list selection). */}
+					{showCount && (localSelectedIds.length > 0 || !!extraAction) && (
 						<div className="flex items-center gap-2 text-sm">
 							<label className="font-medium">{countLabel}:</label>
 							<input
@@ -293,6 +310,17 @@ export function ObjectPicker({
 					)}
 					{/* Right: Cancel / Confirm */}
 					<div className="flex gap-2">
+						{extraAction && (
+							<button
+								onClick={handleExtraAction}
+								className="btn btn-ghost btn-sm"
+							>
+								{extraAction.icon && (
+									<span className={`${extraAction.icon} w-4 h-4`} />
+								)}
+								{extraAction.label}
+							</button>
+						)}
 						<button onClick={handleCancel} className="btn btn-sm">
 							Cancel
 						</button>

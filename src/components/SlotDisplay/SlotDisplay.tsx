@@ -15,9 +15,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { useSnapshot } from "valtio";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
 import { ImagePicker } from "../pickers/ImagePicker";
 import { ActorPicker } from "../pickers/ActorPicker";
+import { targetingStore } from "../Map/Targeting/targetingStore";
 import { DetailDrawer } from "../ui/DetailDrawer";
 import { SectionCard } from "../ui/SectionCard";
 import { PropertyRow } from "../ui/PropertyRow";
@@ -106,6 +108,14 @@ export function SlotDisplay({ isOpen, onClose, config }: SlotDisplayProps) {
 	const { image, adjuster } = config;
 
 	const [activePicker, setActivePicker] = useState<SlotActorPicker | null>(null);
+
+	// This drawer is a full-screen overlay, so it must get out of the way when
+	// map targeting starts (e.g. the user picked "on the map" from the transfer
+	// ActorPicker, or used a targetable item/skill from here).
+	const { request: targetingRequest } = useSnapshot(targetingStore);
+	useEffect(() => {
+		if (targetingRequest && isOpen) onClose();
+	}, [targetingRequest, isOpen, onClose]);
 
 	// --- Adjuster state (uses / duration) ---------------------------------
 	const adjusterValue = adjuster?.value;

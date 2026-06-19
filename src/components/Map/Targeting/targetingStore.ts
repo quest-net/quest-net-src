@@ -1,36 +1,38 @@
 // components/Map/Targeting/targetingStore.ts
 //
-// Transient, never-persisted Valtio store that bridges the item/skill drawer
-// (which lives in the character-sheet panel) and the map (a separate React
-// tree). When the user presses "Use" on a targetable item/skill, the drawer
-// closes and writes a TargetingRequest here; the map's ThreeDTargetingLayer
-// reads it, resolves the next click into an actor/position, and dispatches the
-// use action. Mirrors `presenceStore` in domains/Context/contextStore.ts.
+// Transient, never-persisted Valtio store that bridges a target requester (the
+// item/skill use drawer, an ActorPicker, or any future caller) and the map,
+// which live in separate React trees. The requester calls beginTargeting() with
+// an onResolve callback; the map's ThreeDTargetingLayer resolves the next click
+// into an actor or terrain position and invokes that callback. Mirrors
+// `presenceStore` in domains/Context/contextStore.ts (transient runtime state).
 //
-// No callbacks are stored -- the request carries everything the map needs to
-// dispatch the action itself (actionKey + baseParams + the resolved target),
-// keeping the store serializable and decoupled from the drawer.
+// This store is deliberately domain-agnostic: it knows how to pick a target on
+// the map and hand it back, nothing more. Each caller owns what the target means
+// (e.g. the item drawer dispatches "item:use", the ActorPicker calls onConfirm).
 
 import { proxy } from "valtio";
 
+/** A target chosen on the map. */
+export type TargetResult =
+	| { kind: "actor"; actorId: string }
+	| { kind: "position"; terrainId: string; x: number; y: number; h: number };
+
 export interface TargetingRequest {
-	/** Action to dispatch once a target is chosen, e.g. "item:use" | "skill:use". */
-	actionKey: string;
-	/** Base params merged with the resolved target, e.g. { actorId, itemId }. */
-	baseParams: Record<string, unknown>;
 	/** Whether clicking an actor token resolves a target. */
 	allowActor: boolean;
 	/** Whether clicking a terrain tile resolves a target. */
 	allowPosition: boolean;
 	/** Human label for the targeting cue, e.g. the item/skill name. */
 	label: string;
+	/** Actor that may not be chosen (e.g. no transfer-to-self). Omit to allow any. */
+	excludeActorId?: string;
+	/** Invoked with the chosen target once the user clicks a valid one. */
+	onResolve: (result: TargetResult) => void;
 }
 
 /** What the cursor is currently over while targeting -- drives the cue label. */
-export type TargetHover =
-	| { kind: "actor"; actorId: string }
-	| { kind: "position"; x: number; y: number; h: number }
-	| null;
+export type TargetHover = TargetResult | null;
 
 export const targetingStore = proxy<{
 	request: TargetingRequest | null;
@@ -55,4 +57,26 @@ export function cancelTargeting(): void {
 /** Update what the cursor is currently over (null when over nothing valid). */
 export function setTargetHover(hover: TargetHover): void {
 	targetingStore.hover = hover;
+}
+
+/**
+ * Maps a chosen target onto the standard `targetActorId` / `targetPosition`
+ * action-param convention shared by targetable actions (item:use, skill:use,
+ * and future ones). Spread into the action params alongside the base fields.
+ */
+export function targetResultToParams(
+	result: TargetResult
+):
+	| { targetActorId: string }
+	| { targetPosition: { terrainId: string; x: number; y: number; h: number } } {
+	return result.kind === "actor"
+		? { targetActorId: result.actorId }
+		: {
+				targetPosition: {
+					terrainId: result.terrainId,
+					x: result.x,
+					y: result.y,
+					h: result.h,
+				},
+		  };
 }

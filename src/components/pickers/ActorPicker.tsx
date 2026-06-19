@@ -3,6 +3,7 @@ import { ObjectPicker, ObjectTypeConfig } from "./ObjectPicker";
 import { Actor } from "../../domains/Actor/Actor";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
+import { beginTargeting } from "../Map/Targeting/targetingStore";
 
 interface ActorPickerProps {
     isOpen: boolean;
@@ -88,6 +89,24 @@ export function ActorPicker({
         }
     };
 
+    // "Pick on the map": hand off to map targeting mode (actor-only) and resolve
+    // the chosen actor through the same onConfirm. The owning modal/drawer closes
+    // so the map is clickable (ObjectPicker cancels itself; DetailDrawer auto-
+    // closes while a targeting request is active).
+    const handlePickOnMap = (count: number) => {
+        beginTargeting({
+            allowActor: true,
+            allowPosition: false,
+            label: title,
+            excludeActorId,
+            onResolve: (result) => {
+                if (result.kind === "actor") {
+                    onConfirm(result.actorId, showAmount ? count : undefined);
+                }
+            },
+        });
+    };
+
     return (
         <ObjectPicker
             isOpen={isOpen}
@@ -99,6 +118,11 @@ export function ActorPicker({
             onConfirm={handleConfirm}
             onCancel={onCancel}
             title={title}
+            extraAction={{
+                label: "or pick on the map",
+                icon: "icon-[mdi--map-marker-radius]",
+                onClick: handlePickOnMap,
+            }}
         />
     );
 }

@@ -1,9 +1,9 @@
 // components/Map/Targeting/ThreeDTargetingLayer.tsx
 //
-// Map input layer active only while an item/skill targeting request is pending
-// (see targetingStore). It resolves the next click into either an actor (clicking
-// a token) or a position (clicking a terrain tile), then hands the result to
-// MapScene, which dispatches the use action. Escape / right-click cancels.
+// Map input layer active only while a targeting request is pending (see
+// targetingStore). It resolves the next click into either an actor (clicking a
+// token) or a position (clicking a terrain tile) and invokes the request's
+// onResolve callback. Escape / right-click cancels.
 //
 // While active it also tracks what the cursor is over (publishing it to
 // targetingStore.hover so the cue banner can name the current target) and swaps
@@ -15,7 +15,7 @@
 // so this layer doesn't need to fight them for the event; it leaves propagation
 // alone so OrbitControls can still rotate/pan during targeting.
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import * as THREE from "three";
 import { useSnapshot } from "valtio";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
@@ -27,31 +27,28 @@ import {
 } from "../Movement3D/movement3DHelpers";
 import { setRaycasterFromPointer } from "../mapSceneUtils";
 import { THREE_D_PING_INPUT } from "../threeDMapConstants";
-import { cancelTargeting, setTargetHover, targetingStore } from "./targetingStore";
+import {
+	cancelTargeting,
+	setTargetHover,
+	targetingStore,
+	type TargetResult,
+} from "./targetingStore";
 import { TARGET_ACTOR_CURSOR, TARGET_TILE_CURSOR } from "./targetingCursors";
-
-export type TargetResult =
-	| { kind: "actor"; actorId: string }
-	| { kind: "position"; x: number; y: number; h: number };
 
 interface ThreeDTargetingLayerProps {
 	resources: ThreeDSceneResources;
 	terrainIndex: VoxelTerrainIndex;
-	onResolveTarget: (result: TargetResult) => void;
+	/** The terrain being targeted; stamped onto resolved position targets. */
+	terrainId: string;
 }
 
 export function ThreeDTargetingLayer({
 	resources,
 	terrainIndex,
-	onResolveTarget,
+	terrainId,
 }: ThreeDTargetingLayerProps) {
 	const { request } = useSnapshot(targetingStore);
 	const isActive = request !== null;
-
-	const onResolveTargetRef = useRef(onResolveTarget);
-	useEffect(() => {
-		onResolveTargetRef.current = onResolveTarget;
-	}, [onResolveTarget]);
 
 	useEffect(() => {
 		if (!isActive) return;
@@ -65,6 +62,9 @@ export function ThreeDTargetingLayer({
 		let pendingMove: PointerEvent | null = null;
 		let moveRafId = 0;
 		let lastHoverKey = "";
+		// Right-button press position, so a right-drag (camera pan) can be told
+		// apart from a right-click (cancel) at contextmenu time.
+		let rightDown: { x: number; y: number } | null = null;
 
 		// What the cursor is over right now, or null over empty space. Used for
 		// both the click resolution and the live hover cue / cursor shape.
@@ -79,8 +79,8 @@ export function ThreeDTargetingLayer({
 					resources.actorPickTargets,
 					terrainIndex
 				);
-				// Any actor is a valid target, self included.
-				if (actor) {
+				// Any actor is a valid target unless explicitly excluded.
+				if (actor && actor.actorId !== req.excludeActorId) {
 					return { kind: "actor", actorId: actor.actorId };
 				}
 			}
@@ -89,7 +89,7 @@ export function ThreeDTargetingLayer({
 				const hit = raycastTerrainDDA(raycaster.ray, terrainIndex);
 				if (hit) {
 					const tile = terrainDDAHitToVoxelTile(hit);
-					return { kind: "position", x: tile.x, y: tile.y, h: tile.h };
+					return { kind: "position", terrainId, x: tile.x, y: tile.y, h: tile.h };
 				}
 			}
 
@@ -130,6 +130,10 @@ export function ThreeDTargetingLayer({
 		};
 
 		const handlePointerDown = (event: PointerEvent) => {
+			if (event.button === 2) {
+				rightDown = { x: event.clientX, y: event.clientY };
+				return;
+			}
 			if (event.button !== 0 || event.altKey) return;
 			if (resources.dragState.active) return;
 			pending = {
@@ -154,7 +158,9 @@ export function ThreeDTargetingLayer({
 
 			const result = computeTarget(event);
 			// A miss (clicked empty space) keeps targeting mode active.
-			if (result) onResolveTargetRef.current(result);
+			if (!result) return;
+			targetingStore.request?.onResolve(result);
+			cancelTargeting();
 		};
 
 		const handlePointerCancel = (event: PointerEvent) => {
@@ -171,7 +177,18 @@ export function ThreeDTargetingLayer({
 		};
 
 		const handleContextMenu = (event: MouseEvent) => {
+			// Always suppress the browser menu during targeting; only treat it as a
+			// cancel when the right-button didn't drag (a drag is a camera pan).
 			event.preventDefault();
+			const down = rightDown;
+			rightDown = null;
+			if (down) {
+				const dx = event.clientX - down.x;
+				const dy = event.clientY - down.y;
+				if (Math.hypot(dx, dy) > THREE_D_PING_INPUT.CLICK_DRAG_THRESHOLD_PX) {
+					return;
+				}
+			}
 			cancelTargeting();
 		};
 
@@ -195,7 +212,7 @@ export function ThreeDTargetingLayer({
 			window.removeEventListener("keydown", handleKeyDown, true);
 			el.removeEventListener("contextmenu", handleContextMenu, true);
 		};
-	}, [isActive, resources, terrainIndex]);
+	}, [isActive, resources, terrainIndex, terrainId]);
 
 	return null;
 }

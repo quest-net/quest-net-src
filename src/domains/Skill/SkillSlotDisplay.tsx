@@ -14,7 +14,10 @@ import {
 	SlotDisplayProperty,
 } from "../../components/SlotDisplay/SlotDisplay";
 import { Actor, SkillSlot } from "../Actor/Actor";
-import { beginTargeting } from "../../components/Map/Targeting/targetingStore";
+import {
+	beginTargeting,
+	targetResultToParams,
+} from "../../components/Map/Targeting/targetingStore";
 import {
 	formatActionCost,
 	formatStatCost,
@@ -123,17 +126,21 @@ export function SkillSlotDisplay({
 				icon: "icon-[mdi--play]",
 				variant: "primary",
 				disabled: !canUse || !actionService,
-				// Targetable skills close the drawer and enter map targeting mode;
-				// the resolved target is dispatched by the map. Otherwise fire now.
-				closeOnRun: isTargetable,
+				// Targetable skills enter map targeting mode (the drawer auto-closes
+				// via SlotDisplay); the map dispatches use with the chosen target.
+				// Otherwise the use fires immediately.
 				onRun: () => {
 					if (isTargetable) {
 						beginTargeting({
-							actionKey: "skill:use",
-							baseParams: { actorId: actor.Id, skillId: slot.Id },
 							allowActor: !!skill.CanTargetActor,
 							allowPosition: !!skill.CanTargetPosition,
 							label: skill.Name,
+							onResolve: (result) =>
+								actionService?.execute("skill:use", {
+									actorId: actor.Id,
+									skillId: slot.Id,
+									...targetResultToParams(result),
+								}),
 						});
 					} else {
 						actionService?.execute("skill:use", {

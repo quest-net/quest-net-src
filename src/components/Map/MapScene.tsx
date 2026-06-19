@@ -40,7 +40,7 @@ import { ThreeDActorLayer } from './Actors3D/ThreeDActorLayer';
 import { ThreeDMovementLayer } from './Movement3D/ThreeDMovementLayer';
 import { ThreeDStickerLayer } from './Stickers3D/ThreeDStickerLayer';
 import { ThreeDPingLayer } from './Pings3D/ThreeDPingLayer';
-import { ThreeDTargetingLayer, type TargetResult } from './Targeting/ThreeDTargetingLayer';
+import { ThreeDTargetingLayer } from './Targeting/ThreeDTargetingLayer';
 import { cancelTargeting, targetingStore } from './Targeting/targetingStore';
 import { ThreeDTerrainLinkLayer, type TerrainLinkInteractionFocus } from './TerrainLinks3D/ThreeDTerrainLinkLayer';
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from './Actors3D/actorTokenConstants';
@@ -560,30 +560,6 @@ export default function MapScene({
 		[actionService, pingActiveActorId, terrain]
 	);
 
-	// Resolve a click in item/skill targeting mode: merge the chosen target into
-	// the pending request's base params and dispatch its use action. The target
-	// has no mechanical effect yet -- it augments the action for scripting/logging.
-	const handleResolveTarget = useCallback(
-		(result: TargetResult) => {
-			const req = targetingStore.request;
-			if (!req || !actionService) return;
-			const targetParam =
-				result.kind === "actor"
-					? { targetActorId: result.actorId }
-					: {
-							targetPosition: {
-								terrainId: terrain?.Id ?? "",
-								x: result.x,
-								y: result.y,
-								h: result.h,
-							},
-					  };
-			actionService.execute(req.actionKey, { ...req.baseParams, ...targetParam });
-			cancelTargeting();
-		},
-		[actionService, terrain]
-	);
-
 	const canControlActor = useCallback(
 		(actor: { id: string; kind: "character" | "entity" }) =>
 			canAccessActor(actor.id),
@@ -787,7 +763,7 @@ export default function MapScene({
 						<ThreeDTargetingLayer
 							resources={sceneResources}
 							terrainIndex={terrainIndex}
-							onResolveTarget={handleResolveTarget}
+							terrainId={terrain.Id}
 						/>
 					)}
 					<ThreeDTerrainLinkLayer
