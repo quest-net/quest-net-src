@@ -1,3 +1,4 @@
+import { ACTOR_TOKEN_PLACEMENT } from "../Actors3D/actorTokenConstants";
 import { THREE_D_MAP_RENDERER } from "../threeDMapConstants";
 
 export const FIRST_PERSON_CAMERA = {
@@ -42,7 +43,12 @@ export const FIRST_PERSON_PHYSICS = {
 	CAPSULE_HEAD_CLEARANCE: 0.24,
 	COLLISION_EPSILON: 0.000001,
 	SETTLED_SPEED: 0.045,
-	MIN_WORLD_Y: -20,
+	// Hard floor for the capsule feet (position.y). This is the voxel-grid base
+	// plane, which maps to rules height h = 0 (h_raw = position.y - TERRAIN_WORLD_Y_OFFSET
+	// - BASE_Y_OFFSET, so feet at TERRAIN_WORLD_Y_OFFSET report h = 0). The capsule
+	// cannot descend below the h = 0 ground. There is intentionally no top clamp --
+	// the body (flyers especially) may rise above the terrain's max height freely.
+	MIN_WORLD_Y: ACTOR_TOKEN_PLACEMENT.TERRAIN_WORLD_Y_OFFSET,
 	// Soft movement-range boundary (combat, when player movement is restricted to
 	// range). When the body is past its allowed range, its outward velocity is
 	// cancelled and a gentle inward drift toward the turn-start position is imposed
