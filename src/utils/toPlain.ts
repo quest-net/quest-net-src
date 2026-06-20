@@ -22,7 +22,7 @@
 // worker, structuredClone, or persist. If you need a MUTABLE deep copy
 // (clone-then-mutate), wrap it: `structuredClone(toPlain(x))`.
 
-import { snapshot } from "valtio";
+import { snapshot, getVersion } from "valtio";
 import { getUntracked } from "proxy-compare";
 
 export function toPlain<T>(value: T): T {
@@ -48,16 +48,21 @@ function convert(value: unknown): unknown {
 		return value;
 	}
 
-	// Valtio store proxy -> deeply plain snapshot in one shot. snapshot() throws
-	// on a non-proxy, which is how we fall through to the plain-object case.
-	try {
+	// Valtio store proxy -> deeply plain snapshot in one shot. Detect proxy-ness
+	// with getVersion (returns undefined for a non-proxy WITHOUT warning) rather
+	// than catching snapshot()'s throw: snapshot() console.warns "Please use
+	// proxy object" before throwing in dev, and convert() recurses, so the old
+	// try/catch spammed one warning per plain node on every toPlain of a plain
+	// tree (e.g. normalizeActionParams on action params).
+	if (getVersion(value) !== undefined) {
 		return snapshot(value as object);
-	} catch {
-		if (Array.isArray(value)) return value.map(convert);
-		const out: Record<string, unknown> = {};
-		for (const key of Object.keys(value as Record<string, unknown>)) {
-			out[key] = convert((value as Record<string, unknown>)[key]);
-		}
-		return out;
 	}
+
+	// Plain object/array that may still nest proxies deeper -> rebuild.
+	if (Array.isArray(value)) return value.map(convert);
+	const out: Record<string, unknown> = {};
+	for (const key of Object.keys(value as Record<string, unknown>)) {
+		out[key] = convert((value as Record<string, unknown>)[key]);
+	}
+	return out;
 }
