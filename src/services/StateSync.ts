@@ -2,9 +2,10 @@
 
 import { Campaign } from "../domains/Campaign/Campaign";
 import { Room, type ActionSend } from "../domains/Room/Room";
-import { compare, applyPatch } from "fast-json-patch";
+import { applyPatch } from "fast-json-patch";
 import type { Operation } from "fast-json-patch";
 import { sanitizeCampaignForPlayers } from "./StateSyncSanitize";
+import type { CampaignMutationRecorder } from "./CampaignMutationRecorder";
 import {
 	compressStateUpdateForTransport,
 	decompressStateUpdateIfNeeded,
@@ -27,10 +28,15 @@ export class StateSync {
 	private actionExecute: (actionKey: string, params: any) => void;
 	private sendQueue: Promise<void> = Promise.resolve();
 
-	// State tracking for differential updates. The DM keeps the last sanitized
-	// campaign sent to players, then compares it with the next sanitized campaign
-	// to build JSON Patch deltas.
-	private lastBroadcastState: Campaign | null = null;
+	// Operation-based deltas (DM only): the recorder buffers Valtio mutation ops
+	// and translates them to JSON Patch at broadcast time, so we never diff two
+	// full campaign clones. Undefined on players (who only receive).
+	private recorder?: CampaignMutationRecorder;
+
+	// State tracking. `hasBaseline` is true once players have received at least
+	// one full state to apply deltas onto. `currentState` is the receiver-side
+	// baseline (players only). Version counters gate delta ordering.
+	private hasBaseline = false;
 	private currentState: Campaign | null = null;
 	private version = 0;
 	private updateCount = 0;
@@ -46,10 +52,12 @@ export class StateSync {
 
 	constructor(
 		room: Room,
-		actionExecute: (actionKey: string, params: any) => void = () => { }
+		actionExecute: (actionKey: string, params: any) => void = () => { },
+		recorder?: CampaignMutationRecorder
 	) {
 		this.room = room;
 		this.actionExecute = actionExecute;
+		this.recorder = recorder;
 		this.setupChannel();
 	}
 
@@ -86,18 +94,17 @@ export class StateSync {
 	broadcast(campaign: Campaign, force = false): void {
 		this.updateCount++;
 
-		const sanitized = sanitizeCampaignForPlayers(campaign);
-
 		// First broadcast (no baseline yet) or periodic fallback: send full state
-		// to recover from any desync.
+		// to recover from any desync. Only full sends sanitize the whole campaign;
+		// deltas are built from recorded ops, not a sanitized clone.
 		const shouldSendFull =
-			!this.lastBroadcastState ||
+			!this.hasBaseline ||
 			this.updateCount % this.fullStateInterval === 0;
 
 		if (shouldSendFull) {
-			this.sendFull(sanitized);
+			this.sendFull(sanitizeCampaignForPlayers(campaign));
 		} else {
-			this.broadcastDelta(sanitized, force);
+			this.broadcastDelta(campaign, force);
 		}
 	}
 
@@ -122,30 +129,33 @@ export class StateSync {
 
 		this.queueStateSend(update);
 
-		// `sanitized` is a fresh StateSync-owned clone that nothing mutates after
-		// this point, so adopt it as the diff baseline directly.
-		this.lastBroadcastState = sanitized;
+		// The full snapshot carries every buffered mutation, so drop the recorder
+		// buffer -- replaying those ops as a delta on top would double-apply.
+		this.recorder?.discard();
 
-		// Reset counters on full state.
+		// Players now have a baseline to apply deltas onto. Reset counters.
+		this.hasBaseline = true;
 		this.version = 0;
 		this.updateCount = 0;
 	}
 
 	/**
-	 * Broadcasts a differential update.
+	 * Broadcasts a differential update built from recorded mutation ops. Only
+	 * reached with a baseline already established (broadcast() gates on that).
 	 */
 	private broadcastDelta(campaign: Campaign, force = false): void {
-		if (!this.lastBroadcastState) {
-			this.sendFull(campaign);
+		// `null` means the ops can't be expressed as a delta (campaign root
+		// replaced wholesale, or no recorder on this instance) -- full-send.
+		const patches = this.recorder?.flush(campaign) ?? null;
+		if (patches === null) {
+			this.sendFull(sanitizeCampaignForPlayers(campaign));
 			return;
 		}
-
-		const patches = compare(this.lastBroadcastState, campaign);
 
 		if (patches.length === 0) {
 			if (force) {
 				// Forced with no changes: full sync resets an optimistic player.
-				this.sendFull(campaign);
+				this.sendFull(sanitizeCampaignForPlayers(campaign));
 			}
 			return;
 		}
@@ -158,7 +168,6 @@ export class StateSync {
 		};
 
 		this.queueStateSend(update);
-		this.lastBroadcastState = campaign;
 		this.version++;
 	}
 
@@ -267,8 +276,13 @@ export class StateSync {
 			return;
 		}
 
-		// Apply patches to current state
-		const result = applyPatch(this.currentState, update.patches, true, false);
+		// Apply patches to current state. mutateDocument=true lets fast-json-patch
+		// mutate the private baseline in place (no internal deep clone): we own
+		// `currentState` exclusively and applyPlayerStateUpdate structuredClones
+		// the result before it reaches the proxy, so the baseline never aliases
+		// the UI. Tradeoff: a mid-patch validation failure can leave the baseline
+		// half-applied -- the version-mismatch -> full-sync path heals that.
+		const result = applyPatch(this.currentState, update.patches, true, true);
 
 		if (result.newDocument) {
 			this.currentState = result.newDocument;

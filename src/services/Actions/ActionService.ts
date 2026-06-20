@@ -6,6 +6,7 @@ import type { Campaign } from "../../domains/Campaign/Campaign";
 import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { ActorUtils } from "../../domains/Actor/ActorUtils";
 import { StateSync } from "../StateSync";
+import { CampaignMutationRecorder } from "../CampaignMutationRecorder";
 import { ImageService } from "../ImageService";
 import { Room, type ActionSend } from "../../domains/Room/Room";
 import { bumpPresence } from "../../domains/Context/contextStore";
@@ -34,6 +35,8 @@ export class ActionService {
 	private context: Context;
 	private room: Room;
 	private stateSync: StateSync;
+	// DM-only: records campaign mutation ops for operation-based deltas.
+	private mutationRecorder?: CampaignMutationRecorder;
 	public imageService: ImageService;
 	public actorPoseService: ActorPoseService;
 	public terrainTransferService: TerrainTransferService;
@@ -65,7 +68,17 @@ export class ActionService {
 	constructor(context: Context, room: Room) {
 		this.context = context;
 		this.room = room;
-		this.stateSync = new StateSync(room, this.execute.bind(this));
+		// The DM authors deltas, so only the DM records mutation ops. `context` is
+		// the live contextStore proxy, so the recorder sees every campaign write.
+		this.mutationRecorder =
+			context.User.Role === "dm"
+				? new CampaignMutationRecorder(context)
+				: undefined;
+		this.stateSync = new StateSync(
+			room,
+			this.execute.bind(this),
+			this.mutationRecorder
+		);
 		this.imageService = new ImageService(
 			room,
 			context.User.Role === "dm",
@@ -696,6 +709,7 @@ export class ActionService {
 			clearInterval(this.peerReconcileInterval);
 			this.peerReconcileInterval = undefined;
 		}
+		this.mutationRecorder?.dispose();
 		this.actorPoseService.cleanup();
 		this.terrainTransferService.cleanup();
 		this.pingIntervals.forEach(clearInterval);
