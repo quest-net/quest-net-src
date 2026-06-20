@@ -325,7 +325,7 @@ export function createDefaultVoxelStamps(
 /**
  * Splits an EditableVoxelTerrain into a canonical (payload-free) terrain whose
  * voxels have been materialized into the per-client store and whose metadata
- * (ContentHash / VoxelCount / PreviewColor) has been stamped. The campaign owns
+ * (ContentHash / PreviewColor) has been stamped. The campaign owns
  * only the returned metadata object; the payload is persisted to IndexedDB the
  * next time the campaign is saved (prepareCampaignForStorage).
  */

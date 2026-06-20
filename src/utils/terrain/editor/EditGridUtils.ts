@@ -9,7 +9,6 @@
 // directly. The draft is re-encoded only at commit boundaries.
 
 import {
-	countSetBits,
 	createBitset,
 	isBitSet,
 	setBit,
@@ -147,10 +146,6 @@ export function encodeEditGrid(grid: EditGrid, vW: number, vH: number, vL: numbe
 	return encodeVoxels(voxels);
 }
 
-export function countEditGridVoxels(grid: EditGrid): number {
-	return countSetBits(grid.occupied);
-}
-
 // ---------------------------------------------------------------------------
 // Delta-based undo/redo
 //
@@ -166,7 +161,6 @@ export interface GridDelta {
 	indices:    Uint32Array;  // flat voxel indices
 	oldStates:  Uint16Array;  // bit 8 = was occupied, bits 0-7 = old color
 	newStates:  Uint16Array;  // bit 8 = is  occupied, bits 0-7 = new color
-	countDelta: number;       // net change in occupied-voxel count
 }
 
 export function applyDeltaToGrid(

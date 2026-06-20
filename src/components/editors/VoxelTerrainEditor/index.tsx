@@ -40,7 +40,6 @@ import {
 import {
 	buildEditGrid,
 	copyEditGrid,
-	countEditGridVoxels,
 	createEditGrid,
 	editGridGetColor,
 	editGridHasVoxelAtIndex,
@@ -260,7 +259,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const terrainRef      = useRef(terrain);
 		// Live voxel state. Written per-voxel during editing; never re-encoded mid-stroke.
 		const editGridRef     = useRef<EditGrid>(createEditGrid(0));
-		const occupiedVoxelCountRef = useRef(0);
 		// Chunk system: meshes + pending rebuild set.
 		const chunkMeshesRef  = useRef<Map<number, THREE.Mesh | null>>(new Map());
 		const dirtyChunksRef  = useRef<Set<number>>(new Set());
@@ -386,9 +384,8 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 		const nextSelectionId = useCallback(() => selectionIdRef.current++, []);
 
-		// editGen is read so React treats voxelCount / selectionSummary as deps.
+		// editGen is read so React treats selectionSummary as a dep.
 		void editGen;
-		const voxelCount = occupiedVoxelCountRef.current;
 		const lighting = terrain.Lighting;
 		const background = terrain.Background;
 
@@ -639,7 +636,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			} else {
 				editGridRef.current = newGrid;
 			}
-			occupiedVoxelCountRef.current = countEditGridVoxels(newGrid);
 
 			const resources = resourcesRef.current;
 			const gridGroup = gridGroupRef.current;
@@ -705,7 +701,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 				editGridRef.current = result.grid;
 				chunkDimsRef.current = result.dims;
-				occupiedVoxelCountRef.current = result.count;
 				undoStackRef.current.length = 0;
 				redoStackRef.current.length = 0;
 				setUndoDepth(0);
@@ -761,7 +756,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			const indices    = new Uint32Array(n);
 			const oldStates  = new Uint16Array(n);
 			const newStates  = new Uint16Array(n);
-			let   countDelta = 0;
 			let   i          = 0;
 			for (const [idx, oldPacked] of acc) {
 				const newOccupied = editGridHasVoxelAtIndex(editGridRef.current, idx);
@@ -770,11 +764,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				indices[i]   = idx;
 				oldStates[i] = oldPacked;
 				newStates[i] = newPacked;
-				countDelta  += (newOccupied ? 1 : 0) - ((oldPacked & 0x100) ? 1 : 0);
 				i++;
 			}
 
-			const delta: GridDelta = { indices, oldStates, newStates, countDelta };
+			const delta: GridDelta = { indices, oldStates, newStates };
 			undoStackRef.current.push(delta);
 			if (undoStackRef.current.length > UNDO_LIMIT) undoStackRef.current.shift();
 			redoStackRef.current.length = 0;
@@ -798,7 +791,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				dims.vL,
 				(vx, vy, vz) => markVoxelDirtyChunks(vx, vy, vz, dirtyChunksRef.current, dims),
 			);
-			occupiedVoxelCountRef.current -= delta.countDelta;
 			redoStackRef.current.push(delta);
 			if (redoStackRef.current.length > UNDO_LIMIT) redoStackRef.current.shift();
 
@@ -825,7 +817,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				dims.vL,
 				(vx, vy, vz) => markVoxelDirtyChunks(vx, vy, vz, dirtyChunksRef.current, dims),
 			);
-			occupiedVoxelCountRef.current += delta.countDelta;
 			undoStackRef.current.push(delta);
 			if (undoStackRef.current.length > UNDO_LIMIT) undoStackRef.current.shift();
 
@@ -907,7 +898,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					recordVoxelBefore,
 				);
 				if (!selectionResult.changed) return false;
-				occupiedVoxelCountRef.current += selectionResult.countDelta;
 				refreshSelectionRef.current?.();
 				if (!strokeStartedRef.current) strokeStartedRef.current = true;
 				return true;
@@ -933,7 +923,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 					recordVoxelBefore,
 				);
 				if (!stampResult.changed) return false;
-				occupiedVoxelCountRef.current += stampResult.countDelta;
 				if (!strokeStartedRef.current) strokeStartedRef.current = true;
 				return true;
 			}
@@ -973,7 +962,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			}
 
 			if (!result.changed) return false;
-			occupiedVoxelCountRef.current += result.countDelta;
 			if (!strokeStartedRef.current) strokeStartedRef.current = true;
 			return true;
 		}, [
@@ -1009,7 +997,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				return;
 			}
 
-			occupiedVoxelCountRef.current += result.countDelta;
 			recordUndo();
 			refreshSelectionRef.current?.();
 			commitDraftChange();
@@ -1039,7 +1026,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				return;
 			}
 
-			occupiedVoxelCountRef.current += result.countDelta;
 			recordUndo();
 			refreshSelectionRef.current?.();
 			commitDraftChange();
@@ -1190,7 +1176,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			const initDims    = computeChunkDims(initIndex);
 			chunkDimsRef.current  = initDims;
 			editGridRef.current   = buildEditGrid(initTerrain.Voxels, initIndex);
-			occupiedVoxelCountRef.current = countEditGridVoxels(editGridRef.current);
 			markAllChunksDirty(dirtyChunksRef.current, initDims);
 			rebuildBoundsFrame(gridGroup, initDims);
 			frameOrthoCamera(resources, initTerrain, container);
@@ -2063,7 +2048,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 								/>
 							) : (
 								<EditorSidebar
-									voxelCount={voxelCount}
 									tool={tool}
 									selection={selection}
 									boxSelectionAnchor={boxSelectionAnchor}

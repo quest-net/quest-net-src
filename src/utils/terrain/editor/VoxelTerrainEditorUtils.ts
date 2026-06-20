@@ -11,7 +11,7 @@ import {
 	getTerrainColorByIndex,
 } from "../palette/TerrainPaletteUtils";
 import { getSpecialMaterialEditorColor } from "../materials/terrainMaterialRules";
-import { decodeVoxels, encodeVoxels } from "../data/VoxelDataUtils";
+import { decodeVoxels, decodeVoxelBuffers, encodeVoxels } from "../data/VoxelDataUtils";
 import { getVoxelTerrainResolution } from "../data/VoxelTerrainIndex";
 import { clamp } from "../../math";
 
@@ -259,24 +259,20 @@ export function createFlatVoxelTerrain(params: {
 	};
 }
 
-export function getMostCommonVoxelTerrainColor(voxels: Uint8Array): string {
-	const colorCounts = new Map<number, number>();
+/**
+ * Picks a representative color for a terrain by sampling a single random voxel.
+ * Used only for the small UI preview swatch (terrain index icon / picker dot), so
+ * a random sample is good enough and avoids decoding + tallying every voxel's
+ * color. Falls back to the default palette color for an empty terrain.
+ */
+export function getRandomVoxelTerrainColor(voxels: Uint8Array): string {
+	const { colors } = decodeVoxelBuffers(voxels);
+	const colorIndex =
+		colors.length > 0
+			? normalizeVoxelPaletteIndex(colors[Math.floor(Math.random() * colors.length)])
+			: DEFAULT_TERRAIN_COLOR_INDEX;
 
-	for (const voxel of decodeVoxels(voxels)) {
-		const color = normalizeVoxelPaletteIndex(voxel.color);
-		colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
-	}
-
-	let mostCommonColor = DEFAULT_TERRAIN_COLOR_INDEX;
-	let maxCount = 0;
-	for (const [color, count] of colorCounts) {
-		if (count > maxCount) {
-			mostCommonColor = color;
-			maxCount = count;
-		}
-	}
-
-	const hex = getTerrainColorByIndex(mostCommonColor);
+	const hex = getTerrainColorByIndex(colorIndex);
 	const { r, g, b } = hexToRgb(hex);
 	const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 

@@ -197,7 +197,6 @@ export function normalizeDraftShape(nextShape: DraftShape): DraftShape {
 export interface ReshapeResult {
 	grid: EditGrid;
 	dims: ChunkDims;
-	count: number;
 	shape: DraftShape;
 }
 
@@ -214,7 +213,6 @@ export function reshapeEditGrid(
 		shape.resolution,
 	);
 	const nextGrid = createEditGrid(nextDims.vW * nextDims.vH * nextDims.vL);
-	let count = 0;
 
 	for (let y = 0; y < oldDims.vH; y++) {
 		for (let z = 0; z < oldDims.vL; z++) {
@@ -233,7 +231,6 @@ export function reshapeEditGrid(
 						for (let nx = xRange.start; nx < xRange.end; nx++) {
 							const nextIdx = editGridIndex(nx, ny, nz, nextDims.vW, nextDims.vL);
 							if (!editGridHasVoxelAtIndex(nextGrid, nextIdx)) {
-								count++;
 								editGridSetOccupiedAtIndex(nextGrid, nextIdx, true);
 							}
 							nextGrid.colors[nextIdx] = color;
@@ -244,5 +241,5 @@ export function reshapeEditGrid(
 		}
 	}
 
-	return { grid: nextGrid, dims: nextDims, count, shape };
+	return { grid: nextGrid, dims: nextDims, shape };
 }

@@ -70,7 +70,6 @@ export interface VoxelTerrainIndex {
 	readonly voxelLength: number;
 	// Size of one voxel in tactical units (= 1 / resolution).
 	readonly voxelSize: number;
-	readonly voxelCount: number;
 	readonly maxSurfaceHeight: number;
 	// Per-tactical-tile walkable surfaces. Keys: `${tileX},${tileY}`.
 	// `allSurfaces`       -- rules-height integers (Math.floor of exact).
@@ -197,7 +196,6 @@ export function buildVoxelTerrainIndex(
 	const maxVoxelYs = new Int16Array(voxelLayerSize);
 	maxVoxelYs.fill(-1);
 	let maxVoxelY = -1;
-	let voxelCount = 0;
 
 	const inVoxelBounds = (vx: number, vy: number, vz: number): boolean =>
 		vx >= 0 && vx < voxelWidth &&
@@ -218,7 +216,6 @@ export function buildVoxelTerrainIndex(
 			voxelWidth,
 			voxelLayerSize
 		);
-		if (voxelColors[key] === 0) voxelCount++;
 		voxelColors[key] = (voxel.color & 0xff) + 1;
 
 		const idx = voxel.z * voxelWidth + voxel.x;
@@ -291,7 +288,6 @@ export function buildVoxelTerrainIndex(
 		voxelHeight,
 		voxelLength,
 		voxelSize: 1 / resolution,
-		voxelCount,
 		maxSurfaceHeight: voxelTopToTacticalHeight(maxVoxelY, resolution),
 		allSurfaces,
 		allSurfaceHeights,

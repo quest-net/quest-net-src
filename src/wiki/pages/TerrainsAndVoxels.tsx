@@ -72,10 +72,10 @@ export const terrainsAndVoxelsPage: WikiPage = {
 									"Per-terrain environment settings used by the active map display and renderer.",
 							},
 							{
-								name: "VoxelCount / PreviewColor",
+								name: "PreviewColor",
 								tone: "info",
 								detail:
-									"Metadata maintained when terrain is saved or hydrated, used by the terrain library.",
+									"Preview swatch color (a sampled voxel) maintained when terrain is saved or hydrated, used by the terrain library.",
 							},
 						]}
 					/>
@@ -133,7 +133,7 @@ export const terrainsAndVoxelsPage: WikiPage = {
 					<WikiCallout tone="info" title="O(1) count metadata">
 						<p>
 							<WikiCode>getVoxelCount</WikiCode> reads the count from the SVO
-							header, so terrain list metadata can be updated without decoding the
+							header, so cheap emptiness checks can be made without decoding the
 							full voxel set.
 						</p>
 					</WikiCallout>

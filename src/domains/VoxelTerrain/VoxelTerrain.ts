@@ -207,7 +207,6 @@ export interface VoxelTerrain {
 	 * Optional only for older saves prior to the 2.7.0 migration / empty terrains.
 	 */
 	ContentHash?: string;
-	VoxelCount?: number;
 	Lighting: VoxelTerrainLighting;
 	Background: VoxelTerrainBackground;
 	/**

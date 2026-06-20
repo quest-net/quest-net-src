@@ -49,12 +49,10 @@ export type VoxelEditTool = BrushTool;
 export interface VoxelEditResult {
 	changed: boolean;
 	sampledColor: number | null;
-	countDelta: number;
 }
 
 export interface MutationResult {
 	changed: boolean;
-	countDelta: number;
 }
 
 /**
@@ -76,7 +74,6 @@ export function applyStampToGrid(
 ): MutationResult {
 	const { vW, vH, vL, resolution } = dims;
 	let changed = false;
-	let countDelta = 0;
 
 	for (const offset of iterateStampVoxels(source, resolution, transform)) {
 		const x = anchor.x + offset.x;
@@ -90,7 +87,6 @@ export function applyStampToGrid(
 		if (occupied && grid.colors[gIdx] === next) continue;
 		beforeMutation?.(gIdx);
 		if (!occupied) {
-			countDelta++;
 			editGridSetOccupiedAtIndex(grid, gIdx, true);
 		}
 		grid.colors[gIdx] = next;
@@ -98,7 +94,7 @@ export function applyStampToGrid(
 		changed = true;
 	}
 
-	return { changed, countDelta };
+	return { changed };
 }
 
 /**
@@ -121,12 +117,11 @@ export function applyVoxelEdit(
 
 	if (tool === "sample") {
 		const sampledColor = editGridGetColor(grid, pick.voxel.x, pick.voxel.y, pick.voxel.z, vW, vH, vL);
-		return { changed: false, sampledColor, countDelta: 0 };
+		return { changed: false, sampledColor };
 	}
 
 	const coords = collectAffectedCoords(index, pick, tool, granularity, brushSize);
 	let changed = false;
-	let countDelta = 0;
 
 	for (const { x, y, z } of coords) {
 		if (!inGridBounds(x, y, z, vW, vH, vL)) continue;
@@ -138,7 +133,6 @@ export function applyVoxelEdit(
 				editGridSetOccupiedAtIndex(grid, gIdx, false);
 				markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 				changed = true;
-				countDelta--;
 			}
 			continue;
 		}
@@ -161,11 +155,10 @@ export function applyVoxelEdit(
 			editGridSetOccupiedAtIndex(grid, gIdx, true);
 			markVoxelDirtyChunks(x, y, z, dirtyChunks, dims);
 			changed = true;
-			countDelta++;
 		}
 	}
 
-	return { changed, sampledColor: null, countDelta };
+	return { changed, sampledColor: null };
 }
 
 /**
@@ -183,7 +176,6 @@ export function applySelectionEdit(
 	const { vW, vH, vL } = dims;
 	const next = normalizeVoxelPaletteIndex(colorIndex);
 	let changed = false;
-	let countDelta = 0;
 	let changedMin: VoxelCoord | null = null;
 	let changedMax: VoxelCoord | null = null;
 
@@ -213,7 +205,6 @@ export function applySelectionEdit(
 			beforeMutation?.(gIdx);
 			editGridSetOccupiedAtIndex(grid, gIdx, false);
 			changed = true;
-			countDelta--;
 			markChanged(x, y, z);
 			continue;
 		}
@@ -233,7 +224,6 @@ export function applySelectionEdit(
 			// room with fog while leaving its floor, walls, and props intact.
 			if (occupied) continue;
 			beforeMutation?.(gIdx);
-			countDelta++;
 			editGridSetOccupiedAtIndex(grid, gIdx, true);
 			grid.colors[gIdx] = next;
 			changed = true;
@@ -244,7 +234,6 @@ export function applySelectionEdit(
 		if (occupied && cur === next) continue;
 		beforeMutation?.(gIdx);
 		if (!occupied) {
-			countDelta++;
 			editGridSetOccupiedAtIndex(grid, gIdx, true);
 		}
 		grid.colors[gIdx] = next;
@@ -256,7 +245,7 @@ export function applySelectionEdit(
 		markVoxelRangeDirtyChunks({ min: changedMin, max: changedMax }, dirtyChunks, dims);
 	}
 
-	return { changed, countDelta };
+	return { changed };
 }
 
 export const MIN_SMOOTH_PASSES = 1;
@@ -408,7 +397,6 @@ export function applyBoxSelectionSmooth(
 	}
 
 	let changed = false;
-	let countDelta = 0;
 	for (let z = minZ; z <= maxZ; z++) {
 		for (let x = minX; x <= maxX; x++) {
 			const columnIndex = smoothColumnIndex(x, z, clampedBounds, width);
@@ -435,7 +423,6 @@ export function applyBoxSelectionSmooth(
 						grid.colors[gIdx] = fillColor;
 						editGridSetOccupiedAtIndex(grid, gIdx, true);
 						changed = true;
-						countDelta++;
 					}
 					continue;
 				}
@@ -444,7 +431,6 @@ export function applyBoxSelectionSmooth(
 					beforeMutation?.(gIdx);
 					editGridSetOccupiedAtIndex(grid, gIdx, false);
 					changed = true;
-					countDelta--;
 				}
 			}
 		}
@@ -454,5 +440,5 @@ export function applyBoxSelectionSmooth(
 		markVoxelRangeDirtyChunks(clampedBounds, dirtyChunks, dims);
 	}
 
-	return { changed, countDelta };
+	return { changed };
 }

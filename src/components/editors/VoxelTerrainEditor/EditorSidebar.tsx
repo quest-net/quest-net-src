@@ -1,8 +1,8 @@
 // The right-hand sidebar shown in Edit mode.
 //
-// Includes: voxel-count summary, selection summary panel, color palette,
-// special-material swatches, and the actor visibility toggle. Box-bounds
-// tweaking and smoothing now live on the map (drag gizmo) and in the toolbar.
+// Includes: selection summary panel, color palette, special-material swatches,
+// and the actor visibility toggle. Box-bounds tweaking and smoothing now live on
+// the map (drag gizmo) and in the toolbar.
 
 import type { EditorTool } from "./editorTypes";
 import { TerrainColorPicker } from "./TerrainColorPicker";
@@ -27,7 +27,6 @@ export interface TerrainLinkSidebarEntry {
 }
 
 interface EditorSidebarProps {
-	voxelCount: number;
 	tool: EditorTool;
 	selection: TerrainSelection | null;
 	boxSelectionAnchor: VoxelSelectionBounds | null;
@@ -49,7 +48,6 @@ interface EditorSidebarProps {
 
 export function EditorSidebar(props: EditorSidebarProps) {
 	const {
-		voxelCount,
 		tool,
 		selection,
 		boxSelectionAnchor,
@@ -80,18 +78,6 @@ export function EditorSidebar(props: EditorSidebarProps) {
 
 	return (
 		<>
-			<div>
-				<div className="text-sm font-semibold mb-2">Info</div>
-				<div className="space-y-1 text-xs opacity-70">
-					<div className="flex justify-between gap-3">
-						<span>Count</span>
-						<span className="font-medium text-base-content">
-							{voxelCount.toLocaleString()}
-						</span>
-					</div>
-				</div>
-			</div>
-
 			{showSelectionPanel && (
 				<div>
 					<div className="text-sm font-semibold mb-2">Selection</div>

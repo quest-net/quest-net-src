@@ -159,7 +159,6 @@ export function TerrainEdit({
 			Name: `${data.Name} (Copy)`,
 			Voxels: data.Voxels,
 			ContentHash: undefined,
-			VoxelCount: undefined,
 			PreviewColor: undefined,
 			Tags: data.Tags ? [...data.Tags] : undefined,
 		};

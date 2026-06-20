@@ -7,8 +7,8 @@ import {
 	IndexedDBUtilities,
 	VOXEL_TERRAINS_STORE_NAME,
 } from "../utils/IndexedDBUtilities";
-import { getMostCommonVoxelTerrainColor } from "../utils/terrain/editor/VoxelTerrainEditorUtils";
-import { getVoxelCount, hashVoxels } from "../utils/terrain/data/VoxelDataUtils";
+import { getRandomVoxelTerrainColor } from "../utils/terrain/editor/VoxelTerrainEditorUtils";
+import { hashVoxels } from "../utils/terrain/data/VoxelDataUtils";
 import { toPlain } from "../utils/toPlain";
 import {
 	dropTerrainVoxels,
@@ -124,15 +124,14 @@ export class TerrainStorageService {
 
 	/**
 	 * Materializes `voxels` for a terrain and stamps the small, synced metadata
-	 * (ContentHash / VoxelCount / PreviewColor) onto the canonical object.
-	 * Author-time entry point used by terrain create/edit, stamp import, and
-	 * migration. Returns the new ContentHash.
+	 * (ContentHash / PreviewColor) onto the canonical object. Author-time entry
+	 * point used by terrain create/edit, stamp import, and migration. Returns the
+	 * new ContentHash.
 	 */
 	static materialize(terrain: VoxelTerrain, voxels: Uint8Array): string {
 		const contentHash = setTerrainVoxels(terrain.Id, voxels);
 		terrain.ContentHash = contentHash;
-		terrain.VoxelCount = getVoxelCount(voxels);
-		terrain.PreviewColor = getMostCommonVoxelTerrainColor(voxels);
+		terrain.PreviewColor = getRandomVoxelTerrainColor(voxels);
 		return contentHash;
 	}
 

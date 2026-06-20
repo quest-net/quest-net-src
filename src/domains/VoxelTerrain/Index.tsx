@@ -52,7 +52,7 @@ export function TerrainIndex({
 		return {
 			id: terrain.Id,
 			label: terrain.Name,
-			details: `${terrain.Width}x${terrain.Length}${terrain.VoxelCount !== undefined ? ` - ${terrain.VoxelCount.toLocaleString()} voxels` : ""}${isViewing ? " - Viewing" : ""}`,
+			details: `${terrain.Width}x${terrain.Length}${isViewing ? " - Viewing" : ""}`,
 			icon: "icon-[mdi--terrain]",
 			iconColor: terrain.PreviewColor,
 			tags: terrain.Tags || [],
