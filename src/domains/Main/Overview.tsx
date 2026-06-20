@@ -38,7 +38,7 @@ interface OverviewActorEntry {
 }
 
 interface OverviewProps {
-	onInspectActor: () => void;
+	onInspectActor: (actorId: string) => void;
 }
 
 export function Overview({ onInspectActor }: OverviewProps) {
@@ -178,7 +178,7 @@ export function Overview({ onInspectActor }: OverviewProps) {
 			kind: entry.kind,
 			moveSpeed: entry.actor.MoveSpeed,
 		});
-		onInspectActor();
+		onInspectActor(entry.actor.Id);
 	};
 
 	const handleCardDoubleClick = (

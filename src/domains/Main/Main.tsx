@@ -5,7 +5,7 @@ import { forceContextRerender } from "../Context/contextStore";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import MapScene, { type CameraPreference } from "../../components/Map/MapScene";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapStateProvider, useMapState } from "../../components/Map/MapStateProvider";
 import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
 import { DmMapToolbar } from "../../components/Map/DmMapToolbar";
@@ -62,6 +62,14 @@ interface SidebarTabButtonProps {
 	icon: string;
 }
 
+interface BottomTabDef {
+	key: PlayerBottomTab | DMBottomTab;
+	title: string;
+	icon: string;
+	/** Show the "new items" indicator dot on the tab (players only). */
+	indicator?: boolean;
+}
+
 function SidebarTabButton({ active, onClick, title, icon }: SidebarTabButtonProps) {
 	return (
 		<ToggleButton active={active} onClick={onClick} title={title} className="btn-square">
@@ -98,7 +106,13 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 	// Bottom tabs state (different defaults based on role)
 	const [activeBottomTab, setActiveBottomTab] = useState<
 		PlayerBottomTab | DMBottomTab
-	>(isDM ? "inspector" : "character");
+	>(isDM ? "overview" : "character");
+
+	// Mirror of the map's selected actor. The side panel's tab buttons render
+	// outside MapStateProvider, so InspectorTabSync feeds the selected id up
+	// here; the Inspector tab is only shown while something is selected.
+	const [selectedActorId, setSelectedActorId] = useState<string | null>(null);
+	const hasSelection = selectedActorId !== null;
 
 	// Get the selected character for players
 	const selectedCharacterId =
@@ -232,14 +246,66 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 		selectedCharacter,
 	]);
 
-	// If the Shared Inventories tab is open and the last shared inventory gets
-	// deleted, fall back to a sensible default for the current role rather than
-	// leaving the user on a tab whose button has just disappeared.
-	useEffect(() => {
-		if (activeBottomTab === "shared-inventories" && !hasSharedInventories) {
-			setActiveBottomTab(isDM ? "inspector" : "character");
+	// Bottom-tab definitions in display order, role-specific. Visibility-gated
+	// tabs (shared inventories, inspector) are omitted when unavailable; the
+	// first entry is the role's default/topmost tab. This single source of order
+	// drives both the button list and the fallback below.
+	const bottomTabs = useMemo<BottomTabDef[]>(() => {
+		// Shared between roles, so defined once here.
+		const sharedInventoriesTab: BottomTabDef = {
+			key: "shared-inventories",
+			title: "Shared Inventories",
+			icon: "icon-[mdi--treasure-chest]",
+		};
+		const inspectorTab: BottomTabDef = {
+			key: "inspector",
+			title: "Inspector",
+			icon: "icon-[mdi--magnify]",
+		};
+		if (isDM) {
+			return [
+				{ key: "overview", title: "Overview", icon: "icon-[mdi--account-multiple]" },
+				{ key: "scene", title: "Scene", icon: "icon-[mdi--image]" },
+				{ key: "log", title: "Log", icon: "icon-[mdi--message-text]" },
+				...(hasSharedInventories ? [sharedInventoriesTab] : []),
+				...(hasSelection ? [inspectorTab] : []),
+			];
 		}
-	}, [hasSharedInventories, activeBottomTab, isDM]);
+		return [
+			{
+				key: "character",
+				title: selectedCharacter ? `${selectedCharacter.Name}'s info` : "Character",
+				icon: "icon-[mdi--account]",
+			},
+			{ key: "equipment", title: "Equipment", icon: "icon-[mdi--sword]", indicator: showEquipmentIndicator },
+			{ key: "inventory", title: "Inventory", icon: "icon-[mdi--sack]", indicator: showInventoryIndicator },
+			{ key: "skills", title: "Skills", icon: "icon-[mdi--star]", indicator: showSkillsIndicator },
+			{ key: "statuses", title: "Statuses", icon: "icon-[mdi--heart-pulse]", indicator: showStatusIndicator },
+			{ key: "party", title: "Party", icon: "icon-[mdi--account-group]" },
+			...(hasSharedInventories ? [sharedInventoriesTab] : []),
+			{ key: "log", title: "Log", icon: "icon-[mdi--message-text]" },
+			{ key: "notes", title: "Notes", icon: "icon-[mdi--notebook]" },
+			...(hasSelection ? [inspectorTab] : []),
+		];
+	}, [
+		isDM,
+		hasSelection,
+		hasSharedInventories,
+		selectedCharacter,
+		showEquipmentIndicator,
+		showInventoryIndicator,
+		showSkillsIndicator,
+		showStatusIndicator,
+	]);
+
+	// If the active tab is no longer available (its selection cleared, the last
+	// shared inventory removed, etc.), fall back to the role's topmost tab.
+	useEffect(() => {
+		const fallback = bottomTabs[0]?.key;
+		if (fallback && !bottomTabs.some((tab) => tab.key === activeBottomTab)) {
+			setActiveBottomTab(fallback);
+		}
+	}, [bottomTabs, activeBottomTab]);
 
 	useEffect(() => {
 		if (mapViewMode !== "first-person" || !isDM) return;
@@ -331,9 +397,26 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 		}
 	};
 
-	const switchToInspector = () => {
-		setActiveBottomTab("inspector");
-	};
+	// Map selection -> bottom tab. A player selecting their own character lands
+	// on the Character sheet; everyone else (and the DM) lands on the Inspector.
+	const routeToActorTab = useCallback(
+		(actorId: string) => {
+			setActiveBottomTab(
+				!isDM && actorId === selectedCharacterId ? "character" : "inspector"
+			);
+		},
+		[isDM, selectedCharacterId]
+	);
+
+	// Mirror the map selection into Main; route to a tab on a fresh selection.
+	// The guard effect above handles falling back when the selection goes away.
+	const handleSelectionChange = useCallback(
+		(actorId: string | null) => {
+			setSelectedActorId(actorId);
+			if (actorId) routeToActorTab(actorId);
+		},
+		[routeToActorTab]
+	);
 
 	// Selecting a top tab also expands the top section if it was collapsed.
 	const handleTopTabChange = (tab: TopTab) => {
@@ -358,6 +441,7 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 		<DiceRollerProvider>
 		<MapStateProvider>
 			<ViewTerrainSync />
+				<InspectorTabSync onSelectionChange={handleSelectionChange} />
 			<div className="flex h-full relative">
 				{/* Left 70%: Map */}
 				<div className="flex-1 overflow-hidden relative isolate">
@@ -465,134 +549,24 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 
 						{/* Icon Buttons */}
 						<div className={`flex-1 min-h-0 overflow-y-auto flex flex-col items-center py-1 gap-1 ${panelOpen ? "border-t-2" : ""} lg:border-t-2`}>
-							{isDM ? (
-								// DM Tabs
-								<>
+							{bottomTabs.map((tab) => {
+								const button = (
 									<SidebarTabButton
-										active={activeBottomTab === "inspector"}
-										onClick={() => handleBottomTabChange("inspector")}
-										title="Inspector"
-										icon="icon-[mdi--magnify]"
+										key={tab.key}
+										active={activeBottomTab === tab.key}
+										onClick={() => handleBottomTabChange(tab.key)}
+										title={tab.title}
+										icon={tab.icon}
 									/>
-									<SidebarTabButton
-										active={activeBottomTab === "scene"}
-										onClick={() => handleBottomTabChange("scene")}
-										title="Scene"
-										icon="icon-[mdi--image]"
-									/>
-									<SidebarTabButton
-										active={activeBottomTab === "log"}
-										onClick={() => handleBottomTabChange("log")}
-										title="Log"
-										icon="icon-[mdi--message-text]"
-									/>
-									<SidebarTabButton
-										active={activeBottomTab === "overview"}
-										onClick={() => handleBottomTabChange("overview")}
-										title="Overview"
-										icon="icon-[mdi--account-multiple]"
-									/>
-									{hasSharedInventories && (
-										<SidebarTabButton
-											active={activeBottomTab === "shared-inventories"}
-											onClick={() => handleBottomTabChange("shared-inventories")}
-											title="Shared Inventories"
-											icon="icon-[mdi--treasure-chest]"
-										/>
-									)}
-								</>
-							) : (
-								// Player Tabs
-								<>
-									<SidebarTabButton
-										active={activeBottomTab === "character"}
-										onClick={() => handleBottomTabChange("character")}
-										title={
-											selectedCharacter
-												? `${selectedCharacter.Name}'s info`
-												: "Character"
-										}
-										icon="icon-[mdi--account]"
-									/>
-									<div className={showEquipmentIndicator ? "indicator" : ""}>
-										{showEquipmentIndicator && (
-											<span className="indicator-item status status-info"></span>
-										)}
-										<SidebarTabButton
-											active={activeBottomTab === "equipment"}
-											onClick={() => handleBottomTabChange("equipment")}
-											title="Equipment"
-											icon="icon-[mdi--sword]"
-										/>
+								);
+								if (!tab.indicator) return button;
+								return (
+									<div key={tab.key} className="indicator">
+										<span className="indicator-item status status-info"></span>
+										{button}
 									</div>
-									<div className={showInventoryIndicator ? "indicator" : ""}>
-										{showInventoryIndicator && (
-											<span className="indicator-item status status-info"></span>
-										)}
-										<SidebarTabButton
-											active={activeBottomTab === "inventory"}
-											onClick={() => handleBottomTabChange("inventory")}
-											title="Inventory"
-											icon="icon-[mdi--sack]"
-										/>
-									</div>
-
-									<div className={showSkillsIndicator ? "indicator" : ""}>
-										{showSkillsIndicator && (
-											<span className="indicator-item status status-info"></span>
-										)}
-										<SidebarTabButton
-											active={activeBottomTab === "skills"}
-											onClick={() => handleBottomTabChange("skills")}
-											title="Skills"
-											icon="icon-[mdi--star]"
-										/>
-									</div>
-									<div className={showStatusIndicator ? "indicator" : ""}>
-										{showStatusIndicator && (
-											<span className="indicator-item status status-info"></span>
-										)}
-										<SidebarTabButton
-											active={activeBottomTab === "statuses"}
-											onClick={() => handleBottomTabChange("statuses")}
-											title="Statuses"
-											icon="icon-[mdi--heart-pulse]"
-										/>
-									</div>
-									<SidebarTabButton
-										active={activeBottomTab === "party"}
-										onClick={() => handleBottomTabChange("party")}
-										title="Party"
-										icon="icon-[mdi--account-group]"
-									/>
-									{hasSharedInventories && (
-										<SidebarTabButton
-											active={activeBottomTab === "shared-inventories"}
-											onClick={() => handleBottomTabChange("shared-inventories")}
-											title="Shared Inventories"
-											icon="icon-[mdi--treasure-chest]"
-										/>
-									)}
-									<SidebarTabButton
-										active={activeBottomTab === "inspector"}
-										onClick={() => handleBottomTabChange("inspector")}
-										title="Inspector"
-										icon="icon-[mdi--magnify]"
-									/>
-									<SidebarTabButton
-										active={activeBottomTab === "log"}
-										onClick={() => handleBottomTabChange("log")}
-										title="Log"
-										icon="icon-[mdi--message-text]"
-									/>
-									<SidebarTabButton
-										active={activeBottomTab === "notes"}
-										onClick={() => handleBottomTabChange("notes")}
-										title="Notes"
-										icon="icon-[mdi--notebook]"
-									/>
-								</>
-							)}
+								);
+							})}
 						</div>
 					</div>
 
@@ -677,10 +651,10 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 								<StatusCollection actor={selectedCharacter} />
 							)}
 							{!isDM && activeBottomTab === "party" && (
-								<Party onInspectActor={switchToInspector} />
+								<Party onInspectActor={routeToActorTab} />
 							)}
 							{isDM && activeBottomTab === "overview" && (
-								<Overview onInspectActor={switchToInspector} />
+								<Overview onInspectActor={routeToActorTab} />
 							)}
 							{activeBottomTab === "notes" && <NoteDisplay />}
 							{activeBottomTab === "inspector" && <Inspector />}
@@ -724,6 +698,30 @@ function ViewTerrainSync() {
 		if (actor) setViewedTerrain(actor.Position.terrainId);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [selectedActorId, isDM]);
+
+	return null;
+}
+
+/**
+ * Bridges the map's actor selection (MapStateProvider) up into Main, whose tab
+ * buttons render outside the provider. Reports the selected actor id — and
+ * `null` on deselect — so Main can route to the relevant tab on a fresh
+ * selection (Inspector in general; the Character sheet when a player selects
+ * their own character — see `routeToActorTab`) and gate the Inspector tab on
+ * `hasSelection`. Renders nothing; only sets the tab (does not open the mobile
+ * overlay panel).
+ */
+function InspectorTabSync({
+	onSelectionChange,
+}: {
+	onSelectionChange: (actorId: string | null) => void;
+}) {
+	const { selectedActor } = useMapState();
+	const selectedActorId = selectedActor?.id ?? null;
+
+	useEffect(() => {
+		onSelectionChange(selectedActorId);
+	}, [selectedActorId, onSelectionChange]);
 
 	return null;
 }

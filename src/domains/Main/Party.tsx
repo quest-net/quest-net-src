@@ -25,7 +25,7 @@ import { isItemEntity } from "../Item/ItemDropUtils";
 import { EmptyState } from "../../components/ui/EmptyState";
 
 interface PartyProps {
-	onInspectActor: () => void;
+	onInspectActor: (actorId: string) => void;
 }
 
 export function Party({ onInspectActor }: PartyProps) {
@@ -109,7 +109,7 @@ export function Party({ onInspectActor }: PartyProps) {
 			kind: "character",
 			moveSpeed: character.MoveSpeed,
 		});
-		onInspectActor();
+		onInspectActor(character.Id);
 	};
 
 	const handleCardDoubleClick = (
