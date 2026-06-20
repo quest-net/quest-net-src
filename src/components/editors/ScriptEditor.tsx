@@ -75,6 +75,18 @@ export function ScriptEditor({ scripts, onChange, readOnly }: ScriptEditorProps)
 								className="input input-bordered input-sm flex-1 font-mono"
 								placeholder='Trigger, e.g. "item:use" or "*:move"'
 							/>
+							<select
+								value={script.When ?? "after"}
+								disabled={readOnly}
+								onChange={(e) =>
+									update(i, { When: e.target.value as "before" | "after" })
+								}
+								className="select select-bordered select-sm"
+								title="When to run: after the action (react) or before it (intercept/cancel)"
+							>
+								<option value="after">After</option>
+								<option value="before">Before</option>
+							</select>
 							<label className="flex items-center gap-1 text-xs opacity-80">
 								<input
 									type="checkbox"
@@ -99,8 +111,19 @@ export function ScriptEditor({ scripts, onChange, readOnly }: ScriptEditorProps)
 
 						<p className="text-xs opacity-60">
 							Runs when a dispatched action matches the Trigger glob. In scope:{" "}
-							<code>game</code>, <code>event</code>, <code>this</code>. Change the world
-							only via <code>await game.action(key, params)</code>.
+							<code>game</code>, <code>event</code>, <code>this</code>.{" "}
+							{(script.When ?? "after") === "before" ? (
+								<>
+									<b>Before</b> the action: rewrite it via{" "}
+									<code>event.params</code> or stop it with{" "}
+									<code>event.cancel()</code>.
+								</>
+							) : (
+								<>
+									<b>After</b> the action: change the world only via{" "}
+									<code>await game.action(key, params)</code>.
+								</>
+							)}
 						</p>
 
 						<textarea

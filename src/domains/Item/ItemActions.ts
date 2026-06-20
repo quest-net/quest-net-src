@@ -334,6 +334,12 @@ export const ItemActions = {
 			itemId: string;
 			targetActorId?: string;
 			targetPosition?: Position;
+			/**
+			 * Optional dice-formula override. Normally absent (the item's own
+			 * DiceRoll is used); a "before"-phase script may set it to intercept
+			 * and rewrite the roll (e.g. a "bless" status adding "+1d4").
+			 */
+			diceFormula?: string;
 		},
 		context: Context
 	): void {
@@ -411,10 +417,12 @@ export const ItemActions = {
 			visibility = visibilitySettings.playersSeeDMRolls ? ["all"] : ["dm"];
 		}
 
-		// Roll dice if the item has a DiceRoll formula
-		if (itemTemplate.DiceRoll && itemTemplate.DiceRoll.trim() !== "") {
+		// Roll dice if a formula is present. A "before"-phase script may override the
+		// item's own DiceRoll via params.diceFormula (e.g. a "bless" status adding +1d4).
+		const diceFormula = (params.diceFormula ?? itemTemplate.DiceRoll ?? "").trim();
+		if (diceFormula !== "") {
 			try {
-				const rollResult = rollDiceFormula(itemTemplate.DiceRoll.trim());
+				const rollResult = rollDiceFormula(diceFormula);
 
 				LogActions.create(
 					{

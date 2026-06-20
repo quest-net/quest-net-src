@@ -65,7 +65,7 @@ const scriptingPage: WikiPageDefinition = {
 								name: "Triggered by actions",
 								tone: "accent",
 								detail:
-									"Every dispatched action is an event. A script subscribes to an action-key glob (a move is actor:move; a round tick is combat:incrementRound). When a matching action runs, the script runs right after it.",
+									"Every dispatched action is an event. A script subscribes to an action-key glob (a move is actor:move; a round tick is combat:incrementRound). When a matching action runs, the script runs right after it — or right before it, to intercept and rewrite or cancel the action (see Before vs After).",
 							},
 							{
 								name: "Reads anything, changes via actions",
@@ -164,6 +164,52 @@ game.combat              // read-only combat state { isActive, currentRound, ...
 					<CodeBlock>{`event.key        // the action key that fired, e.g. "actor:move"
 event.params     // the params that action was called with
 event.actor      // the acting actor (resolved from params.actorId/entityId), if any`}</CodeBlock>
+					<p className="text-sm opacity-80">
+						In a <WikiCode>"before"</WikiCode> script <WikiCode>event.params</WikiCode> is
+						mutable and <WikiCode>event.cancel()</WikiCode> is available — see Before vs
+						After.
+					</p>
+				</div>
+			),
+		},
+		{
+			id: "phase",
+			title: "Before vs After (intercepting actions)",
+			body: (
+				<div className="space-y-4">
+					<p>
+						A script has a phase, <WikiCode>When</WikiCode>, relative to the action it
+						triggers on. The default is <WikiCode>"after"</WikiCode> — the action has
+						already run and the script <strong>reacts</strong> (every example above).
+						Set it to <WikiCode>"before"</WikiCode> to <strong>intercept</strong> the
+						action: the script runs <em>first</em>, and may rewrite the action or stop it.
+					</p>
+					<p className="text-sm opacity-80">
+						In a <WikiCode>"before"</WikiCode> script the <WikiCode>event</WikiCode> is
+						mutable:
+					</p>
+					<CodeBlock>{`event.params.amount *= 2;   // rewrite the action's params in place
+event.cancel();             // veto: the action (and its after-reactions) never run`}</CodeBlock>
+					<WikiCallout tone="info" title="Intercepting a dice roll">
+						<p>
+							A skill/item roll uses its template formula unless a before-script supplies{" "}
+							<WikiCode>event.params.diceFormula</WikiCode>. A "bless" status can read the
+							skill's base formula and add to it:
+						</p>
+						<CodeBlock>{`// Status, When: "before"  ·  Trigger: "skill:use"
+if (event.params.actorId !== this.actor.Id) return;   // only OUR bearer
+const skill = game.campaign.SkillTemplates.find(s => s.Id === event.params.skillId);
+if (skill?.DiceRoll) event.params.diceFormula = skill.DiceRoll + " + 1d4";`}</CodeBlock>
+					</WikiCallout>
+					<WikiCallout tone="warning" title="Before-scripts run on the DM only">
+						<p>
+							Like reactions, before-scripts run on the DM's authoritative path. A player
+							sees their own un-modified result optimistically for a moment, then the DM's
+							broadcast (with the rewritten or cancelled outcome) corrects it. A
+							before-script's own <WikiCode>game.action</WikiCode> calls run as normal
+							reactions — they don't recurse the before-phase.
+						</p>
+					</WikiCallout>
 				</div>
 			),
 		},
@@ -315,7 +361,7 @@ await game.log("Round " + game.combat.currentRound + " begins", { category: "com
 		},
 	],
 	searchText:
-		"scripting script behavior automation eca event condition action trigger game.action this game event params vars parameters cascade dm authority actor entity status item skill campaign world rule stalker buff size spawn move log roll combat scriptable async destructive sandbox security test harness api reference",
+		"scripting script behavior automation eca event condition action trigger game.action this game event params vars parameters cascade dm authority actor entity status item skill campaign world rule stalker buff size spawn move log roll combat scriptable async destructive sandbox security test harness api reference before after when intercept interception cancel veto modify rewrite diceformula bless phase",
 };
 
 export default scriptingPage;

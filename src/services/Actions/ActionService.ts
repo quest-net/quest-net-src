@@ -520,6 +520,12 @@ export class ActionService {
 	 */
 	private async executeDM(actionKey: string, params: any): Promise<void> {
 		const campaign = await this.mutateCampaign(async () => {
+			// Before-phase: let "before" scripts rewrite params or veto the action. On
+			// veto we skip the handler and reactions; the unchanged campaign is still
+			// broadcast below, which reverts any player optimistic update.
+			const before = await ScriptEngine.beforeAction(actionKey, params, this.context);
+			if (before.cancelled) return;
+			params = before.params;
 			// Snapshot script hosts before the action (so onRemove cleanup still binds).
 			const scriptSnapshot = ScriptEngine.beginAction(actionKey, this.context);
 			await this.runDomainAction(actionKey, params);
@@ -622,6 +628,16 @@ export class ActionService {
 
 		try {
 			await this.mutateCampaign(async () => {
+				// Before-phase: "before" scripts may rewrite the request's params or
+				// veto it. On veto we skip the handler/reactions; the broadcast below
+				// still fires and resets the player's optimistic update.
+				const before = await ScriptEngine.beforeAction(
+					data.actionKey,
+					data.params,
+					this.context
+				);
+				if (before.cancelled) return;
+				data.params = before.params;
 				// Snapshot script hosts before the action (so onRemove cleanup still binds).
 				const scriptSnapshot = ScriptEngine.beginAction(data.actionKey, this.context);
 				await this.runDomainAction(data.actionKey, data.params);

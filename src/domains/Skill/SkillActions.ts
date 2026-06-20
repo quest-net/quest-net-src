@@ -220,6 +220,12 @@ export const SkillActions = {
 			skillId: string;
 			targetActorId?: string;
 			targetPosition?: Position;
+			/**
+			 * Optional dice-formula override. Normally absent (the skill's own
+			 * DiceRoll is used); a "before"-phase script may set it to intercept
+			 * and rewrite the roll (e.g. a "bless" status adding "+1d4").
+			 */
+			diceFormula?: string;
 		},
 		context: Context
 	): void {
@@ -287,10 +293,12 @@ export const SkillActions = {
 			visibility = visibilitySettings.playersSeeDMRolls ? ["all"] : ["dm"];
 		}
 
-		// Roll dice if the skill has a DiceRoll formula
-		if (skillTemplate.DiceRoll && skillTemplate.DiceRoll.trim() !== "") {
+		// Roll dice if a formula is present. A "before"-phase script may override the
+		// skill's own DiceRoll via params.diceFormula (e.g. a "bless" status adding +1d4).
+		const diceFormula = (params.diceFormula ?? skillTemplate.DiceRoll ?? "").trim();
+		if (diceFormula !== "") {
 			try {
-				const rollResult = rollDiceFormula(skillTemplate.DiceRoll.trim());
+				const rollResult = rollDiceFormula(diceFormula);
 
 				LogActions.create(
 					{

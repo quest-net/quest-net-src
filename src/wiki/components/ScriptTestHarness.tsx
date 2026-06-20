@@ -75,6 +75,7 @@ export function ScriptTestHarness() {
 
 	const [hostIndex, setHostIndex] = useState(0);
 	const [triggerKey, setTriggerKey] = useState("combat:incrementRound");
+	const [phase, setPhase] = useState<"before" | "after">("after");
 	const [paramsText, setParamsText] = useState("{}");
 	const [code, setCode] = useState(DEFAULT_CODE);
 	const [output, setOutput] = useState<{
@@ -82,6 +83,8 @@ export function ScriptTestHarness() {
 		error?: string;
 		patch: string;
 		ran: boolean;
+		cancelled?: boolean;
+		params?: any;
 	}>({ ok: true, patch: "", ran: false });
 
 	const handleRun = async () => {
@@ -115,6 +118,7 @@ export function ScriptTestHarness() {
 			code,
 			triggerKey,
 			params,
+			phase,
 		});
 		const patch = compare(before, working);
 		setOutput({
@@ -122,6 +126,8 @@ export function ScriptTestHarness() {
 			error: result.error,
 			patch: patch.length ? JSON.stringify(patch, null, 2) : "(no state changes)",
 			ran: true,
+			cancelled: result.cancelled,
+			params: result.params,
 		});
 	};
 
@@ -160,6 +166,19 @@ export function ScriptTestHarness() {
 						onChange={(e) => setTriggerKey(e.target.value)}
 						placeholder="e.g. item:use"
 					/>
+				</label>
+				<label className="form-control">
+					<span className="label-text mb-1 text-xs opacity-70">
+						Phase (script.When)
+					</span>
+					<select
+						className="select select-bordered select-sm w-full"
+						value={phase}
+						onChange={(e) => setPhase(e.target.value as "before" | "after")}
+					>
+						<option value="after">After — react (frozen event)</option>
+						<option value="before">Before — intercept (mutable params, event.cancel())</option>
+					</select>
 				</label>
 			</div>
 
@@ -200,6 +219,23 @@ export function ScriptTestHarness() {
 					) : (
 						<div className="rounded-lg border border-success/40 bg-success/10 p-2 text-sm text-success">
 							Ran with no errors.
+						</div>
+					)}
+					{phase === "before" && output.ok && (
+						<div className="rounded-lg border border-base-300 bg-base-200 p-3 text-xs">
+							<div className="mb-1 font-semibold opacity-70">Before-phase outcome</div>
+							<div>
+								Action{" "}
+								{output.cancelled ? (
+									<span className="font-semibold text-error">cancelled</span>
+								) : (
+									<span className="font-semibold text-success">allowed</span>
+								)}
+							</div>
+							<div className="mt-1 opacity-70">Resolved params:</div>
+							<pre className="mt-1 max-h-40 overflow-auto font-mono">
+								<code>{JSON.stringify(output.params ?? {}, null, 2)}</code>
+							</pre>
 						</div>
 					)}
 					<div>

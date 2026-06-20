@@ -165,6 +165,39 @@ function makeEvent(
 	return Object.freeze({ key, params: params ?? {}, result, actor });
 }
 
+/** Mutation flag a before-script flips by calling `event.cancel()`. */
+interface BeforeControl {
+	cancelled: boolean;
+}
+
+/**
+ * The `event` a BEFORE-phase script runs with. Unlike the frozen reaction event,
+ * `params` is a live mutable working copy the script may rewrite in place
+ * (`event.params.amount *= 2`), and `event.cancel()` vetoes the action entirely.
+ * `actor` is bound from the params at action-start; rewriting `params.actorId`
+ * later does not rebind it.
+ */
+function makeBeforeEvent(
+	key: string,
+	params: any,
+	campaign: Campaign,
+	control: BeforeControl
+): any {
+	const actorId = params?.actorId ?? params?.entityId ?? params?.characterId;
+	const actor = actorId
+		? activeActors(campaign).find((a) => a.Id === actorId)
+		: undefined;
+	return {
+		key,
+		params,
+		result: undefined,
+		actor,
+		cancel() {
+			control.cancelled = true;
+		},
+	};
+}
+
 interface ScriptRunState {
 	cascadeDepth: number;
 	actionCount: number;
@@ -299,16 +332,23 @@ interface ScriptMatch extends HostBinding {
 	hostKey: string;
 }
 
+/** Which dispatch phase a collection is gathering scripts for. */
+type ScriptPhase = "before" | "after";
+
 function pushMatches(
 	out: ScriptMatch[],
 	scripts: Script[] | undefined,
 	key: string,
 	binding: HostBinding,
-	hostKey: string
+	hostKey: string,
+	phase: ScriptPhase
 ): void {
 	if (!scripts) return;
 	for (const script of scripts) {
 		if (script.Enabled === false) continue;
+		// Absent When === "after" (a reaction); keep the two phases strictly disjoint
+		// so a "before" interceptor never also fires as an "after" reaction.
+		if ((script.When ?? "after") !== phase) continue;
 		if (!globMatches(script.Trigger, key)) continue;
 		out.push({ ...binding, script, hostKey });
 	}
@@ -320,7 +360,8 @@ function collectSlotMatches(
 	actor: Actor,
 	collection: string,
 	slots: Array<{ Id: string; ScriptVars?: ScriptVars }> | undefined,
-	templates: Array<{ Id: string; Scripts?: Script[]; Parameters?: ScriptParam[] }>
+	templates: Array<{ Id: string; Scripts?: Script[]; Parameters?: ScriptParam[] }>,
+	phase: ScriptPhase
 ): void {
 	if (!slots) return;
 	// Occurrence index per templateId, so two slots sharing a template get
@@ -336,13 +377,22 @@ function collectSlotMatches(
 			template.Scripts,
 			key,
 			{ raw: template, actor, paramsHolder: template, varsOwner: slot },
-			`slot:${actor.Id}:${collection}:${slot.Id}:${n}`
+			`slot:${actor.Id}:${collection}:${slot.Id}:${n}`,
+			phase
 		);
 	}
 }
 
-/** Every (script, host) whose Trigger matches `key`, in deterministic order. */
-function collectMatches(campaign: Campaign, key: string): ScriptMatch[] {
+/**
+ * Every (script, host) whose Trigger matches `key` for the given phase, in
+ * deterministic order. Defaults to the "after" phase (reactions), so the
+ * pre-existing callers (beginAction / runReactions / dispatch) are unchanged.
+ */
+function collectMatches(
+	campaign: Campaign,
+	key: string,
+	phase: ScriptPhase = "after"
+): ScriptMatch[] {
 	const out: ScriptMatch[] = [];
 	// Campaign-level world rules.
 	pushMatches(
@@ -350,7 +400,8 @@ function collectMatches(campaign: Campaign, key: string): ScriptMatch[] {
 		campaign.Scripts,
 		key,
 		{ raw: campaign, paramsHolder: campaign, varsOwner: campaign },
-		"campaign"
+		"campaign",
+		phase
 	);
 	// Actors and their template-backed slots.
 	for (const actor of activeActors(campaign)) {
@@ -359,12 +410,13 @@ function collectMatches(campaign: Campaign, key: string): ScriptMatch[] {
 			actor.Scripts,
 			key,
 			{ raw: actor, actor, paramsHolder: actor, varsOwner: actor },
-			`actor:${actor.Id}`
+			`actor:${actor.Id}`,
+			phase
 		);
-		collectSlotMatches(out, key, actor, "Statuses", actor.Statuses, campaign.StatusTemplates);
-		collectSlotMatches(out, key, actor, "Inventory", actor.Inventory, campaign.ItemTemplates);
-		collectSlotMatches(out, key, actor, "Equipment", actor.Equipment, campaign.ItemTemplates);
-		collectSlotMatches(out, key, actor, "Skills", actor.Skills, campaign.SkillTemplates);
+		collectSlotMatches(out, key, actor, "Statuses", actor.Statuses, campaign.StatusTemplates, phase);
+		collectSlotMatches(out, key, actor, "Inventory", actor.Inventory, campaign.ItemTemplates, phase);
+		collectSlotMatches(out, key, actor, "Equipment", actor.Equipment, campaign.ItemTemplates, phase);
+		collectSlotMatches(out, key, actor, "Skills", actor.Skills, campaign.SkillTemplates, phase);
 	}
 	return out;
 }
@@ -520,6 +572,41 @@ export const ScriptEngine = {
 	},
 
 	/**
+	 * Called by ActionService BEFORE a domain action runs, on the DM's authoritative
+	 * path. Runs every "before"-phase script reacting to `key` so each may rewrite the
+	 * action's params (mutating `event.params`) or veto it (`event.cancel()`), then
+	 * returns the resolved params and whether the action was cancelled.
+	 *
+	 * Returns the caller's params untouched when scripting is disabled or nothing
+	 * matches (no clone on the hot path). When something matches, scripts operate on a
+	 * deep-cloned working copy (via normalizeActionParams) so they can never alias the
+	 * live store. Matching is snapshotted once at action-start; a before-script's own
+	 * game.action() calls cascade with the normal (after-only) dispatch behavior and do
+	 * not re-trigger this before-phase.
+	 */
+	async beforeAction(
+		key: string,
+		params: any,
+		context: Context
+	): Promise<{ cancelled: boolean; params: any }> {
+		if (scriptsDisabled(context)) return { cancelled: false, params };
+		const campaign = CampaignUtils.getActiveCampaign(context);
+		const matches = collectMatches(campaign, key, "before");
+		if (matches.length === 0) return { cancelled: false, params };
+		const working = normalizeActionParams(params ?? {});
+		const control: BeforeControl = { cancelled: false };
+		const event = makeBeforeEvent(key, working, campaign, control);
+		const state = createRunState();
+		for (const match of matches) {
+			// Once a script vetoes, the action will not run — stop, so later
+			// before-scripts don't mutate params that get discarded.
+			if (control.cancelled) break;
+			await runOneScript(match, event, context, campaign, state);
+		}
+		return { cancelled: control.cancelled, params: working };
+	},
+
+	/**
 	 * Called by ActionService on the DM's authoritative path, after a domain action
 	 * has mutated the campaign and before it is committed/broadcast. Runs every
 	 * script reacting to `key` and the entire cascade it triggers, inside the
@@ -541,6 +628,11 @@ export const ScriptEngine = {
 	 * campaign in `context` (the harness passes a throwaway context whose
 	 * ActiveCampaign is a clone, so the live game is untouched). The script's
 	 * game.action(...) calls still cascade through scripts saved on the clone.
+	 *
+	 * `phase` mirrors a script's `When`: "after" (default) runs with the frozen
+	 * reaction event; "before" runs with the mutable interceptor event, so the code
+	 * may rewrite `event.params` or call `event.cancel()`. For "before", the returned
+	 * `cancelled`/`params` report the outcome (param edits don't show in a state diff).
 	 */
 	async runForTest(opts: {
 		context: Context;
@@ -548,8 +640,9 @@ export const ScriptEngine = {
 		code: string;
 		triggerKey: string;
 		params?: any;
-	}): Promise<{ ok: boolean; error?: string }> {
-		const { context, host, code, triggerKey, params } = opts;
+		phase?: "before" | "after";
+	}): Promise<{ ok: boolean; error?: string; cancelled?: boolean; params?: any }> {
+		const { context, host, code, triggerKey, params, phase = "after" } = opts;
 		const campaign = CampaignUtils.getActiveCampaign(context);
 		const binding = bindingForSelection(campaign, host);
 		if (!binding) return { ok: false, error: "Selected host not found in campaign." };
@@ -558,7 +651,12 @@ export const ScriptEngine = {
 		const state = createRunState();
 		const sink = createActionSink();
 		const game = makeGame(context, state, sink);
-		const event = makeEvent(triggerKey, params ?? {}, undefined, campaign);
+		const control: BeforeControl = { cancelled: false };
+		const working = phase === "before" ? normalizeActionParams(params ?? {}) : params ?? {};
+		const event =
+			phase === "before"
+				? makeBeforeEvent(triggerKey, working, campaign, control)
+				: makeEvent(triggerKey, working, undefined, campaign);
 		try {
 			const thisHost = makeThis(binding);
 			// eslint-disable-next-line no-new-func
@@ -566,7 +664,9 @@ export const ScriptEngine = {
 			await fn.call(thisHost, game, event);
 			// Finish (and surface failures from) any actions the script did not await.
 			await sink.drain();
-			return { ok: true };
+			return phase === "before"
+				? { ok: true, cancelled: control.cancelled, params: working }
+				: { ok: true };
 		} catch (err) {
 			return { ok: false, error: String((err as any)?.message ?? err) };
 		}

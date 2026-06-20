@@ -34,6 +34,15 @@ export interface Script {
 	Name?: string;
 	/** Defaults to true; set false to keep a script attached but inert. */
 	Enabled?: boolean;
+	/**
+	 * Phase relative to the triggering action. Defaults to "after" (a reaction:
+	 * the action has already mutated the world and the script reacts by dispatching
+	 * more actions). "before" runs the script BEFORE the domain handler, with a
+	 * mutable `event.params` it may rewrite and an `event.cancel()` it may call to
+	 * prevent the action entirely. Absent === "after", so existing scripts are
+	 * unchanged.
+	 */
+	When?: "before" | "after";
 }
 
 /** JSON-ish primitive that a script param/var may hold. */
