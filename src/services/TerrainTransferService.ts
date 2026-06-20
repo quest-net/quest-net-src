@@ -39,7 +39,6 @@ import {
 	decodeDeltaBytes,
 	encodeDeltaBytes,
 } from "../utils/terrain/data/VoxelTerrainDeltaUtils";
-import { base64ToBytes, bytesToBase64 } from "../utils/base64";
 
 const TERRAIN_REQUEST_TIMEOUT_MS = 30000;
 
@@ -162,17 +161,18 @@ export class TerrainTransferService {
 		}
 
 		try {
-			// The DM responds with the raw SVO bytes (an ArrayBuffer). A request
-			// response can't carry separate metadata, so we re-derive the content
-			// hash from the bytes -- the same hash-verify the delta path does.
+			// The DM responds with the raw SVO bytes (an ArrayBuffer), which are the
+			// canonical payload form -- we keep them as-is. A request response can't
+			// carry separate metadata, so we re-derive the content hash from the
+			// bytes -- the same hash-verify the delta path does.
 			const buf = (await this.requestTerrainData(terrainId, {
 				target: dmPeerId,
 				timeoutMs: TERRAIN_REQUEST_TIMEOUT_MS,
 			})) as ArrayBuffer | null;
 			if (!buf || buf.byteLength === 0) {
-				return { voxels: "", contentHash: "" };
+				return { voxels: new Uint8Array(0), contentHash: "" };
 			}
-			const voxels = bytesToBase64(new Uint8Array(buf));
+			const voxels = new Uint8Array(buf);
 			return { voxels, contentHash: hashVoxels(voxels) };
 		} catch (error) {
 			console.warn(
@@ -184,10 +184,10 @@ export class TerrainTransferService {
 	}
 
 	/**
-	 * DM: serve a requested terrain payload as raw SVO bytes. Sending the bytes
-	 * directly (rather than the base64 string) cuts ~33% off the transfer; the
-	 * requesting player base64-encodes them back for storage and re-hashes to
-	 * recover the ContentHash. Throws if it cannot be served.
+	 * DM: serve a requested terrain payload as raw SVO bytes. The stored payload
+	 * is already raw bytes, so it goes straight onto the wire; the requesting
+	 * player keeps the bytes and re-hashes to recover the ContentHash. Throws if
+	 * it cannot be served.
 	 */
 	private async serveTerrain(terrainId: string): Promise<Uint8Array> {
 		const campaign = this.getCampaign();
@@ -201,7 +201,7 @@ export class TerrainTransferService {
 		if (!payload) {
 			throw new Error(`No payload to serve for terrain ${terrainId}`);
 		}
-		return base64ToBytes(payload.voxels);
+		return payload.voxels;
 	}
 
 	// --- Delta broadcast (DM) ----------------------------------------------
@@ -212,13 +212,13 @@ export class TerrainTransferService {
 	 * then full-fetch.
 	 */
 	private broadcastDelta(edit: TerrainEditDelta): void {
-		const { terrainId, oldB64, newB64, baseHash, newHash } = edit;
-		if (!oldB64 || !newB64) return;
+		const { terrainId, oldBytes, newBytes, baseHash, newHash } = edit;
+		if (oldBytes.byteLength === 0 || newBytes.byteLength === 0) return;
 		if (!baseHash || baseHash === newHash) return;
 
 		let delta;
 		try {
-			delta = computeVoxelDelta(oldB64, newB64);
+			delta = computeVoxelDelta(oldBytes, newBytes);
 		} catch (error) {
 			console.warn(`[TerrainTransferService] Delta compute failed for ${terrainId}:`, error);
 			return;
@@ -320,7 +320,7 @@ export class TerrainTransferService {
 		// Find the base payload the delta was computed against. Prefer the live
 		// materialized buffer; otherwise the durable IDB record (warm-cache path
 		// for a terrain this client has on disk but not in memory).
-		let base: string | null = null;
+		let base: Uint8Array | null = null;
 		if (getMaterializedContentHash(terrainId) === baseHash) {
 			base = getTerrainVoxels(terrainId);
 		} else {
@@ -331,9 +331,9 @@ export class TerrainTransferService {
 		// and let the normal ContentHash-mismatch path issue a full fetch.
 		if (base == null) return;
 
-		let newB64: string;
+		let newBytes: Uint8Array;
 		try {
-			newB64 = applyVoxelDelta(base, decodeDeltaBytes(deltaBytes));
+			newBytes = applyVoxelDelta(base, decodeDeltaBytes(deltaBytes));
 		} catch (error) {
 			console.warn(`[TerrainTransferService] Delta apply failed for ${terrainId}:`, error);
 			return;
@@ -342,14 +342,14 @@ export class TerrainTransferService {
 		// Correctness net: the reconstruction must hash to the broadcast newHash.
 		// A mismatch means a stale base or codec problem -- bail and let the full
 		// fetch correct it rather than caching wrong bytes.
-		if (hashVoxels(newB64) !== newHash) {
+		if (hashVoxels(newBytes) !== newHash) {
 			console.warn(
 				`[TerrainTransferService] Delta hash mismatch for ${terrainId}; ignoring (full fetch will correct).`
 			);
 			return;
 		}
 
-		await TerrainStorageService.commitDeltaPayload(campaign, terrainId, newB64, newHash);
+		await TerrainStorageService.commitDeltaPayload(campaign, terrainId, newBytes, newHash);
 		this.markApplied(terrainId, newHash);
 
 		// Re-render to re-mesh only once the ContentHash patch has caught up;

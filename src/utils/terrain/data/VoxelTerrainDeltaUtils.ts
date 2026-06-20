@@ -31,8 +31,8 @@ export interface VoxelDelta {
 
 export interface ComputeVoxelDeltaOptions {
 	/**
-	 * Skip the delta (return null) when its estimated base64 transport size is at
-	 * least this fraction of the full new payload's size. A delta is only worth
+	 * Skip the delta (return null) when its estimated transport size is at least
+	 * this fraction of the full new payload's size. A delta is only worth
 	 * broadcasting when it is meaningfully smaller than just sending the whole
 	 * thing. Defaults to 0.5 (delta must be < 50% of the full payload).
 	 */
@@ -61,9 +61,9 @@ function* voxelsFromMap(map: Map<number, number>): Generator<Voxel> {
 	}
 }
 
-function decodeToMap(encoded: string): Map<number, number> {
+function decodeToMap(encoded: Uint8Array): Map<number, number> {
 	const map = new Map<number, number>();
-	if (!encoded) return map;
+	if (encoded.byteLength === 0) return map;
 	const { positions, colors } = decodeVoxelBuffers(encoded);
 	for (let i = 0; i < positions.length; i++) {
 		map.set(positions[i], colors[i]);
@@ -84,14 +84,14 @@ function decodeToMap(encoded: string): Map<number, number> {
  * skip computing a delta on a dimension change as a cheap short-circuit.
  */
 export function computeVoxelDelta(
-	oldB64: string,
-	newB64: string,
+	oldBytes: Uint8Array,
+	newBytes: Uint8Array,
 	options?: ComputeVoxelDeltaOptions
 ): VoxelDelta | null {
-	if (!oldB64 || !newB64) return null;
+	if (oldBytes.byteLength === 0 || newBytes.byteLength === 0) return null;
 
-	const oldMap = decodeToMap(oldB64);
-	const newMap = decodeToMap(newB64);
+	const oldMap = decodeToMap(oldBytes);
+	const newMap = decodeToMap(newBytes);
 
 	const positions: number[] = [];
 	const newColors: number[] = [];
@@ -117,9 +117,8 @@ export function computeVoxelDelta(
 	const changedCount = positions.length - removedCount;
 	const estimatedBytes =
 		DELTA_HEADER_BYTES + changedCount * 5 + removedCount * 4;
-	const estimatedBase64 = Math.ceil(estimatedBytes / 3) * 4;
 	const maxSizeRatio = options?.maxSizeRatio ?? DEFAULT_MAX_SIZE_RATIO;
-	if (estimatedBase64 >= newB64.length * maxSizeRatio) return null;
+	if (estimatedBytes >= newBytes.byteLength * maxSizeRatio) return null;
 
 	return {
 		positions: Uint32Array.from(positions),
@@ -128,12 +127,12 @@ export function computeVoxelDelta(
 }
 
 /**
- * Applies a delta to a base SVO payload and returns the resulting base64 SVO.
- * The caller must ensure `oldB64` is the payload the delta was computed against
+ * Applies a delta to a base SVO payload and returns the resulting SVO bytes.
+ * The caller must ensure `oldBytes` is the payload the delta was computed against
  * (matched by content hash); otherwise the result is meaningless.
  */
-export function applyVoxelDelta(oldB64: string, delta: VoxelDelta): string {
-	const map = decodeToMap(oldB64);
+export function applyVoxelDelta(oldBytes: Uint8Array, delta: VoxelDelta): Uint8Array {
+	const map = decodeToMap(oldBytes);
 	const { positions, newColors } = delta;
 	for (let i = 0; i < positions.length; i++) {
 		const color = newColors[i];

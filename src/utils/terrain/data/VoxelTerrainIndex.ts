@@ -1,7 +1,7 @@
 // src/utils/VoxelTerrainIndex.ts
 //
 // Single runtime representation of a voxel terrain. Decodes the encoded voxel
-// string once per revision and exposes the queries used by collision, geometry
+// bytes once per revision and exposes the queries used by collision, geometry
 // building, movement, actor placement, and the editor:
 //   - hasVoxel(x, y, z)               -- collision / face culling / AO
 //   - getVoxelColor(x, y, z)          -- palette index at a voxel, or null
@@ -9,19 +9,25 @@
 //   - allSurfaces / allSurfaceHeights -- per-tactical-tile walkable surfaces
 //   - maxSurfaceHeight                -- global ceiling for framing / spawning
 //
-// Cache strategy: keyed on revision (= shape + Voxels string), not on terrain
-// object identity. fast-json-patch replaces the terrain reference on every
-// delta sync, so WeakMap<VoxelTerrain, ...> caching misses constantly. A small
-// LRU keyed on the value-equal revision survives state sync correctly.
+// Cache strategy: keyed on revision (= shape + content hash of the payload), not
+// on terrain object identity. fast-json-patch replaces the terrain reference on
+// every delta sync, so WeakMap<VoxelTerrain, ...> caching misses constantly. A
+// small LRU keyed on the value-equal revision survives state sync correctly.
+// The revision embeds the short content hash rather than the whole payload, so
+// keying never depends on the multi-megabyte voxel buffer.
 
 import {
 	DEFAULT_TERRAIN_RESOLUTION,
+	type EditableVoxelTerrain,
 	type Voxel,
 	type VoxelTerrain,
 } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { isPassableMaterial } from "../materials/terrainMaterialRules";
-import { decodeVoxels } from "./VoxelDataUtils";
-import { resolveTerrainVoxels } from "./terrainPayloadStore";
+import { decodeVoxels, hashVoxels } from "./VoxelDataUtils";
+import {
+	getMaterializedContentHash,
+	resolveTerrainVoxels,
+} from "./terrainPayloadStore";
 
 // ---------------------------------------------------------------------------
 // Coordinate primitives. They live here (rather than in VoxelTerrainUtils) so
@@ -85,14 +91,29 @@ export interface VoxelTerrainIndex {
 const REVISION_NONE = "none";
 
 /**
+ * Content-identity token for the payload that backs `terrain`. For a committed
+ * terrain this is the O(1) materialized ContentHash; for an EditableVoxelTerrain
+ * carrying inline voxels (editor / preview) it is hashed from those bytes. Falls
+ * back to hashing the resolved bytes when nothing is materialized yet.
+ */
+function terrainPayloadToken(
+	terrain: VoxelTerrain | EditableVoxelTerrain,
+	voxels: Uint8Array
+): string {
+	const inline = (terrain as Partial<EditableVoxelTerrain>).Voxels;
+	if (inline instanceof Uint8Array) return hashVoxels(inline);
+	return getMaterializedContentHash(terrain.Id) ?? hashVoxels(voxels);
+}
+
+/**
  * Value-equal terrain identity. Use anywhere you'd memoize on the terrain.
  * `voxels` defaults to the resolved payload (per-client store, or inline voxels
- * for an EditableVoxelTerrain); callers that already hold the voxel string can
- * pass it to avoid a redundant lookup.
+ * for an EditableVoxelTerrain); callers that already hold the voxel bytes can
+ * pass them to avoid a redundant lookup.
  */
 export function createTerrainRevision(
 	terrain: VoxelTerrain | null | undefined,
-	voxels: string = terrain ? resolveTerrainVoxels(terrain) : ""
+	voxels: Uint8Array = terrain ? resolveTerrainVoxels(terrain) : new Uint8Array(0)
 ): string {
 	if (!terrain) return REVISION_NONE;
 	return [
@@ -101,7 +122,7 @@ export function createTerrainRevision(
 		terrain.Length,
 		terrain.Height,
 		getVoxelTerrainResolution(terrain),
-		voxels,
+		terrainPayloadToken(terrain, voxels),
 	].join(":");
 }
 
@@ -160,7 +181,7 @@ function voxelGridIndex(
  */
 export function buildVoxelTerrainIndex(
 	terrain: VoxelTerrain,
-	voxels: string,
+	voxels: Uint8Array,
 	decodedVoxels?: readonly Voxel[]
 ): VoxelTerrainIndex {
 	const resolution = getVoxelTerrainResolution(terrain);
@@ -339,7 +360,7 @@ const indexCache = new Map<string, VoxelTerrainIndex>();
  */
 export function getVoxelTerrainIndex(
 	terrain: VoxelTerrain,
-	voxels: string = resolveTerrainVoxels(terrain)
+	voxels: Uint8Array = resolveTerrainVoxels(terrain)
 ): VoxelTerrainIndex {
 	const revision = createTerrainRevision(terrain, voxels);
 	const cached = indexCache.get(revision);

@@ -9,7 +9,7 @@ import type { Campaign } from "../Campaign/Campaign";
 import type { CampaignInfo } from "../Campaign/CampaignInfo";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import {
-	getTerrainVoxels,
+	getMaterializedContentHash,
 	hasTerrainPayload,
 } from "../../utils/terrain/data/terrainPayloadStore";
 import { runMigrations } from "../../migrations/runMigrations";
@@ -21,12 +21,12 @@ import { addMissingDefaultVoxelStamps } from "../../data/defaultVoxelStamps";
 const STORAGE_KEY = "quest-net-context";
 const BACKUP_PREFIX = `${STORAGE_KEY}-backup`;
 
-// Tracks each materialized terrain's voxels most recently written to IndexedDB
-// (keyed by `${campaignId}:${terrainId}` -> voxel value), so flush() only
-// re-writes a terrain when its voxels actually changed. Keying on value (not
-// reference) keeps the player path correct, which structuredClones the campaign
-// on every state sync (fresh-but-equal string).
-const lastPersistedTerrainVoxels = new Map<string, string>();
+// Tracks each materialized terrain's ContentHash most recently written to
+// IndexedDB (keyed by `${campaignId}:${terrainId}` -> contentHash), so flush()
+// only re-writes a terrain when its voxels actually changed. Comparing the short
+// content hash (not the multi-megabyte byte buffer) keeps this cheap and correct
+// across the player path, which structuredClones the campaign on every sync.
+const lastPersistedTerrainHash = new Map<string, string>();
 
 // The canonical campaign object no longer carries voxel payloads (they live in
 // TerrainPayloadStore + IndexedDB), so the localStorage copy is naturally
@@ -50,12 +50,14 @@ async function writeHydratedTerrainsThroughIfChanged(
 	if (!campaign) return;
 	for (const terrain of campaign.VoxelTerrains ?? []) {
 		if (!hasTerrainPayload(terrain.Id)) continue;
-		const voxels = getTerrainVoxels(terrain.Id);
+		const contentHash = getMaterializedContentHash(terrain.Id);
 		const key = `${campaign.Id}:${terrain.Id}`;
-		if (lastPersistedTerrainVoxels.get(key) === voxels) continue;
+		if (contentHash !== undefined && lastPersistedTerrainHash.get(key) === contentHash) {
+			continue;
+		}
 		try {
 			await TerrainStorageService.saveTerrain(campaign, terrain);
-			lastPersistedTerrainVoxels.set(key, voxels);
+			if (contentHash !== undefined) lastPersistedTerrainHash.set(key, contentHash);
 		} catch (error) {
 			console.error(
 				"[Context] Failed to persist terrain to IndexedDB:",
@@ -289,7 +291,7 @@ export const ContextService = {
 	 * Clears context from localStorage
 	 */
 	clear(): void {
-		lastPersistedTerrainVoxels.clear();
+		lastPersistedTerrainHash.clear();
 		LocalStorageUtilities.remove(STORAGE_KEY);
 	},
 

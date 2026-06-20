@@ -5,7 +5,12 @@
 
 import type { Migration } from "./types";
 import { encodeVoxels, getVoxelCount } from "../utils/terrain/data/VoxelDataUtils";
-import { base64ToBytes } from "../utils/base64";
+import { base64ToBytes, bytesToBase64 } from "../utils/base64";
+
+// This migration transforms the *legacy on-disk* format, which stored voxels as
+// a base64 string, and keeps producing base64 strings (the later 2.10.0
+// migration rewrites every record to raw bytes once). The now-bytes codec
+// helpers are therefore wrapped with base64 conversion at their edges here.
 
 interface LegacyVoxel {
 	x: number;
@@ -64,7 +69,7 @@ function* decodeLegacyVoxelString(encoded: string): Generator<LegacyVoxel> {
 
 function migrateVoxelString(encoded: string): string {
 	if (!encoded || isAlreadySVO(encoded)) return encoded;
-	return encodeVoxels(decodeLegacyVoxelString(encoded));
+	return bytesToBase64(encodeVoxels(decodeLegacyVoxelString(encoded)));
 }
 
 // On per-terrain encoding failure we replace the voxel payload with the empty
@@ -80,7 +85,7 @@ function migrateTerrain(terrain: any, campaignId: string): boolean {
 
 	try {
 		terrain.Voxels = migrateVoxelString(terrain.Voxels);
-		terrain.VoxelCount = getVoxelCount(terrain.Voxels);
+		terrain.VoxelCount = getVoxelCount(base64ToBytes(terrain.Voxels));
 		return true;
 	} catch (error) {
 		console.error(

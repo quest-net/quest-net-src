@@ -60,7 +60,7 @@ export const VoxelTerrainActions = {
 		// DM can broadcast a delta (changed voxels only) instead of forcing every
 		// player to re-fetch the full payload. Empty base / missing hash -> no delta
 		// (broadcastTerrainDelta skips), and players fall back to the full fetch.
-		const oldB64 = getTerrainVoxels(terrain.Id);
+		const oldBytes = getTerrainVoxels(terrain.Id);
 		const baseHash = getMaterializedContentHash(terrain.Id);
 		const oldWidth = terrain.Width;
 		const oldLength = terrain.Length;
@@ -87,8 +87,8 @@ export const VoxelTerrainActions = {
 			if (!dimensionsChanged) {
 				TerrainStorageService.broadcastTerrainDelta({
 					terrainId: terrain.Id,
-					oldB64,
-					newB64: Voxels,
+					oldBytes,
+					newBytes: Voxels,
 					baseHash,
 					newHash,
 				});

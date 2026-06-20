@@ -176,10 +176,16 @@ export function createVoxelTerrainEnvironmentPreset(
 	};
 }
 
-export type EncodedVoxelSVO = string;
+/**
+ * A voxel terrain's encoded payload: the raw bytes of a Sparse Voxel Octree.
+ * This is the canonical in-memory and at-rest form. base64 survives only at text
+ * boundaries (JSON export/import, source-embedded stamp constants, and a
+ * back-compat shim for IndexedDB records written by older builds).
+ */
+export type EncodedVoxelSVO = Uint8Array;
 
 /**
- * A voxel-based terrain stored as a base64-encoded Sparse Voxel Octree.
+ * A voxel-based terrain stored as a Sparse Voxel Octree (raw SVO bytes).
  *
  * Width/Length/Height remain tactical map units so actor coordinates and
  * gameplay rules don't need to scale when terrain resolution rises.

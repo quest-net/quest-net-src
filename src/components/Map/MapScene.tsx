@@ -336,8 +336,9 @@ export default function MapScene({
 	// DM terrain edits mutate the canonical terrain object in place before the
 	// VoxelTerrains array is shallow-cloned. Derive primitive keys so this
 	// persistent scene notices ContentHash/shape changes even when object identity
-	// is unchanged. Keep the full voxel string inside createTerrainSignature so
-	// the geometry/index caches still use the precise value-equal revision.
+	// is unchanged. createTerrainSignature embeds the payload's content hash (not
+	// the raw bytes) so the geometry/index caches still key on a precise
+	// value-equal revision.
 	const terrainShapeKey = terrain
 		? [
 			terrain.Id,
@@ -362,7 +363,7 @@ export default function MapScene({
 	// never touches, which is why only rotation/pan were resetting.)
 	const terrainFramingKey = terrainShapeKey;
 	const terrainVoxels = useMemo(
-		() => (terrain ? resolveTerrainVoxels(terrain) : ""),
+		() => (terrain ? resolveTerrainVoxels(terrain) : new Uint8Array(0)),
 		// terrainSignature is the value-equal identity for the voxel terrain.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[terrainSignature]

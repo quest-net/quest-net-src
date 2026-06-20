@@ -19,9 +19,13 @@ import type {
 import { hashVoxels } from "./VoxelDataUtils";
 
 interface PayloadEntry {
-	voxels: string;
+	voxels: Uint8Array;
 	contentHash: string;
 }
+
+// Shared empty payload: an un-hydrated terrain reads as zero bytes, exactly how
+// it behaved when `Voxels` lived on the object as an empty string.
+const EMPTY_VOXELS = new Uint8Array(0);
 
 // terrainId -> materialized payload. Only one campaign is active per client at a
 // time, so keying on the bare terrainId is safe; `resetForCampaign` clears the
@@ -30,13 +34,13 @@ const memory = new Map<string, PayloadEntry>();
 let activeCampaignKey: string | null = null;
 
 /**
- * Synchronous accessor for a committed terrain's voxels. Returns "" when the
- * terrain is not materialized on this client -- which is exactly how an
- * un-hydrated terrain behaved when `Voxels` lived on the object (empty string),
- * so routing the index/geometry read paths through this is behavior-preserving.
+ * Synchronous accessor for a committed terrain's voxels. Returns zero bytes when
+ * the terrain is not materialized on this client -- which is exactly how an
+ * un-hydrated terrain behaved when `Voxels` lived on the object (empty), so
+ * routing the index/geometry read paths through this is behavior-preserving.
  */
-export function getTerrainVoxels(terrainId: string): string {
-	return memory.get(terrainId)?.voxels ?? "";
+export function getTerrainVoxels(terrainId: string): Uint8Array {
+	return memory.get(terrainId)?.voxels ?? EMPTY_VOXELS;
 }
 
 /** The ContentHash of the payload currently materialized for `terrainId`. */
@@ -55,7 +59,7 @@ export function hasTerrainPayload(terrainId: string): boolean {
  */
 export function setTerrainVoxels(
 	terrainId: string,
-	voxels: string,
+	voxels: Uint8Array,
 	contentHash: string = hashVoxels(voxels)
 ): string {
 	memory.set(terrainId, { voxels, contentHash });
@@ -91,9 +95,9 @@ export function isTerrainHydrated(
  */
 export function resolveTerrainVoxels(
 	terrain: VoxelTerrain | EditableVoxelTerrain
-): string {
+): Uint8Array {
 	const inline = (terrain as Partial<EditableVoxelTerrain>).Voxels;
-	return typeof inline === "string" ? inline : getTerrainVoxels(terrain.Id);
+	return inline instanceof Uint8Array ? inline : getTerrainVoxels(terrain.Id);
 }
 
 /**

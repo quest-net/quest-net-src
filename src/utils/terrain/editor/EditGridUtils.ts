@@ -120,7 +120,7 @@ export function getColumnTopInRange(
 	return { height: minY - 1, color: null };
 }
 
-export function buildEditGrid(voxels: string, index: VoxelTerrainIndex): EditGrid {
+export function buildEditGrid(voxels: Uint8Array, index: VoxelTerrainIndex): EditGrid {
 	const { voxelWidth: vW, voxelHeight: vH, voxelLength: vL } = index;
 	const grid = createEditGrid(vW * vH * vL);
 	for (const v of decodeVoxels(voxels)) {
@@ -132,7 +132,7 @@ export function buildEditGrid(voxels: string, index: VoxelTerrainIndex): EditGri
 	return grid;
 }
 
-export function encodeEditGrid(grid: EditGrid, vW: number, vH: number, vL: number): string {
+export function encodeEditGrid(grid: EditGrid, vW: number, vH: number, vL: number): Uint8Array {
 	const voxels = [];
 	for (let y = 0; y < vH; y++) {
 		for (let z = 0; z < vL; z++) {

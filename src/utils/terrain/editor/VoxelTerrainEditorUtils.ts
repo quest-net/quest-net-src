@@ -259,7 +259,7 @@ export function createFlatVoxelTerrain(params: {
 	};
 }
 
-export function getMostCommonVoxelTerrainColor(voxels: string): string {
+export function getMostCommonVoxelTerrainColor(voxels: Uint8Array): string {
 	const colorCounts = new Map<number, number>();
 
 	for (const voxel of decodeVoxels(voxels)) {

@@ -10,6 +10,7 @@ import {
 	type VoxelTerrain,
 } from "../domains/VoxelTerrain/VoxelTerrain";
 import { TerrainStorageService } from "../services/TerrainStorageService";
+import { base64ToBytes } from "../utils/base64";
 
 export interface DefaultVoxelStampTemplate {
 	TemplateId: string;
@@ -285,6 +286,8 @@ export const DEFAULT_VOXEL_STAMP_TEMPLATES = [
 	},
 ] as const satisfies readonly DefaultVoxelStampTemplate[];
 
+// The template's Voxels are a base64 string (readable, diffable source); the
+// canonical payload form is bytes, so decode once here when building the stamp.
 function createDefaultVoxelStamp(
 	stamp: DefaultVoxelStampTemplate
 ): EditableVoxelTerrain {
@@ -295,7 +298,7 @@ function createDefaultVoxelStamp(
 		Length: stamp.Length,
 		Height: stamp.Height,
 		Resolution: stamp.Resolution,
-		Voxels: stamp.Voxels,
+		Voxels: base64ToBytes(stamp.Voxels),
 		Lighting: createDefaultVoxelTerrainLighting(),
 		Background: createDefaultVoxelTerrainBackground(),
 		Tags: [...stamp.Tags],

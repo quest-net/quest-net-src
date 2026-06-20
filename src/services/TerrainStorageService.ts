@@ -24,14 +24,17 @@ interface StoredVoxelTerrainRecord {
 	Key: string;
 	CampaignId: string;
 	TerrainId: string;
-	Voxels: string;
+	// Raw SVO bytes. Records written by builds before the base64->bytes switch
+	// held a base64 string; the 2.10.0 migration rewrites those to bytes, so the
+	// runtime always sees Uint8Array here.
+	Voxels: Uint8Array;
 	ContentHash?: string;
 	SavedAt: number;
 }
 
 /** A voxel payload plus its content identity, as exchanged over the wire / IDB. */
 export interface TerrainPayload {
-	voxels: string;
+	voxels: Uint8Array;
 	contentHash: string;
 }
 
@@ -61,9 +64,9 @@ export type TerrainDeltaWaiter = (
 /** A terrain edit's before/after payloads, handed to the delta broadcaster. */
 export interface TerrainEditDelta {
 	terrainId: string;
-	oldB64: string;
+	oldBytes: Uint8Array;
 	baseHash: string | undefined;
-	newB64: string;
+	newBytes: Uint8Array;
 	newHash: string;
 }
 
@@ -125,7 +128,7 @@ export class TerrainStorageService {
 	 * Author-time entry point used by terrain create/edit, stamp import, and
 	 * migration. Returns the new ContentHash.
 	 */
-	static materialize(terrain: VoxelTerrain, voxels: string): string {
+	static materialize(terrain: VoxelTerrain, voxels: Uint8Array): string {
 		const contentHash = setTerrainVoxels(terrain.Id, voxels);
 		terrain.ContentHash = contentHash;
 		terrain.VoxelCount = getVoxelCount(voxels);
@@ -155,7 +158,7 @@ export class TerrainStorageService {
 	private static async writeRecord(
 		campaign: Campaign,
 		terrain: VoxelTerrain,
-		voxels: string,
+		voxels: Uint8Array,
 		contentHash: string
 	): Promise<void> {
 		const key = this.buildStorageKey(campaign, terrain.Id);
@@ -214,7 +217,7 @@ export class TerrainStorageService {
 	static async loadVoxels(
 		campaign: Campaign,
 		terrain: VoxelTerrain
-	): Promise<string | null> {
+	): Promise<Uint8Array | null> {
 		if (isTerrainHydrated(terrain)) return getTerrainVoxels(terrain.Id);
 		const record = await this.readRecord(this.buildStorageKey(campaign, terrain.Id));
 		return record?.Voxels ?? null;
@@ -340,7 +343,7 @@ export class TerrainStorageService {
 	static async commitDeltaPayload(
 		campaign: Campaign,
 		terrainId: string,
-		voxels: string,
+		voxels: Uint8Array,
 		contentHash: string
 	): Promise<void> {
 		const terrain = campaign.VoxelTerrains.find((t) => t.Id === terrainId);
@@ -461,10 +464,10 @@ export class TerrainStorageService {
 		// throws on proxies), then structuredClone gives a mutable deep copy.
 		const clone = structuredClone(toPlain(campaign));
 		for (const terrain of clone.VoxelTerrains ?? []) {
+			const buffered = getTerrainVoxels(terrain.Id);
 			const voxels =
-				(getTerrainVoxels(terrain.Id) ||
-					(await this.loadVoxels(campaign, terrain))) ??
-				"";
+				(buffered.byteLength > 0 ? buffered : await this.loadVoxels(campaign, terrain)) ??
+				new Uint8Array(0);
 			(terrain as EditableVoxelTerrain).Voxels = voxels;
 		}
 		return clone;

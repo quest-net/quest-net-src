@@ -222,7 +222,7 @@ export function useVoxelTerrainGeometryWorker(
 			return;
 		}
 
-		const voxels = terrain ? resolveTerrainVoxels(terrain) : "";
+		const voxels = terrain ? resolveTerrainVoxels(terrain) : new Uint8Array(0);
 		if (!terrain || getVoxelCount(voxels) === 0) {
 			setResult(null);
 			setError(null);
@@ -280,7 +280,8 @@ export function useVoxelTerrainGeometryWorker(
 		try {
 			// `terrain` comes from useQuestContext() (a Valtio tracking proxy) —
 			// postMessage's structured clone throws on proxies, so unwrap to plain.
-			// `voxels` is already a base64 string.
+			// `voxels` is raw SVO bytes; structured clone copies it, so the
+			// payload-store buffer stays intact (not transferred).
 			worker.postMessage({ buildId, terrain: toPlain(terrain), voxels });
 		} catch (postError) {
 			const handler = pendingBuildHandlers.get(buildId);

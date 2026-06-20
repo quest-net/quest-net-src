@@ -349,7 +349,10 @@ async function main() {
 			Length: terrain.Length,
 			Height: terrain.Height,
 			Resolution: terrain.Resolution,
-			Voxels: terrain.Voxels,
+			// buildTerrainFromVox now returns raw SVO bytes; the source file embeds
+			// the payload as a base64 string literal (readable, diffable), decoded
+			// back to bytes at load time in createDefaultVoxelStamp.
+			Voxels: Buffer.from(terrain.Voxels).toString("base64"),
 			Tags: metadata.tags,
 		});
 	}

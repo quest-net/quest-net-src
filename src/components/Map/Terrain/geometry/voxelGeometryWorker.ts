@@ -24,7 +24,6 @@ import * as THREE from 'three';
 import type { VoxelTerrain } from '../../../../domains/VoxelTerrain/VoxelTerrain';
 import type { VoxelTerrainOccupancy } from './VoxelTerrainGeometryUtils';
 import { MATERIAL_LOOKUP } from '../materials';
-import { base64ToBytes } from '../../../../utils/base64';
 import { getVoxelTerrainResolution } from '../../../../utils/terrain/data/VoxelTerrainIndex';
 import {
 	normalizeVoxelPaletteIndex,
@@ -113,7 +112,7 @@ function postBuildError(buildId: number, phase: string, error: unknown): void {
 }
 
 self.onmessage = async (
-	event: MessageEvent<{ buildId: number; terrain: VoxelTerrain; voxels: string }>
+	event: MessageEvent<{ buildId: number; terrain: VoxelTerrain; voxels: Uint8Array }>
 ) => {
 	const { buildId, terrain, voxels } = event.data;
 
@@ -138,15 +137,15 @@ function buildAndPost(
 	mesher: VoxelMesherType,
 	buildId: number,
 	terrain: VoxelTerrain,
-	voxels: string
+	voxels: Uint8Array
 ): void {
 	const resolution = getVoxelTerrainResolution(terrain);
 
 	// Fused decode + mesh: the SVO is decoded inside WASM (build_from_svo), so
 	// the positions/colors arrays never cross the JS<->WASM boundary on this
-	// gameplay build path.
+	// gameplay build path. `voxels` is already raw SVO bytes -- no decode here.
 	const build = mesher.build_from_svo(
-		base64ToBytes(voxels),
+		voxels,
 		terrain.Width,
 		terrain.Height,
 		terrain.Length,

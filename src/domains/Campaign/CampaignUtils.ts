@@ -15,7 +15,12 @@ import {
 	commitEditableVoxelTerrain,
 	createDefaultVoxelStamps,
 } from "../../data/defaultVoxelStamps";
-import { base64ToBlob, blobToBase64 } from "../../utils/base64";
+import {
+	base64ToBlob,
+	base64ToBytes,
+	blobToBase64,
+	bytesToBase64,
+} from "../../utils/base64";
 
 
 /**
@@ -391,8 +396,16 @@ export const CampaignUtils = {
 		}
 
 		// Terrain voxel payloads travel as a separate bundle (like images); the
-		// campaign object stays payload-free.
-		const terrainData = await TerrainStorageService.exportTerrainPayloads(campaign);
+		// campaign object stays payload-free. The canonical payload is raw bytes;
+		// base64-encode it here for the text (JSON) export format.
+		const rawTerrainData = await TerrainStorageService.exportTerrainPayloads(campaign);
+		const terrainData: Record<string, { voxels: string; contentHash: string }> = {};
+		for (const [terrainId, payload] of Object.entries(rawTerrainData)) {
+			terrainData[terrainId] = {
+				voxels: bytesToBase64(payload.voxels),
+				contentHash: payload.contentHash,
+			};
+		}
 
 		try {
 			onProgress?.({
@@ -512,8 +525,16 @@ export const CampaignUtils = {
 
 			// Restore terrain payloads (2.7.0+ exports) into IndexedDB under the new
 			// id. Pre-2.7.0 files carry voxels inline on the campaign instead; the
-			// schema migration below moves those into IndexedDB.
-			await TerrainStorageService.importTerrainPayloads(campaign, terrainData);
+			// schema migration below moves those into IndexedDB. The file stores
+			// voxels as base64; decode back to the canonical byte form here.
+			const terrainPayloads: Record<string, { voxels: Uint8Array; contentHash: string }> = {};
+			for (const [terrainId, payload] of Object.entries(terrainData)) {
+				terrainPayloads[terrainId] = {
+					voxels: base64ToBytes(payload.voxels),
+					contentHash: payload.contentHash,
+				};
+			}
+			await TerrainStorageService.importTerrainPayloads(campaign, terrainPayloads);
 
 			// Run schema migrations against the file's saved version.
 			// For new-style exports the version lives on the container object;

@@ -22,6 +22,7 @@
 
 import type { Migration } from "./types";
 import { getVoxelCount, hashVoxels } from "../utils/terrain/data/VoxelDataUtils";
+import { base64ToBytes } from "../utils/base64";
 
 const VOXEL_TERRAINS_STORE = "voxelTerrains";
 
@@ -67,11 +68,16 @@ export const terrainContentHashV270Migration: Migration = {
 				}
 			}
 
+			// `voxels` is the legacy base64 string; the codec helpers now operate on
+			// bytes, so decode for the hash/count. The byte-derived ContentHash is
+			// what the runtime recomputes on hydrate, so computing it here keeps the
+			// record consistent.
 			let contentHash: string;
 			let voxelCount: number;
 			try {
-				contentHash = hashVoxels(voxels);
-				voxelCount = getVoxelCount(voxels);
+				const bytes = base64ToBytes(voxels);
+				contentHash = hashVoxels(bytes);
+				voxelCount = getVoxelCount(bytes);
 			} catch (error) {
 				console.error(
 					`[v2.7.0 migration] Invalid voxel payload for terrain ` +
@@ -79,7 +85,7 @@ export const terrainContentHashV270Migration: Migration = {
 					error
 				);
 				voxels = "";
-				contentHash = hashVoxels("");
+				contentHash = hashVoxels(new Uint8Array(0));
 				voxelCount = 0;
 			}
 

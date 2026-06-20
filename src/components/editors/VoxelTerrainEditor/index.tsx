@@ -293,9 +293,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const lastEditKeyRef         = useRef<string | null>(null);
 		// Shape change detection for camera framing.
 		const lastShapeSignatureRef  = useRef<string | null>(null);
-		// Tracks the last Voxels string we emitted so we can ignore our own echoes
-		// when the terrain prop bounces back from the parent after onChange.
-		const lastEmittedVoxelsRef   = useRef(terrain.Voxels);
+		// Tracks the revision of the last payload we emitted so we can ignore our
+		// own echoes when the terrain prop bounces back from the parent after
+		// onChange. A revision (shape + content hash) survives the structured-clone
+		// round trip through state, where a raw byte-buffer reference would not.
+		const lastEmittedRevisionRef = useRef(createTerrainRevision(terrain));
 		const onChangeRef            = useRef(onChange);
 		// Stamp state.
 		const stampSourceRef         = useRef<EditableVoxelTerrain | null>(null);
@@ -483,7 +485,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 		const emitTerrainUpdate = (nextTerrain: EditableVoxelTerrain) => {
 			terrainRef.current = nextTerrain;
-			lastEmittedVoxelsRef.current = nextTerrain.Voxels;
+			lastEmittedRevisionRef.current = createTerrainRevision(nextTerrain);
 			onChangeRef.current(nextTerrain);
 		};
 
@@ -604,17 +606,19 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		// -------------------------------------------------------------------------
 		useEffect(() => {
 			// Skip our own echo: the parent re-renders after our onChange call and
-			// passes back the same Voxels string we just emitted.
+			// passes back the same payload we just emitted (matched by revision, so
+			// the structured-clone round trip through state doesn't defeat it).
+			const incomingRevision = createTerrainRevision(terrain);
 			if (
-				createTerrainRevision(terrain) === createTerrainRevision(terrainRef.current) &&
-				terrain.Voxels === lastEmittedVoxelsRef.current
+				incomingRevision === createTerrainRevision(terrainRef.current) &&
+				incomingRevision === lastEmittedRevisionRef.current
 			) {
 				terrainRef.current = terrain;
 				return;
 			}
 
 			terrainRef.current = terrain;
-			lastEmittedVoxelsRef.current = terrain.Voxels;
+			lastEmittedRevisionRef.current = incomingRevision;
 
 			const index = getVoxelTerrainIndex(terrain);
 			const newDims = computeChunkDims(index);
@@ -678,7 +682,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const materializeTerrain = useCallback((): EditableVoxelTerrain => {
 			const nextTerrain = createDraftTerrainSnapshot();
 			terrainRef.current = nextTerrain;
-			lastEmittedVoxelsRef.current = nextTerrain.Voxels;
+			lastEmittedRevisionRef.current = createTerrainRevision(nextTerrain);
 			return nextTerrain;
 		}, [createDraftTerrainSnapshot]);
 
