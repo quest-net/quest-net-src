@@ -420,6 +420,23 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			setPreviewTerrain(createDraftTerrainSnapshot());
 		}, [createDraftTerrainSnapshot]);
 
+		// Metadata-only preview update (Lighting/Background/Surroundings). These
+		// fields never touch voxels, so reuse the existing snapshot's already-
+		// encoded Voxels instead of re-running encodeEditGrid over the whole grid
+		// on every slider tick. Preserving the Voxels reference also keeps the
+		// terrain signature value-equal, so MapScene re-applies the cheap
+		// lighting/surroundings update without remeshing.
+		const patchPreviewTerrainMeta = useCallback(
+			(updates: Partial<EditableVoxelTerrain>) => {
+				setPreviewTerrain((prev) =>
+					prev
+						? { ...prev, ...updates }
+						: { ...createDraftTerrainSnapshot(), ...updates },
+				);
+			},
+			[createDraftTerrainSnapshot],
+		);
+
 		const pickToLinkAnchor = useCallback((
 			pick: PickInfo,
 			targetTerrain: EditableVoxelTerrain
@@ -498,26 +515,24 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 
 		const updateLighting = (updates: Partial<VoxelTerrainLighting>) => {
 			if (readOnly) return;
-			const nextTerrain = {
-				...terrain,
-				Lighting: { ...lighting, ...updates },
-			};
-			emitTerrainUpdate(nextTerrain);
-			if (activeViewRef.current === "preview") refreshPreviewTerrain();
+			const nextLighting = { ...lighting, ...updates };
+			emitTerrainUpdate({ ...terrain, Lighting: nextLighting });
+			if (activeViewRef.current === "preview")
+				patchPreviewTerrainMeta({ Lighting: nextLighting });
 		};
 
 		const updateBackground = (updates: VoxelTerrainBackground) => {
 			if (readOnly) return;
-			const nextTerrain = { ...terrain, Background: updates };
-			emitTerrainUpdate(nextTerrain);
-			if (activeViewRef.current === "preview") refreshPreviewTerrain();
+			emitTerrainUpdate({ ...terrain, Background: updates });
+			if (activeViewRef.current === "preview")
+				patchPreviewTerrainMeta({ Background: updates });
 		};
 
 		const updateSurroundings = (next: VoxelTerrainSurroundings | undefined) => {
 			if (readOnly) return;
-			const nextTerrain = { ...terrain, Surroundings: next };
-			emitTerrainUpdate(nextTerrain);
-			if (activeViewRef.current === "preview") refreshPreviewTerrain();
+			emitTerrainUpdate({ ...terrain, Surroundings: next });
+			if (activeViewRef.current === "preview")
+				patchPreviewTerrainMeta({ Surroundings: next });
 		};
 
 		const selectVoxelsByColor = useCallback((colorIndex: number) => {
