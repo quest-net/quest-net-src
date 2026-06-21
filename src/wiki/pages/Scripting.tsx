@@ -35,7 +35,7 @@ const scriptingPage: WikiPageDefinition = {
 	audience: "Developer",
 	category: "Technical",
 	summary:
-		"Attach small scripts to items, skills, statuses, actors, or the campaign to add custom behaviors — a status that follows a target around, a buff that resizes its bearer, a world rule that fires every round.",
+		"Attach small scripts to items, skills, statuses, actors, or the campaign to add custom behaviors — a poison that ticks each round, a buff that resizes its bearer, a world rule that heals the party on a long rest.",
 	tags: ["scripting", "automation", "behaviors", "actions", "eca", "hooks", "api"],
 	icon: "icon-[mdi--code-braces]",
 	sections: [
@@ -68,10 +68,10 @@ const scriptingPage: WikiPageDefinition = {
 									"Every dispatched action is an event. A script subscribes to an action-key glob (a move is actor:move; a round tick is combat:incrementRound). When a matching action runs, the script runs right after it — or right before it, to intercept and rewrite or cancel the action (see Before vs After).",
 							},
 							{
-								name: "Reads anything, changes via actions",
+								name: "Reads anything, changes via methods",
 								tone: "info",
 								detail:
-									"`this`, `game`, and `event` are real live objects, so reading any field or collection is plain property access — even fields added to the app later. To CHANGE the world you await game.action(...), the same handler the app uses, so validation/clamping/logging are shared.",
+									"`this`, `game`, and `event` are real live objects, so reading any field is plain property access. To CHANGE the world you call a friendly method like this.actor.changeStat('HP', -5) — or, for anything without one, await game.action(...). Both run the same validated handlers the app uses.",
 							},
 							{
 								name: "One atomic reaction",
@@ -103,11 +103,12 @@ const scriptingPage: WikiPageDefinition = {
 						When an action whose key matches is dispatched, the script runs. Only{" "}
 						<WikiCode>*</WikiCode> is special.
 					</p>
-					<CodeBlock>{`"item:use"            // exactly this action
-"*:move"              // any move, e.g. actor:move
-"status:give"         // when any status is applied
+					<CodeBlock>{`"item:use"                // exactly this action
+"*:move"                  // any move, e.g. actor:move
+"status:give"             // when any status is applied
 "combat:incrementRound"   // each round tick ("round start")
-"*"                   // every action (use sparingly)`}</CodeBlock>
+"calendar:longRest"       // when the party long-rests
+"*"                       // every action (use sparingly)`}</CodeBlock>
 					<WikiCallout tone="info" title="Where a script lives vs. what it can reach">
 						<p>
 							A script lives on an object for organization and to bind{" "}
@@ -121,10 +122,13 @@ const scriptingPage: WikiPageDefinition = {
 						<p>
 							A script on a status/item/skill template runs once for{" "}
 							<strong>every instance</strong> of that template when its trigger fires —
-							not just the one involved in the action. Always narrow with{" "}
+							not just the one involved in the action. Narrow with{" "}
 							<WikiCode>event.params</WikiCode>, e.g.{" "}
 							<WikiCode>if (event.params.actorId !== this.actor.Id) return;</WikiCode>,
 							so a poison on one creature doesn't react to another creature's move.
+							(Round ticks like <WikiCode>combat:incrementRound</WikiCode> carry no
+							actor, so each bearer's <WikiCode>this.actor</WikiCode> already points at
+							the right creature — no filter needed.)
 						</p>
 					</WikiCallout>
 				</div>
@@ -141,34 +145,111 @@ const scriptingPage: WikiPageDefinition = {
 					</p>
 					<WikiFieldGrid
 						items={[
-							{ name: "Status / Item / Skill host", tone: "primary", detail: "this = the template fields · this.actor = the bearer/holder · this.vars = per-instance scratch on that slot." },
-							{ name: "Actor / Entity host", tone: "accent", detail: "this = the actor (this.Id, this.Position, this.Stats, ...) · this.actor = the same actor." },
-							{ name: "Campaign host", tone: "info", detail: "this = the campaign (world rule) · no this.actor." },
+							{ name: "Status / Item / Skill host", tone: "primary", detail: "this = the template fields · this.actor = the bearer/holder (an actor facade) · this.vars = per-instance scratch on that slot." },
+							{ name: "Actor / Entity host", tone: "accent", detail: "this = the actor's live fields (this.Id, this.Position, ...) · this.actor = the same actor as a facade (use this.actor for methods)." },
+							{ name: "Campaign host", tone: "info", detail: "this = the campaign (world rule) · no this.actor — reach actors via game.find / game.party()." },
 						]}
 					/>
 					<p className="text-sm opacity-80">On every host:</p>
 					<CodeBlock>{`this.params          // declared Parameters resolved to their defaults (read-only)
 this.vars            // persistent scratch — read AND write (this.vars.count = 3)
-this.actor           // the bearer/holder actor (undefined for campaign hosts)`}</CodeBlock>
+this.actor           // the bearer/holder actor facade (undefined for campaign hosts)`}</CodeBlock>
 					<p className="text-sm opacity-80">The <WikiCode>game</WikiCode> facade:</p>
-					<CodeBlock>{`game.campaign            // the whole live Campaign (read anything)
-await game.action(key, params) // THE only way to change the world (see below)
-game.actors()            // active characters + entities
-game.find("Goblin*")     // active actor by name glob
-game.template(coll, name)// resolve a template by name -> the template object (use .Id)
-game.roll("2d6+1")       // DM-authoritative dice -> number
-game.rng()               // 0..1
-await game.log("text")   // quick log entry
-game.combat              // read-only combat state { isActive, currentRound, ... }`}</CodeBlock>
+					<CodeBlock>{`game.campaign                  // the whole live Campaign (read anything)
+game.find("Goblin")            // an active actor by name or id -> actor facade
+game.actors()                  // all active actors  ·  game.party()  ·  game.enemies()
+game.actorsWithStatus("Poisoned")
+game.sharedInventory("Party Funds")   // a shared pool facade
+game.combat                    // combat system (round / isActive / start / nextRound...)
+game.calendar                  // in-world date + rests (advanceDays / shortRest / longRest)
+game.scene                     // setEnvironment / setFocus images
+game.audio                     // setTrack / setVolume / stop
+game.roll("2d6+1")             // silent DM dice -> number   ·   game.rng() -> 0..1
+await game.log("text")         // quick log entry
+await game.spawnActor("Goblin", pos)    //  await game.spawnItem("Torch", pos)
+await game.ping(pos)           // flash a marker on the map
+await game.action(key, params) // escape hatch: dispatch ANY scriptable action`}</CodeBlock>
 					<p className="text-sm opacity-80">The triggering <WikiCode>event</WikiCode>:</p>
 					<CodeBlock>{`event.key        // the action key that fired, e.g. "actor:move"
 event.params     // the params that action was called with
-event.actor      // the acting actor (resolved from params.actorId/entityId), if any`}</CodeBlock>
+event.actor      // the acting actor as a facade (from params.actorId), if any`}</CodeBlock>
 					<p className="text-sm opacity-80">
 						In a <WikiCode>"before"</WikiCode> script <WikiCode>event.params</WikiCode> is
 						mutable and <WikiCode>event.cancel()</WikiCode> is available — see Before vs
 						After.
 					</p>
+				</div>
+			),
+		},
+		{
+			id: "actors",
+			title: "Working with Actors",
+			body: (
+				<div className="space-y-4">
+					<p>
+						<WikiCode>this.actor</WikiCode>, <WikiCode>game.find(...)</WikiCode>, and{" "}
+						<WikiCode>event.actor</WikiCode> are <WikiHighlight tone="primary">actor
+						facades</WikiHighlight>: the live actor with handy methods layered on. Every
+						"which stat / item / status" argument takes a <strong>name or id</strong> —
+						you never type a GUID. Reading any field is plain property access.
+					</p>
+					<CodeBlock>{`const goblin = game.find("Goblin");        // by name (or id, or "Gob*")
+
+goblin.changeStat("HP", -5);               // damage, clamped 0..Max
+goblin.setStat("HP", 10);                  // set an absolute value
+goblin.getStatValue("HP");                 // read -> number | null
+goblin.hasStatus("Stunned");               // -> boolean
+goblin.distanceTo("Hero");                 // movement-cost distance -> number
+
+goblin.giveStatus("Poisoned");             // also: removeStatus, setStatusDuration
+goblin.giveItem("Potion", 2);              // also: removeItem, useItem, equipItem, unequipItem
+goblin.giveSkill("Fireball");              // also: removeSkill, useSkill
+goblin.move(this.actor.Position);          // teleport (no pathing)
+goblin.roll("1d20+3");                      // an OBSERVABLE roll other scripts can react to
+
+goblin.Name, goblin.Position, goblin.Stats // any live field reads straight through`}</CodeBlock>
+					<WikiCallout tone="info" title="await is optional, but recommended">
+						<p>
+							Every facade mutation (and <WikiCode>game.action</WikiCode>) returns a
+							promise. <WikiCode>await</WikiCode> it when ordering matters; if you forget,
+							the engine still runs your calls in order and finishes them before the one
+							broadcast.
+						</p>
+					</WikiCallout>
+				</div>
+			),
+		},
+		{
+			id: "systems",
+			title: "Game Systems",
+			body: (
+				<div className="space-y-4">
+					<p>
+						The cross-cutting systems hang off <WikiCode>game</WikiCode> as small
+						facades. Reads are properties; verbs are methods.
+					</p>
+					<p className="text-sm opacity-80">Combat:</p>
+					<CodeBlock>{`game.combat.isActive          // boolean
+game.combat.round             // 1-based round number
+game.combat.side              // "party" | "enemies" (party mode)
+await game.combat.start();    // also: end(), nextRound(), prevRound()
+await game.combat.markTurnDone("Goblin");
+game.combat.actorsThisRound(); // actor facades acting this round`}</CodeBlock>
+					<p className="text-sm opacity-80">Calendar &amp; rests:</p>
+					<CodeBlock>{`game.calendar.day             // absolute day counter
+game.calendar.date            // { year, month, day, ... }
+await game.calendar.advanceDays(1);   // also: setDay(n), setDate({ year, month, day })
+await game.calendar.shortRest();      // also: longRest()`}</CodeBlock>
+					<p className="text-sm opacity-80">Scene &amp; audio:</p>
+					<CodeBlock>{`await game.scene.setEnvironment("Dungeon");     // background image (name or id)
+await game.scene.setFocus("Boss Portrait");     // pass "" to clear
+await game.audio.setTrack("Battle Theme");      // also: setVolume(0.5), stop()`}</CodeBlock>
+					<p className="text-sm opacity-80">Shared inventories (party pools):</p>
+					<CodeBlock>{`const funds = game.sharedInventory("Party Funds");
+funds.getStatValue("Gold");                     // read a pooled stat
+await funds.changeStat("Gold", -10);            // spend, clamped 0..Max
+await funds.transferStatTo("Hero", "Gold", 5);  // to an actor OR another pool
+await funds.transferItemTo("Hero", "Map");      // move an item out  ·  discardItem(item)`}</CodeBlock>
 				</div>
 			),
 		},
@@ -215,19 +296,19 @@ if (skill?.DiceRoll) event.params.diceFormula = skill.DiceRoll + " + 1d4";`}</Co
 		},
 		{
 			id: "actions",
-			title: "Changing the World (game.action)",
+			title: "The Escape Hatch (game.action)",
 			body: (
 				<div className="space-y-4">
 					<p>
-						A script changes the world in exactly one way:{" "}
-						<WikiCode>await game.action("domain:verb", params)</WikiCode>. This runs the same
-						handler the app uses, so all validation/clamping/logging is shared.
+						The facade methods cover the common effects, but anything they don't can be
+						dispatched directly with{" "}
+						<WikiCode>await game.action("domain:verb", params)</WikiCode>. This runs the
+						same handler the app uses, so all validation/clamping/logging is shared.
 						Pass plain ids and values — never a live object as an id (use{" "}
 						<WikiCode>actor.Id</WikiCode>, <WikiCode>template.Id</WikiCode>).
 					</p>
-					<CodeBlock>{`await game.action("actor:move",   { actorId: e.Id, position: this.actor.Position });
-await game.action("status:give",  { statusIds: [s.Id], actorIds: [this.actor.Id], count: 1 });
-await game.action("actor:edit",   { actorId: this.actor.Id, updates: { Size: "large" } });`}</CodeBlock>
+					<CodeBlock>{`await game.action("actor:bulkEditTags", { updates: [{ actorId: this.actor.Id, tags: ["seen"] }] });
+await game.action("status:give", { statusIds: [s.Id], actorIds: [this.actor.Id], count: 1 });`}</CodeBlock>
 					<p className="text-sm opacity-80">
 						Script-ok actions (generated from the registry — anything not listed throws
 						when called):
@@ -250,15 +331,15 @@ await game.action("actor:edit",   { actorId: this.actor.Id, updates: { Size: "la
 			body: (
 				<div className="space-y-4">
 					<p>
-						Because every <WikiCode>game.action</WikiCode> is itself an event, reactions
-						chain: an item damages a creature → the creature's "on edit" script sees it
-						hit 0 HP → it explodes and damages its neighbors → their scripts fire. The
-						engine runs the whole chain inside the one triggering mutation, then
-						broadcasts once.
+						Because every facade mutation (and <WikiCode>game.action</WikiCode>) is itself
+						an event, reactions chain: an item damages a creature → the creature's "on
+						edit" script sees it hit 0 HP → it explodes and damages its neighbors → their
+						scripts fire. The engine runs the whole chain inside the one triggering
+						mutation, then broadcasts once.
 					</p>
 					<WikiFieldGrid
 						items={[
-							{ name: "Mutate only via game.action", tone: "primary", detail: "A direct field write changes state but emits no event, so nothing reacts. Always go through game.action to make cascades work." },
+							{ name: "Mutate via methods / game.action", tone: "primary", detail: "A direct field write changes state but emits no event, so nothing reacts. Always change the world through a facade method or game.action so cascades work." },
 							{ name: "Guard against loops", tone: "warning", detail: "Use this.vars as a latch (e.g. this.vars.exploded) so a one-shot reaction can't re-fire. Avoid scripts that undo each other." },
 							{ name: "Bounded", tone: "info", detail: "Per-mutation caps on cascade depth and total actions halt a runaway chain (and log it). There is no wall-clock limit, so never write an infinite loop." },
 							{ name: "Errors are isolated", tone: "success", detail: "A throwing script logs to the DM-visible campaign log and the rest of the cascade continues — one bad script never wedges a turn." },
@@ -306,40 +387,33 @@ await game.action("actor:edit",   { actorId: this.actor.Id, updates: { Size: "la
 			body: (
 				<div className="space-y-4">
 					<p className="text-sm opacity-80">
-						Stalked status — spawns a "Stalker" on first move, then follows the bearer:
+						Poison — ticks the bearer's HP at the start of every round:
+					</p>
+					<CodeBlock>{`// Status hook  ·  Trigger: "combat:incrementRound"
+this.actor.changeStat("HP", -this.params.potency);`}</CodeBlock>
+					<p className="text-sm opacity-80">
+						Stalker status — spawns a "Stalker" on first move, then follows the bearer:
 					</p>
 					<CodeBlock>{`// Status hook  ·  Trigger: "*:move"
-if (event.params.actorId !== this.actor.Id) return;   // only OUR bearer
+if (event.params.actorId !== this.actor.Id) return;   // only when OUR bearer moves
 const stalker = game.find("Stalker");
-const pos = this.actor.Position;
-if (!stalker) {
-  await game.action("actor:spawn", { actorId: game.template("EntityTemplates", "Stalker").Id, position: pos });
-} else {
-  await game.action("actor:move", { actorId: stalker.Id, position: pos });
-}`}</CodeBlock>
+if (stalker) stalker.move(this.actor.Position);
+else game.spawnActor("Stalker", this.actor.Position);`}</CodeBlock>
 					<p className="text-sm opacity-80">
-						Enlarging buff — bigger while applied, restored on removal:
-					</p>
-					<CodeBlock>{`// Status, script A  ·  Trigger: "status:give"
-if (!event.params.actorIds?.includes(this.actor.Id)) return;
-this.vars.prevSize = this.actor.Size ?? "medium";
-await game.action("actor:edit", { actorId: this.actor.Id, updates: { Size: "large" } });
-
-// Status, script B  ·  Trigger: "status:remove"
-if (event.params.actorId !== this.actor.Id) return;
-await game.action("actor:edit", { actorId: this.actor.Id, updates: { Size: this.vars.prevSize ?? "medium" } });`}</CodeBlock>
-					<p className="text-sm opacity-80">
-						On-use trinket — applies a status to the user:
+						Blessing trinket — gives a status to whoever uses it:
 					</p>
 					<CodeBlock>{`// Item hook  ·  Trigger: "item:use"
-await game.action("status:give", {
-  statusIds: [game.template("StatusTemplates", "Blessed").Id],
-  actorIds: [this.actor.Id],
-  count: 1,
-});`}</CodeBlock>
-					<p className="text-sm opacity-80">Campaign world rule — log each round:</p>
+if (event.params.itemId !== this.Id) return;          // this item...
+if (event.params.actorId !== this.actor.Id) return;   // ...used by our holder
+this.actor.giveStatus("Blessed");`}</CodeBlock>
+					<p className="text-sm opacity-80">
+						World rule — restore the whole party to full HP on a long rest:
+					</p>
+					<CodeBlock>{`// Campaign hook  ·  Trigger: "calendar:longRest"
+for (const pc of game.party()) pc.setStat("HP", pc.getStatMax("HP"));`}</CodeBlock>
+					<p className="text-sm opacity-80">World rule — announce each round:</p>
 					<CodeBlock>{`// Campaign hook  ·  Trigger: "combat:incrementRound"
-await game.log("Round " + game.combat.currentRound + " begins", { category: "combat" });`}</CodeBlock>
+await game.log("Round " + game.combat.round + " begins", { category: "combat" });`}</CodeBlock>
 				</div>
 			),
 		},
@@ -361,7 +435,7 @@ await game.log("Round " + game.combat.currentRound + " begins", { category: "com
 		},
 	],
 	searchText:
-		"scripting script behavior automation eca event condition action trigger game.action this game event params vars parameters cascade dm authority actor entity status item skill campaign world rule stalker buff size spawn move log roll combat scriptable async destructive sandbox security test harness api reference before after when intercept interception cancel veto modify rewrite diceformula bless phase",
+		"scripting script behavior automation eca event condition action trigger game.action this game event params vars parameters cascade dm authority actor entity status item skill campaign world rule facade changestat setstat givestatus giveitem useitem equip giveskill move roll distanceto spawnactor spawnitem ping shared inventory pool calendar long rest short rest advance day scene environment focus audio track volume combat round nextround markturndone stalker buff size spawn move log roll scriptable async destructive sandbox security test harness api reference before after when intercept interception cancel veto modify rewrite diceformula bless phase",
 };
 
 export default scriptingPage;
