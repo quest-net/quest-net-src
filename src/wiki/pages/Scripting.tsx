@@ -8,6 +8,12 @@ import {
 } from "../components/content";
 import type { WikiPageDefinition } from "./WikiPage";
 import { ACTION_REGISTRY, isScriptableAction } from "../../services/Actions/ActionRegistry";
+import {
+	ACTION_DOCS,
+	FACADE_DOCS,
+	SCRIPTING_LIMITS,
+	type FacadeGroupDoc,
+} from "../../services/Scripting/docs/scriptingApiModel";
 import { ScriptTestHarness } from "../components/ScriptTestHarness";
 
 // ---------------------------------------------------------------------------
@@ -28,6 +34,75 @@ function CodeBlock({ children }: { children: ReactNode }) {
 const SCRIPTABLE_ACTION_KEYS = Object.keys(ACTION_REGISTRY)
 	.filter(isScriptableAction)
 	.sort();
+
+/**
+ * Exhaustive facade reference for one group, rendered from the shared model so it
+ * stays in sync with the downloadable scripting brief.
+ */
+function FacadeTable({ group }: { group: FacadeGroupDoc }) {
+	return (
+		<div className="space-y-2">
+			<h4 className="font-semibold text-sm">{group.title}</h4>
+			<p className="text-sm opacity-80">{group.intro}</p>
+			<div className="overflow-x-auto rounded-lg border border-base-300 bg-base-200">
+				<table className="table table-sm">
+					<tbody>
+						{group.methods.map((m) => (
+							<tr key={m.signature}>
+								<td className="font-mono text-xs whitespace-nowrap align-top">
+									{m.signature}
+								</td>
+								<td className="text-xs opacity-80">
+									{m.description}
+									{m.backedBy && m.backedBy !== "read" && (
+										<span className="opacity-60"> · {m.backedBy}</span>
+									)}
+								</td>
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	);
+}
+
+/** Every action, grouped by domain, with roles / scriptable / when-it-fires. */
+function TriggerReferenceTable() {
+	const keys = Object.keys(ACTION_REGISTRY).sort();
+	return (
+		<div className="overflow-x-auto rounded-lg border border-base-300 bg-base-200">
+			<table className="table table-sm">
+				<thead>
+					<tr>
+						<th>Action</th>
+						<th>Roles</th>
+						<th>Script-ok</th>
+						<th>When it fires</th>
+					</tr>
+				</thead>
+				<tbody>
+					{keys.map((key) => {
+						const def = ACTION_REGISTRY[key];
+						const doc = ACTION_DOCS[key];
+						return (
+							<tr key={key}>
+								<td className="font-mono text-xs whitespace-nowrap align-top">{key}</td>
+								<td className="text-xs align-top">{def.roles.join(" / ")}</td>
+								<td className="text-xs align-top">
+									{isScriptableAction(key) ? "yes" : "—"}
+								</td>
+								<td className="text-xs opacity-80">
+									{doc ? doc.whenFires : "(undocumented)"}
+								</td>
+							</tr>
+						);
+					})}
+				</tbody>
+			</table>
+		</div>
+	);
+}
 
 const scriptingPage: WikiPageDefinition = {
 	slug: "scripting",
@@ -109,6 +184,11 @@ const scriptingPage: WikiPageDefinition = {
 "combat:incrementRound"   // each round tick ("round start")
 "calendar:longRest"       // when the party long-rests
 "*"                       // every action (use sparingly)`}</CodeBlock>
+					<p className="text-sm opacity-80">
+						Every action and when it fires (the <WikiCode>Script-ok</WikiCode> column
+						marks which a script may also <em>call</em>):
+					</p>
+					<TriggerReferenceTable />
 					<WikiCallout tone="info" title="Where a script lives vs. what it can reach">
 						<p>
 							A script lives on an object for organization and to bind{" "}
@@ -254,6 +334,22 @@ await funds.transferItemTo("Hero", "Map");      // move an item out  ·  discard
 			),
 		},
 		{
+			id: "api-reference",
+			title: "API Reference",
+			body: (
+				<div className="space-y-4">
+					<p>
+						The complete curated surface, generated from the same model as the
+						downloadable scripting brief. Every reference argument takes a{" "}
+						<strong>name or id</strong>; mutation methods show their backing action.
+					</p>
+					{FACADE_DOCS.map((group) => (
+						<FacadeTable key={group.title} group={group} />
+					))}
+				</div>
+			),
+		},
+		{
 			id: "phase",
 			title: "Before vs After (intercepting actions)",
 			body: (
@@ -314,6 +410,12 @@ await game.action("status:give", { statusIds: [s.Id], actorIds: [this.actor.Id],
 						when called):
 					</p>
 					<CodeBlock>{SCRIPTABLE_ACTION_KEYS.join("\n")}</CodeBlock>
+					<p className="text-sm opacity-80">What scripts cannot do:</p>
+					<ul className="list-disc space-y-1 pl-6 text-sm opacity-80">
+						{SCRIPTING_LIMITS.map((limit, i) => (
+							<li key={i}>{limit}</li>
+						))}
+					</ul>
 					<WikiCallout tone="info" title="Why some actions are missing">
 						<p>
 							An action is script-ok only when its registry entry has{" "}

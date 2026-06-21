@@ -17,7 +17,7 @@
  * Forbidden identifiers. Matched as whole words (so "important" is fine even
  * though "import" is listed). Case-sensitive — these are JS identifiers.
  */
-const FORBIDDEN_TOKENS = [
+export const FORBIDDEN_TOKENS = [
 	// Global scope handles / frame escapes
 	"window",
 	"document",

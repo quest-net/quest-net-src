@@ -24,6 +24,7 @@ import CalendarConfigEditor from "../../components/editors/CalendarConfigEditor"
 import { MovementSettingsEditor } from "../../components/editors/MovementSettingsEditor";
 import { InitiativeSettingsEditor } from "../../components/editors/InitiativeSettingsEditor";
 import { ScriptingFields } from "../../components/editors/ScriptingFields";
+import { downloadScriptingDoc } from "../../services/Scripting/docs/generateScriptingDoc";
 import { SecretModeToggle } from "../../components/editors/SecretModeToggle";
 import { CampaignStats } from "./CampaignStats";
 import { Campaign } from "../Campaign/Campaign";
@@ -675,6 +676,19 @@ function renderCategory(category: SettingsCategory, args: CategoryRenderArgs) {
 							World-rule scripts run with <code>this</code> bound to the campaign
 							and can reach anything via <code>game</code>.
 						</div>
+					</FormSection>
+					<FormSection
+						title="AI scripting brief"
+						description="Download a self-contained markdown document (API reference + triggers + limits + this campaign's data) to hand an AI agent so it can write a script for you. Paste its reply into a script's code."
+					>
+						<button
+							type="button"
+							onClick={() => downloadScriptingDoc(data)}
+							className="btn btn-primary gap-2 self-start"
+						>
+							<span className="icon-[mdi--robot-outline] w-5 h-5" />
+							Download AI scripting brief
+						</button>
 					</FormSection>
 					<ScriptingFields data={data} onChange={onChange} />
 				</>
