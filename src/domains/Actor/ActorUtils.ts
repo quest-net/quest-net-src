@@ -2,7 +2,11 @@ import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { Context } from "../Context/Context";
 import { LogActions } from "../Log/LogActions";
 import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
-import { getVoxelTerrainById } from "../VoxelTerrain/VoxelTerrainQueries";
+import { getVoxelTerrainById, roundVoxelPosition } from "../VoxelTerrain/VoxelTerrainQueries";
+import { calculateVoxelMovementRange } from "../VoxelTerrain/VoxelMovementUtilities";
+import { tileHeightKey } from "../../utils/terrain/data/VoxelTerrainIndex";
+import { resolveByNameOrId } from "../../utils/resolveByNameOrId";
+import type { Campaign } from "../Campaign/Campaign";
 import { Actor, Position, StatSlot, ActionSlot, AttributeSlot } from "./Actor";
 import type {
 	StatDefinition,
@@ -76,6 +80,175 @@ export const ActorUtils = {
 			return "entity";
 		}
 		return undefined;
+	},
+
+	// ---- Scripting-API tier-1 reads (pure, no dispatch) --------------------
+	// These back the actor facade (`this.actor.*`). Refs are name-OR-id, resolved
+	// through the shared resolver. Reads return live data; they never clone.
+
+	/**
+	 * Every ACTIVE actor (spawned characters + entities). The single shared
+	 * definition of "active actors" used by the scripting facades and the engine.
+	 * NOT `getAllActors` — that also includes the roster/templates, which a script
+	 * must never resolve onto (it could otherwise mutate a template).
+	 */
+	getActiveActors(campaign: Campaign): Actor[] {
+		return [...campaign.GameState.Characters, ...campaign.GameState.Entities];
+	},
+
+	/**
+	 * Resolves an ActorRef (a held actor/facade object with `.Id`, or a name|id
+	 * string) to the Id of an ACTIVE actor (spawned characters + entities). Used by
+	 * every facade that mutates an actor. Returns undefined when nothing resolves.
+	 *
+	 * Resolution order: an object ref reads `.Id` directly (then confirms it is
+	 * active); a string ref runs through `resolveByNameOrId` over active actors
+	 * (Id -> Name -> first glob match -> undefined).
+	 */
+	resolveActorId(
+		campaign: Campaign,
+		ref: string | { Id: string }
+	): string | undefined {
+		const active = ActorUtils.getActiveActors(campaign);
+		if (ref != null && typeof ref === "object") {
+			// A held actor/facade: trust its Id only if it's still on the field.
+			return active.some((a) => a.Id === ref.Id) ? ref.Id : undefined;
+		}
+		return resolveByNameOrId(active, ref)?.Id;
+	},
+
+	/**
+	 * Resolve an ActorRef to the LIVE active actor OBJECT (not just its Id), or
+	 * undefined. The object-returning companion to `resolveActorId`, for reads that
+	 * need the actor's fields/Position/slots. The single shared resolver every
+	 * scripting facade calls — replaces the per-facade `resolveActiveActor` copies.
+	 */
+	resolveActiveActor(
+		campaign: Campaign,
+		ref: string | { Id: string }
+	): Actor | undefined {
+		const id = ActorUtils.resolveActorId(campaign, ref);
+		if (!id) return undefined;
+		return ActorUtils.getActiveActors(campaign).find((a) => a.Id === id);
+	},
+
+	/**
+	 * Clamp a stat value to its slot's valid range `0..Max`. The single shared rule
+	 * every stat write uses (changeStat / setStat / transferStat / applyStatCost /
+	 * regen) so stat clamping stays consistent across the board.
+	 */
+	clampStat(value: number, max: number): number {
+		return Math.max(0, Math.min(max, value));
+	},
+
+	/**
+	 * THE one shared stat resolver: resolves a stat NAME or definition Id to the
+	 * matching StatSlot on `actor`. The ref resolves over the campaign's
+	 * StatDefinitions (name|id -> definition Id), then the actor's slot whose `Id`
+	 * equals that definition Id is returned. Everything stat-related routes here.
+	 * Returns undefined when the definition or the actor's slot is absent.
+	 */
+	getStat(
+		actor: Actor,
+		campaign: Campaign,
+		statRef: string
+	): StatSlot | undefined {
+		const def = resolveByNameOrId(campaign.Settings.StatDefinitions, statRef);
+		if (!def) return undefined;
+		return actor.Stats?.find((s) => s.Id === def.Id);
+	},
+
+	/**
+	 * Current value of a stat (name|id), or `null` when the actor doesn't have the
+	 * stat — either the slot is absent OR its Current is null (the "unset" state in
+	 * the StatSlot model). `null` = "not present on the actor".
+	 */
+	getStatValue(actor: Actor, campaign: Campaign, statRef: string): number | null {
+		const slot = ActorUtils.getStat(actor, campaign, statRef);
+		if (!slot || slot.Current === null) return null;
+		return slot.Current;
+	},
+
+	/**
+	 * Max for a stat (name|id), or `undefined` when the actor has no slot for it.
+	 * (Max is always a number on a present slot, retained even while the stat is
+	 * unset, so absence is the only `undefined` case.)
+	 */
+	getStatMax(actor: Actor, campaign: Campaign, statRef: string): number | undefined {
+		const slot = ActorUtils.getStat(actor, campaign, statRef);
+		return slot ? slot.Max : undefined;
+	},
+
+	/** Whether the actor has the stat set (slot present AND Current !== null). */
+	hasStat(actor: Actor, campaign: Campaign, statRef: string): boolean {
+		const slot = ActorUtils.getStat(actor, campaign, statRef);
+		return !!slot && slot.Current !== null;
+	},
+
+	/**
+	 * Value of an attribute (name|id), or `undefined` when the actor has no slot
+	 * for it. Resolves the AttributeDefinition then reads the actor's AttributeSlot
+	 * Value (always a string in the model).
+	 */
+	getAttribute(actor: Actor, campaign: Campaign, attrRef: string): string | undefined {
+		const def = resolveByNameOrId(campaign.Settings.AttributeDefinitions, attrRef);
+		if (!def) return undefined;
+		return actor.Attributes?.find((a) => a.Id === def.Id)?.Value;
+	},
+
+	/**
+	 * Movement distance from actor `a` to actor `b`: the cheapest in-game movement
+	 * cost for `a` to reach `b`'s tile, using the SAME Dijkstra pathing the movement
+	 * range highlight uses (`calculateVoxelMovementRange`) — cardinal steps, height
+	 * costs, and `a`'s own walker/flyer profile. NOT straight-line distance: a
+	 * diagonal neighbour is 2, a tile up a cliff costs its height penalty, etc.
+	 *
+	 * `Infinity` when either lacks a Position, they are on different terrains, the
+	 * terrain is missing, or `b`'s tile is unreachable for `a`. Asymmetric by design
+	 * (climbing costs, flyer vs walker), so `distanceTo(a,b)` may differ from
+	 * `distanceTo(b,a)`. NOTE: floods the full reachable surface (unbounded budget),
+	 * so it is a heavier read than a coordinate subtraction — fine for occasional
+	 * script use; avoid in tight per-tile loops on huge terrains.
+	 */
+	distanceTo(a: Actor, b: Actor, campaign: Campaign): number {
+		if (!a?.Position || !b?.Position) return Infinity;
+		if (a.Position.terrainId !== b.Position.terrainId) return Infinity;
+		const terrain = getVoxelTerrainById(campaign, a.Position.terrainId);
+		if (!terrain) return Infinity;
+		const target = roundVoxelPosition(b.Position);
+		// Unbounded flood (a huge budget never trips the cost cutoff) so the cost
+		// map covers every standable tile; read the accumulated cost at b's tile.
+		const { costs } = calculateVoxelMovementRange(
+			terrain,
+			a.Position,
+			Number.MAX_SAFE_INTEGER,
+			a.CanFly ?? false,
+			campaign.Settings.MovementSettings
+		);
+		return costs.get(tileHeightKey(target.x, target.y, target.h)) ?? Infinity;
+	},
+
+	/**
+	 * Whether `a` can reach `b` in a single step of movement — `distanceTo(a,b) <= 1`,
+	 * i.e. a same-height cardinal neighbour (or the same tile). Uses the movement
+	 * model, so diagonals and tiles that require a height-cost step are NOT adjacent.
+	 */
+	isAdjacentTo(a: Actor, b: Actor, campaign: Campaign): boolean {
+		return ActorUtils.distanceTo(a, b, campaign) <= 1;
+	},
+
+	/**
+	 * Value of a `"prefix:value"` tag from the actor's Tags, e.g.
+	 * getTagValue(actor, "level") -> "7" for the tag "level:7" (caller does
+	 * Number()); `undefined` when no such tag exists. The first matching tag wins.
+	 * Only the first colon splits prefix from value, so a value may itself contain
+	 * colons (e.g. "url:http://..."). (FolderUtils only parses the `path:` tag for
+	 * its folder tree; this is the generic single-tag-value read it lacked.)
+	 */
+	getTagValue(actor: Actor, prefix: string): string | undefined {
+		const head = prefix + ":";
+		const tag = actor.Tags?.find((t) => t.startsWith(head));
+		return tag === undefined ? undefined : tag.slice(head.length);
 	},
 
 	/**
@@ -334,7 +507,7 @@ export function applyStatCost(
 	if (!stat || stat.Current === null) return "";
 
 	const currentValue = stat.Current;
-	const newValue = Math.max(0, currentValue - cost.amount);
+	const newValue = ActorUtils.clampStat(currentValue - cost.amount, stat.Max);
 	stat.Current = newValue;
 
 	const statDef = settings.StatDefinitions.find((s) => s.Id === stat.Id);

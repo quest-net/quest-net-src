@@ -21,6 +21,7 @@ import { CampaignActions } from "../../domains/Campaign/CampaignActions";
 import { ScenarioActions } from "../../domains/Scenario/ScenarioActions";
 import { SharedInventoryActions } from "../../domains/SharedInventory/SharedInventoryActions";
 import { ActorActions } from "../../domains/Actor/ActorActions";
+import { DiceActions } from "../../domains/Dice/DiceActions";
 import { PingActions } from "../../domains/Ping/PingActions";
 import { StickerActions } from "../../domains/Sticker/StickerActions";
 import { TerrainLinkActions } from "../../domains/TerrainLink/TerrainLinkActions";
@@ -110,6 +111,16 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	"actor:transferStat": {
 		roles: ["dm", "player"],
 		handler: ActorActions.transferStat,
+		scriptable: true,
+	},
+
+	// ============================================================================
+	// DICE ACTIONS
+	// ============================================================================
+	"dice:roll": {
+		// Observable-roll cascade carrier; the facade's actor.roll dispatches it.
+		roles: ["dm", "player"],
+		handler: DiceActions.roll,
 		scriptable: true,
 	},
 

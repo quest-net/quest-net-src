@@ -206,10 +206,7 @@ export const ActorActions = {
 		const statName = statTemplate?.Name ?? params.sourceStatId;
 
 		// Resolve source
-		const allActors = [
-			...campaign.GameState.Characters,
-			...campaign.GameState.Entities,
-		];
+		const allActors = ActorUtils.getActiveActors(campaign);
 		const sourceActor = allActors.find((a) => a.Id === params.sourceActorId);
 		if (!sourceActor) return;
 
@@ -236,21 +233,21 @@ export const ActorActions = {
 			const tStat = targetActor.Stats.find((s) => s.Id === params.targetStatId);
 			// Refuse transfers into unset stats -- target doesn't have this stat.
 			if (tStat && tStat.Current !== null) {
-				tStat.Current = Math.min(tStat.Max, tStat.Current + availableAmount);
+				tStat.Current = ActorUtils.clampStat(tStat.Current + availableAmount, tStat.Max);
 				transferSuccess = true;
 			}
 		} else if (targetSharedInv) {
 			targetName = targetSharedInv.Name;
 			const tStat = targetSharedInv.Stats.find((s) => s.Id === params.targetStatId);
 			if (tStat && tStat.Current !== null) {
-				tStat.Current = Math.min(tStat.Max, tStat.Current + availableAmount);
+				tStat.Current = ActorUtils.clampStat(tStat.Current + availableAmount, tStat.Max);
 				transferSuccess = true;
 			}
 		}
 
 		if (transferSuccess) {
 			// Deduct from source (sourceStat.Current guaranteed non-null above)
-			sourceStat.Current = Math.max(0, sourceStat.Current - availableAmount);
+			sourceStat.Current = ActorUtils.clampStat(sourceStat.Current - availableAmount, sourceStat.Max);
 
 			LogActions.create(
 				{

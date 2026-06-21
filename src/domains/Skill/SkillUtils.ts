@@ -1,6 +1,8 @@
 import { Actor, SkillSlot } from "../Actor/Actor";
 import { Context } from "../Context/Context";
+import { Campaign } from "../Campaign/Campaign";
 import { Skill } from "./Skill";
+import { resolveByNameOrId } from "../../utils/resolveByNameOrId";
 
 /**
  * Syncs all skill slots across all actors when a skill template is edited
@@ -50,5 +52,27 @@ export const SkillUtils = {
 			MaxUses: undefined,
 			DiceRoll: "",
 		};
+	},
+
+	/**
+	 * Resolve a skill NAME or template Id to its template record on the campaign.
+	 * Tier-1 read used by the scripting facade. Order: Id -> Name -> first glob ->
+	 * undefined (via the shared resolveByNameOrId). Returns undefined when nothing
+	 * matches.
+	 */
+	findTemplate(campaign: Campaign, ref: string): Skill | undefined {
+		return resolveByNameOrId(campaign.SkillTemplates, ref);
+	},
+
+	/**
+	 * Resolve a skill ref (name|id) to the actor's first matching skill slot.
+	 * A slot's `Id` references its template, so this resolves the template Id first
+	 * (over the campaign's SkillTemplates) then finds the slot whose `Id` equals it.
+	 * Returns undefined when the template can't be resolved or the actor lacks it.
+	 */
+	findSlot(actor: Actor, campaign: Campaign, ref: string): SkillSlot | undefined {
+		const template = SkillUtils.findTemplate(campaign, ref);
+		if (!template) return undefined;
+		return actor.Skills.find((s) => s.Id === template.Id);
 	},
 };

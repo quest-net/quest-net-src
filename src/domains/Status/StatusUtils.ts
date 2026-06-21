@@ -1,6 +1,8 @@
-import { Actor, StatusSlotExpiration } from "../Actor/Actor";
+import { Actor, StatusSlot, StatusSlotExpiration } from "../Actor/Actor";
 import { Status, StatusExpiration } from "./Status";
 import { Context } from "../Context/Context";
+import type { Campaign } from "../Campaign/Campaign";
+import { resolveByNameOrId } from "../../utils/resolveByNameOrId";
 
 /**
  * Syncs all status slots across all actors when a status template's Expiration changes.
@@ -132,5 +134,26 @@ export const StatusUtils = {
 			Tags: [],
 			Expiration: { type: "turns", count: 3 }, // Default 3 turns
 		};
+	},
+
+	/**
+	 * Resolve a status NAME or template Id to its Status template on the campaign.
+	 * Name|Id -> the matching `campaign.StatusTemplates` record (Id exact -> name
+	 * exact -> first glob match -> undefined). The single shared status resolver;
+	 * every status-related read/forwarder routes its ref through here.
+	 */
+	findTemplate(campaign: Campaign, ref: string): Status | undefined {
+		return resolveByNameOrId(campaign.StatusTemplates, ref);
+	},
+
+	/**
+	 * Every status slot on `actor` whose `.Id` references the resolved template
+	 * (a slot's `Id` is the template Id). Returns all matching stacks; `[]` when the
+	 * template can't be resolved or no stack is present. Reads live data, no clone.
+	 */
+	findSlots(actor: Actor, campaign: Campaign, ref: string): StatusSlot[] {
+		const templateId = StatusUtils.findTemplate(campaign, ref)?.Id;
+		if (!templateId) return [];
+		return actor.Statuses.filter((s) => s.Id === templateId);
 	},
 };

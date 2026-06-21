@@ -4,10 +4,65 @@ import type { Campaign } from "../Campaign/Campaign";
 import { Actor } from "../Actor/Actor";
 import type { InitiativeMode } from "../CampaignSetting/CampaignSetting";
 import { resolveStat } from "../Actor/ActorResolvers";
+import { ActorUtils } from "../Actor/ActorUtils";
+import { isItemEntity } from "../Item/ItemDropUtils";
+import { computeInitiativeOrder, hasInitiativeSourceValue } from "./InitiativeUtils";
 
 export function getInitiativeMode(campaign: Campaign): InitiativeMode {
 	const initiativeSettings = campaign.Settings.InitiativeSettings;
 	return initiativeSettings ? initiativeSettings.Mode : "party";
+}
+
+/**
+ * The live actors that act this round, in initiative order (lowest Order first).
+ *
+ * The acting pool follows mode + side, mirroring the banner/Party/Overview tabs:
+ *   - individual mode -> everyone (Characters + non-item Entities);
+ *   - party mode      -> only the side that currently holds initiative
+ *                        (party -> Characters, enemies -> Entities).
+ * Item-entities (dropped loot) are excluded, and actors with no usable
+ * initiative source value are dropped (they never enter the acting order).
+ *
+ * This is the FULL round roster in order — it deliberately does NOT subtract
+ * actors who have already taken their turn (`CombatState.RoundCompleted`). It
+ * answers "who is in this round, and in what order", matching the UI's
+ * initiative list. "Has this actor already acted / who is still to act" is a
+ * separate question (read `RoundCompleted`) and would be its own helper.
+ *
+ * Returns [] when combat is inactive or initiative is not configured. This is
+ * the single shared definition of "who acts this round" that the scripting
+ * `game.combat.actorsThisRound()` facade reads.
+ */
+export function actorsThisRound(campaign: Campaign): Actor[] {
+	const combatState = campaign.GameState.CombatState;
+	if (!combatState.isActive) return [];
+
+	const mode = getInitiativeMode(campaign);
+	const initiativeSettings = campaign.Settings.InitiativeSettings;
+
+	// Build the candidate pool per mode + side.
+	const candidates: Actor[] =
+		mode === "individual"
+			? [...campaign.GameState.Characters, ...campaign.GameState.Entities]
+			: combatState.initiativeSide === "enemies"
+				? campaign.GameState.Entities
+				: campaign.GameState.Characters;
+
+	// Drop loot item-entities and actors with no initiative value (they never act).
+	const pool = candidates.filter(
+		(actor) =>
+			!isItemEntity(actor) &&
+			hasInitiativeSourceValue(actor, initiativeSettings, campaign.Settings)
+	);
+
+	const entries = computeInitiativeOrder(pool, initiativeSettings, campaign.Settings);
+	if (entries.length === 0) return [];
+
+	// Map ordered entries back to the live actor objects, preserving order.
+	const byId = new Map(pool.map((a) => [a.Id, a]));
+	return entries
+		.map((e) => byId.get(e.ActorId))
+		.filter((a): a is Actor => a !== undefined);
 }
 
 /**
@@ -48,8 +103,8 @@ export function applyRegenToAllActors(campaign: any, multiplier: 1 | -1): void {
 				const regenAmount = resolved.RegenRate * multiplier;
 				const newValue = stat.Current + regenAmount;
 
-				// Clamp between 0 and Max
-				stat.Current = Math.max(0, Math.min(newValue, stat.Max));
+				// Clamp between 0 and Max (shared stat-clamp rule)
+				stat.Current = ActorUtils.clampStat(newValue, stat.Max);
 			});
 		});
 	};
@@ -85,8 +140,8 @@ export function applyRegenToSharedInventories(campaign: any, multiplier: 1 | -1)
 			if (!resolved.RegenRate) return;
 
 			const regenAmount = resolved.RegenRate * multiplier;
-			// Clamp between 0 and Max — surplus is discarded.
-			stat.Current = Math.max(0, Math.min(stat.Current + regenAmount, stat.Max));
+			// Clamp between 0 and Max — surplus is discarded (shared stat-clamp rule).
+			stat.Current = ActorUtils.clampStat(stat.Current + regenAmount, stat.Max);
 		});
 	});
 }

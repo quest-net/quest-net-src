@@ -27,10 +27,14 @@ import {
 	normalizeActionParams,
 } from "../Actions/ActionRegistry";
 import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
+import { ActorUtils } from "../../domains/Actor/ActorUtils";
 import { LogActions } from "../../domains/Log/LogActions";
-import { rollDiceFormula } from "../../utils/DiceUtils";
+import { globMatches } from "../../utils/resolveByNameOrId";
 import { validateScriptSource } from "./scriptValidation";
 import { SCRIPT_BUDGETS, SCRIPTING_DISABLED_SETTING } from "./scriptConstants";
+import { makeGameApi } from "./api/gameApi";
+import { wrapActor } from "./api/actorApi";
+import type { ScriptApiContext } from "./api/apiContext";
 
 type AsyncFunctionConstructor = new (
 	...args: string[]
@@ -38,52 +42,15 @@ type AsyncFunctionConstructor = new (
 
 const AsyncFunction = (async function () {}).constructor as AsyncFunctionConstructor;
 
-// ---- Glob matching (action keys, names) -------------------------------------
-
-const globCache = new Map<string, RegExp>();
-function globToRegExp(glob: string): RegExp {
-	let re = globCache.get(glob);
-	if (!re) {
-		const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
-		re = new RegExp("^" + escaped + "$", "i");
-		globCache.set(glob, re);
-	}
-	return re;
-}
-function globMatches(glob: string, value: string): boolean {
-	return globToRegExp(glob).test(value);
-}
-
 // ---- Campaign reads ---------------------------------------------------------
 
 /** Every active actor (characters + entities) — scripts and triggers see these. */
 function activeActors(campaign: Campaign): Actor[] {
-	return [...campaign.GameState.Characters, ...campaign.GameState.Entities];
+	return ActorUtils.getActiveActors(campaign);
 }
 
 function isActorActive(campaign: Campaign, actor: Actor): boolean {
 	return activeActors(campaign).some((a) => a.Id === actor.Id);
-}
-
-/** Campaign template collections a script can resolve a template by name from. */
-type TemplateCollection =
-	| "EntityTemplates"
-	| "ItemTemplates"
-	| "SkillTemplates"
-	| "StatusTemplates"
-	| "CharacterRoster";
-
-function resolveTemplate(
-	campaign: Campaign,
-	collection: TemplateCollection,
-	nameOrGlob: string
-): { Id: string; Name: string } | undefined {
-	const list = (campaign as any)[collection] as Array<{ Id: string; Name: string }>;
-	if (!Array.isArray(list)) return undefined;
-	const lowered = String(nameOrGlob).toLowerCase();
-	const exact = list.find((t) => t.Name?.toLowerCase() === lowered);
-	if (exact) return exact;
-	return list.find((t) => t.Name != null && globMatches(nameOrGlob, t.Name));
 }
 
 function scriptsDisabled(context: Context): boolean {
@@ -134,17 +101,20 @@ interface HostBinding {
 /**
  * Build the `this` a script runs with: a Proxy over the host's real object that
  * also exposes `vars` (mutable scratch), `params` (frozen config), and `actor`
- * (the bearer). All other reads pass through to the live object, so the model can
- * grow without touching this code.
+ * (the bearer, wrapped as an ActorFacade so `this.actor.changeStat(...)` works).
+ * All other reads pass through to the live object, so the model can grow without
+ * touching this code. The actor facade is wrapped via the run's shared
+ * `facadeCache`, so `this.actor === game.find(sameActor) === event.actor`.
  */
-function makeThis(binding: HostBinding): any {
+function makeThis(binding: HostBinding, api: ScriptApiContext): any {
 	const params = resolveParams(binding.paramsHolder);
 	const vars = makeVarsProxy(binding.varsOwner);
+	const actor = binding.actor ? wrapActor(binding.actor, api) : undefined;
 	return new Proxy(binding.raw, {
 		get(target, key) {
 			if (key === "vars") return vars;
 			if (key === "params") return params;
-			if (key === "actor") return binding.actor;
+			if (key === "actor") return actor;
 			return Reflect.get(target, key);
 		},
 	});
@@ -156,12 +126,14 @@ function makeEvent(
 	key: string,
 	params: any,
 	result: unknown,
-	campaign: Campaign
+	campaign: Campaign,
+	api: ScriptApiContext
 ): any {
 	const actorId = params?.actorId ?? params?.entityId ?? params?.characterId;
-	const actor = actorId
+	const raw = actorId
 		? activeActors(campaign).find((a) => a.Id === actorId)
 		: undefined;
+	const actor = raw ? wrapActor(raw, api) : undefined;
 	return Object.freeze({ key, params: params ?? {}, result, actor });
 }
 
@@ -181,12 +153,14 @@ function makeBeforeEvent(
 	key: string,
 	params: any,
 	campaign: Campaign,
-	control: BeforeControl
+	control: BeforeControl,
+	api: ScriptApiContext
 ): any {
 	const actorId = params?.actorId ?? params?.entityId ?? params?.characterId;
-	const actor = actorId
+	const raw = actorId
 		? activeActors(campaign).find((a) => a.Id === actorId)
 		: undefined;
+	const actor = raw ? wrapActor(raw, api) : undefined;
 	return {
 		key,
 		params,
@@ -248,38 +222,23 @@ function createActionSink(): ScriptActionSink {
 	};
 }
 
-function makeGame(context: Context, state: ScriptRunState, sink: ScriptActionSink): any {
-	const campaign = () => CampaignUtils.getActiveCampaign(context);
+/**
+ * Build the per-run ScriptApiContext the curated facade layer (`makeGameApi`,
+ * `wrapActor`) closes over. `action` routes through the run's sink so an
+ * un-awaited facade mutation is still sequenced and drained before commit; the
+ * `facadeCache` is fresh per run, so wrapped-actor identities hold within the run
+ * (`this.actor === game.find(...) === event.actor`) and never leak across runs.
+ */
+function makeApiContext(
+	context: Context,
+	state: ScriptRunState,
+	sink: ScriptActionSink
+): ScriptApiContext {
 	return {
-		get campaign() {
-			return campaign();
-		},
-		get combat() {
-			return campaign().GameState.CombatState;
-		},
-		actors: () => activeActors(campaign()),
-		find: (glob: string) =>
-			activeActors(campaign()).find((a) => globMatches(glob, a.Name)),
-		template: (collection: TemplateCollection, name: string) =>
-			resolveTemplate(campaign(), collection, name),
-		roll: (expr: string) => rollDiceFormula(expr).total,
-		rng: () => Math.random(),
-		log: (text: string, opts?: { category?: string; level?: string; details?: string }) =>
-			sink.run(() =>
-				dispatch(
-					"log:create",
-					{
-						action: text,
-						details: opts?.details,
-						category: opts?.category ?? "system",
-						level: opts?.level ?? "info",
-					},
-					context,
-					state
-				)
-			),
-		action: (key: string, params?: any) =>
-			sink.run(() => dispatch(key, params ?? {}, context, state)),
+		action: (key, params) => sink.run(() => dispatch(key, params ?? {}, context, state)),
+		campaign: () => CampaignUtils.getActiveCampaign(context),
+		context,
+		facadeCache: new WeakMap(),
 	};
 }
 
@@ -443,9 +402,23 @@ function logScriptError(context: Context, script: Script, err: unknown): void {
 	console.error("[Scripting] script failed:", script.Name ?? script.Trigger, err);
 }
 
+/**
+ * The data each script body's `event` is built from. For the after-phase that is
+ * `{ key, params, result }`; for the before-phase `control` is present (the shared
+ * veto flag) and `params` is the mutable working copy shared across before-scripts.
+ * The event object itself is built per-script inside runOneScript so `event.actor`
+ * is wrapped with that run's api (and thus equals `this.actor` / `game.find(...)`).
+ */
+interface ScriptEventInfo {
+	key: string;
+	params: any;
+	result?: unknown;
+	control?: BeforeControl;
+}
+
 async function runOneScript(
 	match: ScriptMatch,
-	event: any,
+	eventInfo: ScriptEventInfo,
 	context: Context,
 	campaign: Campaign,
 	state: ScriptRunState
@@ -459,9 +432,17 @@ async function runOneScript(
 		return;
 	}
 	const sink = createActionSink();
-	const game = makeGame(context, state, sink);
+	const api = makeApiContext(context, state, sink);
+	const game = makeGameApi(api);
+	// Build the event with this run's api so event.actor is the SAME facade as
+	// this.actor / game.find(...). For the before-phase the mutable params + veto
+	// control are shared across scripts (carried in eventInfo); only the actor
+	// wrapping is per-run.
+	const event = eventInfo.control
+		? makeBeforeEvent(eventInfo.key, eventInfo.params, campaign, eventInfo.control, api)
+		: makeEvent(eventInfo.key, eventInfo.params, eventInfo.result, campaign, api);
 	try {
-		const thisHost = makeThis(match);
+		const thisHost = makeThis(match, api);
 		// eslint-disable-next-line no-new-func
 		const fn = new AsyncFunction("game", "event", '"use strict";\n' + script.Code);
 		await fn.call(thisHost, game, event);
@@ -501,9 +482,9 @@ async function runReactions(
 			if (removed.length) matches = [...post, ...removed];
 		}
 		if (matches.length === 0) return;
-		const event = makeEvent(key, params, result, campaign);
+		const eventInfo: ScriptEventInfo = { key, params, result };
 		for (const match of matches) {
-			await runOneScript(match, event, context, campaign, state);
+			await runOneScript(match, eventInfo, context, campaign, state);
 		}
 	} finally {
 		state.cascadeDepth--;
@@ -595,13 +576,13 @@ export const ScriptEngine = {
 		if (matches.length === 0) return { cancelled: false, params };
 		const working = normalizeActionParams(params ?? {});
 		const control: BeforeControl = { cancelled: false };
-		const event = makeBeforeEvent(key, working, campaign, control);
+		const eventInfo: ScriptEventInfo = { key, params: working, control };
 		const state = createRunState();
 		for (const match of matches) {
 			// Once a script vetoes, the action will not run — stop, so later
 			// before-scripts don't mutate params that get discarded.
 			if (control.cancelled) break;
-			await runOneScript(match, event, context, campaign, state);
+			await runOneScript(match, eventInfo, context, campaign, state);
 		}
 		return { cancelled: control.cancelled, params: working };
 	},
@@ -650,15 +631,16 @@ export const ScriptEngine = {
 		if (!validation.ok) return { ok: false, error: validation.error };
 		const state = createRunState();
 		const sink = createActionSink();
-		const game = makeGame(context, state, sink);
+		const api = makeApiContext(context, state, sink);
+		const game = makeGameApi(api);
 		const control: BeforeControl = { cancelled: false };
 		const working = phase === "before" ? normalizeActionParams(params ?? {}) : params ?? {};
 		const event =
 			phase === "before"
-				? makeBeforeEvent(triggerKey, working, campaign, control)
-				: makeEvent(triggerKey, working, undefined, campaign);
+				? makeBeforeEvent(triggerKey, working, campaign, control, api)
+				: makeEvent(triggerKey, working, undefined, campaign, api);
 		try {
-			const thisHost = makeThis(binding);
+			const thisHost = makeThis(binding, api);
 			// eslint-disable-next-line no-new-func
 			const fn = new AsyncFunction("game", "event", '"use strict";\n' + code);
 			await fn.call(thisHost, game, event);
