@@ -23,6 +23,7 @@ import { FloatingActionButton } from "../ui/FloatingActionButton";
 // ============================================================================
 
 type FormMode = "create" | "edit" | "view";
+type SaveBlocker = () => string | null | undefined;
 
 interface ButtonConfig {
 	showTopCancel?: boolean;
@@ -42,6 +43,7 @@ interface FormContextValue {
 	isDirty: boolean;
 	setDirty: (dirty: boolean) => void;
 	registerSaveResolver: (resolver: (() => unknown) | null) => () => void;
+	registerSaveBlocker: (blocker: SaveBlocker | null) => () => void;
 }
 
 const FormContext = createContext<FormContextValue | null>(null);
@@ -186,8 +188,10 @@ export function FormWrapper<T extends Record<string, any>>({
 	// State management
 	const [data, setDataState] = useState<T>(initialData);
 	const [isDirty, setDirty] = useState(mode === "create");
+	const [saveError, setSaveError] = useState<string | null>(null);
 	const dataRef = useRef<T>(initialData);
 	const saveResolverRef = useRef<(() => T) | null>(null);
+	const saveBlockersRef = useRef<Set<SaveBlocker>>(new Set());
 
 	// Report this form's dirty state into the app-wide registry so concerns
 	// outside the form (e.g. idle auto-refresh) can avoid discarding unsaved work.
@@ -230,6 +234,7 @@ export function FormWrapper<T extends Record<string, any>>({
 		(nextData: T) => {
 			dataRef.current = nextData;
 			setDataState(nextData);
+			setSaveError(null);
 			if (mode !== "view") {
 				setDirty(true);
 			}
@@ -249,6 +254,17 @@ export function FormWrapper<T extends Record<string, any>>({
 		[]
 	);
 
+	const registerSaveBlocker = useCallback(
+		(blocker: SaveBlocker | null) => {
+			if (!blocker) return () => {};
+			saveBlockersRef.current.add(blocker);
+			return () => {
+				saveBlockersRef.current.delete(blocker);
+			};
+		},
+		[]
+	);
+
 	const resolveSaveData = (): T => {
 		const resolvedData = saveResolverRef.current?.();
 		if (resolvedData !== undefined) {
@@ -260,7 +276,20 @@ export function FormWrapper<T extends Record<string, any>>({
 		return dataRef.current;
 	};
 
+	const getSaveBlockMessage = (): string | null => {
+		for (const blocker of saveBlockersRef.current) {
+			const message = blocker();
+			if (message) return message;
+		}
+		return null;
+	};
+
 	const handleSave = () => {
+		const blockMessage = getSaveBlockMessage();
+		if (blockMessage) {
+			setSaveError(blockMessage);
+			return;
+		}
 		onSave(resolveSaveData());
 		setDirty(false);
 		onClose();
@@ -268,6 +297,11 @@ export function FormWrapper<T extends Record<string, any>>({
 
 	const handleClone = () => {
 		if (onClone) {
+			const blockMessage = getSaveBlockMessage();
+			if (blockMessage) {
+				setSaveError(blockMessage);
+				return;
+			}
 			onClone(resolveSaveData());
 		}
 	};
@@ -293,6 +327,7 @@ export function FormWrapper<T extends Record<string, any>>({
 		isDirty,
 		setDirty,
 		registerSaveResolver,
+		registerSaveBlocker,
 	};
 
 	// Inject data and setData into children
@@ -316,6 +351,13 @@ export function FormWrapper<T extends Record<string, any>>({
 					showSave={showTopSave}
 					buttonsRef={headerButtonsRef}
 				/>
+
+				{saveError && !readOnly && (
+					<div className="alert alert-error text-sm">
+						<span className="icon-[mdi--alert-circle-outline] h-5 w-5 shrink-0" />
+						<span>{saveError}</span>
+					</div>
+				)}
 
 				{childrenWithProps}
 

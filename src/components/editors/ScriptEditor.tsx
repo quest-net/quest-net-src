@@ -6,9 +6,9 @@
 // behind an "Advanced" collapse on edit forms — scripts are usually machine
 // written, and debugging happens in the Wiki test harness.
 
-import { useMemo } from "react";
+import { useMemo, type KeyboardEvent } from "react";
 import type { Script } from "../../domains/Script/Script";
-import { ACTION_REGISTRY, isScriptableAction } from "../../services/Actions/ActionRegistry";
+import { ACTION_REGISTRY } from "../../services/Actions/ActionRegistry";
 import { validateScriptSource } from "../../services/Scripting/scriptValidation";
 
 interface ScriptEditorProps {
@@ -18,12 +18,9 @@ interface ScriptEditorProps {
 }
 
 export function ScriptEditor({ scripts, onChange, readOnly }: ScriptEditorProps) {
-	// Suggest the script-ok action keys as Trigger autocompletion (a script can
-	// trigger on any action key, but only script-ok ones can be *called*).
-	const scriptableKeys = useMemo(
-		() => Object.keys(ACTION_REGISTRY).filter(isScriptableAction).sort(),
-		[]
-	);
+	// A script can trigger on any action key. Script-ok only limits what
+	// game.action(...) may call from inside script code.
+	const actionKeys = useMemo(() => Object.keys(ACTION_REGISTRY).sort(), []);
 
 	const update = (index: number, patch: Partial<Script>) => {
 		onChange(scripts.map((s, i) => (i === index ? { ...s, ...patch } : s)));
@@ -38,10 +35,80 @@ export function ScriptEditor({ scripts, onChange, readOnly }: ScriptEditorProps)
 		onChange(scripts.filter((_, i) => i !== index));
 	};
 
+	const updateSelection = (
+		target: HTMLTextAreaElement,
+		start: number,
+		end: number
+	) => {
+		requestAnimationFrame(() => {
+			target.selectionStart = start;
+			target.selectionEnd = end;
+		});
+	};
+
+	const handleCodeKeyDown = (
+		event: KeyboardEvent<HTMLTextAreaElement>,
+		index: number
+	) => {
+		if (event.key !== "Tab" || readOnly) return;
+		event.preventDefault();
+
+		const target = event.currentTarget;
+		const { value, selectionStart, selectionEnd } = target;
+		const lineStart = value.lastIndexOf("\n", Math.max(0, selectionStart - 1)) + 1;
+		const lineEndIndex = value.indexOf("\n", selectionEnd);
+		const lineEnd = lineEndIndex === -1 ? value.length : lineEndIndex;
+		const hasMultilineSelection = value.slice(selectionStart, selectionEnd).includes("\n");
+
+		if (!hasMultilineSelection && !event.shiftKey) {
+			const nextCode =
+				value.slice(0, selectionStart) + "\t" + value.slice(selectionEnd);
+			update(index, { Code: nextCode });
+			updateSelection(target, selectionStart + 1, selectionStart + 1);
+			return;
+		}
+
+		const block = value.slice(lineStart, lineEnd);
+		const lines = block.split("\n");
+		let nextStart = selectionStart;
+		let nextEnd = selectionEnd;
+		let nextLines: string[];
+
+		if (event.shiftKey) {
+			let removedBeforeStart = 0;
+			let removedTotal = 0;
+			nextLines = lines.map((line, lineIndex) => {
+				const removeCount = line.startsWith("\t")
+					? 1
+					: line.startsWith("  ")
+						? 2
+						: line.startsWith(" ")
+							? 1
+							: 0;
+				if (lineIndex === 0) {
+					removedBeforeStart = Math.min(removeCount, selectionStart - lineStart);
+				}
+				removedTotal += removeCount;
+				return line.slice(removeCount);
+			});
+			nextStart = Math.max(lineStart, selectionStart - removedBeforeStart);
+			nextEnd = Math.max(nextStart, selectionEnd - removedTotal);
+		} else {
+			nextLines = lines.map((line) => `\t${line}`);
+			nextStart = selectionStart + 1;
+			nextEnd = selectionEnd + lines.length;
+		}
+
+		const nextBlock = nextLines.join("\n");
+		const nextCode = value.slice(0, lineStart) + nextBlock + value.slice(lineEnd);
+		update(index, { Code: nextCode });
+		updateSelection(target, nextStart, nextEnd);
+	};
+
 	return (
 		<div className="space-y-3">
-			<datalist id="scriptable-action-keys">
-				{scriptableKeys.map((k) => (
+			<datalist id="script-action-keys">
+				{actionKeys.map((k) => (
 					<option key={k} value={k} />
 				))}
 			</datalist>
@@ -63,16 +130,16 @@ export function ScriptEditor({ scripts, onChange, readOnly }: ScriptEditorProps)
 								value={script.Name ?? ""}
 								disabled={readOnly}
 								onChange={(e) => update(i, { Name: e.target.value })}
-								className="input input-bordered input-sm sm:w-40"
+								className="input input-bordered input-sm sm:w-40 sm:shrink-0"
 								placeholder="Name (optional)"
 							/>
 							<input
 								type="text"
-								list="scriptable-action-keys"
+								list="script-action-keys"
 								value={script.Trigger}
 								disabled={readOnly}
 								onChange={(e) => update(i, { Trigger: e.target.value })}
-								className="input input-bordered input-sm flex-1 font-mono"
+								className="input input-bordered input-sm min-w-0 flex-1 font-mono"
 								placeholder='Trigger, e.g. "item:use" or "*:move"'
 							/>
 							<select
@@ -81,7 +148,7 @@ export function ScriptEditor({ scripts, onChange, readOnly }: ScriptEditorProps)
 								onChange={(e) =>
 									update(i, { When: e.target.value as "before" | "after" })
 								}
-								className="select select-bordered select-sm"
+								className="select select-bordered select-sm w-24 shrink-0"
 								title="When to run: after the action (react) or before it (intercept/cancel)"
 							>
 								<option value="after">After</option>
@@ -101,42 +168,24 @@ export function ScriptEditor({ scripts, onChange, readOnly }: ScriptEditorProps)
 								<button
 									type="button"
 									onClick={() => remove(i)}
-									className="btn btn-sm btn-ghost text-error"
+									className="btn btn-sm btn-ghost btn-square text-error"
 									aria-label="Remove script"
+									title="Remove script"
 								>
-									Remove
+									<span className="icon-[mdi--trash-can-outline] h-4 w-4" />
 								</button>
 							)}
 						</div>
-
-						<p className="text-xs opacity-60">
-							Runs when a dispatched action matches the Trigger glob. In scope:{" "}
-							<code>game</code>, <code>event</code>, <code>this</code>.{" "}
-							{(script.When ?? "after") === "before" ? (
-								<>
-									<b>Before</b> the action: rewrite it via{" "}
-									<code>event.params</code> or stop it with{" "}
-									<code>event.cancel()</code>.
-								</>
-							) : (
-								<>
-									<b>After</b> the action: change the world only via{" "}
-									<code>await game.action(key, params)</code>.
-								</>
-							)}
-						</p>
 
 						<textarea
 							value={script.Code}
 							disabled={readOnly}
 							onChange={(e) => update(i, { Code: e.target.value })}
-							className="textarea textarea-bordered w-full font-mono text-sm"
-							rows={6}
+							onKeyDown={(e) => handleCodeKeyDown(e, i)}
+							className="textarea textarea-bordered min-h-72 w-full resize-y font-mono text-sm leading-relaxed"
+							rows={14}
 							spellCheck={false}
-							placeholder={
-								'// e.g. if (event.params.actorId !== this.actor.Id) return;\n' +
-								'// await game.action("actor:move", { actorId: stalker.Id, position: this.actor.Position });'
-							}
+							placeholder="Write script code here."
 						/>
 
 						{!validation.ok && script.Code.trim() !== "" && (
