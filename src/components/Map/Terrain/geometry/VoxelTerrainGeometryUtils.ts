@@ -28,12 +28,22 @@ export interface VoxelTerrainBuffers {
 }
 
 /**
- * Voxel-occupancy snapshot. One byte per voxel cell, 255 if occupied and 0 if
+ * Voxel-occupancy snapshot. One byte per grid cell, 255 if occupied and 0 if
  * empty, in `data[z * voxelWidth * voxelHeight + y * voxelWidth + x]` order
  * (Z-major, then Y, then X -- the layout `THREE.Data3DTexture` expects).
  *
- * Sized in voxel units. The main thread wraps `data` in a `THREE.Data3DTexture`
- * and feeds it to every terrain material as the AO sampler.
+ * This is a (possibly downsampled) view of the voxel grid: `voxelWidth/Height/
+ * Length` are the TEXTURE dimensions, which equal the voxel dims at full
+ * resolution but are coarser when the volume is downsampled to fit the AO texel
+ * budget (see chooseOccupancyDownsampleFactor). The world AABB (worldOrigin/
+ * worldSize) is unchanged either way, so the AO shader -- which samples in world
+ * space -- needs no knowledge of the factor. `voxelSize` remains the TRUE voxel
+ * edge (1 / resolution), used to offset the AO sample half a voxel off the
+ * rendered face (the mesh is still full-resolution). CPU consumers that index
+ * `data` must derive their grid step from worldSize / dims, NOT from voxelSize.
+ *
+ * The main thread wraps `data` in a `THREE.Data3DTexture` and feeds it to every
+ * terrain material as the AO sampler.
  */
 export interface VoxelTerrainOccupancy {
 	data: Uint8Array;
@@ -48,7 +58,7 @@ export interface VoxelTerrainOccupancy {
 	worldSizeX: number;
 	worldSizeY: number;
 	worldSizeZ: number;
-	/** One voxel in world units (= 1 / resolution). */
+	/** One TRUE voxel in world units (= 1 / resolution), not the grid-cell size. */
 	voxelSize: number;
 }
 

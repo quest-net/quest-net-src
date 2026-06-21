@@ -23,6 +23,7 @@
 import * as THREE from 'three';
 import type { VoxelTerrain } from '../../../../domains/VoxelTerrain/VoxelTerrain';
 import type { VoxelTerrainOccupancy } from './VoxelTerrainGeometryUtils';
+import { chooseOccupancyDownsampleFactor } from './VoxelTerrainGeometryConstants';
 import { MATERIAL_LOOKUP } from '../materials';
 import { getVoxelTerrainResolution } from '../../../../utils/terrain/data/VoxelTerrainIndex';
 import {
@@ -141,6 +142,13 @@ function buildAndPost(
 ): void {
 	const resolution = getVoxelTerrainResolution(terrain);
 
+	// Coarsen the occupancy/fog volume so its largest dimension stays within the
+	// texel budget (a no-op factor of 1 at today's sizes). The mesh itself stays
+	// at full resolution -- only the AO/fog sampling volume is downsampled.
+	const maxVoxelDim =
+		Math.max(terrain.Width, terrain.Height, terrain.Length) * resolution;
+	const occFactor = chooseOccupancyDownsampleFactor(maxVoxelDim);
+
 	// Fused decode + mesh: the SVO is decoded inside WASM (build_from_svo), so
 	// the positions/colors arrays never cross the JS<->WASM boundary on this
 	// gameplay build path. `voxels` is already raw SVO bytes -- no decode here.
@@ -149,7 +157,8 @@ function buildAndPost(
 		terrain.Width,
 		terrain.Height,
 		terrain.Length,
-		resolution
+		resolution,
+		occFactor
 	);
 
 	// Reshape the kernel output into the worker message + transfer list. Each
@@ -158,6 +167,9 @@ function buildAndPost(
 	const transferList: Transferable[] = [];
 	let occupancyData: Uint8Array;
 	let fogData: Uint8Array | null;
+	let occWidth: number;
+	let occHeight: number;
+	let occLength: number;
 	try {
 		const bucketCount = build.bucket_count();
 		for (let i = 0; i < bucketCount; i++) {
@@ -192,19 +204,25 @@ function buildAndPost(
 
 		occupancyData = build.take_occupancy();
 		fogData = build.take_fog() ?? null;
+		// Texture dimensions of the occupancy/fog volume (downsampled when
+		// occFactor > 1). Read from the kernel so JS never re-derives the factor.
+		occWidth = build.occupancy_width();
+		occHeight = build.occupancy_height();
+		occLength = build.occupancy_length();
 	} finally {
 		build.free();
 	}
 
 	// Occupancy/fog world bounds are pure terrain math -- compute them here so
-	// the kernel only has to return the byte volumes.
-	const voxelWidth = terrain.Width * resolution;
-	const voxelHeight = terrain.Height * resolution;
-	const voxelLength = terrain.Length * resolution;
+	// the kernel only has to return the byte volumes. The grid dims are the
+	// (possibly downsampled) texture dims, but the world AABB and voxelSize stay
+	// in true terrain units: the shader samples in world space (so resolution is
+	// irrelevant to it), and voxelSize is the true voxel edge used to offset the
+	// AO sample half a voxel off the rendered face.
 	const worldBounds = {
-		voxelWidth,
-		voxelHeight,
-		voxelLength,
+		voxelWidth: occWidth,
+		voxelHeight: occHeight,
+		voxelLength: occLength,
 		worldOriginX: -terrain.Width / 2,
 		worldOriginY: -0.5,
 		worldOriginZ: -terrain.Length / 2,

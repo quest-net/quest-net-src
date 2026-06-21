@@ -32,6 +32,29 @@ export class MeshBuild {
         return ret >>> 0;
     }
     /**
+     * @returns {number}
+     */
+    occupancy_height() {
+        const ret = wasm.meshbuild_occupancy_height(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    occupancy_length() {
+        const ret = wasm.meshbuild_occupancy_length(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * Occupancy/fog grid dimensions (= voxel dims when not downsampled). The
+     * occupancy and fog volumes share these dims.
+     * @returns {number}
+     */
+    occupancy_width() {
+        const ret = wasm.meshbuild_occupancy_width(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
      * @param {number} i
      * @returns {Float32Array | undefined}
      */
@@ -197,14 +220,15 @@ export class VoxelMesher {
      * @param {number} height
      * @param {number} length
      * @param {number} resolution
+     * @param {number} occ_factor
      * @returns {MeshBuild}
      */
-    build(positions, colors, width, height, length, resolution) {
+    build(positions, colors, width, height, length, resolution, occ_factor) {
         const ptr0 = passArray32ToWasm0(positions, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArray8ToWasm0(colors, wasm.__wbindgen_malloc);
         const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.voxelmesher_build(this.__wbg_ptr, ptr0, len0, ptr1, len1, width, height, length, resolution);
+        const ret = wasm.voxelmesher_build(this.__wbg_ptr, ptr0, len0, ptr1, len1, width, height, length, resolution, occ_factor);
         return MeshBuild.__wrap(ret);
     }
     /**
@@ -217,12 +241,13 @@ export class VoxelMesher {
      * @param {number} height
      * @param {number} length
      * @param {number} resolution
+     * @param {number} occ_factor
      * @returns {MeshBuild}
      */
-    build_from_svo(svo_bytes, width, height, length, resolution) {
+    build_from_svo(svo_bytes, width, height, length, resolution, occ_factor) {
         const ptr0 = passArray8ToWasm0(svo_bytes, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.voxelmesher_build_from_svo(this.__wbg_ptr, ptr0, len0, width, height, length, resolution);
+        const ret = wasm.voxelmesher_build_from_svo(this.__wbg_ptr, ptr0, len0, width, height, length, resolution, occ_factor);
         return MeshBuild.__wrap(ret);
     }
     /**

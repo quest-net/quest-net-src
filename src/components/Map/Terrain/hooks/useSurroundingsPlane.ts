@@ -86,7 +86,11 @@ interface InteriorCoverage {
 	covered: Uint8Array; // 1 = the plane fills this column
 	voxelWidth: number;
 	voxelLength: number;
-	voxelSize: number;
+	// World units per occupancy-grid cell along X / Z. Derived from world size /
+	// grid dims so it stays correct when the occupancy volume is a downsampled
+	// view (where it no longer equals the true voxelSize = 1 / resolution).
+	stepX: number;
+	stepZ: number;
 	originX: number;
 	originZ: number;
 }
@@ -113,11 +117,14 @@ function computeInteriorCoverage(
 	occupancy: VoxelTerrainOccupancy,
 	planeHeight: number
 ): InteriorCoverage {
-	const { data, voxelWidth, voxelHeight, voxelLength, voxelSize } = occupancy;
-	const resolution = Math.round(1 / voxelSize);
-	// The voxel layer whose bottom face is coplanar with the plane, and the
-	// layer whose top face is (one below it).
-	const layerAbove = Math.round(planeHeight * resolution);
+	const { data, voxelWidth, voxelHeight, voxelLength } = occupancy;
+	// Cells per world unit along Y, from the grid dims + world size -- correct
+	// even when the occupancy volume is downsampled (voxelSize no longer matches
+	// the grid resolution).
+	const cellsPerWorldY = voxelHeight / occupancy.worldSizeY;
+	// The grid layer whose bottom face is coplanar with the plane, and the layer
+	// whose top face is (one below it).
+	const layerAbove = Math.round(planeHeight * cellsPerWorldY);
 	const layerBelow = layerAbove - 1;
 	const columnCount = voxelWidth * voxelLength;
 	const sliceSize = voxelWidth * voxelHeight;
@@ -172,7 +179,8 @@ function computeInteriorCoverage(
 		covered,
 		voxelWidth,
 		voxelLength,
-		voxelSize,
+		stepX: occupancy.worldSizeX / voxelWidth,
+		stepZ: occupancy.worldSizeZ / voxelLength,
 		originX: occupancy.worldOriginX,
 		originZ: occupancy.worldOriginZ,
 	};
@@ -212,12 +220,12 @@ function makeStrengthAt(
 	bandX: number,
 	bandZ: number
 ): (x: number, z: number) => number {
-	const { covered, voxelWidth, voxelLength, voxelSize, originX, originZ } =
+	const { covered, voxelWidth, voxelLength, stepX, stepZ, originX, originZ } =
 		coverage;
 	const eps = 1e-4;
 	const columnOpen = (wx: number, wz: number): boolean => {
-		const vx = Math.floor((wx - originX) / voxelSize);
-		const vz = Math.floor((wz - originZ) / voxelSize);
+		const vx = Math.floor((wx - originX) / stepX);
+		const vz = Math.floor((wz - originZ) / stepZ);
 		// Outside the footprint is open field (the ring).
 		if (vx < 0 || vx >= voxelWidth || vz < 0 || vz >= voxelLength) return true;
 		return covered[vz * voxelWidth + vx] === 1;
@@ -367,7 +375,7 @@ function buildSurroundingsGeometry(
 	// Interior fill: greedy-merge the covered mask into rectangles and emit a
 	// top quad per rectangle, in world units via the occupancy grid mapping.
 	if (coverage) {
-		const { covered, voxelWidth, voxelLength, voxelSize, originX, originZ } =
+		const { covered, voxelWidth, voxelLength, stepX, stepZ, originX, originZ } =
 			coverage;
 		const consumed = new Uint8Array(covered.length);
 		for (let z = 0; z < voxelLength; z++) {
@@ -394,10 +402,10 @@ function buildSurroundingsGeometry(
 					const rowBase = (z + dz) * voxelWidth + x;
 					consumed.fill(1, rowBase, rowBase + w);
 				}
-				const rectMinX = originX + x * voxelSize;
-				const rectMaxX = originX + (x + w) * voxelSize;
-				const rectMinZ = originZ + z * voxelSize;
-				const rectMaxZ = originZ + (z + d) * voxelSize;
+				const rectMinX = originX + x * stepX;
+				const rectMaxX = originX + (x + w) * stepX;
+				const rectMinZ = originZ + z * stepZ;
+				const rectMaxZ = originZ + (z + d) * stepZ;
 				if (strengthAt) {
 					addDetailTopQuad(rectMinX, rectMaxX, rectMinZ, rectMaxZ, strengthAt);
 				} else {
@@ -421,8 +429,8 @@ function buildSurroundingsGeometry(
 		const xPos = halfWidth + eps;
 		const columnsX = coverage ? coverage.voxelWidth : 1;
 		const columnsZ = coverage ? coverage.voxelLength : 1;
-		const stepX = coverage ? coverage.voxelSize : width;
-		const stepZ = coverage ? coverage.voxelSize : length;
+		const stepX = coverage ? coverage.stepX : width;
+		const stepZ = coverage ? coverage.stepZ : length;
 		const originX = coverage ? coverage.originX : -halfWidth;
 		const originZ = coverage ? coverage.originZ : -halfLength;
 		const coveredAt = (x: number, z: number) =>

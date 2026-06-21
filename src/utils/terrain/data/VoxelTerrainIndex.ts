@@ -4,7 +4,6 @@
 // bytes once per revision and exposes the queries used by collision, geometry
 // building, movement, actor placement, and the editor:
 //   - hasVoxel(x, y, z)               -- collision / face culling / AO
-//   - getVoxelColor(x, y, z)          -- palette index at a voxel, or null
 //   - isVoxelOccupiedAtTile(...)      -- actor flight clearance
 //   - allSurfaces / allSurfaceHeights -- per-tactical-tile walkable surfaces
 //   - maxSurfaceHeight                -- global ceiling for framing / spawning
@@ -79,11 +78,6 @@ export interface VoxelTerrainIndex {
 	/** Whether (vx, vy, vz) is inside the voxel grid. The single bounds authority. */
 	inVoxelBounds(vx: number, vy: number, vz: number): boolean;
 	hasVoxel(vx: number, vy: number, vz: number): boolean;
-	/**
-	 * Palette index (0..255) of the voxel at (vx, vy, vz), or null if no voxel
-	 * occupies that cell. Used by the editor for sample / paint / hover lookups.
-	 */
-	getVoxelColor(vx: number, vy: number, vz: number): number | null;
 	isVoxelOccupiedAtTile(tileX: number, tileY: number, voxelY: number): boolean;
 }
 
@@ -163,15 +157,12 @@ export function tileHeightKey(tileX: number, tileY: number, h: number): string {
 	return `${tileX},${tileY},${h}`;
 }
 
-function voxelGridIndex(
-	vx: number,
-	vy: number,
-	vz: number,
-	voxelWidth: number,
-	voxelLayerSize: number
-): number {
-	return vx + vz * voxelWidth + vy * voxelLayerSize;
-}
+// The color grid is stored as 32^3 chunk blocks allocated on first write, so a
+// thin surface over a wide footprint costs only its occupied chunks rather than
+// a dense full-volume array (which is multi-hundred-MB at large sizes). 32 is a
+// power of two so chunk/local coordinates are shift/mask, not divide/modulo.
+const VOXEL_INDEX_CHUNK = 32;
+const VOXEL_INDEX_CHUNK_VOLUME = VOXEL_INDEX_CHUNK * VOXEL_INDEX_CHUNK * VOXEL_INDEX_CHUNK;
 
 /**
  * Builds an index without touching the cache. Use this in workers, or pass
@@ -188,14 +179,40 @@ export function buildVoxelTerrainIndex(
 	const voxelLength = terrain.Length * resolution;
 	const voxelHeight = terrain.Height * resolution;
 	const revision = createTerrainRevision(terrain, voxels);
-	const voxelLayerSize = voxelWidth * voxelLength;
 
-	// Dense occupancy/color grid. 0 means empty; occupied cells store
-	// paletteIndex + 1 so all 0..255 palette values fit in Uint16.
-	const voxelColors = new Uint16Array(voxelLayerSize * voxelHeight);
-	const maxVoxelYs = new Int16Array(voxelLayerSize);
-	maxVoxelYs.fill(-1);
+	// Chunked occupancy/color grid. 0 means empty; occupied cells store
+	// paletteIndex + 1 so all 0..255 palette values fit in Uint16. Blocks are
+	// allocated lazily (see setColorAt), so empty regions cost nothing. Reads
+	// stay O(1) with near-array speed -- a flat chunk array indexed by shift/mask
+	// plus one null check -- which keeps the hot collision / raycast paths fast.
+	const chunksX = Math.ceil(voxelWidth / VOXEL_INDEX_CHUNK);
+	const chunksY = Math.ceil(voxelHeight / VOXEL_INDEX_CHUNK);
+	const chunksZ = Math.ceil(voxelLength / VOXEL_INDEX_CHUNK);
+	const colorChunks: (Uint16Array | null)[] = new Array(
+		chunksX * chunksY * chunksZ
+	).fill(null);
 	let maxVoxelY = -1;
+
+	// Callers guard with inVoxelBounds before these, so (vx,vy,vz) is always in
+	// range here -- the chunk slot and local offset are therefore always valid.
+	const chunkSlot = (vx: number, vy: number, vz: number): number =>
+		(vx >> 5) + (vz >> 5) * chunksX + (vy >> 5) * chunksX * chunksZ;
+	const chunkLocal = (vx: number, vy: number, vz: number): number =>
+		(vx & 31) + (vz & 31) * VOXEL_INDEX_CHUNK +
+		(vy & 31) * VOXEL_INDEX_CHUNK * VOXEL_INDEX_CHUNK;
+	const colorAt = (vx: number, vy: number, vz: number): number => {
+		const block = colorChunks[chunkSlot(vx, vy, vz)];
+		return block ? block[chunkLocal(vx, vy, vz)] : 0;
+	};
+	const setColorAt = (vx: number, vy: number, vz: number, value: number): void => {
+		const slot = chunkSlot(vx, vy, vz);
+		let block = colorChunks[slot];
+		if (!block) {
+			block = new Uint16Array(VOXEL_INDEX_CHUNK_VOLUME);
+			colorChunks[slot] = block;
+		}
+		block[chunkLocal(vx, vy, vz)] = value;
+	};
 
 	const inVoxelBounds = (vx: number, vy: number, vz: number): boolean =>
 		vx >= 0 && vx < voxelWidth &&
@@ -209,17 +226,8 @@ export function buildVoxelTerrainIndex(
 			continue;
 		}
 
-		const key = voxelGridIndex(
-			voxel.x,
-			voxel.y,
-			voxel.z,
-			voxelWidth,
-			voxelLayerSize
-		);
-		voxelColors[key] = (voxel.color & 0xff) + 1;
+		setColorAt(voxel.x, voxel.y, voxel.z, (voxel.color & 0xff) + 1);
 
-		const idx = voxel.z * voxelWidth + voxel.x;
-		if (voxel.y > maxVoxelYs[idx]) maxVoxelYs[idx] = voxel.y;
 		if (voxel.y > maxVoxelY) maxVoxelY = voxel.y;
 	}
 
@@ -241,13 +249,7 @@ export function buildVoxelTerrainIndex(
 		// the solid voxel beneath -- the ground stays walkable.
 		const aboveColor =
 			voxel.y + 1 < voxelHeight
-				? voxelColors[voxelGridIndex(
-					voxel.x,
-					voxel.y + 1,
-					voxel.z,
-					voxelWidth,
-					voxelLayerSize
-				)]
+				? colorAt(voxel.x, voxel.y + 1, voxel.z)
 				: 0;
 		if (aboveColor !== 0 && !isPassableMaterial(aboveColor - 1)) continue;
 
@@ -294,26 +296,9 @@ export function buildVoxelTerrainIndex(
 		inVoxelBounds,
 		hasVoxel(vx, vy, vz) {
 			if (!inVoxelBounds(vx, vy, vz)) return false;
-			const color = voxelColors[voxelGridIndex(
-				vx,
-				vy,
-				vz,
-				voxelWidth,
-				voxelLayerSize
-			)];
+			const color = colorAt(vx, vy, vz);
 			// Passable materials are invisible to collision / raycast / FP capsule.
 			return color !== 0 && !isPassableMaterial(color - 1);
-		},
-		getVoxelColor(vx, vy, vz) {
-			if (!inVoxelBounds(vx, vy, vz)) return null;
-			const color = voxelColors[voxelGridIndex(
-				vx,
-				vy,
-				vz,
-				voxelWidth,
-				voxelLayerSize
-			)];
-			return color === 0 ? null : color - 1;
 		},
 		isVoxelOccupiedAtTile(tileX, tileY, voxelY) {
 			if (voxelY < 0 || voxelY >= voxelHeight) return false;
@@ -329,13 +314,7 @@ export function buildVoxelTerrainIndex(
 			}
 			for (let vz = startZ; vz < endZ; vz++) {
 				for (let vx = startX; vx < endX; vx++) {
-					const color = voxelColors[voxelGridIndex(
-						vx,
-						voxelY,
-						vz,
-						voxelWidth,
-						voxelLayerSize
-					)];
+					const color = colorAt(vx, voxelY, vz);
 					if (color !== 0 && !isPassableMaterial(color - 1)) return true;
 				}
 			}
@@ -344,9 +323,11 @@ export function buildVoxelTerrainIndex(
 	};
 }
 
-// Revision-keyed LRU. Size 4 covers active terrain + an undo step + a worker
-// preview + slack. Insertion order is the LRU order (Map preserves it).
-const INDEX_CACHE_LIMIT = 4;
+// Revision-keyed LRU. The renderer meshes via WASM (not this index) and the
+// editor mutates an EditGrid (not this index), so only the live gameplay terrain
+// plus one transitional revision (e.g. mid state-sync swap) are ever needed.
+// Insertion order is the LRU order (Map preserves it).
+const INDEX_CACHE_LIMIT = 2;
 const indexCache = new Map<string, VoxelTerrainIndex>();
 
 /**

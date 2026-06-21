@@ -9,11 +9,12 @@
 // directly. The draft is re-encoded only at commit boundaries.
 
 import {
+	countSetBits,
 	createBitset,
 	isBitSet,
 	setBit,
 } from "../../BitsetUtils";
-import { decodeVoxels, encodeVoxels } from "../data/VoxelDataUtils";
+import { decodeVoxels, encodeVoxelBuffers, packPosition } from "../data/VoxelDataUtils";
 import type { VoxelTerrainIndex } from "../data/VoxelTerrainIndex";
 import type { VoxelColorGrid } from "./VoxelTerrainSelectionUtils";
 import { normalizeVoxelPaletteIndex } from "./VoxelTerrainEditorUtils";
@@ -132,18 +133,28 @@ export function buildEditGrid(voxels: Uint8Array, index: VoxelTerrainIndex): Edi
 }
 
 export function encodeEditGrid(grid: EditGrid, vW: number, vH: number, vL: number): Uint8Array {
-	const voxels = [];
+	// Stream occupied voxels straight into the packed position/color buffers the
+	// codec consumes, rather than building a `{x,y,z,color}` object per voxel
+	// (millions of transient objects on a large grid). Each grid cell is a unique
+	// position, so no dedup is needed.
+	const count = countSetBits(grid.occupied);
+	if (count === 0) return new Uint8Array(0);
+
+	const positions = new Uint32Array(count);
+	const colors = new Uint8Array(count);
+	let w = 0;
 	for (let y = 0; y < vH; y++) {
 		for (let z = 0; z < vL; z++) {
 			for (let x = 0; x < vW; x++) {
 				const idx = editGridIndex(x, y, z, vW, vL);
-				if (editGridHasVoxelAtIndex(grid, idx)) {
-					voxels.push({ x, y, z, color: grid.colors[idx] });
-				}
+				if (!editGridHasVoxelAtIndex(grid, idx)) continue;
+				positions[w] = packPosition(x, y, z);
+				colors[w] = grid.colors[idx];
+				w++;
 			}
 		}
 	}
-	return encodeVoxels(voxels);
+	return encodeVoxelBuffers(positions.subarray(0, w), colors.subarray(0, w));
 }
 
 // ---------------------------------------------------------------------------

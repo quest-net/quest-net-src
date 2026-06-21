@@ -160,6 +160,12 @@ pub struct MeshBuild {
     buckets: Vec<Bucket>,
     occupancy: Vec<u8>,
     fog: Option<Vec<u8>>,
+    // Occupancy/fog grid dimensions. These equal the voxel dims when occ_factor
+    // is 1, and are the coarsened (downsampled) dims otherwise. JS reads them
+    // back to size the Data3DTexture rather than re-deriving the factor.
+    occ_width: usize,
+    occ_height: usize,
+    occ_length: usize,
     voxel_count: u32,
 }
 
@@ -176,6 +182,18 @@ impl MeshBuild {
 
     pub fn voxel_count(&self) -> u32 {
         self.voxel_count
+    }
+
+    /// Occupancy/fog grid dimensions (= voxel dims when not downsampled). The
+    /// occupancy and fog volumes share these dims.
+    pub fn occupancy_width(&self) -> u32 {
+        self.occ_width as u32
+    }
+    pub fn occupancy_height(&self) -> u32 {
+        self.occ_height as u32
+    }
+    pub fn occupancy_length(&self) -> u32 {
+        self.occ_length as u32
     }
 
     pub fn take_positions(&mut self, i: usize) -> Vec<f32> {
@@ -261,11 +279,20 @@ impl VoxelMesher {
         height: u32,
         length: u32,
         resolution: u32,
+        occ_factor: u32,
     ) -> MeshBuild {
         let voxel_width = (width * resolution) as usize;
         let voxel_height = (height * resolution) as usize;
         let voxel_length = (length * resolution) as usize;
         let voxel_layer_size = voxel_width * voxel_length;
+        // Occupancy/fog volumes can be coarser than the mesh: they only feed the
+        // low-frequency AO + fog samplers. occ_factor == 1 reproduces the
+        // full-resolution volume byte-for-byte (the regression anchor); larger
+        // power-of-two factors coarsen by ceil-divide to bound texture memory.
+        let occ_factor = occ_factor.max(1) as usize;
+        let occ_width = (voxel_width + occ_factor - 1) / occ_factor;
+        let occ_height = (voxel_height + occ_factor - 1) / occ_factor;
+        let occ_length = (voxel_length + occ_factor - 1) / occ_factor;
         // Position math is done in f64 then stored as f32 to match the JS
         // reference exactly (JS does double-precision arithmetic then rounds on
         // the Float32Array store; doing it in f32 here would double-round).
@@ -275,9 +302,10 @@ impl VoxelMesher {
 
         // --- Pass 1: dense color grid + occupancy + (lazy) fog volume ---------
         // color grid layout:   x + z*voxel_width + y*voxel_layer_size  (value = palette+1)
-        // occupancy/fog layout: z*voxel_width*voxel_height + y*voxel_width + x
+        // occupancy/fog layout: oz*occ_width*occ_height + oy*occ_width + ox
+        //   where (ox,oy,oz) = (vx,vy,vz) / occ_factor.
         let mut grid: Vec<u16> = vec![0; voxel_layer_size * voxel_height];
-        let occ_len = voxel_width * voxel_height * voxel_length;
+        let occ_len = occ_width * occ_height * occ_length;
         let mut occupancy: Vec<u8> = vec![0; occ_len];
         let mut fog: Option<Vec<u8>> = None;
         let mut voxel_count: u32 = 0;
@@ -304,7 +332,12 @@ impl VoxelMesher {
             }
             grid[grid_index] = (color_idx as u16) + 1;
 
-            let cell_index = vz * voxel_width * voxel_height + vy * voxel_width + vx;
+            // Scatter into the (possibly coarsened) occupancy/fog grid. Writing
+            // the constant 255 makes "any solid voxel in the cell" fall out for
+            // free -- exactly the OR semantics AO wants so thin occluders survive.
+            let cell_index = (vz / occ_factor) * occ_width * occ_height
+                + (vy / occ_factor) * occ_width
+                + (vx / occ_factor);
             if self.is_volumetric[color_idx] == 1 {
                 let fog_vol = fog.get_or_insert_with(|| vec![0; occ_len]);
                 fog_vol[cell_index] = 255;
@@ -573,6 +606,9 @@ impl VoxelMesher {
             buckets,
             occupancy,
             fog,
+            occ_width,
+            occ_height,
+            occ_length,
             voxel_count,
         }
     }
@@ -588,11 +624,12 @@ impl VoxelMesher {
         height: u32,
         length: u32,
         resolution: u32,
+        occ_factor: u32,
     ) -> MeshBuild {
         let (positions, colors) = svo::decode_svo(svo_bytes);
         // `build` keeps its native Rust signature under wasm-bindgen, so it is
         // callable directly here with real slices (no JS round-trip).
-        self.build(&positions, &colors, width, height, length, resolution)
+        self.build(&positions, &colors, width, height, length, resolution, occ_factor)
     }
 }
 

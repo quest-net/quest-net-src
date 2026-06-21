@@ -205,6 +205,11 @@ interface ActiveStroke {
 }
 
 const UNDO_LIMIT = 50;
+// Cap on per-stroke fine-grained undo recording. A stroke that changes more
+// voxels than this (e.g. flood-filling a huge terrain) stops being recorded and
+// becomes a history barrier rather than accumulating a delta the size of the
+// whole grid. ~2M entries keeps the accumulator + delta arrays well bounded.
+const MAX_UNDO_STROKE_VOXELS = 2_000_000;
 const STROKE_DRAG_THRESHOLD_PX = 5;
 
 const IS_MAC =
@@ -288,6 +293,11 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		// (bit 8 = was occupied, bits 0-7 = old color). Null when no stroke is
 		// in progress.
 		const strokeDeltaRef         = useRef<Map<number, number> | null>(null);
+		// Set when a single stroke touches more voxels than we'll record for undo
+		// (see MAX_UNDO_STROKE_VOXELS). Past that point the accumulator stops
+		// growing and the stroke becomes a history barrier -- recording every
+		// voxel of a fill-the-world operation would otherwise blow the heap.
+		const strokeUndoOverflowRef  = useRef(false);
 		const lastEditKeyRef         = useRef<string | null>(null);
 		// Shape change detection for camera framing.
 		const lastShapeSignatureRef  = useRef<string | null>(null);
@@ -749,7 +759,20 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		// -------------------------------------------------------------------------
 		const recordUndo = useCallback(() => {
 			const acc = strokeDeltaRef.current;
+			const overflowed = strokeUndoOverflowRef.current;
 			strokeDeltaRef.current = null;
+			strokeUndoOverflowRef.current = false;
+			// A stroke that overflowed the recording cap can't be represented as a
+			// precise delta, so we can't let it sit on the stack between undoable
+			// strokes (undoing past it would corrupt the grid). Drop all history --
+			// the operation itself already applied to the grid; it's just not undoable.
+			if (overflowed) {
+				undoStackRef.current.length = 0;
+				redoStackRef.current.length = 0;
+				setUndoDepth(0);
+				setRedoDepth(0);
+				return;
+			}
 			if (!acc || acc.size === 0) return;
 
 			const n = acc.size;
@@ -836,8 +859,17 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			if (acc === null) {
 				strokeDeltaRef.current = new Map();
 				acc = strokeDeltaRef.current;
+				strokeUndoOverflowRef.current = false;
 			}
+			// Once a stroke exceeds the cap, stop recording: the stroke becomes a
+			// history barrier (handled in recordUndo) rather than growing a delta
+			// proportional to the whole grid.
+			if (strokeUndoOverflowRef.current) return;
 			if (acc.has(gIdx)) return; // already recorded for this stroke
+			if (acc.size >= MAX_UNDO_STROKE_VOXELS) {
+				strokeUndoOverflowRef.current = true;
+				return;
+			}
 			const occupied = editGridHasVoxelAtIndex(editGridRef.current, gIdx);
 			const color    = editGridRef.current.colors[gIdx];
 			acc.set(gIdx, (occupied ? 0x100 : 0) | color);

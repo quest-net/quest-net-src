@@ -8,7 +8,7 @@
 import type { Voxel } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { getVoxelCodec, type VoxelDecodeResult } from "./voxelCodecWasm";
 
-function packPosition(x: number, y: number, z: number): number {
+export function packPosition(x: number, y: number, z: number): number {
 	return x + y * 256 + z * 65536;
 }
 
@@ -47,6 +47,21 @@ export function encodeVoxels(voxels: Iterable<Voxel>): Uint8Array {
 		index++;
 	}
 
+	return encodeVoxelBuffers(positions, colors);
+}
+
+/**
+ * Encodes prebuilt parallel position/color buffers directly to SVO bytes,
+ * skipping the intermediate `{x,y,z,color}` object array that `encodeVoxels`
+ * would otherwise materialize. Callers that already hold packed positions (e.g.
+ * the editor streaming a dense grid) use this to avoid millions of transient
+ * objects. Positions must be unique -- this does no deduplication.
+ */
+export function encodeVoxelBuffers(
+	positions: Uint32Array,
+	colors: Uint8Array
+): Uint8Array {
+	if (positions.length === 0) return new Uint8Array(0);
 	return getVoxelCodec().encode(positions, colors);
 }
 

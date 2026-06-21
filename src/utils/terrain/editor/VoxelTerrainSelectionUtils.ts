@@ -33,7 +33,10 @@ export type TerrainSelection =
 		kind: "mask";
 		id: number;
 		label: string;
-		mask: Uint8Array;
+		// Sorted flat edit-grid indices of the selected voxels (one entry each),
+		// not a dense full-grid mask -- keeps memory at O(selectedCount), which
+		// matters on large terrains where a dense Uint8Array(grid.length) is huge.
+		indices: Uint32Array;
 		selectedCount: number;
 		bounds: VoxelSelectionBounds | null;
 		colorIndex?: number;
@@ -128,16 +131,26 @@ export function createColorVoxelSelection(
 	colorIndex: number,
 	id: number
 ): TerrainSelection {
-	const mask = new Uint8Array(grid.length);
+	// First pass: count matches so we can allocate an exact Uint32Array rather
+	// than growing a boxed number[] (which would be far heavier for millions of
+	// matched voxels). Second pass fills indices + bounds. Both scans are O(N)
+	// reads with no O(N) allocation -- the result holds only selected voxels.
 	let selectedCount = 0;
+	for (let i = 0; i < grid.length; i++) {
+		if (isBitSet(grid.occupied, i) && grid.colors[i] === colorIndex) {
+			selectedCount++;
+		}
+	}
+
+	const indices = new Uint32Array(selectedCount);
+	let write = 0;
 	let min: VoxelCoord | null = null;
 	let max: VoxelCoord | null = null;
 
 	for (let i = 0; i < grid.length; i++) {
 		if (!isBitSet(grid.occupied, i) || grid.colors[i] !== colorIndex) continue;
 
-		mask[i] = 1;
-		selectedCount++;
+		indices[write++] = i;
 
 		const coord = editGridOffsetToVoxelCoord(i, dims);
 		if (!min || !max) {
@@ -157,7 +170,7 @@ export function createColorVoxelSelection(
 		kind: "mask",
 		id,
 		label: `Color ${colorIndex}`,
-		mask,
+		indices,
 		selectedCount,
 		bounds: min && max ? { min, max } : null,
 		colorIndex,
@@ -180,9 +193,7 @@ export function* iterateVoxelSelectionSpace(
 		return;
 	}
 
-	for (let i = 0; i < selection.mask.length; i++) {
-		if (selection.mask[i] !== 0) {
-			yield editGridOffsetToVoxelCoord(i, dims);
-		}
+	for (let i = 0; i < selection.indices.length; i++) {
+		yield editGridOffsetToVoxelCoord(selection.indices[i], dims);
 	}
 }
