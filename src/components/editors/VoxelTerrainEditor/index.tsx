@@ -1916,7 +1916,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 				if (valid.length === 0) {
 					setVoxImportModal({
 						kind: "error",
-						message: `This file's dimensions (${parsed.voxWidth}x${parsed.voxLength}x${parsed.voxHeight} voxels) are too large to import at any resolution. Maximum terrain size is 64x64x64 tactical units.`,
+						message: `This file's dimensions (${parsed.voxWidth}x${parsed.voxLength}x${parsed.voxHeight} voxels) are too large to import at any resolution. Maximum terrain size is 256x256x256 voxels (at resolution 1).`,
 					});
 					return;
 				}

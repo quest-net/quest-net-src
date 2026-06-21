@@ -46,9 +46,11 @@ export interface VoxelTerrainSurroundings {
 }
 
 /**
- * The maximum height (in tactical units) the movement cost system accounts for.
- * Matches MAX_VOXEL_TERRAIN_HEIGHT in VoxelTerrainEditorUtils. Used for
- * height-cost formula validation and UI previews.
+ * Ceiling (in tactical units) for the movement height-cost lookup. Climbs taller
+ * than this reuse the cost at this height (see getHeightCost). This is a cost-model
+ * constant only and is INDEPENDENT of a terrain's dimension caps, which are now
+ * resolution-dependent (see maxTacticalDimensionForResolution in
+ * VoxelTerrainEditorUtils). Used for height-cost formula validation and UI previews.
  */
 export const MAX_HEIGHT = 64;
 

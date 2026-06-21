@@ -31,9 +31,7 @@ import type {
 import { DEFAULT_TERRAIN_COLOR_INDEX } from "../palette/TerrainPaletteUtils";
 import { encodeVoxels } from "../data/VoxelDataUtils";
 import {
-	MAX_VOXEL_TERRAIN_HEIGHT,
-	MAX_VOXEL_TERRAIN_LENGTH,
-	MAX_VOXEL_TERRAIN_WIDTH,
+	maxTacticalDimensionForResolution,
 	MAX_VOXEL_TERRAIN_RESOLUTION,
 	MIN_VOXEL_TERRAIN_RESOLUTION,
 	voxelColorToTerrainPaletteIndex,
@@ -262,15 +260,16 @@ export function getVoxResolutionOptions(parsed: VoxParseResult): VoxResolutionOp
 		const tacticalWidth  = Math.ceil(parsed.voxWidth  / r);
 		const tacticalLength = Math.ceil(parsed.voxLength / r);
 		const tacticalHeight = Math.ceil(parsed.voxHeight / r);
+		const maxDimension = maxTacticalDimensionForResolution(r);
 		options.push({
 			resolution: r,
 			tacticalWidth,
 			tacticalLength,
 			tacticalHeight,
 			fits:
-				tacticalWidth  <= MAX_VOXEL_TERRAIN_WIDTH  &&
-				tacticalLength <= MAX_VOXEL_TERRAIN_LENGTH &&
-				tacticalHeight <= MAX_VOXEL_TERRAIN_HEIGHT,
+				tacticalWidth  <= maxDimension &&
+				tacticalLength <= maxDimension &&
+				tacticalHeight <= maxDimension,
 		});
 	}
 	return options;

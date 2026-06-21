@@ -1,5 +1,4 @@
 import {
-	MAX_HEIGHT,
 	createDefaultVoxelTerrainBackground,
 	createDefaultVoxelTerrainLighting,
 	type EditableVoxelTerrain,
@@ -15,22 +14,17 @@ import { decodeVoxels, decodeVoxelBuffers, encodeVoxels } from "../data/VoxelDat
 import { getVoxelTerrainResolution } from "../data/VoxelTerrainIndex";
 import { clamp } from "../../math";
 
-export const MAX_VOXEL_TERRAIN_WIDTH = 64;
-export const MAX_VOXEL_TERRAIN_LENGTH = 64;
-export const MAX_VOXEL_TERRAIN_HEIGHT = MAX_HEIGHT;
+// 8-bit voxel coordinate packing (x + y*256 + z*65536) caps coordinates at
+// 0..255, so the raw voxel grid can be at most 256 voxels on every axis. Since
+// raw voxels = tactical units * resolution, the maximum tactical dimension is
+// resolution-dependent: floor(256 / resolution). This keeps the raw voxel
+// budget flat (~256^3) regardless of how big the tactical grid gets.
+export const MAX_RAW_VOXELS_PER_AXIS = 256;
 export const MIN_VOXEL_TERRAIN_HEIGHT = 1;
 export const DEFAULT_VOXEL_TERRAIN_HEIGHT = 8;
 export const DEFAULT_VOXEL_TERRAIN_MAX_HEIGHT = 16;
 export const MIN_VOXEL_TERRAIN_RESOLUTION = 1;
 export const MAX_VOXEL_TERRAIN_RESOLUTION = 4;
-
-export function clampVoxelTerrainHeight(height: number): number {
-	return clamp(
-		Math.floor(height) || MIN_VOXEL_TERRAIN_HEIGHT,
-		MIN_VOXEL_TERRAIN_HEIGHT,
-		MAX_VOXEL_TERRAIN_HEIGHT
-	);
-}
 
 export function clampVoxelTerrainResolution(resolution: number | undefined): number {
 	return clamp(
@@ -38,6 +32,22 @@ export function clampVoxelTerrainResolution(resolution: number | undefined): num
 			MIN_VOXEL_TERRAIN_RESOLUTION,
 		MIN_VOXEL_TERRAIN_RESOLUTION,
 		MAX_VOXEL_TERRAIN_RESOLUTION
+	);
+}
+
+/**
+ * Maximum tactical units per axis at a given resolution = floor(256 / resolution).
+ * Yields 256 / 128 / 85 / 64 for resolutions 1 / 2 / 3 / 4.
+ */
+export function maxTacticalDimensionForResolution(resolution: number | undefined): number {
+	return Math.floor(MAX_RAW_VOXELS_PER_AXIS / clampVoxelTerrainResolution(resolution));
+}
+
+export function clampVoxelTerrainHeight(height: number, resolution?: number): number {
+	return clamp(
+		Math.floor(height) || MIN_VOXEL_TERRAIN_HEIGHT,
+		MIN_VOXEL_TERRAIN_HEIGHT,
+		maxTacticalDimensionForResolution(resolution)
 	);
 }
 
@@ -157,9 +167,10 @@ export function reshapeVoxelTerrainForEditor(
 ): EditableVoxelTerrain {
 	const oldResolution = getVoxelTerrainResolution(terrain);
 	const newResolution = clampVoxelTerrainResolution(nextShape.resolution);
-	const nextHeight = clampVoxelTerrainHeight(nextShape.height);
-	const nextWidth = clamp(Math.floor(nextShape.width) || 1, 1, MAX_VOXEL_TERRAIN_WIDTH);
-	const nextLength = clamp(Math.floor(nextShape.length) || 1, 1, MAX_VOXEL_TERRAIN_LENGTH);
+	const maxDimension = maxTacticalDimensionForResolution(newResolution);
+	const nextHeight = clampVoxelTerrainHeight(nextShape.height, newResolution);
+	const nextWidth = clamp(Math.floor(nextShape.width) || 1, 1, maxDimension);
+	const nextLength = clamp(Math.floor(nextShape.length) || 1, 1, maxDimension);
 	const nextResolvedWidth = nextWidth * newResolution;
 	const nextResolvedLength = nextLength * newResolution;
 	const nextResolvedHeight = nextHeight * newResolution;
@@ -221,15 +232,18 @@ export function createFlatVoxelTerrain(params: {
 	colorIndex?: number;
 	tags?: string[];
 }): EditableVoxelTerrain {
+	// createFlatVoxelTerrain always produces a resolution-1 terrain (Resolution: 1
+	// below), so its tactical height ceiling is maxTacticalDimensionForResolution(1).
+	const maxDimension = maxTacticalDimensionForResolution(1);
 	const height = clamp(
 		Math.floor(params.height ?? DEFAULT_VOXEL_TERRAIN_HEIGHT),
 		0,
-		MAX_VOXEL_TERRAIN_HEIGHT
+		maxDimension
 	);
 	const maxHeight = clamp(
 		Math.floor(params.maxHeight ?? DEFAULT_VOXEL_TERRAIN_MAX_HEIGHT),
 		MIN_VOXEL_TERRAIN_HEIGHT,
-		MAX_VOXEL_TERRAIN_HEIGHT
+		maxDimension
 	);
 	const fillHeight = clamp(height, 0, maxHeight);
 	const colorIndex = normalizeVoxelPaletteIndex(

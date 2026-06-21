@@ -8,8 +8,7 @@ import type { VoxelTerrainIndex } from "../data/VoxelTerrainIndex";
 import {
 	clampVoxelTerrainHeight,
 	clampVoxelTerrainResolution,
-	MAX_VOXEL_TERRAIN_LENGTH,
-	MAX_VOXEL_TERRAIN_WIDTH,
+	maxTacticalDimensionForResolution,
 	getRescaledVoxelRange,
 	normalizeVoxelPaletteIndex,
 } from "./VoxelTerrainEditorUtils";
@@ -186,11 +185,13 @@ export function getChunkVoxelBounds(
 }
 
 export function normalizeDraftShape(nextShape: DraftShape): DraftShape {
+	const resolution = clampVoxelTerrainResolution(nextShape.resolution);
+	const maxDimension = maxTacticalDimensionForResolution(resolution);
 	return {
-		width: clamp(Math.floor(nextShape.width) || 1, 1, MAX_VOXEL_TERRAIN_WIDTH),
-		length: clamp(Math.floor(nextShape.length) || 1, 1, MAX_VOXEL_TERRAIN_LENGTH),
-		height: clampVoxelTerrainHeight(nextShape.height),
-		resolution: clampVoxelTerrainResolution(nextShape.resolution),
+		width: clamp(Math.floor(nextShape.width) || 1, 1, maxDimension),
+		length: clamp(Math.floor(nextShape.length) || 1, 1, maxDimension),
+		height: clampVoxelTerrainHeight(nextShape.height, resolution),
+		resolution,
 	};
 }
 

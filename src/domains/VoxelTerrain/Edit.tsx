@@ -18,9 +18,7 @@ import { VoxelTerrainUtils } from "./VoxelTerrainUtils";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { getTerrainVoxels } from "../../utils/terrain/data/terrainPayloadStore";
 import {
-	MAX_VOXEL_TERRAIN_HEIGHT,
-	MAX_VOXEL_TERRAIN_WIDTH,
-	MAX_VOXEL_TERRAIN_LENGTH,
+	maxTacticalDimensionForResolution,
 	clampVoxelTerrainHeight,
 	clampVoxelTerrainResolution,
 } from "../../utils/terrain/editor/VoxelTerrainEditorUtils";
@@ -324,7 +322,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 		setShapeDraft({
 			width: data.Width,
 			length: data.Length,
-			height: clampVoxelTerrainHeight(data.Height),
+			height: clampVoxelTerrainHeight(data.Height, data.Resolution),
 			resolution: clampVoxelTerrainResolution(data.Resolution),
 		});
 	}, [data]);
@@ -397,12 +395,20 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 			...shapeDraft,
 			...updates,
 		};
-		nextDraft.width = Math.max(1, Math.min(MAX_VOXEL_TERRAIN_WIDTH, Math.floor(nextDraft.width) || 1));
-		nextDraft.length = Math.max(1, Math.min(MAX_VOXEL_TERRAIN_LENGTH, Math.floor(nextDraft.length) || 1));
-		nextDraft.height = clampVoxelTerrainHeight(nextDraft.height);
+		// Resolve resolution first: the per-axis cap depends on it. Raising
+		// resolution shrinks the cap, so width/length/height auto-clamp down to
+		// the new ceiling (the editor then rescales/crops voxels accordingly).
 		nextDraft.resolution = clampVoxelTerrainResolution(nextDraft.resolution);
+		const maxDimension = maxTacticalDimensionForResolution(nextDraft.resolution);
+		nextDraft.width = Math.max(1, Math.min(maxDimension, Math.floor(nextDraft.width) || 1));
+		nextDraft.length = Math.max(1, Math.min(maxDimension, Math.floor(nextDraft.length) || 1));
+		nextDraft.height = clampVoxelTerrainHeight(nextDraft.height, nextDraft.resolution);
 		scheduleShapeChange(nextDraft);
 	};
+
+	// Per-axis tactical cap tracks the current resolution (floor(256 / resolution)),
+	// so the visible limits update live as the DM changes resolution.
+	const maxDimension = maxTacticalDimensionForResolution(shapeDraft.resolution);
 
 	return (
 		<div className="flex flex-col gap-4 min-h-[calc(100dvh-14rem)]">
@@ -426,7 +432,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 							<label className="text-sm font-medium mb-1">
 								Width
 								<span className="text-xs opacity-70 ml-1">
-									(1-{MAX_VOXEL_TERRAIN_WIDTH})
+									(1-{maxDimension})
 								</span>
 							</label>
 							<input
@@ -438,7 +444,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 								onBlur={flushShapeChange}
 								className="input input-bordered w-full"
 								min={1}
-								max={MAX_VOXEL_TERRAIN_WIDTH}
+								max={maxDimension}
 								disabled={readOnly}
 								readOnly={readOnly}
 							/>
@@ -447,7 +453,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 							<label className="text-sm font-medium mb-1">
 								Length
 								<span className="text-xs opacity-70 ml-1">
-									(1-{MAX_VOXEL_TERRAIN_LENGTH})
+									(1-{maxDimension})
 								</span>
 							</label>
 							<input
@@ -459,7 +465,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 								onBlur={flushShapeChange}
 								className="input input-bordered w-full"
 								min={1}
-								max={MAX_VOXEL_TERRAIN_LENGTH}
+								max={maxDimension}
 								disabled={readOnly}
 								readOnly={readOnly}
 							/>
@@ -468,7 +474,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 							<label className="text-sm font-medium mb-1">
 								Max Height
 								<span className="text-xs opacity-70 ml-1">
-									(1-{MAX_VOXEL_TERRAIN_HEIGHT})
+									(1-{maxDimension})
 								</span>
 							</label>
 							<input
@@ -480,7 +486,7 @@ function TerrainFormFields({ data, onChange, readOnly }: TerrainFormFieldsProps)
 								onBlur={flushShapeChange}
 								className="input input-bordered w-full"
 								min={1}
-								max={MAX_VOXEL_TERRAIN_HEIGHT}
+								max={maxDimension}
 								disabled={readOnly}
 								readOnly={readOnly}
 							/>
