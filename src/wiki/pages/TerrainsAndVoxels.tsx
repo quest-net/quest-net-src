@@ -35,9 +35,9 @@ export const terrainsAndVoxelsPage: WikiPage = {
 					<WikiCallout tone="warning" title="The voxel payload is not on this object">
 						<p>
 							The canonical <WikiCode>VoxelTerrain</WikiCode> carries only
-							metadata — never the voxel bytes. The base64 SVO payload lives
+							metadata — never the voxel bytes. The SVO byte payload lives
 							per-client in the in-memory <WikiCode>TerrainPayloadStore</WikiCode>{" "}
-							and IndexedDB; only the <WikiCode>ContentHash</WikiCode> rides along
+							and OPFS; only the <WikiCode>ContentHash</WikiCode> rides along
 							on the synced campaign. Code that needs the payload reads it from
 							the store, or carries an explicit{" "}
 							<WikiCode>EditableVoxelTerrain</WikiCode> (terrain plus its{" "}
@@ -149,7 +149,7 @@ export const terrainsAndVoxelsPage: WikiPage = {
 						Voxel payloads never live on the synced campaign object.{" "}
 						<WikiCode>TerrainStorageService</WikiCode> backs a per-client
 						materialized buffer (<WikiCode>TerrainPayloadStore</WikiCode>) with
-						IndexedDB, and — for players — an on-demand peer fetch over the{" "}
+						OPFS, and — for players — an on-demand peer fetch over the{" "}
 						<WikiCode>terrainFetch</WikiCode> request action. A client
 						materializes a terrain only when it needs to render or validate
 						against it.
@@ -164,9 +164,9 @@ export const terrainsAndVoxelsPage: WikiPage = {
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Hydrate" tone="accent">
-								Payload is loaded from the <WikiCode>voxelTerrains</WikiCode>{" "}
-								IndexedDB store when its hash matches, else fetched from the DM,
-								into the per-client buffer.
+								Payload is loaded from the per-campaign{" "}
+								<WikiCode>terrains</WikiCode> OPFS file when its hash matches, else
+								fetched from the DM, into the per-client buffer.
 							</WikiDiagramNode>
 							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
@@ -190,7 +190,7 @@ export const terrainsAndVoxelsPage: WikiPage = {
 								name: "prepareCampaignForStorage",
 								tone: "secondary",
 								detail:
-									"Persists every materialized terrain payload to IndexedDB. The campaign object stays payload-free either way.",
+									"Persists every materialized terrain payload to OPFS. The campaign object stays payload-free either way.",
 							},
 							{
 								name: "loadTerrainForEditing",
@@ -202,13 +202,13 @@ export const terrainsAndVoxelsPage: WikiPage = {
 								name: "hydrateTerrain",
 								tone: "info",
 								detail:
-									"Materializes a terrain into the per-client buffer from IndexedDB (hash match) or, for players, the DM over the network.",
+									"Materializes a terrain into the per-client buffer from OPFS (hash match) or, for players, the DM over the network.",
 							},
 							{
 								name: "deleteTerrain",
 								tone: "error",
 								detail:
-									"Drops the buffered payload and deletes the IndexedDB record for the removed terrain.",
+									"Drops the buffered payload and deletes the OPFS file for the removed terrain.",
 							},
 						]}
 					/>
@@ -521,7 +521,7 @@ export const terrainsAndVoxelsPage: WikiPage = {
 		},
 	],
 	searchText:
-		"terrain voxel VoxelTerrain VoxelDataUtils voxelCodecWasm WASM Sparse Voxel Octree SVO TerrainStorageService IndexedDB hydration editor EditGrid stamps VOX import VoxelTerrainIndex movement actor validation rendering material buckets networking",
+		"terrain voxel VoxelTerrain VoxelDataUtils voxelCodecWasm WASM Sparse Voxel Octree SVO TerrainStorageService OPFS OpfsUtilities IndexedDB hydration editor EditGrid stamps VOX import VoxelTerrainIndex movement actor validation rendering material buckets networking",
 };
 
 export default terrainsAndVoxelsPage;

@@ -3,10 +3,7 @@ import type {
 	EditableVoxelTerrain,
 	VoxelTerrain,
 } from "../domains/VoxelTerrain/VoxelTerrain";
-import {
-	IndexedDBUtilities,
-	VOXEL_TERRAINS_STORE_NAME,
-} from "../utils/IndexedDBUtilities";
+import { OpfsUtilities } from "../utils/OpfsUtilities";
 import { getRandomVoxelTerrainColor } from "../utils/terrain/editor/VoxelTerrainEditorUtils";
 import { hashVoxels } from "../utils/terrain/data/VoxelDataUtils";
 import { toPlain } from "../utils/toPlain";
@@ -20,19 +17,16 @@ import {
 	setTerrainVoxels,
 } from "../utils/terrain/data/terrainPayloadStore";
 
+// A terrain payload as read back from durable storage (OPFS). The store keeps
+// the raw SVO bytes plus the content hash in a file header, so a read always
+// yields both -- ContentHash stays optional only to keep recordContentHash's
+// legacy fallback path (hash the bytes) intact.
 interface StoredVoxelTerrainRecord {
-	Key: string;
-	CampaignId: string;
-	TerrainId: string;
-	// Raw SVO bytes. Records written by builds before the base64->bytes switch
-	// held a base64 string; the 2.10.0 migration rewrites those to bytes, so the
-	// runtime always sees Uint8Array here.
 	Voxels: Uint8Array;
 	ContentHash?: string;
-	SavedAt: number;
 }
 
-/** A voxel payload plus its content identity, as exchanged over the wire / IDB. */
+/** A voxel payload plus its content identity, as exchanged over the wire / OPFS. */
 export interface TerrainPayload {
 	voxels: Uint8Array;
 	contentHash: string;
@@ -81,8 +75,9 @@ export type TerrainDeltaBroadcaster = (edit: TerrainEditDelta) => void;
 /**
  * Durable + network layer for terrain voxel payloads. The in-memory
  * materialized buffer lives in `terrainPayloadStore`; this service backs it with
- * IndexedDB (the per-client source of truth for payloads) and, for players, an
- * on-demand peer fetch. The canonical campaign object never carries voxels --
+ * OPFS (the per-client source of truth for payloads, via the generic
+ * OpfsUtilities) and, for players, an on-demand peer fetch. The canonical
+ * campaign object never carries voxels --
  * only metadata + a `ContentHash` (see docs/terrain-payload-state-coupling.md).
  */
 export class TerrainStorageService {
@@ -112,12 +107,6 @@ export class TerrainStorageService {
 		this.deltaBroadcaster?.(edit);
 	}
 
-	// Local IDB key. Purely client-local now -- it never travels in synced state,
-	// so the Campaign.Id prefix is no longer a leaked secret.
-	static buildStorageKey(campaign: Campaign, terrainId: string): string {
-		return `${campaign.Id}:${terrainId}`;
-	}
-
 	static isHydrated(terrain: VoxelTerrain | null | undefined): boolean {
 		return isTerrainHydrated(terrain);
 	}
@@ -135,23 +124,33 @@ export class TerrainStorageService {
 		return contentHash;
 	}
 
+	// OPFS layout: one file per terrain under a per-campaign directory, so
+	// deleting a campaign's terrains is a single recursive directory removal.
+	private static terrainPath(campaignId: string, terrainId: string): string {
+		return `terrains/${campaignId}/${terrainId}`;
+	}
+
+	private static campaignTerrainsDir(campaignId: string): string {
+		return `terrains/${campaignId}`;
+	}
+
 	private static async readRecord(
-		key: string
+		campaignId: string,
+		terrainId: string
 	): Promise<StoredVoxelTerrainRecord | null> {
-		const db = await IndexedDBUtilities.getDB();
-		return new Promise<StoredVoxelTerrainRecord | null>((resolve, reject) => {
-			const transaction = db.transaction([VOXEL_TERRAINS_STORE_NAME], "readonly");
-			const store = transaction.objectStore(VOXEL_TERRAINS_STORE_NAME);
-			const request = store.get(key);
-			request.onsuccess = () => resolve(request.result ?? null);
-			request.onerror = () => {
-				console.error(
-					`[TerrainStorageService] Failed to read terrain record: ${key}`,
-					request.error
-				);
-				reject(request.error);
-			};
-		});
+		try {
+			const blob = await OpfsUtilities.load<{ contentHash?: string }>(
+				this.terrainPath(campaignId, terrainId)
+			);
+			if (!blob) return null;
+			return { Voxels: blob.data, ContentHash: blob.metadata.contentHash };
+		} catch (error) {
+			console.error(
+				`[TerrainStorageService] Failed to read terrain record: ${campaignId}:${terrainId}`,
+				error
+			);
+			throw error;
+		}
 	}
 
 	private static async writeRecord(
@@ -160,29 +159,17 @@ export class TerrainStorageService {
 		voxels: Uint8Array,
 		contentHash: string
 	): Promise<void> {
-		const key = this.buildStorageKey(campaign, terrain.Id);
-		const db = await IndexedDBUtilities.getDB();
-		const record: StoredVoxelTerrainRecord = {
-			Key: key,
-			CampaignId: campaign.Id,
-			TerrainId: terrain.Id,
-			Voxels: voxels,
-			ContentHash: contentHash,
-			SavedAt: Date.now(),
-		};
-		await new Promise<void>((resolve, reject) => {
-			const transaction = db.transaction([VOXEL_TERRAINS_STORE_NAME], "readwrite");
-			const store = transaction.objectStore(VOXEL_TERRAINS_STORE_NAME);
-			const request = store.put(record);
-			request.onsuccess = () => resolve();
-			request.onerror = () => {
-				console.error(
-					`[TerrainStorageService] Failed to save terrain: ${terrain.Id}`,
-					request.error
-				);
-				reject(request.error);
-			};
-		});
+		try {
+			await OpfsUtilities.save(this.terrainPath(campaign.Id, terrain.Id), voxels, {
+				contentHash,
+			});
+		} catch (error) {
+			console.error(
+				`[TerrainStorageService] Failed to save terrain: ${terrain.Id}`,
+				error
+			);
+			throw error;
+		}
 	}
 
 	private static recordContentHash(record: StoredVoxelTerrainRecord): string {
@@ -198,7 +185,7 @@ export class TerrainStorageService {
 	}
 
 	/**
-	 * Persists the materialized payload for `terrain` to IndexedDB. No-op when the
+	 * Persists the materialized payload for `terrain` to OPFS. No-op when the
 	 * terrain is not currently materialized on this client.
 	 */
 	static async saveTerrain(
@@ -212,18 +199,18 @@ export class TerrainStorageService {
 		await this.writeRecord(campaign, terrain, voxels, contentHash);
 	}
 
-	/** Reads a terrain's voxels from the materialized buffer or IndexedDB. */
+	/** Reads a terrain's voxels from the materialized buffer or OPFS. */
 	static async loadVoxels(
 		campaign: Campaign,
 		terrain: VoxelTerrain
 	): Promise<Uint8Array | null> {
 		if (isTerrainHydrated(terrain)) return getTerrainVoxels(terrain.Id);
-		const record = await this.readRecord(this.buildStorageKey(campaign, terrain.Id));
+		const record = await this.readRecord(campaign.Id, terrain.Id);
 		return record?.Voxels ?? null;
 	}
 
 	/**
-	 * Materializes a terrain on this client: from IndexedDB when the cached
+	 * Materializes a terrain on this client: from OPFS when the cached
 	 * payload matches the canonical ContentHash, otherwise (players) over the
 	 * network. Returns the canonical terrain on success, or null when the payload
 	 * could not be obtained. Does NOT mutate the terrain's geometry -- voxels land
@@ -237,7 +224,7 @@ export class TerrainStorageService {
 		if (!terrain) return null;
 		if (isTerrainHydrated(terrain)) return terrain;
 
-		const record = await this.readRecord(this.buildStorageKey(campaign, terrainId));
+		const record = await this.readRecord(campaign.Id, terrainId);
 		if (record && this.recordMatches(record, terrain)) {
 			setTerrainVoxels(terrainId, record.Voxels, this.recordContentHash(record));
 			return terrain;
@@ -250,9 +237,7 @@ export class TerrainStorageService {
 		if (this.deltaWaiter && terrain.ContentHash) {
 			await this.deltaWaiter(terrainId, terrain.ContentHash);
 			if (isTerrainHydrated(terrain)) return terrain;
-			const refreshed = await this.readRecord(
-				this.buildStorageKey(campaign, terrainId)
-			);
+			const refreshed = await this.readRecord(campaign.Id, terrainId);
 			if (refreshed && this.recordMatches(refreshed, terrain)) {
 				setTerrainVoxels(
 					terrainId,
@@ -297,7 +282,7 @@ export class TerrainStorageService {
 
 	/**
 	 * Returns a terrain payload to serve to a requesting peer (DM side). Prefers
-	 * the materialized buffer, falling back to IndexedDB.
+	 * the materialized buffer, falling back to OPFS.
 	 */
 	static async getPayloadForServing(
 		campaign: Campaign,
@@ -312,13 +297,13 @@ export class TerrainStorageService {
 		}
 		const terrain = campaign.VoxelTerrains.find((t) => t.Id === terrainId);
 		if (!terrain) return null;
-		const record = await this.readRecord(this.buildStorageKey(campaign, terrainId));
+		const record = await this.readRecord(campaign.Id, terrainId);
 		if (!record) return null;
 		return { voxels: record.Voxels, contentHash: this.recordContentHash(record) };
 	}
 
 	/**
-	 * Reads a terrain's durably-stored payload from IndexedDB (NOT the in-memory
+	 * Reads a terrain's durably-stored payload from OPFS (NOT the in-memory
 	 * buffer). Used as a delta base when a delta arrives for a terrain this client
 	 * has cached on disk but not materialized in memory. Returns null when there
 	 * is no stored record.
@@ -327,14 +312,14 @@ export class TerrainStorageService {
 		campaign: Campaign,
 		terrainId: string
 	): Promise<TerrainPayload | null> {
-		const record = await this.readRecord(this.buildStorageKey(campaign, terrainId));
+		const record = await this.readRecord(campaign.Id, terrainId);
 		if (!record) return null;
 		return { voxels: record.Voxels, contentHash: this.recordContentHash(record) };
 	}
 
 	/**
 	 * Commits a delta-reconstructed payload (player side). Always refreshes the
-	 * durable IndexedDB record so future loads cache-hit, and updates the
+	 * durable OPFS record so future loads cache-hit, and updates the
 	 * in-memory buffer only when the terrain was already materialized -- so a
 	 * delta for a non-rendered terrain warms the disk cache without growing the
 	 * resident voxel set. No-op when the terrain is unknown to this campaign.
@@ -473,7 +458,7 @@ export class TerrainStorageService {
 	}
 
 	/**
-	 * Collects every terrain's payload (from the buffer or IndexedDB) for export.
+	 * Collects every terrain's payload (from the buffer or OPFS) for export.
 	 * Keyed by terrain Id; the campaign object itself stays payload-free.
 	 */
 	static async exportTerrainPayloads(
@@ -488,7 +473,7 @@ export class TerrainStorageService {
 	}
 
 	/**
-	 * Restores exported terrain payloads into IndexedDB under this (freshly
+	 * Restores exported terrain payloads into OPFS under this (freshly
 	 * id'd) campaign, so the imported terrains hydrate normally on next load.
 	 */
 	static async importTerrainPayloads(
@@ -513,45 +498,26 @@ export class TerrainStorageService {
 		terrain: VoxelTerrain
 	): Promise<void> {
 		dropTerrainVoxels(terrain.Id);
-		const key = this.buildStorageKey(campaign, terrain.Id);
-		const db = await IndexedDBUtilities.getDB();
-
-		await new Promise<void>((resolve, reject) => {
-			const transaction = db.transaction([VOXEL_TERRAINS_STORE_NAME], "readwrite");
-			const store = transaction.objectStore(VOXEL_TERRAINS_STORE_NAME);
-			const request = store.delete(key);
-
-			request.onsuccess = () => resolve();
-			request.onerror = () => {
-				console.error(
-					`[TerrainStorageService] Failed to delete terrain: ${terrain.Id}`,
-					request.error
-				);
-				reject(request.error);
-			};
-		});
+		try {
+			await OpfsUtilities.remove(this.terrainPath(campaign.Id, terrain.Id));
+		} catch (error) {
+			console.error(
+				`[TerrainStorageService] Failed to delete terrain: ${terrain.Id}`,
+				error
+			);
+			throw error;
+		}
 	}
 
 	static async deleteCampaignTerrains(campaignId: string): Promise<void> {
-		const db = await IndexedDBUtilities.getDB();
-
-		await new Promise<void>((resolve, reject) => {
-			const transaction = db.transaction([VOXEL_TERRAINS_STORE_NAME], "readwrite");
-			const store = transaction.objectStore(VOXEL_TERRAINS_STORE_NAME);
-			const request = store.getAll();
-
-			transaction.oncomplete = () => resolve();
-			transaction.onerror = () => reject(transaction.error);
-			transaction.onabort = () => reject(transaction.error);
-			request.onsuccess = () => {
-				const records = (request.result ?? []) as StoredVoxelTerrainRecord[];
-				for (const record of records) {
-					if (record.CampaignId === campaignId) {
-						store.delete(record.Key);
-					}
-				}
-			};
-			request.onerror = () => reject(request.error);
-		});
+		try {
+			await OpfsUtilities.removeDirectory(this.campaignTerrainsDir(campaignId));
+		} catch (error) {
+			console.error(
+				`[TerrainStorageService] Failed to delete campaign terrains: ${campaignId}`,
+				error
+			);
+			throw error;
+		}
 	}
 }

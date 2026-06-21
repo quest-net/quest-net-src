@@ -359,7 +359,8 @@ export const dataStructuresPage: WikiPage = {
 				<div className="space-y-4">
 					<p>
 						Storage is split by payload size and access pattern. Small app state is
-						saved to localStorage, while large or binary records use IndexedDB.
+						saved to localStorage, campaigns and images live in IndexedDB, and
+						large voxel blobs live in OPFS (the Origin Private File System).
 					</p>
 					<WikiCardGrid
 						items={[
@@ -379,15 +380,15 @@ export const dataStructuresPage: WikiPage = {
 								body: "IndexedDB store for full campaign payloads, version stamps, and save timestamps.",
 							},
 							{
-								title: "voxelTerrains",
+								title: "terrains (OPFS)",
 								tone: "success",
-								body: "IndexedDB store for large SVO voxel strings keyed by campaign and terrain ID.",
+								body: "OPFS files for large SVO voxel byte blobs, one file per terrain under terrains/<campaignId>/<terrainId>. Written off the main thread in a worker.",
 							},
 						]}
 					/>
 					<Callout tone="warning" title="Terrain hydration rule">
 						<p>
-							Inactive voxel terrains are packed into IndexedDB and stripped down
+							Inactive voxel terrains are packed into OPFS and stripped down
 							to metadata stubs. The active terrain is hydrated when a campaign is
 							loaded, and editing loads a hydrated draft.
 						</p>
@@ -426,6 +427,8 @@ export const dataStructuresPage: WikiPage = {
 					<pre className="my-4 overflow-x-auto rounded-lg border border-base-300 bg-base-200/70 p-4 font-mono text-sm leading-6">
 						{`localStorage.clear();
 indexedDB.deleteDatabase('quest-net-db');
+// Terrain voxel blobs live in OPFS, not IndexedDB -- wipe them too:
+navigator.storage.getDirectory().then(d => d.removeEntry('terrains', { recursive: true })).catch(() => {});
 Storage.prototype.setItem = () => {}; // block the beforeunload re-save
 location.reload();`}
 					</pre>

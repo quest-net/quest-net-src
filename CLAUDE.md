@@ -19,7 +19,7 @@ The sandboxed Linux shell sees a stale/truncated view of files in this repo (bas
 - **Trystero** (`^0.25.2`) for peer-to-peer networking (Nostr strategy by default, app ID `'quest-net'`)
 - **fast-json-patch** for delta state synchronization
 - **mathjs** for dice/formula evaluation
-- **IndexedDB** for image binary storage and large terrain voxel data; **localStorage** for app state (Context)
+- **IndexedDB** for image binary storage and full campaign payloads; **OPFS** (Origin Private File System, via a dedicated worker) for large terrain voxel data; **localStorage** for app state (Context)
 
 ## Architecture Overview
 
@@ -29,13 +29,13 @@ The DM holds the canonical game state. Players send action requests over Tryster
 
 ### State Management
 
-A single `Context` object holds global app state and is persisted to localStorage. It holds: `User`, `Campaigns: CampaignInfo[]` (lightweight metadata only — full campaign payloads live in IndexedDB), `ActiveCampaign: Campaign | null` (the currently open campaign, unpacked from IndexedDB), `AppSettings: Record<string, string>`, `version`, `IsOptimistic?`, `SecretModes?`, and `ViewedTerrains`. The Context is backed by a **Valtio proxy** (`contextStore` in `domains/Context/contextStore.ts`), the single source of truth. **Mutation rule:** write to `contextStore` (or anything reached through it); components read via `useSnapshot`/`useQuestContext` and must never write to that readonly snapshot. The proxy's identity is stable for the app's lifetime — `hydrateContextStore()` copies a freshly loaded Context in field-by-field rather than replacing the proxy, since long-lived holders (e.g. `ActionService`) capture it once. Valtio drives fine-grained re-renders automatically from property access, replacing the old global `triggerContextUpdate()`; `forceContextRerender()` (a `renderTick` bump) is the narrow remaining broadcast for out-of-proxy data changes (e.g. terrain voxel payloads that live in IndexedDB, not the proxy). Transient peer presence lives in a separate `presenceStore` so ping churn never touches the persisted context. **Clone boundaries:** `structuredClone` (Worker.postMessage, IndexedDB writes) throws `DataCloneError` on a Proxy — run proxy-backed campaign/terrain data through `toPlain()` (`src/utils/toPlain.ts`) before it crosses those boundaries; JSON paths (Trystero, `JSON.stringify`) read through proxies and need no conversion. Images are stored separately in IndexedDB and exchanged over dedicated Trystero channels.
+A single `Context` object holds global app state and is persisted to localStorage. It holds: `User`, `Campaigns: CampaignInfo[]` (lightweight metadata only — full campaign payloads live in IndexedDB), `ActiveCampaign: Campaign | null` (the currently open campaign, unpacked from IndexedDB), `AppSettings: Record<string, string>`, `version`, `IsOptimistic?`, `SecretModes?`, and `ViewedTerrains`. The Context is backed by a **Valtio proxy** (`contextStore` in `domains/Context/contextStore.ts`), the single source of truth. **Mutation rule:** write to `contextStore` (or anything reached through it); components read via `useSnapshot`/`useQuestContext` and must never write to that readonly snapshot. The proxy's identity is stable for the app's lifetime — `hydrateContextStore()` copies a freshly loaded Context in field-by-field rather than replacing the proxy, since long-lived holders (e.g. `ActionService`) capture it once. Valtio drives fine-grained re-renders automatically from property access, replacing the old global `triggerContextUpdate()`; `forceContextRerender()` (a `renderTick` bump) is the narrow remaining broadcast for out-of-proxy data changes (e.g. terrain voxel payloads that live in OPFS, not the proxy). Transient peer presence lives in a separate `presenceStore` so ping churn never touches the persisted context. **Clone boundaries:** `structuredClone` (Worker.postMessage, IndexedDB writes) throws `DataCloneError` on a Proxy — run proxy-backed campaign/terrain data through `toPlain()` (`src/utils/toPlain.ts`) before it crosses those boundaries; JSON paths (Trystero, `JSON.stringify`) read through proxies and need no conversion. Images are stored separately in IndexedDB and exchanged over dedicated Trystero channels.
 
 ### Action System (Command Pattern)
 
 All state mutations go through `ACTION_REGISTRY` — a map of `"domain:action"` keys to handlers with role-based permissions. `ActionService.execute()` dispatches locally for the DM or sends a request to the DM for players. This pattern enables permission checks, logging, and network serialization in one place.
 
-Action handlers mutate the campaign **in place** through the Valtio proxy (`contextStore`), and Valtio's proxy-based tracking re-renders exactly the components that read the changed paths — no manual reference-bumping is required (the former `ActionService.bumpCampaignRefs()` was removed with the Valtio migration). The one case Valtio cannot see is data that lives **outside** the proxy — notably terrain voxel payloads stored in IndexedDB, where only a stub sits on the campaign; after such a change call `forceContextRerender()` so map consumers re-mesh.
+Action handlers mutate the campaign **in place** through the Valtio proxy (`contextStore`), and Valtio's proxy-based tracking re-renders exactly the components that read the changed paths — no manual reference-bumping is required (the former `ActionService.bumpCampaignRefs()` was removed with the Valtio migration). The one case Valtio cannot see is data that lives **outside** the proxy — notably terrain voxel payloads stored in OPFS, where only a stub sits on the campaign; after such a change call `forceContextRerender()` so map consumers re-mesh.
 
 ### State Sync
 
@@ -78,7 +78,7 @@ Each domain typically has a model file (`Domain.ts`), an actions file (`DomainAc
 - **Actor / Character / Entity** — Characters are player-controlled actors; Entities are NPCs/enemies. Both extend the Actor base (stats, actions, attributes, inventory, equipment, skills, statuses, position, color, size). `Character` additionally has `Notes: Note[]` and `CritMessage?`.
 - **GameState** — Live session state: active characters/entities, combat state, scene, audio list, volume, calendar day, remaining short rests. Terrain is no longer tracked here — each actor's `Position.terrainId` determines which terrain it occupies (multi-terrain worlds).
 - **Item / Skill / Status** — Templates stored on the campaign; instances slotted onto actors.
-- **VoxelTerrain** — 3D voxel grid encoded as a **base64-encoded Sparse Voxel Octree (SVO)**; voxel positions are implicit in the octree structure and colors are stored as a parallel byte stream. Supports configurable resolution (1–3 voxels per tactical unit). Has `Lighting` and `Background` properties. Large terrain voxel data is offloaded to IndexedDB via `TerrainStorageService`; the `Voxels` field may be a stub until hydrated. `Campaign.VoxelTerrains[]` holds all terrains; `GameState.VoxelTerrainId` points to the active one.
+- **VoxelTerrain** — 3D voxel grid encoded as a **binary Sparse Voxel Octree (SVO)** (raw `Uint8Array` bytes; the wire, WASM codec, and storage all use bytes); voxel positions are implicit in the octree structure and colors are stored as a parallel byte stream. Supports configurable resolution (1–3 voxels per tactical unit). Has `Lighting` and `Background` properties. Large terrain voxel data is offloaded to OPFS via `TerrainStorageService` (which delegates the actual file I/O to the generic `OpfsUtilities` + a dedicated worker); the `Voxels` field may be a stub until hydrated. `Campaign.VoxelTerrains[]` holds all terrains; `GameState.VoxelTerrainId` points to the active one.
 - **Terrain** — UI wrapper (Edit/Index/Display) for creating and managing VoxelTerrains.
 - **Scene** — Environment and focus images for the current encounter.
 - **Image** — Metadata in campaign, binary data in IndexedDB via ImageService.
@@ -166,7 +166,7 @@ See `src/DEVELOPMENT_NOTES.md` for full networking constraints and implementatio
 - **StateSync.ts** — delta/full-state broadcast to peers
 - **ImageService.ts** — IndexedDB image storage and peer transfer
 - **ImageGenerationService.ts** + `imageGenerationProviders/` — AI image generation (Google Gemini Flash, OpenAI GPT-Image, Flux2Pro, Kling)
-- **TerrainStorageService.ts** — stores large voxel data blobs in IndexedDB separately from the campaign object
+- **TerrainStorageService.ts** — stores large voxel data blobs in OPFS (via the generic `OpfsUtilities` in `src/utils/`, which runs a dedicated worker) separately from the campaign object; networking-free (transfer hooks installed by `TerrainTransferService`)
 - **ActorPoseService.ts** — live actor pose overrides (synced via `actorPose` channel)
 - **CampaignLoadingService.ts** — campaign load/save orchestration
 - **SoundEffectService.ts** — sound effect playback
@@ -186,10 +186,10 @@ npm run deploy:2.0
 
 - Domain files live together: model, actions, and UI components for each domain
 - All state mutations flow through the action registry — never mutate campaign state directly in components
-- Mutate campaign state through the Valtio `contextStore` proxy (directly or via action handlers); never write to the readonly `useSnapshot`/`useQuestContext` value. Valtio re-renders proxy readers automatically — call `forceContextRerender()` only for out-of-proxy data (e.g. IndexedDB terrain payloads). Run proxy-backed data through `toPlain()` before any structured-clone boundary (workers, IndexedDB, `structuredClone`)
+- Mutate campaign state through the Valtio `contextStore` proxy (directly or via action handlers); never write to the readonly `useSnapshot`/`useQuestContext` value. Valtio re-renders proxy readers automatically — call `forceContextRerender()` only for out-of-proxy data (e.g. OPFS terrain payloads). Run proxy-backed data through `toPlain()` before any structured-clone boundary (workers, IndexedDB, `structuredClone`)
 - Role permissions are checked via `canPerformAction(user, actionKey)`
 - Images are always metadata-in-campaign, binary-in-IndexedDB
-- Large terrain voxel data is always stored in IndexedDB via `TerrainStorageService`; never embed large `Voxels` strings directly in the campaign object or localStorage
+- Large terrain voxel data is always stored in OPFS via `TerrainStorageService`; never embed large `Voxels` byte blobs directly in the campaign object or localStorage
 - Tags double as folder paths for hierarchical organization (via FolderUtils)
 - Dice notation follows D&D conventions: `2d6`, `1d20+5`, `2d20kh1` (keep highest), etc.
 
