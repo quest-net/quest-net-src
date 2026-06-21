@@ -171,7 +171,8 @@ function getOccupiedActorPositionKeys(
 function returnCharacterToRoster(
 	campaign: Campaign,
 	character: Character,
-	context: Context
+	context: Context,
+	reason = "due to invalid voxel position"
 ): void {
 	const alreadyInRoster = campaign.CharacterRoster.some(
 		(candidate) => candidate.Id === character.Id
@@ -188,11 +189,47 @@ function returnCharacterToRoster(
 	LogActions.create(
 		{
 			action: "Character despawned",
-			details: `${character.Name} returned to roster due to invalid voxel position`,
+			details: `${character.Name} returned to roster ${reason}`,
 			category: "system",
 			level: "important",
 			visibility: ["all"],
 			actorId: character.Id,
+		},
+		context
+	);
+}
+
+/**
+ * Removes a single on-field actor from its GameState array: characters return to
+ * the roster, entities/items are dropped. Shared by position-repair despawns and
+ * terrain-deletion despawns so both honor the same character-vs-entity handling.
+ */
+function despawnFieldActor(
+	campaign: Campaign,
+	actors: Actor[],
+	actorId: string,
+	type: "entity" | "character",
+	context: Context,
+	reason: string
+): void {
+	const arrayIndex = actors.findIndex((actor) => actor.Id === actorId);
+	if (arrayIndex === -1) return;
+
+	const actor = actors[arrayIndex];
+	actors.splice(arrayIndex, 1);
+	if (type === "character") {
+		returnCharacterToRoster(campaign, actor as Character, context, reason);
+		return;
+	}
+
+	LogActions.create(
+		{
+			action: `${type} despawned`,
+			details: `${actor.Name} was removed ${reason}`,
+			category: "system",
+			level: "verbose",
+			visibility: ["dm"],
+			actorId: actor.Id,
 		},
 		context
 	);
@@ -345,26 +382,55 @@ export const VoxelTerrainUtils = {
 		}
 
 		for (const actorId of toRemove) {
-			const arrayIndex = actors.findIndex((actor) => actor.Id === actorId);
-			if (arrayIndex === -1) continue;
+			despawnFieldActor(
+				campaign,
+				actors,
+				actorId,
+				type,
+				context,
+				"due to invalid voxel position"
+			);
+		}
+	},
 
-			const actor = actors[arrayIndex];
-			actors.splice(arrayIndex, 1);
-			if (type === "character") {
-				returnCharacterToRoster(campaign, actor as Character, context);
-				continue;
-			}
+	/**
+	 * Despawns every on-field actor standing on `terrainId` — characters return to
+	 * the roster, entities/items are dropped. Called when a terrain is deleted:
+	 * those actors have nowhere to stand, and silently teleporting them to another
+	 * terrain would put them somewhere the DM never intended.
+	 */
+	despawnActorsOnTerrain(
+		campaign: Campaign,
+		terrainId: string,
+		context: Context
+	): void {
+		const reason = "because its terrain was deleted";
 
-			LogActions.create(
-				{
-					action: `${type} despawned`,
-					details: `${actor.Name} was removed due to invalid voxel position`,
-					category: "system",
-					level: "verbose",
-					visibility: ["dm"],
-					actorId: actor.Id,
-				},
-				context
+		const characterIds = campaign.GameState.Characters.filter(
+			(actor) => actor.Position.terrainId === terrainId
+		).map((actor) => actor.Id);
+		for (const actorId of characterIds) {
+			despawnFieldActor(
+				campaign,
+				campaign.GameState.Characters,
+				actorId,
+				"character",
+				context,
+				reason
+			);
+		}
+
+		const entityIds = campaign.GameState.Entities.filter(
+			(actor) => actor.Position.terrainId === terrainId
+		).map((actor) => actor.Id);
+		for (const actorId of entityIds) {
+			despawnFieldActor(
+				campaign,
+				campaign.GameState.Entities,
+				actorId,
+				"entity",
+				context,
+				reason
 			);
 		}
 	},

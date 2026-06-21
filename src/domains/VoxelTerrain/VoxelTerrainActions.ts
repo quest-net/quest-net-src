@@ -129,6 +129,11 @@ export const VoxelTerrainActions = {
 			return;
 		}
 
+		// Despawn any actors standing on this terrain before it disappears: they
+		// have nowhere to stand, and silently relocating them would put them
+		// somewhere the DM never intended. Characters return to the roster.
+		VoxelTerrainUtils.despawnActorsOnTerrain(campaign, terrain.Id, context);
+
 		campaign.VoxelTerrains.splice(arrayIndex, 1);
 		await TerrainStorageService.deleteTerrain(campaign, terrain);
 
