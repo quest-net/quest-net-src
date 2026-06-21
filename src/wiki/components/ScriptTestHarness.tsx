@@ -242,7 +242,7 @@ export function ScriptTestHarness() {
 						<div className="mb-1 text-xs font-semibold opacity-70">
 							State diff (live campaign untouched)
 						</div>
-						<pre className="max-h-80 overflow-auto rounded-lg border border-base-300 bg-base-200 p-3 font-mono text-xs">
+						<pre className="max-h-80 overflow-auto rounded-lg border border-base-300 bg-base-200 p-3 font-mono text-xs text-base-content">
 							<code>{output.patch}</code>
 						</pre>
 					</div>

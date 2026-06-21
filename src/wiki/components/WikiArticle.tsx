@@ -83,7 +83,7 @@ export function WikiArticle({ pageExists, visiblePage }: WikiArticleProps) {
 								{section.title}
 							</h2>
 						</div>
-						<div className="max-w-4xl text-base leading-8 opacity-70 [&_code]:rounded [&_code]:bg-base-content [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm [&_code]:font-semibold [&_code]:text-base-100">
+						<div className="max-w-4xl text-base leading-8 text-base-content/70 [&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-base-300 [&_:not(pre)>code]:px-1.5 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:font-mono [&_:not(pre)>code]:text-[0.85em] [&_:not(pre)>code]:font-medium [&_:not(pre)>code]:text-base-content">
 							{section.body}
 						</div>
 					</section>

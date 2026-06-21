@@ -19,7 +19,7 @@ import { ScriptTestHarness } from "../components/ScriptTestHarness";
 /** A small multi-line code block (WikiCode is inline-only). */
 function CodeBlock({ children }: { children: ReactNode }) {
 	return (
-		<pre className="overflow-x-auto rounded-lg border border-base-300 bg-base-200 p-4 font-mono text-xs leading-relaxed">
+		<pre className="overflow-x-auto rounded-lg border border-base-300 bg-base-200 p-4 font-mono text-sm leading-relaxed text-base-content">
 			<code>{children}</code>
 		</pre>
 	);

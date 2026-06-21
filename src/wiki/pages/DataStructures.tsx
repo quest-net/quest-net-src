@@ -424,7 +424,7 @@ export const dataStructuresPage: WikiPage = {
 						Neutralizing <Code>setItem</Code> makes the unload-time flush a no-op
 						so the reload starts from an empty store:
 					</p>
-					<pre className="my-4 overflow-x-auto rounded-lg border border-base-300 bg-base-200/70 p-4 font-mono text-sm leading-6">
+					<pre className="my-4 overflow-x-auto rounded-lg border border-base-300 bg-base-200/70 p-4 font-mono text-sm leading-6 text-base-content">
 						{`localStorage.clear();
 indexedDB.deleteDatabase('quest-net-db');
 // Terrain voxel blobs live in OPFS, not IndexedDB -- wipe them too:

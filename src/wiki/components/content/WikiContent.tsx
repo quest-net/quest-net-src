@@ -68,7 +68,7 @@ const textToneClass: Record<WikiTone, string> = {
 
 export function WikiCode({ children }: { children: ReactNode }) {
 	return (
-		<code className="rounded bg-base-content px-1.5 py-0.5 font-mono text-sm font-semibold text-base-100">
+		<code className="rounded bg-base-300 px-1.5 py-0.5 font-mono text-[0.85em] font-medium text-base-content">
 			{children}
 		</code>
 	);
