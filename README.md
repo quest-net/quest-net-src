@@ -2,58 +2,71 @@
 
 Quest-Net is a real-time collaborative tabletop RPG manager for DMs and players. It brings campaign prep, live play, peer-to-peer sessions, 3D voxel maps, character sheets, combat tools, dice, images, scenes, audio, and world rules into one browser app.
 
-<p align="center">
-  <img src="docs/screenshots/01-main-world-view.png" alt="Quest-Net DM world view with a voxel terrain and session controls" width="900">
-</p>
+At the table, the DM view keeps the 3D terrain, active actors, environment controls, calendar, rests, and stat cards visible in one workspace.
 
-## Highlights
+![Quest-Net DM world view with a voxel terrain and session controls](docs/screenshots/01-main-world-view.png)
 
-- **DM-as-authority multiplayer:** players join by room code while the DM owns the canonical campaign state.
-- **3D voxel tabletop:** run encounters in an isometric world view, switch into first-person mode, highlight movement, place actors, and manage terrain-specific scenes.
-- **Built-in campaign database:** manage characters, entities, items, skills, statuses, images, audio, scenarios, terrains, logs, and campaign settings.
-- **Terrain creation tools:** paint voxel maps, import `.vox` models, use material palettes, add terrain links, and preview maps with actors.
-- **Session tools:** roll dice formulas, track stats and action economy, run rests, manage calendar time, show scene art, and prep privately with secret mode.
-- **Local-first asset storage:** image binaries and large terrain payloads are stored outside the main campaign state for practical browser persistence.
+## Start A Campaign
 
-## Screenshots
+Quest-Net opens with a focused launch screen for local prep, wiki access, settings, and campaign entry.
 
-### Play
+![Quest-Net homepage with animated title](docs/screenshots/12-homepage.png)
 
-| DM world view | Movement highlighting |
-| --- | --- |
-| <img src="docs/screenshots/01-main-world-view.png" alt="DM world view with terrain tab and actor controls" width="430"> | <img src="docs/screenshots/10-movement-highlight.png" alt="Movement highlight shown on a 3D terrain" width="430"> |
+Campaigns can be created locally, imported from JSON, resumed from the campaign list, or joined by room code as a player.
 
-| First-person mode | Scene display |
-| --- | --- |
-| <img src="docs/screenshots/03-first-person-view.png" alt="First-person character point of view on terrain" width="430"> | <img src="docs/screenshots/08-scene-display.png" alt="Scene artwork displayed over the active map" width="430"> |
+![Campaign creation form and campaign list](docs/screenshots/11-campaigns-list.png)
 
-| Dice roller | Campaign setup |
-| --- | --- |
-| <img src="docs/screenshots/02-dice-roller-formula.png" alt="Dice roller with several dice and formula results" width="430"> | <img src="docs/screenshots/11-campaigns-list.png" alt="Campaign creation form and campaign list" width="430"> |
+## Run The Table
 
-### Build
+Movement range is visualized directly on the terrain, so the DM and players can reason about reachable spaces in context.
 
-| Terrain editor | Campaign settings |
-| --- | --- |
-| <img src="docs/screenshots/04-terrain-editor.png" alt="Voxel terrain editor with cathedral terrain and palette" width="430"> | <img src="docs/screenshots/06-campaign-settings-stats-actions.png" alt="Campaign settings for stats, actions, and attributes" width="430"> |
+![Movement highlight shown on a 3D terrain](docs/screenshots/10-movement-highlight.png)
 
-| Items | Entities |
-| --- | --- |
-| <img src="docs/screenshots/05-items-tab.png" alt="Item templates grid with images and spawn actions" width="430"> | <img src="docs/screenshots/09-entities-tab.png" alt="Entity templates grid with illustrated entities" width="430"> |
+Scene art can be displayed over the map during play while the active actor list and campaign clock stay available.
 
-| Image library | Home |
-| --- | --- |
-| <img src="docs/screenshots/07-images-tab.png" alt="Campaign image library with upload drop zone and thumbnails" width="430"> | <img src="docs/screenshots/12-homepage.png" alt="Quest-Net homepage with animated title" width="430"> |
+![Scene artwork displayed over the active map](docs/screenshots/08-scene-display.png)
+
+The map can also switch into first-person mode from a character's point of view for exploration, positioning, and table-facing reveals.
+
+![First-person character point of view on terrain](docs/screenshots/03-first-person-view.png)
+
+The dice roller supports TTRPG formulas and quick dice buttons, with the panel floating over the active session.
+
+![Dice roller with several dice and formula results](docs/screenshots/02-dice-roller-formula.png)
+
+## Build The World
+
+The terrain editor supports high-resolution voxel maps, `.vox` imports, tile and voxel brush modes, actor overlays, material palettes, lighting presets, and preview tools.
+
+![Voxel terrain editor with cathedral terrain and palette](docs/screenshots/04-terrain-editor.png)
+
+Campaign settings let the DM define stat pools, action economy, attributes, combat rules, rest rules, visibility, terrain presets, shared inventories, and world-rule scripts.
+
+![Campaign settings for stats, actions, and attributes](docs/screenshots/06-campaign-settings-stats-actions.png)
+
+## Manage The Campaign
+
+Item templates can include art, descriptions, tags, folders, scripted behavior, and spawn controls for dropping objects into the live scene.
+
+![Item templates grid with images and spawn actions](docs/screenshots/05-items-tab.png)
+
+Entity templates use the same campaign database patterns, making NPCs, enemies, hazards, and reusable encounter pieces easy to browse and spawn.
+
+![Entity templates grid with illustrated entities](docs/screenshots/09-entities-tab.png)
+
+Images live in a campaign image library and can be reused for characters, entities, scenes, focus art, maps, and item cards.
+
+![Campaign image library with upload drop zone and thumbnails](docs/screenshots/07-images-tab.png)
 
 ## Tech Stack
 
-- React 19, TypeScript, React Router, and Vite
-- Tailwind CSS 4 and DaisyUI 5
-- Three.js for voxel terrain, world view, and first-person rendering
-- Trystero for peer-to-peer networking
-- IndexedDB and OPFS-backed storage for images and terrain payloads
-- fast-json-patch for state deltas
-- mathjs for dice and formula evaluation
+- **App framework:** [React](https://github.com/facebook/react), [TypeScript](https://github.com/microsoft/TypeScript), [React Router](https://github.com/remix-run/react-router), and [Vite](https://github.com/vitejs/vite)
+- **UI and styling:** [Tailwind CSS](https://github.com/tailwindlabs/tailwindcss), [DaisyUI](https://github.com/saadeghi/daisyui), and [Iconify](https://github.com/iconify/iconify)
+- **3D map:** [Three.js](https://github.com/mrdoob/three.js) and [postprocessing](https://github.com/pmndrs/postprocessing)
+- **Animation and panels:** [GSAP](https://github.com/greensock/GSAP), [Motion](https://github.com/motiondivision/motion), and [react-rnd](https://github.com/bokuweb/react-rnd)
+- **State and data utilities:** [Valtio](https://github.com/pmndrs/valtio), [colorjs.io](https://github.com/color-js/color.js), [fast-json-patch](https://github.com/Starcounter-Jack/JSON-Patch), and [mathjs](https://github.com/josdejong/mathjs)
+- **Multiplayer:** [Trystero](https://github.com/dmotz/trystero) for peer-to-peer rooms and WebRTC signaling
+- **Storage:** localStorage for compact app state, plus IndexedDB and OPFS-backed payload storage for images and large voxel terrains
 
 ## Quick Start
 
