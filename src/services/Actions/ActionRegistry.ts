@@ -108,6 +108,11 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		handler: ActorActions.bulkEditTags,
 		scriptable: true,
 	},
+	"actor:bulkDelete": {
+		roles: ["dm"],
+		handler: ActorActions.bulkDelete,
+		scriptable: false,
+	},
 	"actor:transferStat": {
 		roles: ["dm", "player"],
 		handler: ActorActions.transferStat,
@@ -197,6 +202,11 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		handler: ItemActions.bulkEditTags,
 		scriptable: true,
 	},
+	"item:bulkDelete": {
+		roles: ["dm"],
+		handler: ItemActions.bulkDelete,
+		scriptable: false,
+	},
 
 	// ============================================================================
 	// SHARED INVENTORY ACTIONS
@@ -258,6 +268,11 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm"],
 		handler: SkillActions.bulkEditTags,
 		scriptable: true,
+	},
+	"skill:bulkDelete": {
+		roles: ["dm"],
+		handler: SkillActions.bulkDelete,
+		scriptable: false,
 	},
 	"skill:adjustUses": {
 		roles: ["dm", "player"],
@@ -390,6 +405,11 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		handler: ImageActions.bulkEditTags,
 		scriptable: true,
 	},
+	"image:bulkDelete": {
+		roles: ["dm"],
+		handler: ImageActions.bulkDelete,
+		scriptable: false,
+	},
 	"image:reassignOwner": {
 		roles: ["dm"],
 		handler: ImageActions.reassignOwner,
@@ -433,6 +453,11 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		roles: ["dm"],
 		handler: StatusActions.bulkEditTags,
 		scriptable: true,
+	},
+	"status:bulkDelete": {
+		roles: ["dm"],
+		handler: StatusActions.bulkDelete,
+		scriptable: false,
 	},
 	// ============================================================================
 	// LOG ACTIONS

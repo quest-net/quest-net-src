@@ -172,6 +172,38 @@ export const StatusActions = {
 	},
 
 	/**
+	 * Permanently deletes multiple status templates in one operation.
+	 * Mirrors bulkEditTags: single log entry, single state sync.
+	 */
+	bulkDelete(params: { statusIds: string[] }, context: Context): void {
+		const campaign = CampaignUtils.getActiveCampaign(context);
+
+		let count = 0;
+		params.statusIds.forEach((statusId) => {
+			const idx = campaign.StatusTemplates.findIndex((s) => s.Id === statusId);
+			if (idx !== -1) {
+				campaign.StatusTemplates.splice(idx, 1);
+				count++;
+			} else {
+				console.warn(`Status not found for bulk delete: ${statusId}`);
+			}
+		});
+
+		if (count === 0) return;
+
+		LogActions.create(
+			{
+				action: "Statuses deleted",
+				details: `${count} status(es) removed from templates`,
+				category: "combat",
+				level: "important",
+				visibility: ["dm"],
+			},
+			context
+		);
+	},
+
+	/**
 	 * Bulk edit tags for multiple statuses
 	 */
 	bulkEditTags(

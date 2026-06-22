@@ -78,6 +78,9 @@ export const ACTION_DOCS: Record<string, ActionDoc> = {
 	"actor:bulkEditTags": {
 		whenFires: "Tags are added/removed across one or more actors in a batch.",
 	},
+	"actor:bulkDelete": {
+		whenFires: "Multiple actors are deleted from the roster/templates in a batch (not the field). Not scriptable.",
+	},
 	"actor:transferStat": {
 		whenFires: "A stat amount is moved from one actor to another (clamped 0..Max).",
 	},
@@ -107,6 +110,7 @@ export const ACTION_DOCS: Record<string, ActionDoc> = {
 	"item:pickup": { whenFires: "An item is picked up from the terrain by an actor." },
 	"item:spawn": { whenFires: "An item is placed onto the terrain (loot drop) from a template." },
 	"item:bulkEditTags": { whenFires: "Tags are batch-edited across item templates." },
+	"item:bulkDelete": { whenFires: "Multiple item templates are deleted in a batch. Not scriptable." },
 
 	// Shared inventory
 	"sharedInventory:transferItem": {
@@ -131,6 +135,7 @@ export const ACTION_DOCS: Record<string, ActionDoc> = {
 	"skill:discard": { whenFires: "A skill is removed from an actor." },
 	"skill:give": { whenFires: "A skill is added to an actor (from a template)." },
 	"skill:bulkEditTags": { whenFires: "Tags are batch-edited across skill templates." },
+	"skill:bulkDelete": { whenFires: "Multiple skill templates are deleted in a batch. Not scriptable." },
 	"skill:adjustUses": { whenFires: "A skill slot's remaining uses are set to an absolute value." },
 
 	// Entity
@@ -164,6 +169,7 @@ export const ACTION_DOCS: Record<string, ActionDoc> = {
 	"image:edit": { whenFires: "An image's metadata is edited." },
 	"image:delete": { whenFires: "An image is deleted. Not scriptable." },
 	"image:bulkEditTags": { whenFires: "Tags are batch-edited across images." },
+	"image:bulkDelete": { whenFires: "Multiple images are deleted in a batch. Not scriptable." },
 	"image:reassignOwner": { whenFires: "An image's owner is reassigned." },
 
 	// Status
@@ -174,6 +180,7 @@ export const ACTION_DOCS: Record<string, ActionDoc> = {
 	"status:delete": { whenFires: "A status template is deleted. Not scriptable." },
 	"status:adjustDuration": { whenFires: "A status slot's remaining duration is set to an absolute value." },
 	"status:bulkEditTags": { whenFires: "Tags are batch-edited across status templates." },
+	"status:bulkDelete": { whenFires: "Multiple status templates are deleted in a batch. Not scriptable." },
 
 	// Log
 	"log:create": { whenFires: "A log entry is created with full metadata (category/level/visibility)." },

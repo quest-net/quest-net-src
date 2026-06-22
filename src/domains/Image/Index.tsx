@@ -18,6 +18,7 @@ import {
 	PickableUser,
 } from "../../components/pickers/UserPicker";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
 
 export function ImageIndex() {
 	const context = useQuestContext();
@@ -99,6 +100,17 @@ export function ImageIndex() {
 		});
 	};
 
+	const handleBulkDelete = (imageIds: string[]) => {
+		if (!actionService) return;
+
+		// Remove metadata from the campaign (broadcasts to peers via StateSync).
+		actionService.execute("image:bulkDelete", { imageIds });
+		// Drop the blobs from IndexedDB. Fire-and-forget, mirroring the single
+		// delete in ImageEdit: the action above has already removed the metadata,
+		// so the images are logically gone even if blob cleanup lags or fails.
+		imageIds.forEach((id) => void IndexedDBUtilities.remove(id));
+	};
+
 	const formatFileSize = (bytes: number): string => {
 		if (bytes < 1024) return `${bytes} B`;
 		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -140,6 +152,7 @@ export function ImageIndex() {
 				searchPlaceholder="Search images by name..."
 				emptyMessage="No images yet. Upload one to get started!"
 				onBulkUpdateItemTags={handleBulkUpdateImageTags}
+				onBulkDelete={handleBulkDelete}
 				selectionActions={selectionActions}
 				renderEditForm={(item, { closeDrawer }) => {
 					const image = item

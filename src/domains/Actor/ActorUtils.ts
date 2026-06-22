@@ -409,6 +409,47 @@ export const ActorUtils = {
 		);
 	},
 	/**
+	 * Bulk deletes multiple actors from the roster/templates (NOT from GameState)
+	 * Works for both Characters and Entities
+	 */
+	bulkDelete(
+		type: "character" | "entity",
+		params: { actorIds: string[] },
+		context: Context
+	): void {
+		const campaign = CampaignUtils.getActiveCampaign(context);
+		const roster =
+			type === "character"
+				? campaign.CharacterRoster
+				: campaign.EntityTemplates;
+
+		let count = 0;
+
+		params.actorIds.forEach((actorId) => {
+			const index = roster.findIndex((a) => a.Id === actorId);
+			if (index !== -1) {
+				roster.splice(index, 1);
+				count++;
+			} else {
+				console.warn(`${type} not found for bulk delete: ${actorId}`);
+			}
+		});
+
+		if (count === 0) return;
+
+		LogActions.create(
+			{
+				action: "Actors deleted",
+				details: `${count} ${type === "character" ? "character" : "entity"}(s) removed from ${type === "character" ? "roster" : "catalog"}`,
+				category: type === "character" ? "character" : "combat",
+				level: "important",
+				visibility: ["dm"],
+			},
+			context
+		);
+	},
+
+	/**
 	 * Bulk edit tags for multiple actors in roster/templates
 	 * Works for both Characters and Entities
 	 */

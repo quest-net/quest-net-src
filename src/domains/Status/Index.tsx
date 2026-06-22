@@ -31,6 +31,11 @@ export function StatusIndex() {
 		});
 	};
 
+	const handleBulkDelete = (statusIds: string[]) => {
+		if (!actionService) return;
+		actionService.execute("status:bulkDelete", { statusIds });
+	};
+
 	const statuses: IndexViewItem[] = (campaign.StatusTemplates as Status[]).map(
 		(status) => ({
 			id: status.Id,
@@ -53,6 +58,7 @@ export function StatusIndex() {
 			searchPlaceholder="Search statuses by name..."
 			emptyMessage="No statuses yet. Create one to get started!"
 			onBulkUpdateItemTags={handleBulkUpdateStatusTags}
+			onBulkDelete={handleBulkDelete}
 			renderEditForm={(item, { currentPath, closeDrawer }) => {
 				const found = item
 					? (campaign.StatusTemplates as Status[]).find((s) => s.Id === item.id)

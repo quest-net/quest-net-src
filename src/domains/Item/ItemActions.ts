@@ -291,6 +291,38 @@ export const ItemActions = {
 		);
 	},
 	/**
+	 * Permanently deletes multiple item templates in one operation.
+	 * Mirrors bulkEditTags: single log entry, single state sync.
+	 */
+	bulkDelete(params: { itemIds: string[] }, context: Context): void {
+		const campaign = CampaignUtils.getActiveCampaign(context);
+
+		let count = 0;
+		params.itemIds.forEach((itemId) => {
+			const idx = campaign.ItemTemplates.findIndex((i) => i.Id === itemId);
+			if (idx !== -1) {
+				campaign.ItemTemplates.splice(idx, 1);
+				count++;
+			} else {
+				console.warn(`Item not found for bulk delete: ${itemId}`);
+			}
+		});
+
+		if (count === 0) return;
+
+		LogActions.create(
+			{
+				action: "Items deleted",
+				details: `${count} item(s) removed from templates`,
+				category: "item",
+				level: "important",
+				visibility: ["dm"],
+			},
+			context
+		);
+	},
+
+	/**
 	 * Bulk edit tags for multiple items
 	 */
 	bulkEditTags(

@@ -176,6 +176,38 @@ export const SkillActions = {
 	},
 
 	/**
+	 * Permanently deletes multiple skill templates in one operation.
+	 * Mirrors bulkEditTags: single log entry, single state sync.
+	 */
+	bulkDelete(params: { skillIds: string[] }, context: Context): void {
+		const campaign = CampaignUtils.getActiveCampaign(context);
+
+		let count = 0;
+		params.skillIds.forEach((skillId) => {
+			const idx = campaign.SkillTemplates.findIndex((s) => s.Id === skillId);
+			if (idx !== -1) {
+				campaign.SkillTemplates.splice(idx, 1);
+				count++;
+			} else {
+				console.warn(`Skill not found for bulk delete: ${skillId}`);
+			}
+		});
+
+		if (count === 0) return;
+
+		LogActions.create(
+			{
+				action: "Skills deleted",
+				details: `${count} skill(s) removed from templates`,
+				category: "skill",
+				level: "important",
+				visibility: ["dm"],
+			},
+			context
+		);
+	},
+
+	/**
 	 * Bulk edit tags for multiple skills
 	 */
 	bulkEditTags(

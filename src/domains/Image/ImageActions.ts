@@ -157,6 +157,40 @@ export const ImageActions = {
 	},
 
 	/**
+	 * Permanently deletes multiple images from the campaign catalog (metadata
+	 * only) in one operation. Mirrors `bulkEditTags`: single log entry, single
+	 * state sync. NOTE: IndexedDB blob cleanup is handled by the caller (the
+	 * Index view) — see ImageActions.delete for the per-image rationale.
+	 */
+	bulkDelete(params: { imageIds: string[] }, context: Context): void {
+		const campaign = CampaignUtils.getActiveCampaign(context);
+
+		let count = 0;
+		params.imageIds.forEach((imageId) => {
+			const index = campaign.Images.findIndex((img) => img.Id === imageId);
+			if (index !== -1) {
+				campaign.Images.splice(index, 1);
+				count++;
+			} else {
+				console.warn(`Image not found for bulk delete: ${imageId}`);
+			}
+		});
+
+		if (count === 0) return;
+
+		LogActions.create(
+			{
+				action: "Images removed",
+				details: `${count} image(s) deleted`,
+				category: "system",
+				level: "important",
+				visibility: ["dm"],
+			},
+			context
+		);
+	},
+
+	/**
 	 * Reassigns ownership of the given images to `toUserId`. Pass
 	 * `toUserId: undefined` to release them back to the shared DM library
 	 * (no owner). Mirrors `bulkEditTags`: operates on an explicit set of

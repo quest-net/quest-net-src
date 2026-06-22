@@ -45,6 +45,11 @@ export function EntityIndex() {
 		});
 	};
 
+	const handleBulkDelete = (actorIds: string[]) => {
+		if (!actionService) return;
+		actionService.execute("actor:bulkDelete", { actorIds });
+	};
+
 	// Handle Give Objects selection action
 	const handleGiveObjectsClick = (selectedIds: string[]) => {
 		setSelectedActorIds(selectedIds);
@@ -129,6 +134,7 @@ export function EntityIndex() {
 				searchPlaceholder="Search entities by name..."
 				emptyMessage="No entities yet. Create one to get started!"
 				onBulkUpdateItemTags={handleBulkUpdateItemTags}
+				onBulkDelete={handleBulkDelete}
 				selectionActions={selectionActions}
 				renderEditForm={(item, { currentPath, closeDrawer }) => {
 					const entity = item

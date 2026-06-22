@@ -32,6 +32,11 @@ export function ItemIndex() {
 		});
 	};
 
+	const handleBulkDelete = (itemIds: string[]) => {
+		if (!actionService) return;
+		actionService.execute("item:bulkDelete", { itemIds });
+	};
+
 	const handleSpawnItem = (itemId: string) => {
 		if (!actionService) return;
 
@@ -74,6 +79,7 @@ export function ItemIndex() {
 			searchPlaceholder="Search items by name..."
 			emptyMessage="No items yet. Create one to get started!"
 			onBulkUpdateItemTags={handleBulkUpdateItemTags}
+			onBulkDelete={handleBulkDelete}
 			renderEditForm={(item, { currentPath, closeDrawer }) => {
 				const found = item
 					? (campaign.ItemTemplates as Item[]).find((i) => i.Id === item.id)

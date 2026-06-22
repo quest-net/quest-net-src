@@ -4,6 +4,7 @@ import { useState, ReactNode, useEffect } from "react";
 import { ImageDisplay } from "../../domains/Image/ImageDisplay";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import { EmptyState } from "../ui/EmptyState";
+import { ConfirmButton } from "../ui/ConfirmButton";
 import {
 	getFoldersAtPath,
 	getItemsAtPath,
@@ -89,6 +90,13 @@ interface IndexViewProps {
 	// Selection actions - custom actions to perform on selected items
 	selectionActions?: SelectionAction[];
 
+	/**
+	 * Opt-in bulk delete. When provided, selection mode shows a two-click
+	 * "Delete" confirm button that permanently removes the selected items. Omit
+	 * to hide the control entirely (most domains don't expose bulk delete).
+	 */
+	onBulkDelete?: (selectedIds: string[]) => void;
+
 	// Optional
 	emptyMessage?: string;
 }
@@ -112,6 +120,7 @@ export function IndexView({
 	editFormFullWidth = false,
 	onBulkUpdateItemTags,
 	selectionActions = [],
+	onBulkDelete,
 	emptyMessage = "No items yet. Create one to get started!",
 }: IndexViewProps) {
 	const [searchQuery, setSearchQuery] = useState("");
@@ -312,6 +321,12 @@ export function IndexView({
 		// Note: Don't automatically exit selection mode - let the action handler decide
 	};
 
+	const handleBulkDelete = () => {
+		if (!onBulkDelete || selectedItemIds.size === 0) return;
+		onBulkDelete(Array.from(selectedItemIds));
+		handleExitSelectionMode();
+	};
+
 	// Pagination handlers
 	const handlePrevPage = () => {
 		setCurrentPage((prev) => Math.max(1, prev - 1));
@@ -324,8 +339,9 @@ export function IndexView({
 	// Check if we have folder management available
 	const hasFolderManagement = !!onBulkUpdateItemTags;
 	
-	// Check if we have any selection features (folder management OR custom actions)
-	const hasSelectionFeatures = hasFolderManagement || selectionActions.length > 0;
+	// Check if we have any selection features (folder management OR custom actions OR bulk delete)
+	const hasSelectionFeatures =
+		hasFolderManagement || selectionActions.length > 0 || !!onBulkDelete;
 
 	return (
 		<div className="drawer">
@@ -505,6 +521,22 @@ export function IndexView({
 											<span className="icon-[mdi--arrow-right] w-4 h-4" />
 											Move
 										</button>
+									</>
+								)}
+
+								{/* Bulk Delete - opt-in, two-click confirm */}
+								{onBulkDelete && (
+									<>
+										<div className="divider divider-horizontal mx-2"></div>
+										<ConfirmButton
+											icon="icon-[mdi--delete]"
+											className="btn-sm"
+											disabled={selectedItemIds.size === 0}
+											confirmLabel={`Delete ${selectedItemIds.size}?`}
+											onConfirm={handleBulkDelete}
+										>
+											Delete
+										</ConfirmButton>
 									</>
 								)}
 

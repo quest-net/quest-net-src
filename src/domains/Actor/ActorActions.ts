@@ -185,6 +185,46 @@ export const ActorActions = {
 	},
 
 	/**
+	 * Bulk deletes multiple actors from the roster/templates (NOT from GameState).
+	 * Updates are grouped by resolved kind so a mixed batch is handled correctly
+	 * (call sites are single-kind today — entity templates). A Character that is
+	 * currently spawned is skipped (must be removed from the field first), matching
+	 * the single-actor `delete` guard.
+	 */
+	bulkDelete(params: { actorIds: string[] }, context: Context): void {
+		const campaign = CampaignUtils.getActiveCampaign(context);
+
+		const byKind: Record<"character" | "entity", string[]> = {
+			character: [],
+			entity: [],
+		};
+		for (const actorId of params.actorIds) {
+			const kind = ActorUtils.getActorKind(context, actorId);
+			if (!kind) {
+				console.warn(`actor:bulkDelete - actor not found: ${actorId}`);
+				continue;
+			}
+			if (
+				kind === "character" &&
+				campaign.GameState.Characters.some((c) => c.Id === actorId)
+			) {
+				console.warn(
+					`Cannot delete spawned character: ${actorId}. Remove from field first.`
+				);
+				continue;
+			}
+			byKind[kind].push(actorId);
+		}
+
+		if (byKind.character.length) {
+			ActorUtils.bulkDelete("character", { actorIds: byKind.character }, context);
+		}
+		if (byKind.entity.length) {
+			ActorUtils.bulkDelete("entity", { actorIds: byKind.entity }, context);
+		}
+	},
+
+	/**
 	 * Transfers a stat amount from an actor to another actor or shared inventory
 	 */
 	transferStat(

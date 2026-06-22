@@ -30,6 +30,11 @@ export function SkillIndex() {
 		});
 	};
 
+	const handleBulkDelete = (skillIds: string[]) => {
+		if (!actionService) return;
+		actionService.execute("skill:bulkDelete", { skillIds });
+	};
+
 	const skills: IndexViewItem[] = (campaign.SkillTemplates as Skill[]).map(
 		(skill) => ({
 			id: skill.Id,
@@ -52,6 +57,7 @@ export function SkillIndex() {
 			searchPlaceholder="Search skills by name..."
 			emptyMessage="No skills yet. Create one to get started!"
 			onBulkUpdateItemTags={handleBulkUpdateSkillTags}
+			onBulkDelete={handleBulkDelete}
 			renderEditForm={(item, { currentPath, closeDrawer }) => {
 				const found = item
 					? (campaign.SkillTemplates as Skill[]).find((s) => s.Id === item.id)
