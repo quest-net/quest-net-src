@@ -104,19 +104,57 @@ export function TerrainEdit({
 		};
 	}, [campaign, terrain]);
 
+	const handleDelete = () => {
+		if (!actionService || !terrain) return;
+
+		actionService.execute("terrain:delete", {
+			terrainId: terrain.Id,
+		});
+	};
+
 	if (terrain && loadError) {
+		const canDelete = !isDeleteProtected;
 		return (
-			<div className="p-6 text-error">
-				<p>{loadError}</p>
+			<div className="p-6 flex flex-col gap-4">
+				<div className="alert alert-error">
+					<span>{loadError}</span>
+				</div>
+				<p className="text-sm opacity-70">
+					The voxel data for this terrain could not be loaded, so it can't be
+					edited. You can still delete it{canDelete ? "" : " (deletion is disabled because it's in use)"}.
+				</p>
+				<div className="flex gap-2 justify-end">
+					{canDelete && (
+						<button
+							onClick={() => {
+								handleDelete();
+								onClose();
+							}}
+							className="btn btn-error"
+						>
+							Delete
+						</button>
+					)}
+					<button onClick={onClose} className="btn btn-neutral">
+						Close
+					</button>
+				</div>
 			</div>
 		);
 	}
 
 	if (terrain && !loadedTerrain) {
 		return (
-			<div className="p-6 flex items-center gap-3">
-				<span className="loading loading-spinner loading-sm" />
-				<span>Loading terrain...</span>
+			<div className="p-6 flex flex-col gap-4">
+				<div className="flex items-center gap-3">
+					<span className="loading loading-spinner loading-sm" />
+					<span>Loading terrain...</span>
+				</div>
+				<div className="flex justify-end">
+					<button onClick={onClose} className="btn btn-neutral">
+						Close
+					</button>
+				</div>
 			</div>
 		);
 	}
@@ -183,14 +221,6 @@ export function TerrainEdit({
 		}
 
 		onClose();
-	};
-
-	const handleDelete = () => {
-		if (!actionService || !terrain) return;
-
-		actionService.execute("terrain:delete", {
-			terrainId: terrain.Id,
-		});
 	};
 
 	return (
