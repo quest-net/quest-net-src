@@ -14,6 +14,7 @@ import {
 	normalizeFormula,
 	rollDiceFormula,
 	makeRollLogText,
+	getRollOutcome,
 	DiceRollResult,
 } from "../../utils/DiceUtils";
 
@@ -621,6 +622,7 @@ export function DiceRoller() {
 					level: "important",
 					visibility,
 					actorId,
+					rollOutcome: getRollOutcome(r),
 				});
 			}
 		});

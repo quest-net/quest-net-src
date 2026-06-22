@@ -1,6 +1,6 @@
 // utils/DiceUtils.ts
 
-import type { LogEntry } from "../domains/Log/Log";
+import type { LogEntry, RollOutcome } from "../domains/Log/Log";
 
 const MAX_DICE_PER_GROUP = 20;  // Max dice in a single group (e.g., 100d20)
 const MAX_TOTAL_DICE = 20;       // Max total dice across all groups
@@ -376,13 +376,45 @@ export function makeRollLogText(result: DiceRollResult): string {
 	return `Rolled ${result.formula}: ${result.total} [highest: ${hi} | lowest: ${lo}]`;
   }
 
-/*** Crit / fumble detection (from dice-roll log entries) ***/
+/*** Crit / fumble detection ***/
+
+/**
+ * Compute the crit/fumble facts of a roll structurally, from the rolled dice.
+ * A crit is a KEPT d20/d100 that came up natural max; a fumble is a kept d20/d100
+ * natural 1. This is the single source of truth — every roll site stamps the
+ * result onto its log entry (LogEntry.RollOutcome) so consumers never re-derive
+ * crits from rendered text. Reading the kept flag is what lets it ignore a
+ * dropped 20 on disadvantage (2d20kl1) and a group subtotal that merely equals 20.
+ */
+export function getRollOutcome(result: DiceRollResult): RollOutcome {
+	let crit = false;
+	let fumble = false;
+	let critValue: 20 | 100 | null = null;
+
+	for (const d of result.dice) {
+		if (!d.kept || (d.sides !== 20 && d.sides !== 100)) continue;
+		if (d.isMax) {
+			crit = true;
+			// Prefer 100 over 20 when a roll somehow crits on both.
+			const sides = d.sides as 20 | 100;
+			if (critValue === null || sides > critValue) critValue = sides;
+		}
+		if (d.isMin) fumble = true;
+	}
+
+	return { crit, fumble, critValue };
+}
 
 export const isDiceRoll = (entry: LogEntry): boolean => entry.Category === "dice";
 
-/** Natural max on a kept d20/d100 (e.g. [20]/=20 or [100]/=100 in the breakdown). */
+/**
+ * Natural max on a kept d20/d100. Reads the structured RollOutcome when present
+ * (stamped at roll time); falls back to scanning the breakdown text for log
+ * entries saved before RollOutcome existed.
+ */
 export const isCritRoll = (entry: LogEntry): boolean => {
 	if (!isDiceRoll(entry)) return false;
+	if (entry.RollOutcome) return entry.RollOutcome.crit;
 
 	const action = entry.Action || "";
 	const details = entry.Details || "";
@@ -398,14 +430,21 @@ export const isCritRoll = (entry: LogEntry): boolean => {
 	return false;
 };
 
-/** Natural 1 on a kept d20/d100 (e.g. [1]/=1 in the breakdown). */
+/**
+ * Natural 1 on a kept d20/d100. Reads the structured RollOutcome when present;
+ * falls back to the breakdown text otherwise. (The legacy fallback only matched
+ * the die token in Action, so it missed item/skill rolls whose formula lives in
+ * Details — the structured path fixes that for all new entries.)
+ */
 export const isFumbleRoll = (entry: LogEntry): boolean => {
 	if (!isDiceRoll(entry)) return false;
+	if (entry.RollOutcome) return entry.RollOutcome.fumble;
 
 	const action = entry.Action || "";
 	const details = entry.Details || "";
 
-	const isD20OrD100 = /d(?:20|100)(?!\d)/i.test(action);
+	const isD20OrD100 =
+		/d(?:20|100)(?!\d)/i.test(action) || /d(?:20|100)(?!\d)/i.test(details);
 	if (!isD20OrD100) return false;
 
 	return /(?:\[1\]|=1)(?!\d)/.test(details);
@@ -414,10 +453,12 @@ export const isFumbleRoll = (entry: LogEntry): boolean => {
 /**
  * The natural value that made an entry a crit: 100 for a kept d100=100, 20 for a
  * kept d20=20, or null if it isn't a crit. (The natural die — not the total — so
- * a 1d20+5 crit still reports 20.)
+ * a 1d20+5 crit still reports 20.) Reads RollOutcome when present; falls back to
+ * the breakdown text for legacy entries.
  */
 export const getCritRollValue = (entry: LogEntry): 20 | 100 | null => {
 	if (!isDiceRoll(entry)) return null;
+	if (entry.RollOutcome) return entry.RollOutcome.critValue;
 
 	const action = entry.Action || "";
 	const details = entry.Details || "";

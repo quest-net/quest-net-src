@@ -1,6 +1,6 @@
 import { Context } from "../Context/Context";
 import { LogActions } from "../Log/LogActions";
-import type { LogVisibility } from "../Log/Log";
+import type { LogVisibility, RollOutcome } from "../Log/Log";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { ActorUtils } from "../Actor/ActorUtils";
 
@@ -8,10 +8,12 @@ export const DiceActions = {
 	/**
 	 * Logs an observable roll. `actorId` attributes the roll (optional); `expr` is the
 	 * formula; `total` is the already-computed result; `breakdown` is the per-die
-	 * breakdown (surfaced in details, like DiceRoller / item / skill rolls, so crit
-	 * detection — which scans Details — still fires); `tags` are optional author
-	 * labels in the summary (e.g. "attack", "save"); `secret: true` forces a DM-only
-	 * log line.
+	 * breakdown (surfaced in details, like DiceRoller / item / skill rolls);
+	 * `rollOutcome` carries the structured crit/fumble facts (computed by the caller
+	 * from the full roll result, since the total/breakdown alone can't be re-derived
+	 * here without re-rolling) so the crit splash fires off structured data, not
+	 * text; `tags` are optional author labels in the summary (e.g. "attack", "save");
+	 * `secret: true` forces a DM-only log line.
 	 */
 	roll(
 		params: {
@@ -19,6 +21,7 @@ export const DiceActions = {
 			expr: string;
 			total: number;
 			breakdown?: string;
+			rollOutcome?: RollOutcome;
 			tags?: string[];
 			secret?: boolean;
 		},
@@ -50,6 +53,7 @@ export const DiceActions = {
 				level: "important",
 				visibility,
 				actorId: params.actorId,
+				rollOutcome: params.rollOutcome,
 			},
 			context
 		);

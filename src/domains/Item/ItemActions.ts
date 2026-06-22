@@ -5,7 +5,7 @@ import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 import { Item } from "./Item";
 import { Actor, Position } from "../Actor/Actor";
-import { rollDiceFormula } from "../../utils/DiceUtils";
+import { rollDiceFormula, getRollOutcome } from "../../utils/DiceUtils";
 import { syncItemSlotsAfterEdit } from "./ItemUtils";
 import { getAllActors, applyActionCost, applyStatCost, describeUseTarget } from "../Actor/ActorUtils";
 import { createItemEntity, createItemEntityFromTemplate, getItemDataFromEntity, isItemEntity } from "./ItemDropUtils";
@@ -432,6 +432,7 @@ export const ItemActions = {
 						level: "important",
 						visibility,
 						actorId: params.actorId,
+						rollOutcome: getRollOutcome(rollResult),
 					},
 					context
 				);

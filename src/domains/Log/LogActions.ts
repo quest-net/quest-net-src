@@ -4,6 +4,7 @@ import {
 	LogCategory,
 	LogLevel,
 	LogVisibility,
+	RollOutcome,
 } from "../Log/Log";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { MAX_LOG_SIZE } from "./LogUtils";
@@ -23,6 +24,7 @@ export const LogActions = {
 			actorId?: string;
 			targetId?: string;
 			mentionedActorIds?: string[];
+			rollOutcome?: RollOutcome;
 		},
 		context: Context
 	): void {
@@ -44,6 +46,7 @@ export const LogActions = {
 				params.mentionedActorIds && params.mentionedActorIds.length > 0
 					? params.mentionedActorIds
 					: undefined,
+			RollOutcome: params.rollOutcome,
 		};
 
 		// Initialize LogHead if missing (migration safety)

@@ -28,7 +28,7 @@ import type { Actor, Position, StatSlot, StatusSlotExpiration } from "../../../d
 import type { ScriptApiContext } from "./apiContext";
 import { ActorUtils } from "../../../domains/Actor/ActorUtils";
 import { resolveByNameOrId } from "../../../utils/resolveByNameOrId";
-import { rollDiceFormula } from "../../../utils/DiceUtils";
+import { rollDiceFormula, getRollOutcome } from "../../../utils/DiceUtils";
 import * as itemApi from "./itemApi";
 import * as statusApi from "./statusApi";
 import * as skillApi from "./skillApi";
@@ -262,15 +262,17 @@ function makeActorMethods(
 			await api.action("actor:despawn", { actorId: actor.Id });
 		},
 		roll: async (expr, opts) => {
-			// Compute the full result here, then carry total + breakdown in the
-			// params (event.result is dead inside cascades). The dice:roll handler
-			// logs it (breakdown -> details, so crit detection still works).
+			// Compute the full result here, then carry total + breakdown + the
+			// structured crit/fumble outcome in the params (event.result is dead
+			// inside cascades). The dice:roll handler logs it; the outcome drives
+			// crit detection structurally (no re-parsing the breakdown text).
 			const result = rollDiceFormula(expr);
 			await api.action("dice:roll", {
 				actorId: actor.Id,
 				expr,
 				total: result.total,
 				breakdown: result.breakdown,
+				rollOutcome: getRollOutcome(result),
 				tags: opts?.tags,
 				secret: opts?.secret,
 			});

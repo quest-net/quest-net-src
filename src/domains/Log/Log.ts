@@ -12,6 +12,19 @@ export interface LogEntry {
 	ActorId?: string; // Who performed the action
 	TargetId?: string; // Who/what was affected
 	MentionedActorIds?: string[]; // Character IDs @mentioned in a chat message; "DM" sentinel for the DM
+	RollOutcome?: RollOutcome; // Structured crit/fumble facts, computed once at roll time (see DiceUtils.getRollOutcome). Absent on legacy entries -> text-scan fallback in isCritRoll/isFumbleRoll.
+}
+
+/**
+ * The crit/fumble facts of a dice roll, derived structurally from the rolled
+ * dice (kept + natural max/min on a d20/d100) at roll time. This is the single
+ * source of truth for crit detection; the regex text-scans in DiceUtils only
+ * exist as a fallback for log entries saved before this field existed.
+ */
+export interface RollOutcome {
+	crit: boolean; // a kept d20/d100 came up natural max
+	fumble: boolean; // a kept d20/d100 came up natural 1
+	critValue: 20 | 100 | null; // the natural die that triggered the crit (100 wins if both)
 }
 
 export type LogCategory =
