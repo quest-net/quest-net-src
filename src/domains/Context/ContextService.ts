@@ -106,6 +106,7 @@ export const ContextService = {
 			version: APP_VERSION,
 			SecretModes: {},
 			ViewedTerrains: {},
+			LastUpdated: {},
 		};
 
 		this.save(context);
@@ -163,6 +164,11 @@ export const ContextService = {
 			}
 			if (!context.ViewedTerrains) {
 				context.ViewedTerrains = {};
+			}
+			// Seeded from prior LastActivity by the 3.0.0 context migration; this is
+			// the belt-and-suspenders default for contexts that bypassed migrations.
+			if (!context.LastUpdated) {
+				context.LastUpdated = {};
 			}
 			if (!Array.isArray(context.Campaigns)) {
 				context.Campaigns = [];

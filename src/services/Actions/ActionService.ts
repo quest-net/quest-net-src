@@ -9,7 +9,7 @@ import { StateSync } from "../StateSync";
 import { CampaignMutationRecorder } from "../CampaignMutationRecorder";
 import { ImageService } from "../ImageService";
 import { Room, type ActionSend } from "../../domains/Room/Room";
-import { bumpPresence } from "../../domains/Context/contextStore";
+import { bumpPresence, markCampaignUpdated } from "../../domains/Context/contextStore";
 import { snapshot } from "valtio";
 import { RoomService } from "../../domains/Room/RoomService";
 import { LogUtils } from "../../domains/Log/LogUtils";
@@ -476,6 +476,9 @@ export class ActionService {
 		const campaign = CampaignUtils.getActiveCampaign(this.context);
 		await TerrainStorageService.packInactiveTerrains(campaign);
 		this.commitActiveCampaign(campaign);
+		// Stamp this campaign's local last-updated time so cloud backup and the
+		// campaign list reflect the edit, even when it writes no log entry.
+		markCampaignUpdated(campaign.Id);
 		return campaign;
 	}
 

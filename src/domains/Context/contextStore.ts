@@ -36,6 +36,7 @@ export const contextStore = proxy<Context>({
 	version: APP_VERSION,
 	SecretModes: {},
 	ViewedTerrains: {},
+	LastUpdated: {},
 });
 
 /**
@@ -52,8 +53,24 @@ export function hydrateContextStore(loaded: Context): void {
 	contextStore.version = loaded.version;
 	contextStore.SecretModes = loaded.SecretModes ?? {};
 	contextStore.ViewedTerrains = loaded.ViewedTerrains ?? {};
+	contextStore.LastUpdated = loaded.LastUpdated ?? {};
 	// Runtime-only flag; never restored from a loaded context.
 	delete contextStore.IsOptimistic;
+}
+
+/**
+ * Records that a campaign's local state just changed, for cloud-backup freshness
+ * and campaign-list ordering. Local-only (never broadcast); mirrors SecretModes.
+ * Pass an explicit timestamp to match an external source (e.g. when restoring a
+ * cloud backup, stamp the backup's own time so we don't immediately re-upload);
+ * otherwise defaults to now.
+ */
+export function markCampaignUpdated(
+	campaignId: string,
+	when: number = Date.now()
+): void {
+	if (!contextStore.LastUpdated) contextStore.LastUpdated = {};
+	contextStore.LastUpdated[campaignId] = when;
 }
 
 // ---------------------------------------------------------------------------

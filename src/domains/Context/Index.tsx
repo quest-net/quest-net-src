@@ -10,6 +10,7 @@ import TextType from "../../components/effects/TextType";
 import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
 import { APP_VERSION } from "../../version";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { CloudBackupBanner } from "../../components/CloudBackupBanner";
 export function Home() {
 	const context = useQuestContext();
 	const navigate = useNavigate();
@@ -44,6 +45,7 @@ export function Home() {
 					waveSpeedY={0.05}
 				/>
 			</div>
+			<CloudBackupBanner />
 			<div className="fixed top-3 right-3 z-50">
 				<div className="flex flex-wrap justify-end gap-2">
 					<button

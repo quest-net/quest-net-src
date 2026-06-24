@@ -18,6 +18,11 @@ export interface Campaign {
 	Name: string;
 	RoomCode: string;
 	CreatedAt: number;
+	// Stable cross-device identity for cloud backup. Unlike `Id` (re-minted when a
+	// campaign is restored as a copy), `BackupKey` is preserved across every
+	// restore so a campaign keeps mapping to the same Google Drive backup file no
+	// matter which machine it lives on. Lazily assigned on first backup.
+	BackupKey?: string;
 	//Global Collections
 	CharacterRoster: Character[];
 	ItemTemplates: Item[];

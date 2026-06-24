@@ -150,8 +150,10 @@ export const dataStructuresPage: WikiPage = {
 									<>
 										Lives inside <Code>Context.Campaigns</Code>. It contains{" "}
 										<Code>Id</Code>, <Code>RoomCode</Code>, <Code>Name</Code>,{" "}
-										<Code>CreatedAt</Code>, <Code>LastActivity</Code>,{" "}
-										<Code>CharacterCount</Code>, and <Code>Version</Code>.
+										<Code>CreatedAt</Code>, <Code>CharacterCount</Code>, and{" "}
+										<Code>Version</Code>. A campaign's last-updated time lives
+										separately in the local-only <Code>Context.LastUpdated</Code>{" "}
+										map (never broadcast), bumped on every edit and save.
 									</>
 								),
 							},

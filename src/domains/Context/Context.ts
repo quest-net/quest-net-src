@@ -26,4 +26,11 @@ export interface Context {
 	// broadcast. Mirrors the SecretModes shape so it needs no extra context
 	// provider.
 	ViewedTerrains?: Record<string, string[]>;
+	// Wall-clock timestamp (ms) of the most recent LOCAL change to each campaign,
+	// keyed by campaign ID. Bumped on every action mutation and on every IDB
+	// save, so it reflects ALL edits — including ones that write no log entry.
+	// Local-only and never broadcast (lives on Context, not on the Campaign), so
+	// a peer's clock can never clobber it. Drives cloud-backup freshness and the
+	// campaign-list ordering. Mirrors the SecretModes shape.
+	LastUpdated?: Record<string, number>;
 }

@@ -129,6 +129,80 @@ export interface ExportProgress {
 	status: string;
 }
 
+/**
+ * How a restore should treat an existing local campaign.
+ * - `copy`: brand-new Id, never clobbers anything (fresh machine / import file).
+ * - `replace`: write under an existing local Id (update-in-place across devices).
+ */
+export type RestoreMode =
+	| { mode: "copy" }
+	| { mode: "replace"; targetCampaignId: string };
+
+/** Per-collection content counts used for the restore shrink guard. */
+export interface CampaignCounts {
+	Items: number;
+	Terrains: number;
+	Images: number;
+	Characters: number;
+	Entities: number;
+	Skills: number;
+	Statuses: number;
+}
+
+export interface CountChange {
+	label: keyof CampaignCounts;
+	before: number;
+	after: number;
+}
+
+export interface CampaignCountDiff {
+	changes: CountChange[];
+	significantShrink: boolean;
+}
+
+// A collection must drop by more than this fraction AND more than the absolute
+// floor below for an update-in-place restore to flag a "significant shrink" and
+// ask the user to confirm. Trimming a couple of images never nags.
+export const RESTORE_SHRINK_THRESHOLD = 0.2;
+export const RESTORE_SHRINK_MIN_ABSOLUTE = 5;
+
+/**
+ * Splits a parsed export payload into its parts, tolerating both the modern
+ * container shape ({ version, campaign, imageData, terrainData }) and old-style
+ * files that are just the bare Campaign object.
+ */
+function parseExportData(data: unknown): {
+	campaign: Campaign;
+	imageData: Record<string, { base64: string; mimeType: string }>;
+	terrainData: Record<string, { voxels: string; contentHash: string }>;
+	fileVersion: string;
+} {
+	let campaign: Campaign;
+	let imageData: Record<string, { base64: string; mimeType: string }> = {};
+	let terrainData: Record<string, { voxels: string; contentHash: string }> = {};
+
+	if (
+		data &&
+		typeof data === "object" &&
+		"campaign" in data &&
+		"imageData" in data
+	) {
+		const container = data as CampaignExportData;
+		campaign = (container.campaign as Campaign) ?? ({} as Campaign);
+		imageData = container.imageData || {};
+		terrainData = container.terrainData || {};
+	} else {
+		campaign = data as Campaign;
+	}
+
+	const fileVersion: string =
+		(data && typeof data === "object" && "version" in data
+			? (data as { version?: string }).version
+			: null) ?? "0.0.0";
+
+	return { campaign, imageData, terrainData, fileVersion };
+}
+
 export const CampaignUtils = {
 	/**
 	 * Returns the lightweight CampaignInfo metadata matching the URL
@@ -325,6 +399,10 @@ export const CampaignUtils = {
 		// is slow.
 		context.Campaigns.splice(index, 1);
 
+		if (context.LastUpdated) {
+			delete context.LastUpdated[params.campaignId];
+		}
+
 		if (isActive) {
 			context.ActiveCampaign = null;
 		}
@@ -359,42 +437,56 @@ export const CampaignUtils = {
 		}
 	},
 
+	/** Per-collection content counts, used for the restore shrink guard. */
+	campaignCounts(campaign: Campaign): CampaignCounts {
+		return {
+			Items: campaign.ItemTemplates?.length ?? 0,
+			Terrains: campaign.VoxelTerrains?.length ?? 0,
+			Images: campaign.Images?.length ?? 0,
+			Characters: campaign.CharacterRoster?.length ?? 0,
+			Entities: campaign.EntityTemplates?.length ?? 0,
+			Skills: campaign.SkillTemplates?.length ?? 0,
+			Statuses: campaign.StatusTemplates?.length ?? 0,
+		};
+	},
+
 	/**
-	 * Downloads a campaign as a JSON file with all image data included
+	 * Compares incoming (backup) counts against local counts. Returns the changed
+	 * collections and whether any of them shrank enough to warrant a confirm.
 	 */
-	async download(
-		params: { campaignId: string },
-		context: Context,
+	diffCounts(local: CampaignCounts, incoming: CampaignCounts): CampaignCountDiff {
+		const changes: CountChange[] = [];
+		let significantShrink = false;
+
+		(Object.keys(local) as (keyof CampaignCounts)[]).forEach((key) => {
+			const before = local[key];
+			const after = incoming[key];
+			if (before !== after) {
+				changes.push({ label: key, before, after });
+			}
+			const drop = before - after;
+			if (
+				drop > RESTORE_SHRINK_MIN_ABSOLUTE &&
+				before > 0 &&
+				drop / before > RESTORE_SHRINK_THRESHOLD
+			) {
+				significantShrink = true;
+			}
+		});
+
+		return { changes, significantShrink };
+	},
+
+	/**
+	 * Builds the self-contained export payload for an already-loaded campaign:
+	 * the campaign object plus every image binary (from IndexedDB) and terrain
+	 * voxel payload (from OPFS), base64-encoded for the JSON format. Pure data —
+	 * no transport (download/upload) concern.
+	 */
+	async buildExportDataForCampaign(
+		campaign: Campaign,
 		onProgress?: (progress: ExportProgress) => void
-	): Promise<void> {
-		const info = context.Campaigns.find((c) => c.Id === params.campaignId);
-
-		if (!info) {
-			console.warn(`Campaign not found: ${params.campaignId}`);
-			return;
-		}
-
-		// Prefer the live ActiveCampaign if it matches; otherwise pull from IDB.
-		let campaign: Campaign | null = null;
-		if (
-			context.ActiveCampaign &&
-			(context.ActiveCampaign.Id === params.campaignId ||
-				context.ActiveCampaign.RoomCode === params.campaignId)
-		) {
-			campaign = context.ActiveCampaign;
-		} else {
-			campaign = await CampaignLoadingService.loadCampaign(
-				params.campaignId
-			);
-		}
-
-		if (!campaign) {
-			console.warn(
-				`Campaign payload missing in IndexedDB: ${params.campaignId}`
-			);
-			return;
-		}
-
+	): Promise<CampaignExportData> {
 		// Terrain voxel payloads travel as a separate bundle (like images); the
 		// campaign object stays payload-free. The canonical payload is raw bytes;
 		// base64-encode it here for the text (JSON) export format.
@@ -407,58 +499,106 @@ export const CampaignUtils = {
 			};
 		}
 
-		try {
+		onProgress?.({
+			current: 0,
+			total: campaign.Images.length,
+			status: "Starting export...",
+		});
+
+		// Collect all image data from IndexedDB
+		const imageData: Record<string, { base64: string; mimeType: string }> = {};
+		for (let i = 0; i < campaign.Images.length; i++) {
+			const image = campaign.Images[i];
+
 			onProgress?.({
-				current: 0,
+				current: i,
 				total: campaign.Images.length,
-				status: "Starting export...",
+				status: `Exporting image ${i + 1}/${campaign.Images.length}: ${image.Name}`,
 			});
 
-			// Collect all image data from IndexedDB
-			const imageData: Record<string, { base64: string; mimeType: string }> = {};
-
-			for (let i = 0; i < campaign.Images.length; i++) {
-				const image = campaign.Images[i];
-
-				onProgress?.({
-					current: i,
-					total: campaign.Images.length,
-					status: `Exporting image ${i + 1}/${campaign.Images.length}: ${image.Name}`,
-				});
-
-				const cached = await IndexedDBUtilities.load(image.Id);
-				if (cached) {
-					const blob = cached.data as Blob;
-					const base64 = await blobToBase64(blob);
-					imageData[image.Id] = {
-						base64,
-						mimeType: image.MimeType,
-					};
-				}
+			const cached = await IndexedDBUtilities.load(image.Id);
+			if (cached) {
+				const blob = cached.data as Blob;
+				const base64 = await blobToBase64(blob);
+				imageData[image.Id] = {
+					base64,
+					mimeType: image.MimeType,
+				};
 			}
+		}
 
-			onProgress?.({
-				current: campaign.Images.length,
-				total: campaign.Images.length,
-				status: "Finalizing export...",
-			});
+		onProgress?.({
+			current: campaign.Images.length,
+			total: campaign.Images.length,
+			status: "Finalizing export...",
+		});
 
-			// Create export data structure
-			const exportData: CampaignExportData = {
-				version: APP_VERSION,
-				campaign,
-				imageData,
-				terrainData,
-			};
+		return {
+			version: APP_VERSION,
+			campaign,
+			imageData,
+			terrainData,
+		};
+	},
 
-			// Download as JSON file
+	/**
+	 * Resolves a campaign by id (preferring the live ActiveCampaign) and builds
+	 * its export payload. Returns null if the campaign can't be found/loaded.
+	 */
+	async buildExportData(
+		campaignId: string,
+		context: Context,
+		onProgress?: (progress: ExportProgress) => void
+	): Promise<CampaignExportData | null> {
+		const info = context.Campaigns.find((c) => c.Id === campaignId);
+		if (!info) {
+			console.warn(`Campaign not found: ${campaignId}`);
+			return null;
+		}
+
+		// Prefer the live ActiveCampaign if it matches; otherwise pull from IDB.
+		let campaign: Campaign | null = null;
+		if (
+			context.ActiveCampaign &&
+			(context.ActiveCampaign.Id === campaignId ||
+				context.ActiveCampaign.RoomCode === campaignId)
+		) {
+			campaign = context.ActiveCampaign;
+		} else {
+			campaign = await CampaignLoadingService.loadCampaign(campaignId);
+		}
+
+		if (!campaign) {
+			console.warn(`Campaign payload missing in IndexedDB: ${campaignId}`);
+			return null;
+		}
+
+		return this.buildExportDataForCampaign(campaign, onProgress);
+	},
+
+	/**
+	 * Downloads a campaign as a JSON file with all image + terrain data included.
+	 */
+	async download(
+		params: { campaignId: string },
+		context: Context,
+		onProgress?: (progress: ExportProgress) => void
+	): Promise<void> {
+		try {
+			const exportData = await this.buildExportData(
+				params.campaignId,
+				context,
+				onProgress
+			);
+			if (!exportData) return;
+
 			const json = JSON.stringify(exportData, null, 2);
 			const blob = new Blob([json], { type: "application/json" });
 			const url = URL.createObjectURL(blob);
 
 			const link = document.createElement("a");
 			link.href = url;
-			link.download = `${campaign.Name.replace(
+			link.download = `${exportData.campaign.Name.replace(
 				/[^a-z0-9]/gi,
 				"_"
 			)}_${Date.now()}.json`;
@@ -468,8 +608,8 @@ export const CampaignUtils = {
 			URL.revokeObjectURL(url);
 
 			onProgress?.({
-				current: campaign.Images.length,
-				total: campaign.Images.length,
+				current: exportData.campaign.Images.length,
+				total: exportData.campaign.Images.length,
 				status: "Export complete!",
 			});
 		} catch (error) {
@@ -478,6 +618,113 @@ export const CampaignUtils = {
 				}`
 			);
 		}
+	},
+
+	/**
+	 * Restores a campaign from a parsed export payload. `copy` mode (default)
+	 * mints a new Id so nothing local is ever clobbered; `replace` mode writes
+	 * under an existing local Id (update-in-place). The archive's `BackupKey` is
+	 * preserved in both modes so cross-device identity survives the restore.
+	 */
+	async restoreFromExportData(
+		data: CampaignExportData | unknown,
+		context: Context,
+		opts: RestoreMode = { mode: "copy" },
+		onProgress?: (progress: ExportProgress) => void
+	): Promise<CampaignInfo> {
+		const { campaign, imageData, terrainData, fileVersion } =
+			parseExportData(data);
+
+		// Preserve the backup's stable identity; mint one if the archive predates
+		// BackupKey.
+		if (!campaign.BackupKey) {
+			campaign.BackupKey = crypto.randomUUID();
+		}
+
+		if (opts.mode === "replace") {
+			// Update in place: keep the existing local Id so we overwrite that
+			// campaign instead of creating a duplicate entry.
+			campaign.Id = opts.targetCampaignId;
+		} else {
+			// Restore as a copy: brand-new Id so an existing local campaign is
+			// never clobbered.
+			campaign.Id = crypto.randomUUID();
+		}
+
+		// Restore terrain payloads into IndexedDB/OPFS under the (possibly new)
+		// id. Pre-2.7.0 files carry voxels inline on the campaign instead; the
+		// schema migration below moves those over. The file stores voxels as
+		// base64; decode back to the canonical byte form here.
+		const terrainPayloads: Record<string, { voxels: Uint8Array; contentHash: string }> = {};
+		for (const [terrainId, payload] of Object.entries(terrainData)) {
+			terrainPayloads[terrainId] = {
+				voxels: base64ToBytes(payload.voxels),
+				contentHash: payload.contentHash,
+			};
+		}
+		await TerrainStorageService.importTerrainPayloads(campaign, terrainPayloads);
+
+		// Run schema migrations against the archive's saved version.
+		const migrated = (await runMigrations(
+			campaign,
+			fileVersion,
+			campaignMigrations
+		)) as Campaign;
+		addMissingDefaultVoxelStamps(migrated);
+
+		// Ensure the room code is unique against OTHER local campaigns (exclude
+		// the replace target itself so a same-campaign update keeps its code).
+		const existingRoomCodes = context.Campaigns
+			.filter((c) => c.Id !== migrated.Id)
+			.map((c) => c.RoomCode);
+		if (existingRoomCodes.includes(migrated.RoomCode)) {
+			migrated.RoomCode = generateRoomCode();
+		}
+
+		// Import images to IndexedDB
+		const imageIds = Object.keys(imageData);
+		const totalSteps = imageIds.length + 1; // +1 for final save
+
+		for (let i = 0; i < imageIds.length; i++) {
+			const imageId = imageIds[i];
+			const { base64, mimeType } = imageData[imageId];
+
+			onProgress?.({
+				current: i,
+				total: totalSteps,
+				status: `Importing image ${i + 1}/${imageIds.length}...`,
+			});
+
+			const blob = base64ToBlob(base64, mimeType);
+			await IndexedDBUtilities.save(imageId, blob);
+		}
+
+		onProgress?.({
+			current: imageIds.length,
+			total: totalSteps,
+			status: "Saving campaign...",
+		});
+
+		// Persist the full Campaign payload to IndexedDB, then replace the
+		// matching CampaignInfo in place or append a new one.
+		await CampaignLoadingService.saveCampaign(migrated);
+		const info = CampaignLoadingService.buildInfo(migrated);
+		const existingIndex = context.Campaigns.findIndex(
+			(c) => c.Id === migrated.Id
+		);
+		if (existingIndex >= 0) {
+			context.Campaigns[existingIndex] = info;
+		} else {
+			context.Campaigns.push(info);
+		}
+
+		onProgress?.({
+			current: totalSteps,
+			total: totalSteps,
+			status: "Restore complete!",
+		});
+
+		return info;
 	},
 
 	async importFromFile(
@@ -495,104 +742,14 @@ export const CampaignUtils = {
 			const text = await params.file.text();
 			const data = JSON.parse(text);
 
-			let campaign: Campaign;
-			let imageData: Record<string, { base64: string; mimeType: string }> = {};
-			let terrainData: Record<string, { voxels: string; contentHash: string }> = {};
-
-			// New-style exports: { version, campaign, imageData, terrainData? }
-			if (
-				data &&
-				typeof data === "object" &&
-				"campaign" in data &&
-				"imageData" in data
-			) {
-				campaign = (data.campaign as Campaign) ?? ({} as Campaign);
-				imageData =
-					(data.imageData as Record<string, { base64: string; mimeType: string }>) ||
-					{};
-				terrainData =
-					(data.terrainData as Record<
-						string,
-						{ voxels: string; contentHash: string }
-					>) || {};
-			} else {
-				// Old-style exports (pre-container) -- assume it's just the Campaign object
-				campaign = data as Campaign;
-			}
-
-			// Generate new ID to avoid conflicts
-			campaign.Id = crypto.randomUUID();
-
-			// Restore terrain payloads (2.7.0+ exports) into IndexedDB under the new
-			// id. Pre-2.7.0 files carry voxels inline on the campaign instead; the
-			// schema migration below moves those into IndexedDB. The file stores
-			// voxels as base64; decode back to the canonical byte form here.
-			const terrainPayloads: Record<string, { voxels: Uint8Array; contentHash: string }> = {};
-			for (const [terrainId, payload] of Object.entries(terrainData)) {
-				terrainPayloads[terrainId] = {
-					voxels: base64ToBytes(payload.voxels),
-					contentHash: payload.contentHash,
-				};
-			}
-			await TerrainStorageService.importTerrainPayloads(campaign, terrainPayloads);
-
-			// Run schema migrations against the file's saved version.
-			// For new-style exports the version lives on the container object;
-			// old-style exports carry no version, so we start from scratch.
-			const fileVersion: string =
-				(data && typeof data === "object" && "version" in data
-					? (data as any).version
-					: null) ?? "0.0.0";
-			campaign = (await runMigrations(
-				campaign,
-				fileVersion,
-				campaignMigrations
-			)) as Campaign;
-			addMissingDefaultVoxelStamps(campaign);
-
-			// Ensure room code is unique against existing CampaignInfos
-			const existingRoomCodes = context.Campaigns.map((c) => c.RoomCode);
-			if (existingRoomCodes.includes(campaign.RoomCode)) {
-				campaign.RoomCode = generateRoomCode();
-			}
-
-			// Import images to IndexedDB
-			const imageIds = Object.keys(imageData);
-			const totalSteps = imageIds.length + 1; // +1 for final save
-
-			for (let i = 0; i < imageIds.length; i++) {
-				const imageId = imageIds[i];
-				const { base64, mimeType } = imageData[imageId];
-
-				onProgress?.({
-					current: i,
-					total: totalSteps,
-					status: `Importing image ${i + 1}/${imageIds.length}...`,
-				});
-
-				const blob = base64ToBlob(base64, mimeType);
-				await IndexedDBUtilities.save(imageId, blob);
-			}
-
-			onProgress?.({
-				current: imageIds.length,
-				total: totalSteps,
-				status: "Saving campaign...",
-			});
-
-			// Persist the full Campaign payload to IndexedDB and add a
-			// CampaignInfo to the in-memory list.
-			await CampaignLoadingService.saveCampaign(campaign);
-			const info = CampaignLoadingService.buildInfo(campaign);
-			context.Campaigns.push(info);
-
-			onProgress?.({
-				current: totalSteps,
-				total: totalSteps,
-				status: "Import complete!",
-			});
-
-			return info;
+			// Importing a file always restores as a copy — never clobber a local
+			// campaign.
+			return await this.restoreFromExportData(
+				data,
+				context,
+				{ mode: "copy" },
+				onProgress
+			);
 		} catch (error) {
 			throw new Error(
 				`Failed to import campaign: ${error instanceof Error ? error.message : "Invalid JSON"

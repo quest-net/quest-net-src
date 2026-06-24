@@ -55,7 +55,6 @@ export function CampaignIndex() {
 		const unchanged =
 			cur.Name === refreshed.Name &&
 			cur.RoomCode === refreshed.RoomCode &&
-			cur.LastActivity === refreshed.LastActivity &&
 			cur.CharacterCount === refreshed.CharacterCount;
 		if (unchanged) return;
 
@@ -431,10 +430,14 @@ export function CampaignIndex() {
 										<p>No campaigns yet. Create one to get started!</p>
 									</EmptyState>
 								) : (
-									// Most-recent activity first so the campaign you were
+									// Most-recently-updated first so the campaign you were
 									// just playing surfaces at the top.
 									[...context.Campaigns]
-										.sort((a, b) => b.LastActivity - a.LastActivity)
+										.sort(
+											(a, b) =>
+												(context.LastUpdated?.[b.Id] ?? b.CreatedAt) -
+												(context.LastUpdated?.[a.Id] ?? a.CreatedAt)
+										)
 										.map((info) => (
 										<div
 											key={info.Id}
@@ -469,9 +472,12 @@ export function CampaignIndex() {
 												</div>
 
 												<div className="text-xs opacity-70 mt-2">
-													Last activity: {info.LastActivity > info.CreatedAt
-														? new Date(info.LastActivity).toLocaleString()
-														: "Never"}
+													{(() => {
+														const updated = context.LastUpdated?.[info.Id];
+														return updated && updated > info.CreatedAt
+															? `Last updated: ${new Date(updated).toLocaleString()}`
+															: "Last updated: Never";
+													})()}
 												</div>
 
 												<div className="card-actions justify-end mt-2">

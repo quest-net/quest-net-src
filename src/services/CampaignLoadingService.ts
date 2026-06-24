@@ -12,6 +12,7 @@ import { runMigrations } from "../migrations/runMigrations";
 import { campaignMigrations } from "../migrations/campaignMigrations";
 import { addMissingDefaultVoxelStamps } from "../data/defaultVoxelStamps";
 import { toPlain } from "../utils/toPlain";
+import { markCampaignUpdated } from "../domains/Context/contextStore";
 
 /**
  * CampaignLoadingService
@@ -49,7 +50,12 @@ export class CampaignLoadingService {
 			const store = transaction.objectStore(CAMPAIGNS_STORE_NAME);
 			const request = store.put(record);
 
-			request.onsuccess = () => resolve();
+			request.onsuccess = () => {
+				// Record the local change so cloud backup and the campaign list see
+				// this write — including edits that wrote no log entry.
+				markCampaignUpdated(campaign.Id);
+				resolve();
+			};
 			request.onerror = () => {
 				console.error(
 					`[CampaignLoadingService] Failed to save campaign: ${campaign.Id}`,
@@ -163,17 +169,16 @@ export class CampaignLoadingService {
 	 * localStorage" layout.
 	 */
 	static buildInfo(campaign: Campaign): CampaignInfo {
-		const lastLog = campaign.Log[campaign.Log.length - 1];
 		return {
 			Id: campaign.Id,
 			RoomCode: campaign.RoomCode,
 			Name: campaign.Name,
 			CreatedAt: campaign.CreatedAt,
-			LastActivity: lastLog?.Timestamp ?? campaign.CreatedAt,
 			CharacterCount:
 				(campaign.CharacterRoster?.length ?? 0) +
 				(campaign.GameState?.Characters?.length ?? 0),
 			Version: APP_VERSION,
+			BackupKey: campaign.BackupKey,
 		};
 	}
 

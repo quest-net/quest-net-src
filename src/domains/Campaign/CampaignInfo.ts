@@ -22,10 +22,14 @@ export interface CampaignInfo {
 	Name: string;
 	/** Creation timestamp (ms since epoch). */
 	CreatedAt: number;
-	/** Timestamp of the latest log entry, or CreatedAt if no logs. */
-	LastActivity: number;
 	/** Total characters in roster + active game state (display only). */
 	CharacterCount: number;
 	/** Schema version of the stored Campaign payload in IndexedDB. */
 	Version: VersionString;
+	/**
+	 * Stable cross-device identity for cloud backup (mirrors Campaign.BackupKey).
+	 * Lets on-open backup matching compare against Drive files without loading
+	 * full payloads. Undefined until the campaign is first backed up.
+	 */
+	BackupKey?: string;
 }

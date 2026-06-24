@@ -6,6 +6,13 @@ import { AppSettings, DEFAULT_IMAGE_PROMPT } from "./AppSetting";
 import { SoundEffectService } from "../../services/SoundEffectService";
 import { DEFAULT_PROVIDER_ID } from "../../services/ImageGenerationService";
 
+/** Persisted Google Drive backup connection + last-result status. */
+export interface CloudBackupState {
+  connected: boolean;
+  email?: string;
+  lastStatus?: { time: number; ok: boolean; error?: string };
+}
+
 // ---------------------------------------------------------------------------
 // Helpers — AppSettings is a flat Record<string, string> on the Context, so
 // any value that isn't a plain string must be JSON-serialized.
@@ -172,6 +179,49 @@ export const AppSettingUtils = {
   setImagePromptTemplate(params: { template: string }, context: Context): void {
     const trimmed = params.template.trim();
     context.AppSettings.imagePromptTemplate = trimmed || DEFAULT_IMAGE_PROMPT;
+  },
+
+  // ---------------------------------------------------------------------------
+  // Cloud backup (Google Drive) — connection + last-result status
+  // ---------------------------------------------------------------------------
+
+  getCloudBackup(context: Context): CloudBackupState | undefined {
+    return getJson<CloudBackupState>(context, "cloudBackup");
+  },
+
+  setCloudBackupConnected(
+    params: { connected: boolean; email?: string },
+    context: Context
+  ): void {
+    const prev = getJson<CloudBackupState>(context, "cloudBackup") ?? {
+      connected: false,
+    };
+    setJson<CloudBackupState>(context, "cloudBackup", {
+      ...prev,
+      connected: params.connected,
+      email: params.email ?? prev.email,
+    });
+  },
+
+  setCloudBackupStatus(
+    params: { ok: boolean; error?: string },
+    context: Context
+  ): void {
+    const prev = getJson<CloudBackupState>(context, "cloudBackup") ?? {
+      connected: false,
+    };
+    setJson<CloudBackupState>(context, "cloudBackup", {
+      ...prev,
+      lastStatus: {
+        time: Date.now(),
+        ok: params.ok,
+        error: params.ok ? undefined : params.error,
+      },
+    });
+  },
+
+  clearCloudBackup(context: Context): void {
+    delete context.AppSettings.cloudBackup;
   },
 
   // ---------------------------------------------------------------------------

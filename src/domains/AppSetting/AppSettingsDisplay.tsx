@@ -3,6 +3,8 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { contextStore } from "../Context/contextStore";
 import { AppSettingUtils } from "./AppSettingUtils";
 import { ToggleButton } from "../../components/ui/ToggleButton";
+import { CloudBackupService } from "../../services/CloudBackupService";
+import { loginAndSync, disconnect as cloudDisconnect } from "../../components/cloudBackupUi";
 
 export function AppSettingsDisplay() {
 	const context = useQuestContext();
@@ -22,6 +24,7 @@ export function AppSettingsDisplay() {
 	const [critSplashEnabled, setCritSplashEnabled] = useState(
 		AppSettingUtils.getCritSplashEnabled(context)
 	);
+	const [cloudBusy, setCloudBusy] = useState(false);
 	const windowRef = useRef<HTMLDivElement>(null);
 	const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -97,6 +100,32 @@ export function AppSettingsDisplay() {
 	const handleCritSplashChange = (enabled: boolean) => {
 		setCritSplashEnabled(enabled);
 		AppSettingUtils.setCritSplashEnabled({ enabled }, contextStore);
+	};
+
+	const cloudConfigured = CloudBackupService.isConfigured();
+	const cloud = AppSettingUtils.getCloudBackup(context);
+	const cloudConnected = cloud?.connected === true;
+
+	const handleCloudLogin = async () => {
+		setCloudBusy(true);
+		try {
+			await loginAndSync();
+		} catch {
+			// Failure is reflected in the persisted status + homepage banner.
+		} finally {
+			setCloudBusy(false);
+		}
+	};
+
+	const handleCloudBackupNow = async () => {
+		setCloudBusy(true);
+		try {
+			await CloudBackupService.backupNow(contextStore);
+		} catch {
+			// Failure is reflected in the persisted status + homepage banner.
+		} finally {
+			setCloudBusy(false);
+		}
 	};
 
 	return (
@@ -225,6 +254,72 @@ export function AppSettingsDisplay() {
 								</p>
 							)}
 						</div>
+
+						{cloudConfigured && (
+							<div className="space-y-2 border-t border-base-300 pt-3">
+								<div className="flex items-center gap-2">
+									<span className="icon-[mdi--cloud] w-5 h-5 opacity-70" />
+									<span className="font-medium">Cloud backup</span>
+								</div>
+								{cloudConnected ? (
+									<>
+										<p className="text-xs opacity-70 truncate">
+											{cloud?.email
+												? `Logged in as ${cloud.email}`
+												: "Connected to Google Drive"}
+										</p>
+										{cloud?.lastStatus &&
+											(cloud.lastStatus.ok ? (
+												<p className="text-xs text-success">
+													Last backup succeeded
+												</p>
+											) : (
+												<p className="text-xs text-warning">
+													Last backup didn't succeed
+												</p>
+											))}
+										<div className="flex gap-2">
+											<button
+												type="button"
+												className="btn btn-sm flex-1 gap-1"
+												disabled={cloudBusy}
+												onClick={handleCloudBackupNow}
+											>
+												{cloudBusy ? (
+													<span className="loading loading-spinner loading-xs" />
+												) : (
+													<span className="icon-[mdi--cloud-upload] w-4 h-4" />
+												)}
+												Back up now
+											</button>
+											<button
+												type="button"
+												className="btn btn-sm btn-ghost gap-1"
+												onClick={cloudDisconnect}
+												title="Log out of Google Drive"
+											>
+												<span className="icon-[mdi--logout] w-4 h-4" />
+												Log out
+											</button>
+										</div>
+									</>
+								) : (
+									<button
+										type="button"
+										className="btn btn-sm btn-primary w-full gap-1"
+										disabled={cloudBusy}
+										onClick={handleCloudLogin}
+									>
+										{cloudBusy ? (
+											<span className="loading loading-spinner loading-xs" />
+										) : (
+											<span className="icon-[mdi--google] w-4 h-4" />
+										)}
+										Log in to Google
+									</button>
+								)}
+							</div>
+						)}
 					</div>
 				</div>
 			)}
