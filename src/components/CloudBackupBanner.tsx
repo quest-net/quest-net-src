@@ -46,8 +46,10 @@ export function CloudBackupBanner() {
 			<div className="fixed top-16 sm:top-3 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-1 max-w-[92vw]">
 				<div className="flex items-center gap-2 rounded-full bg-base-100/90 border border-base-300 px-3 py-1.5 shadow-sm max-w-full">
 					<span className="icon-[mdi--cloud-check] w-4 h-4 text-success shrink-0" />
-					<span className="text-sm opacity-80 truncate">
-						{state?.email ? `Logged in as ${state.email}` : "Backup on"}
+					<span className="text-sm opacity-80 truncate" title={state?.email}>
+						{context.User.Name
+							? `You are logged in as ${context.User.Name}`
+							: "Backup on"}
 					</span>
 					<button
 						type="button"

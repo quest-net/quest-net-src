@@ -24,9 +24,13 @@ import {
 	type BackupFileMeta,
 	type DriveBackupMeta,
 } from "./GoogleDriveBackupService";
-import { AppSettingUtils } from "../domains/AppSetting/AppSettingUtils";
+import {
+	AppSettingUtils,
+	PROFILE_SYNCED_APP_SETTING_KEYS,
+} from "../domains/AppSetting/AppSettingUtils";
 import { isCloudBackupConfigured } from "../config/googleDrive";
 import { isGUID } from "../utils/UrlParser";
+import { APP_VERSION } from "../version";
 
 /** A Drive backup that is newer than its local counterpart, awaiting confirm. */
 export interface PendingRestore {
@@ -46,6 +50,47 @@ export interface SyncResult {
  *  back to the campaign's CreatedAt when this is 0. */
 function lastUpdatedOf(context: Context, campaignId: string): number {
 	return context.LastUpdated?.[campaignId] ?? 0;
+}
+
+/** The synced "account" profile — the content of the Drive profile.json file. */
+interface ProfilePayload {
+	version: string;
+	lastUpdated: number;
+	user: { Name: string };
+	appSettings: Record<string, string>;
+}
+
+/** Builds the profile payload from live context (allowlisted AppSettings only). */
+function buildProfilePayload(
+	context: Context,
+	lastUpdated: number
+): ProfilePayload {
+	const appSettings: Record<string, string> = {};
+	for (const key of PROFILE_SYNCED_APP_SETTING_KEYS) {
+		const value = context.AppSettings[key];
+		if (typeof value === "string") appSettings[key] = value;
+	}
+	return {
+		version: APP_VERSION,
+		lastUpdated,
+		user: { Name: context.User.Name },
+		appSettings,
+	};
+}
+
+/** Adopts a downloaded profile onto the live context (allowlisted keys only).
+ *  Merges AppSettings rather than replacing, so device-local keys (notably the
+ *  cloudBackup connection blob) are preserved. */
+function applyProfilePayload(payload: ProfilePayload): void {
+	const name = payload?.user?.Name;
+	if (typeof name === "string" && name.trim()) {
+		contextStore.User.Name = name;
+	}
+	const incoming = payload?.appSettings ?? {};
+	for (const key of PROFILE_SYNCED_APP_SETTING_KEYS) {
+		const value = incoming[key];
+		if (typeof value === "string") contextStore.AppSettings[key] = value;
+	}
 }
 
 export const CloudBackupService = {
@@ -224,6 +269,42 @@ export const CloudBackupService = {
 	},
 
 	// -------------------------------------------------------------------------
+	// Account profile (identity + preferences)
+	// -------------------------------------------------------------------------
+
+	/**
+	 * Syncs the "account" profile (User.Name + allowlisted AppSettings) against
+	 * the singleton Drive profile.json, last-write-wins by timestamp. Adopting a
+	 * newer cloud profile stamps ProfileUpdated with the cloud's own time so the
+	 * adoption isn't immediately echoed back as a local change. A pristine device
+	 * (ProfileUpdated === 0) never uploads — it only ever adopts. Never reads or
+	 * writes the device-local cloudBackup connection blob.
+	 */
+	async syncProfile(context: Context): Promise<void> {
+		const cloudMeta = await GoogleDriveBackupService.getProfileMeta();
+		const local = context.ProfileUpdated ?? 0;
+		const cloudTime = cloudMeta?.lastUpdated ?? 0;
+
+		if (cloudMeta && cloudTime > local) {
+			const payload = (await GoogleDriveBackupService.downloadProfile(
+				cloudMeta.fileId
+			)) as ProfilePayload;
+			applyProfilePayload(payload);
+			contextStore.ProfileUpdated = cloudTime;
+			forceContextRerender();
+			return;
+		}
+
+		if (local > 0 && local > cloudTime) {
+			const payload = buildProfilePayload(context, local);
+			await GoogleDriveBackupService.uploadProfile(JSON.stringify(payload), {
+				lastUpdated: local,
+				version: payload.version,
+			});
+		}
+	},
+
+	// -------------------------------------------------------------------------
 	// On-open sync
 	// -------------------------------------------------------------------------
 
@@ -235,6 +316,15 @@ export const CloudBackupService = {
 	 */
 	async syncOnOpen(context: Context): Promise<SyncResult> {
 		await this.ensureSession();
+
+		// Sync the account profile (identity + preferences) first, so an adopted
+		// name/settings are in place for the rest of the open. Isolated in its own
+		// try/catch: a profile hiccup must never block campaign backup/restore.
+		try {
+			await this.syncProfile(context);
+		} catch (e) {
+			console.error("[CloudBackup] Profile sync failed:", e);
+		}
 
 		const backups = await GoogleDriveBackupService.listBackups();
 		const localByKey = new Map<string, CampaignInfo>();

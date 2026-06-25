@@ -65,6 +65,8 @@ export interface BackupFileMeta {
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const DRIVE_UPLOAD = "https://www.googleapis.com/upload/drive/v3";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
+// The singleton account-profile file (User.Name + allowlisted AppSettings).
+const PROFILE_FILE_NAME = "profile.json";
 
 // Drive caps each appProperties entry at 124 bytes (key + value), so counts are
 // stored as a compact positional array in this fixed order rather than a
@@ -97,10 +99,19 @@ function decodeCounts(raw: string | undefined): CampaignCounts | null {
 	}
 }
 
+/** appProperties payload + freshness for the singleton profile.json file. */
+export interface DriveProfileMeta {
+	fileId: string;
+	/** Local last-updated time (ms) of the profile that was uploaded. */
+	lastUpdated: number;
+	version: string;
+}
+
 let tokenClient: google.accounts.oauth2.TokenClient | null = null;
 let accessToken: string | null = null;
 let tokenExpiry = 0;
 let folderId: string | null = null;
+let profileFileId: string | null = null;
 
 // requestAccessToken is callback-based; these bridge the active request to a
 // promise. Only one token request is ever in flight at a time.
@@ -203,6 +214,35 @@ async function ensureFolder(): Promise<string> {
 	return folderId;
 }
 
+/**
+ * Resolves the singleton profile.json file id, creating an empty file if none
+ * exists yet. Only used by uploadProfile (which immediately writes content) —
+ * getProfileMeta queries without creating so it can report "no profile yet".
+ */
+async function ensureProfileFile(): Promise<string> {
+	if (profileFileId) return profileFileId;
+	const folder = await ensureFolder();
+	const q = encodeURIComponent(
+		`'${folder}' in parents and name='${PROFILE_FILE_NAME}' and trashed=false`
+	);
+	const res = await driveFetch(
+		`${DRIVE_API}/files?q=${q}&spaces=drive&fields=files(id)`
+	);
+	const data = (await res.json()) as { files?: { id: string }[] };
+	if (data.files && data.files.length > 0) {
+		profileFileId = data.files[0].id;
+		return profileFileId;
+	}
+	const created = await driveFetch(`${DRIVE_API}/files?fields=id`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ name: PROFILE_FILE_NAME, parents: [folder] }),
+	});
+	const createdData = (await created.json()) as { id: string };
+	profileFileId = createdData.id;
+	return profileFileId;
+}
+
 function parseMeta(
 	fileId: string,
 	appProperties: Record<string, string> | undefined
@@ -246,6 +286,7 @@ export const GoogleDriveBackupService = {
 		accessToken = null;
 		tokenExpiry = 0;
 		folderId = null;
+		profileFileId = null;
 	},
 
 	/** True if a usable in-memory token is currently held. */
@@ -334,6 +375,77 @@ export const GoogleDriveBackupService = {
 
 		// 2) Upload the media body to the session URL in one PUT (payloads are
 		// well under the size where chunking matters).
+		const put = await fetch(sessionUrl, {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: json,
+		});
+		if (!put.ok) {
+			const detail = await put.text().catch(() => "");
+			throw new Error(`Drive upload ${put.status}: ${detail.slice(0, 300)}`);
+		}
+		const result = (await put.json()) as { id: string };
+		return result.id;
+	},
+
+	// -------------------------------------------------------------------------
+	// Account profile (singleton profile.json) — cheap freshness via
+	// appProperties; mirrors the campaign upload/download pattern.
+	// -------------------------------------------------------------------------
+
+	/** Reads the profile file's freshness without creating it; null if absent. */
+	async getProfileMeta(): Promise<DriveProfileMeta | null> {
+		const folder = await ensureFolder();
+		const q = encodeURIComponent(
+			`'${folder}' in parents and name='${PROFILE_FILE_NAME}' and trashed=false`
+		);
+		const res = await driveFetch(
+			`${DRIVE_API}/files?q=${q}&spaces=drive&fields=files(id,appProperties)`
+		);
+		const data = (await res.json()) as {
+			files?: { id: string; appProperties?: Record<string, string> }[];
+		};
+		const f = data.files?.[0];
+		if (!f) return null;
+		profileFileId = f.id;
+		return {
+			fileId: f.id,
+			lastUpdated: Number(f.appProperties?.lastUpdated) || 0,
+			version: f.appProperties?.version || "0.0.0",
+		};
+	},
+
+	/** Downloads and parses the profile file's full JSON payload. */
+	async downloadProfile(fileId: string): Promise<unknown> {
+		const res = await driveFetch(`${DRIVE_API}/files/${fileId}?alt=media`);
+		const text = await res.text();
+		return JSON.parse(text);
+	},
+
+	/** Creates or updates the singleton profile file (resumable). */
+	async uploadProfile(
+		json: string,
+		meta: { lastUpdated: number; version: string }
+	): Promise<string> {
+		const fileId = await ensureProfileFile();
+		const appProperties: Record<string, string> = {
+			profile: "1",
+			lastUpdated: String(meta.lastUpdated),
+			version: meta.version,
+		};
+		const metadata = { name: PROFILE_FILE_NAME, appProperties };
+		const start = await driveFetch(
+			`${DRIVE_UPLOAD}/files/${fileId}?uploadType=resumable&fields=id`,
+			{
+				method: "PATCH",
+				headers: { "Content-Type": "application/json; charset=UTF-8" },
+				body: JSON.stringify(metadata),
+			}
+		);
+		const sessionUrl = start.headers.get("Location") || "";
+		if (!sessionUrl) {
+			throw new Error("Drive resumable upload: no session URL returned.");
+		}
 		const put = await fetch(sessionUrl, {
 			method: "PUT",
 			headers: { "Content-Type": "application/json" },

@@ -5,6 +5,26 @@ import { Context } from "../Context/Context";
 import { AppSettings, DEFAULT_IMAGE_PROMPT } from "./AppSetting";
 import { SoundEffectService } from "../../services/SoundEffectService";
 import { DEFAULT_PROVIDER_ID } from "../../services/ImageGenerationService";
+import { markProfileUpdated } from "../Context/contextStore";
+
+/**
+ * AppSettings keys that sync as part of the "Quest-Net account" profile
+ * (cloud profile.json). Preferences + image-gen credentials. Deliberately
+ * EXCLUDES `cloudBackup` (device-specific connection/email/status). Every setter
+ * that writes one of these keys must call markProfileUpdated(); keep this list
+ * and those setters in lockstep.
+ */
+export const PROFILE_SYNCED_APP_SETTING_KEYS = [
+  "theme",
+  "volume",
+  "performanceMode",
+  "preserveFlyingHeightOnTileMove",
+  "critSplashEnabled",
+  "imagePromptTemplate",
+  "imageService",
+  "imageApiKeys",
+  "imageApiSecrets",
+] as const;
 
 /** Persisted Google Drive backup connection + last-result status. */
 export interface CloudBackupState {
@@ -46,12 +66,13 @@ export const AppSettingUtils = {
   },
 
   /**
-   * Sets the player's personal volume (0.0 to 1.0)
-   * This is local to the user and doesn't sync
+   * Sets the player's personal volume (0.0 to 1.0). Not broadcast to peers, but
+   * synced across the user's own devices via the cloud account profile.
    */
   setPlayerVolume(params: { volume: number }, context: Context): void {
     const volume = Math.max(0, Math.min(1, params.volume));
     context.AppSettings.volume = volume.toString();
+    markProfileUpdated();
   },
 
   /**
@@ -68,6 +89,7 @@ export const AppSettingUtils = {
 
   setTheme(params: { theme: "light" | "dark" }, context: Context): void {
     context.AppSettings.theme = params.theme;
+    markProfileUpdated();
   },
 
   getTheme(context: Context): "light" | "dark" {
@@ -83,6 +105,7 @@ export const AppSettingUtils = {
     context.AppSettings.preserveFlyingHeightOnTileMove = params.preserve
       ? "true"
       : "false";
+    markProfileUpdated();
   },
 
   getPreserveFlyingHeightOnTileMove(context: Context): boolean {
@@ -94,6 +117,7 @@ export const AppSettingUtils = {
     context: Context
   ): void {
     context.AppSettings.performanceMode = params.enabled ? "true" : "false";
+    markProfileUpdated();
   },
 
   getPerformanceMode(context: Context): boolean {
@@ -105,6 +129,7 @@ export const AppSettingUtils = {
     context: Context
   ): void {
     context.AppSettings.critSplashEnabled = params.enabled ? "true" : "false";
+    markProfileUpdated();
   },
 
   /** Defaults to enabled when the setting has never been set. */
@@ -122,6 +147,7 @@ export const AppSettingUtils = {
 
   setImageService(params: { providerId: string }, context: Context): void {
     context.AppSettings.imageService = params.providerId;
+    markProfileUpdated();
   },
 
   // ---------------------------------------------------------------------------
@@ -144,6 +170,7 @@ export const AppSettingUtils = {
       delete map[params.providerId];
     }
     setJson(context, "imageApiKeys", map);
+    markProfileUpdated();
   },
 
   getProviderApiSecret(
@@ -166,6 +193,7 @@ export const AppSettingUtils = {
       delete map[params.providerId];
     }
     setJson(context, "imageApiSecrets", map);
+    markProfileUpdated();
   },
 
   // ---------------------------------------------------------------------------
@@ -179,6 +207,7 @@ export const AppSettingUtils = {
   setImagePromptTemplate(params: { template: string }, context: Context): void {
     const trimmed = params.template.trim();
     context.AppSettings.imagePromptTemplate = trimmed || DEFAULT_IMAGE_PROMPT;
+    markProfileUpdated();
   },
 
   // ---------------------------------------------------------------------------

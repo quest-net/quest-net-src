@@ -263,9 +263,9 @@ export function AppSettingsDisplay() {
 								</div>
 								{cloudConnected ? (
 									<>
-										<p className="text-xs opacity-70 truncate">
-											{cloud?.email
-												? `Logged in as ${cloud.email}`
+										<p className="text-xs opacity-70 truncate" title={cloud?.email}>
+											{context.User.Name
+												? `You are logged in as ${context.User.Name}`
 												: "Connected to Google Drive"}
 										</p>
 										{cloud?.lastStatus &&

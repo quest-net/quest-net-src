@@ -1,5 +1,6 @@
 import { Context } from "../Context/Context";
 import { User } from "./User";
+import { markProfileUpdated } from "../Context/contextStore";
 
 // Word lists for generating random names
 const adjectives = [
@@ -46,6 +47,7 @@ export const UserUtils = {
 		const newName = params.name.trim();
 		if (newName) {
 			context.User.Name = newName;
+			markProfileUpdated();
 		}
 	},
 

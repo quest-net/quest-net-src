@@ -33,4 +33,10 @@ export interface Context {
 	// a peer's clock can never clobber it. Drives cloud-backup freshness and the
 	// campaign-list ordering. Mirrors the SecretModes shape.
 	LastUpdated?: Record<string, number>;
+	// Wall-clock timestamp (ms) of the most recent LOCAL change to the synced
+	// account profile (User.Name + allowlisted AppSettings). Bumped by
+	// markProfileUpdated() on those mutations. Local-only; drives the
+	// last-write-wins comparison for the Google Drive profile.json file. 0/absent
+	// means "never changed locally", so a cloud profile always wins on first sync.
+	ProfileUpdated?: number;
 }

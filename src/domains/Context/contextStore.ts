@@ -37,6 +37,7 @@ export const contextStore = proxy<Context>({
 	SecretModes: {},
 	ViewedTerrains: {},
 	LastUpdated: {},
+	ProfileUpdated: 0,
 });
 
 /**
@@ -54,6 +55,7 @@ export function hydrateContextStore(loaded: Context): void {
 	contextStore.SecretModes = loaded.SecretModes ?? {};
 	contextStore.ViewedTerrains = loaded.ViewedTerrains ?? {};
 	contextStore.LastUpdated = loaded.LastUpdated ?? {};
+	contextStore.ProfileUpdated = loaded.ProfileUpdated ?? 0;
 	// Runtime-only flag; never restored from a loaded context.
 	delete contextStore.IsOptimistic;
 }
@@ -71,6 +73,17 @@ export function markCampaignUpdated(
 ): void {
 	if (!contextStore.LastUpdated) contextStore.LastUpdated = {};
 	contextStore.LastUpdated[campaignId] = when;
+}
+
+/**
+ * Records that the synced account profile (User.Name + allowlisted AppSettings)
+ * just changed locally, for the cloud profile.json last-write-wins comparison.
+ * Local-only. Pass an explicit timestamp to match an external source (e.g. when
+ * adopting a cloud profile, stamp the cloud's own time so we don't immediately
+ * re-upload); otherwise defaults to now.
+ */
+export function markProfileUpdated(when: number = Date.now()): void {
+	contextStore.ProfileUpdated = when;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,5 @@
 import { Context } from "../Context/Context";
+import { contextStore } from "../Context/contextStore";
 import { Campaign } from "./Campaign";
 import { CampaignInfo } from "./CampaignInfo";
 import { getUrlIdentifier, isReservedRouteKeyword } from "../../utils/UrlParser";
@@ -121,6 +122,12 @@ export interface CampaignExportData {
 	// the same way image binaries are. Optional for backward compat with
 	// pre-2.7.0 export files (whose voxels are inline and handled by migration).
 	terrainData?: Record<string, { voxels: string; contentHash: string }>;
+	// Per-campaign local DM state that lives on the Context (keyed by the
+	// campaign's GUID), not on the Campaign object: secret-mode flag and the
+	// recently-viewed-terrains list. Travels with the campaign so it follows a
+	// cloud restore; re-keyed onto the (possibly new) campaign Id on restore.
+	// Optional — absence just means "no state to carry".
+	contextState?: { secretMode?: boolean; viewedTerrains?: string[] };
 }
 
 export interface ExportProgress {
@@ -175,11 +182,13 @@ function parseExportData(data: unknown): {
 	campaign: Campaign;
 	imageData: Record<string, { base64: string; mimeType: string }>;
 	terrainData: Record<string, { voxels: string; contentHash: string }>;
+	contextState?: CampaignExportData["contextState"];
 	fileVersion: string;
 } {
 	let campaign: Campaign;
 	let imageData: Record<string, { base64: string; mimeType: string }> = {};
 	let terrainData: Record<string, { voxels: string; contentHash: string }> = {};
+	let contextState: CampaignExportData["contextState"];
 
 	if (
 		data &&
@@ -191,6 +200,7 @@ function parseExportData(data: unknown): {
 		campaign = (container.campaign as Campaign) ?? ({} as Campaign);
 		imageData = container.imageData || {};
 		terrainData = container.terrainData || {};
+		contextState = container.contextState;
 	} else {
 		campaign = data as Campaign;
 	}
@@ -200,7 +210,7 @@ function parseExportData(data: unknown): {
 			? (data as { version?: string }).version
 			: null) ?? "0.0.0";
 
-	return { campaign, imageData, terrainData, fileVersion };
+	return { campaign, imageData, terrainData, contextState, fileVersion };
 }
 
 export const CampaignUtils = {
@@ -533,11 +543,21 @@ export const CampaignUtils = {
 			status: "Finalizing export...",
 		});
 
+		// Carry the campaign's local DM context state (keyed by its GUID Id) so it
+		// survives a cloud round-trip. Spread the array so no proxy reference leaks
+		// into the export object.
+		const secretMode = contextStore.SecretModes?.[campaign.Id];
+		const viewedTerrains = contextStore.ViewedTerrains?.[campaign.Id];
+		const contextState: CampaignExportData["contextState"] = {};
+		if (secretMode !== undefined) contextState.secretMode = secretMode;
+		if (viewedTerrains) contextState.viewedTerrains = [...viewedTerrains];
+
 		return {
 			version: APP_VERSION,
 			campaign,
 			imageData,
 			terrainData,
+			contextState,
 		};
 	},
 
@@ -632,7 +652,7 @@ export const CampaignUtils = {
 		opts: RestoreMode = { mode: "copy" },
 		onProgress?: (progress: ExportProgress) => void
 	): Promise<CampaignInfo> {
-		const { campaign, imageData, terrainData, fileVersion } =
+		const { campaign, imageData, terrainData, contextState, fileVersion } =
 			parseExportData(data);
 
 		// Preserve the backup's stable identity; mint one if the archive predates
@@ -704,6 +724,18 @@ export const CampaignUtils = {
 			total: totalSteps,
 			status: "Saving campaign...",
 		});
+
+		// Restore the campaign's local DM context state onto the FINAL id (a new
+		// GUID for a copy, the target id for a replace), so secret mode and
+		// recently-viewed terrains follow the campaign across a cloud restore.
+		if (contextState?.secretMode !== undefined) {
+			if (!contextStore.SecretModes) contextStore.SecretModes = {};
+			contextStore.SecretModes[migrated.Id] = contextState.secretMode;
+		}
+		if (contextState?.viewedTerrains) {
+			if (!contextStore.ViewedTerrains) contextStore.ViewedTerrains = {};
+			contextStore.ViewedTerrains[migrated.Id] = [...contextState.viewedTerrains];
+		}
 
 		// Persist the full Campaign payload to IndexedDB, then replace the
 		// matching CampaignInfo in place or append a new one.
