@@ -43,7 +43,23 @@ export const LogUtils = {
 	canUserSeeEntry(
 		entry: LogEntry,
 		userRole: "dm" | "player" | undefined,
+		selectedCharacterId?: string,
 	): boolean {
+		// "owner"-scoped (whisper) entries are private to the @mentioned character.
+		// This is the visibility counterpart to the mention toast in LogAlerts: the
+		// two stay in lockstep so the target both sees the line AND gets the toast,
+		// while other players see neither. Bypasses the category whitelist below (a
+		// whisper reaches its target regardless of category). The DM is omniscient
+		// and always sees owner entries (it authored them via script). Treated as an
+		// additional grant, so ["owner", "all"] still reads as public.
+		if (entry.Visibility.includes("owner")) {
+			if (userRole === "dm") return true;
+			if (
+				selectedCharacterId &&
+				entry.MentionedActorIds?.includes(selectedCharacterId)
+			)
+				return true;
+		}
 		if (userRole === "dm" && (entry.Visibility.includes("dm") || entry.Visibility.includes("all"))) return true;
 		let visibilityCheck = entry.Visibility.includes("all") || (entry.Visibility.includes("player"));
 		let categoryCheck = entry.Category.includes("chat") || entry.Category.includes("dice") || entry.Category.includes("sticker") || entry.Category.includes("ping");

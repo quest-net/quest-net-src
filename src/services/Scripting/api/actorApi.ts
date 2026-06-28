@@ -98,6 +98,12 @@ export interface ActorApiMethods {
 	 * -> action dice:roll (total + breakdown ride in event.params; event.result is dead in cascades)
 	 */
 	roll(expr: string, opts?: { tags?: string[]; secret?: boolean }): Promise<number>;
+	/**
+	 * Private toast/whisper to THIS actor's player: a line only this character's
+	 * player (and the DM) can see, surfaced as a toast alert for them. -> log:create
+	 * (owner visibility + self-mention)
+	 */
+	toast(text: string, opts?: { category?: string; level?: string; details?: string }): Promise<void>;
 
 	// ---- Cross-domain forwarders (logic lives in sibling modules) ----------
 
@@ -177,6 +183,7 @@ const ACTOR_API_KEYS = new Set<keyof ActorApiMethods>([
 	"edit",
 	"despawn",
 	"roll",
+	"toast",
 	"giveStatus",
 	"removeStatus",
 	"setStatusDuration",
@@ -278,6 +285,17 @@ function makeActorMethods(
 			});
 			return result.total;
 		},
+		toast: (text, opts) =>
+			// Owner-scoped + self-mention: private to this actor's player (and the DM),
+			// and the mention surfaces it as a toast for them. Mirrors game.toast.
+			api.action("log:create", {
+				action: text,
+				details: opts?.details,
+				category: opts?.category ?? "chat",
+				level: opts?.level ?? "info",
+				visibility: ["owner"],
+				mentionedActorIds: [actor.Id],
+			}),
 
 		// ---- Cross-domain forwarders ----------------------------------------
 		giveStatus: (status, count) => statusApi.give(api, self, status, count),

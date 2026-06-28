@@ -246,6 +246,7 @@ game.scene                     // setEnvironment / setFocus images
 game.audio                     // setTrack / setVolume / stop
 game.roll("2d6+1")             // silent DM dice -> number   ·   game.rng() -> 0..1
 await game.log("text")         // quick log entry
+await game.toast("Aria", "text")        // private toast/whisper to ONE player
 await game.spawnActor("Goblin", pos)    //  await game.spawnItem("Torch", pos)
 await game.ping(pos)           // flash a marker on the map
 await game.action(key, params) // escape hatch: dispatch ANY scriptable action`}</CodeBlock>
@@ -286,6 +287,7 @@ goblin.giveItem("Potion", 2);              // also: removeItem, useItem, equipIt
 goblin.giveSkill("Fireball");              // also: removeSkill, useSkill
 goblin.move(this.actor.Position);          // teleport (no pathing)
 goblin.roll("1d20+3");                      // an OBSERVABLE roll other scripts can react to
+goblin.toast("Only you hear this...");      // private toast/whisper to this actor's player
 
 goblin.Name, goblin.Position, goblin.Stats // any live field reads straight through`}</CodeBlock>
 					<WikiCallout tone="info" title="await is optional, but recommended">
@@ -516,6 +518,27 @@ for (const pc of game.party()) pc.setStat("HP", pc.getStatMax("HP"));`}</CodeBlo
 					<p className="text-sm opacity-80">World rule — announce each round:</p>
 					<CodeBlock>{`// Campaign hook  ·  Trigger: "combat:incrementRound"
 await game.log("Round " + game.combat.round + " begins", { category: "combat" });`}</CodeBlock>
+					<p className="text-sm opacity-80">
+						Private whisper — tell one player something only they (and the DM) see,
+						both as a toast alert and in their log:
+					</p>
+					<CodeBlock>{`// Status hook  ·  Trigger: "combat:incrementRound"
+this.actor.toast("The poison whispers through your veins...");
+
+// Or, from a world rule, target a specific character by name:
+game.toast("Aria", "A cold presence watches you from the dark.");`}</CodeBlock>
+					<WikiCallout tone="info" title="Who sees a toast / whisper">
+						<p>
+							<WikiCode>actor.toast</WikiCode> and <WikiCode>game.toast</WikiCode>{" "}
+							create a log entry private to that one player's character — no other
+							player sees it in their log or as an alert. The DM always sees it (it
+							authored the line). For a message <em>everyone</em> should see, use{" "}
+							<WikiCode>game.log("text", {`{ level: "important" }`})</WikiCode> — a{" "}
+							<WikiCode>chat</WikiCode>/<WikiCode>dice</WikiCode> category log at{" "}
+							<WikiCode>important</WikiCode> or <WikiCode>critical</WikiCode> level
+							pops as a shared toast.
+						</p>
+					</WikiCallout>
 				</div>
 			),
 		},
@@ -537,7 +560,7 @@ await game.log("Round " + game.combat.round + " begins", { category: "combat" })
 		},
 	],
 	searchText:
-		"scripting script behavior automation eca event condition action trigger game.action this game event params vars parameters cascade dm authority actor entity status item skill campaign world rule facade changestat setstat givestatus giveitem useitem equip giveskill move roll distanceto spawnactor spawnitem ping shared inventory pool calendar long rest short rest advance day scene environment focus audio track volume combat round nextround markturndone stalker buff size spawn move log roll scriptable async destructive sandbox security test harness api reference before after when intercept interception cancel veto modify rewrite diceformula bless phase",
+		"scripting script behavior automation eca event condition action trigger game.action this game event params vars parameters cascade dm authority actor entity status item skill campaign world rule facade changestat setstat givestatus giveitem useitem equip giveskill move roll distanceto spawnactor spawnitem ping shared inventory pool calendar long rest short rest advance day scene environment focus audio track volume combat round nextround markturndone stalker buff size spawn move log toast whisper private player alert visibility owner roll scriptable async destructive sandbox security test harness api reference before after when intercept interception cancel veto modify rewrite diceformula bless phase",
 };
 
 export default scriptingPage;

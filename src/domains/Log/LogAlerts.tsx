@@ -52,7 +52,7 @@ export function LogAlerts() {
 		const newAlerts = chronologicalLog.filter((entry) => {
 			const levelOk = entry.Level === "important" || entry.Level === "critical";
 			const fresh = now - entry.Timestamp < MAX_ALERT_AGE;
-			const canSee = LogUtils.canUserSeeEntry(entry, userRole);
+			const canSee = LogUtils.canUserSeeEntry(entry, userRole, selectedCharacterId);
 			// Crits are normally shown via the full-screen CritSplash, not a toast;
 			// when that splash is disabled they fall back to a regular alert here.
 			return (

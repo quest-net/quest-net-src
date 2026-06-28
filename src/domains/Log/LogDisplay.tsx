@@ -156,7 +156,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	const visibleLog = useMemo(() => {
 		const chronologicalLog = LogUtils.getChronologicalLog(campaign);
 		return chronologicalLog.filter((entry) =>
-			LogUtils.canUserSeeEntry(entry, userRole)
+			LogUtils.canUserSeeEntry(entry, userRole, selectedCharacterId)
 		);
 	}, [campaign.Log, campaign.LogHead, userRole, selectedCharacterId, logLength, lastLogId]);
 

@@ -135,6 +135,7 @@ export function IndexView({
 		new Set()
 	);
 	const [moveToPath, setMoveToPath] = useState("");
+	const [tagToAdd, setTagToAdd] = useState("");
 
 	// Pagination state
 	const [currentPage, setCurrentPage] = useState(1);
@@ -180,6 +181,15 @@ export function IndexView({
 	const existingFolders = Array.from(
 		new Set(
 			items.flatMap((item) => extractPathTags(item.tags).map((path) => path))
+		)
+	).sort();
+
+	// All existing non-path tags, for the bulk-tag shortcut dropdown
+	const existingTags = Array.from(
+		new Set(
+			items.flatMap((item) =>
+				(item.tags || []).filter((tag) => !tag.startsWith("path:"))
+			)
 		)
 	).sort();
 
@@ -269,6 +279,7 @@ export function IndexView({
 		setIsSelectionMode(false);
 		setSelectedItemIds(new Set());
 		setMoveToPath("");
+		setTagToAdd("");
 	};
 
 	const handleMoveItems = () => {
@@ -307,6 +318,57 @@ export function IndexView({
 			itemId: string;
 			newTags: string[];
 		}>;
+
+		// Execute bulk update
+		onBulkUpdateItemTags(updates);
+
+		// Exit selection mode
+		handleExitSelectionMode();
+	};
+
+	const handleTagItems = () => {
+		if (!onBulkUpdateItemTags) {
+			console.warn("onBulkUpdateItemTags not provided to IndexView");
+			return;
+		}
+
+		const trimmedTag = tagToAdd.trim();
+		if (trimmedTag === "" || selectedItemIds.size === 0) {
+			return;
+		}
+
+		const updates = Array.from(selectedItemIds)
+			.map((itemId) => {
+				const item = items.find((i) => i.id === itemId);
+				if (!item) return null;
+
+				const currentTags = item.tags || [];
+
+				// Skip items that already have this tag (case-insensitive, mirroring
+				// TagEditor) so we don't create duplicate-looking entries.
+				if (
+					currentTags.some(
+						(t) => t.toLowerCase() === trimmedTag.toLowerCase()
+					)
+				) {
+					return null;
+				}
+
+				return {
+					itemId: item.id,
+					newTags: [...currentTags, trimmedTag],
+				};
+			})
+			.filter((update) => update !== null) as Array<{
+			itemId: string;
+			newTags: string[];
+		}>;
+
+		// Nothing to do if every selected item already had the tag
+		if (updates.length === 0) {
+			handleExitSelectionMode();
+			return;
+		}
 
 		// Execute bulk update
 		onBulkUpdateItemTags(updates);
@@ -520,6 +582,55 @@ export function IndexView({
 										>
 											<span className="icon-[mdi--arrow-right] w-4 h-4" />
 											Move
+										</button>
+									</>
+								)}
+
+								{/* Bulk Tag controls - add a tag to all selected items */}
+								{hasFolderManagement && selectedItemIds.size > 0 && (
+									<>
+										<div className="divider divider-horizontal mx-2"></div>
+										<span className="text-sm">Add tag:</span>
+										<input
+											type="text"
+											value={tagToAdd}
+											onChange={(e) => setTagToAdd(e.target.value)}
+											onKeyDown={(e) => {
+												if (e.key === "Enter") {
+													e.preventDefault();
+													handleTagItems();
+												}
+											}}
+											placeholder="tag"
+											className="input input-bordered input-sm w-48"
+										/>
+
+										{/* Existing tag shortcuts dropdown */}
+										{existingTags.length > 0 && (
+											<div className="dropdown">
+												<label tabIndex={0} className="btn btn-sm btn-ghost">
+													<span className="icon-[mdi--tag-outline] w-4 h-4" />
+												</label>
+												<ul
+													tabIndex={0}
+													className="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-52 max-h-64 overflow-y-auto"
+												>
+													{existingTags.map((tag) => (
+														<li key={tag}>
+															<a onClick={() => setTagToAdd(tag)}>{tag}</a>
+														</li>
+													))}
+												</ul>
+											</div>
+										)}
+
+										<button
+											onClick={handleTagItems}
+											disabled={!tagToAdd.trim()}
+											className="btn btn-primary btn-sm"
+										>
+											<span className="icon-[mdi--tag-plus-outline] w-4 h-4" />
+											Tag
 										</button>
 									</>
 								)}

@@ -85,6 +85,12 @@ export interface GameApi {
 	rng(): number;
 	/** Write a log line. -> log:create */
 	log(text: string, opts?: { category?: string; level?: string; details?: string }): Promise<void>;
+	/**
+	 * Private toast to ONE player: a whisper only the target character's player
+	 * (and the DM) can see — both in the log feed and as a toast alert. `target`
+	 * is an actor name|id|facade. -> log:create (owner visibility + mention)
+	 */
+	toast(target: ActorRef, text: string, opts?: { category?: string; level?: string; details?: string }): Promise<void>;
 	/** Dispatch any scriptable action by key (the raw escape hatch). */
 	action(key: string, params?: any): Promise<void>;
 
@@ -185,6 +191,21 @@ export function makeGameApi(api: ScriptApiContext): GameApi {
 				category: opts?.category ?? "system",
 				level: opts?.level ?? "info",
 			}),
+		toast: (target, text, opts) => {
+			// Owner-scoped + self-mentioned: canUserSeeEntry restricts the line to the
+			// target's character (and the DM), and the mention drives the toast in
+			// LogAlerts for that one player regardless of level. If the target can't
+			// be resolved, the entry still lands as a DM-only owner line (no mention).
+			const id = ActorUtils.resolveActorId(api.campaign(), target);
+			return api.action("log:create", {
+				action: text,
+				details: opts?.details,
+				category: opts?.category ?? "chat",
+				level: opts?.level ?? "info",
+				visibility: ["owner"],
+				mentionedActorIds: id ? [id] : undefined,
+			});
+		},
 		action: (key, params) => api.action(key, params),
 
 		// ---- Spawn / ping verbs (FLAT) -> delegate to sibling module fns ------
