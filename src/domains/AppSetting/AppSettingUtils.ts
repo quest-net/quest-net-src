@@ -2,6 +2,7 @@
 
 import { isDmAccess } from "../../utils/UrlParser";
 import { Context } from "../Context/Context";
+import type { CameraPreference } from "../../components/Map/MapScene";
 import { AppSettings, DEFAULT_IMAGE_PROMPT } from "./AppSetting";
 import { SoundEffectService } from "../../services/SoundEffectService";
 import { DEFAULT_PROVIDER_ID } from "../../services/ImageGenerationService";
@@ -110,6 +111,25 @@ export const AppSettingUtils = {
 
   getPreserveFlyingHeightOnTileMove(context: Context): boolean {
     return context.AppSettings.preserveFlyingHeightOnTileMove === "true";
+  },
+
+  /**
+   * World-view map camera framing. Defaults to isometric. `freecam` is a
+   * DM-only mode, so it's gated here the same way volume is: a player who has
+   * `freecam` persisted (e.g. a former DM) reads back as isometric.
+   */
+  getCameraPreference(context: Context): CameraPreference {
+    const value = context.AppSettings.cameraPreference;
+    if (value === "perspective") return "perspective";
+    if (value === "freecam" && isDmAccess()) return "freecam";
+    return "ortho";
+  },
+
+  setCameraPreference(
+    params: { preference: CameraPreference },
+    context: Context
+  ): void {
+    context.AppSettings.cameraPreference = params.preference;
   },
 
   setPerformanceMode(

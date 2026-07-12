@@ -1,9 +1,8 @@
 // domains/Main/Main.tsx - Updated
 
 import { useQuestContext } from "../Context/ContextProvider";
-import { forceContextRerender } from "../Context/contextStore";
+import { contextStore, forceContextRerender } from "../Context/contextStore";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
-import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import MapScene, { type CameraPreference } from "../../components/Map/MapScene";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapStateProvider, useMapState } from "../../components/Map/MapStateProvider";
@@ -33,6 +32,7 @@ import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { findFirstPersonActor } from "../../components/Map/FirstPerson/actor";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { CameraModeDropdown } from "../../components/Map/CameraModeDropdown";
+import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 
 type TopTab = "music" | "calendar" | "terrain" | "combat";
@@ -92,12 +92,16 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 	const [mapViewMode, setMapViewMode] = useState<MapViewMode>("world");
 	const [xRayActors, setXRayActors] = useState(false);
 	const [showTerrainLinks, setShowTerrainLinks] = useState(false);
-	const [cameraPreference, setCameraPreference] = useState<CameraPreference>(() => {
-		const saved = localStorage.getItem("quest-net:cameraPreference");
-		if (saved === "perspective") return "perspective";
-		if (saved === "freecam" && isDM) return "freecam";
-		return "ortho";
-	});
+	// Camera preference lives in Context.AppSettings (like the other map
+	// preferences) so the player's mobile header hamburger — a sibling of <Main>
+	// — can drive the same value we feed to <MapScene>. The getter gates the
+	// DM-only `freecam` mode away for players.
+	const cameraPreference = AppSettingUtils.getCameraPreference(context);
+	const setCameraPreference = useCallback(
+		(preference: CameraPreference) =>
+			AppSettingUtils.setCameraPreference({ preference }, contextStore),
+		[]
+	);
 	const [mapReady, setMapReady] = useState(false);
 
 	// Top tabs state (same for everyone)
@@ -325,12 +329,6 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 		setViewedTerrain,
 	]);
 
-	useEffect(() => {
-		LocalStorageUtilities.saveString(
-			"quest-net:cameraPreference",
-			cameraPreference
-		);
-	}, [cameraPreference]);
 
 	// Reset map-ready flag whenever the rendered terrain changes so the loading
 	// screen re-appears during the WebGL init + shader compile for the new terrain.
@@ -479,7 +477,10 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 							onEnterFirstPerson={() => setMapViewMode("first-person")}
 						/>
 					)}
-					{mapViewMode === "world" && !isDM && (
+					{/* Player map controls (first-person + camera mode). Hidden on
+					    mobile: first-person is desktop-only and camera mode lives in
+					    the header hamburger there. */}
+					{mapViewMode === "world" && !isDM && !isMobile && (
 						<div className="absolute left-3 top-3 z-20">
 							<div className="join shadow-sm">
 								{showFirstPersonButton && (

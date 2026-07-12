@@ -14,6 +14,7 @@ import { Main } from "../Main/Main";
 import { AudioPlayer } from "../Audio/AudioPlayer";
 import { AudioStateProvider } from "../Audio/AudioContext";
 import { AppSettingsDisplay } from "../AppSetting/AppSettingsDisplay";
+import { PlayerMobileMenu } from "./PlayerMobileMenu";
 
 export function PlayerView() {
 	const context = useQuestContext();
@@ -60,25 +61,38 @@ export function PlayerView() {
 				<header className="navbar border-b-2 px-4 lg:px-6 justify-between">
 					<div className="flex items-center gap-4">
 						<PeerStatus connectionStatus={connectionStatus} peers={peers} selfPeer={selfPeer} totalInRoom={totalInRoom} />
-						<AppSettingsDisplay />
+						{/* App settings omitted on mobile — most options aren't relevant there. */}
+						{!isMobile && <AppSettingsDisplay />}
 					</div>
 					<h1 className="text-xl font-bold">{campaign.Name}</h1>
 					<div className="flex items-center gap-2">
-						{hasSelectedCharacter && (
-							<button
-								className="btn btn-neutral btn-sm"
-								onClick={handleChangeCharacter}
-								title="Change character"
-							>
-								<span className="icon-[mdi--account-switch] w-5 h-5" />
-							</button>
+						{isMobile ? (
+							// Mobile: change character, exit, and camera mode collapse
+							// into a single hamburger menu.
+							<PlayerMobileMenu
+								hasSelectedCharacter={hasSelectedCharacter}
+								onChangeCharacter={handleChangeCharacter}
+								onExit={() => navigate("/campaigns")}
+							/>
+						) : (
+							<>
+								{hasSelectedCharacter && (
+									<button
+										className="btn btn-neutral btn-sm"
+										onClick={handleChangeCharacter}
+										title="Change character"
+									>
+										<span className="icon-[mdi--account-switch] w-5 h-5" />
+									</button>
+								)}
+								<button
+									className="btn btn-neutral"
+									onClick={() => navigate("/campaigns")}
+								>
+									Leave Campaign
+								</button>
+							</>
 						)}
-						<button
-							className="btn btn-neutral"
-							onClick={() => navigate("/campaigns")}
-						>
-							{isMobile ? "Exit" : "Leave Campaign"}
-						</button>
 					</div>
 				</header>
 

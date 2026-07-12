@@ -4,6 +4,9 @@ export interface AppSettings {
   sfxVolume?: number; // 0-1. Sound effects volume (stickers, etc.), separate from music
   preserveFlyingHeightOnTileMove?: boolean;
   performanceMode?: boolean;
+  /** World-view map camera framing. `freecam` is DM-only. Device-local (not
+   *  profile-synced) — camera framing can reasonably differ per device. */
+  cameraPreference?: "ortho" | "perspective" | "freecam";
   /** When false, natural crits show as normal log alerts instead of the full-screen splash. Defaults to enabled. */
   critSplashEnabled?: boolean;
   imagePromptTemplate?: string;
