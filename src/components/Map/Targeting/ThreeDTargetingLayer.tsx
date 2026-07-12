@@ -14,6 +14,12 @@
 // (movement, actor selection) early-return while targetingStore.request is set,
 // so this layer doesn't need to fight them for the event; it leaves propagation
 // alone so OrbitControls can still rotate/pan during targeting.
+//
+// It runs in BOTH view modes. In world mode the aim point is the cursor; in
+// first-person mode the pointer is locked, so the aim is the screen-centre
+// crosshair (raycast from the FP camera through the middle of the viewport). The
+// resolve/hover logic is shared — only the ray origin and a few input details
+// differ (see the `isWorld` branches).
 
 import { useEffect } from "react";
 import * as THREE from "three";
@@ -25,7 +31,7 @@ import {
 	raycastTerrainDDA,
 	terrainDDAHitToVoxelTile,
 } from "../Movement3D/movement3DHelpers";
-import { setRaycasterFromPointer } from "../mapSceneUtils";
+import { setRaycasterFromCenter, setRaycasterFromPointer } from "../mapSceneUtils";
 import { THREE_D_PING_INPUT } from "../threeDMapConstants";
 import {
 	cancelTargeting,
@@ -40,12 +46,15 @@ interface ThreeDTargetingLayerProps {
 	terrainIndex: VoxelTerrainIndex;
 	/** The terrain being targeted; stamped onto resolved position targets. */
 	terrainId: string;
+	/** World view (cursor-aimed) vs first-person (crosshair-aimed). */
+	isWorld: boolean;
 }
 
 export function ThreeDTargetingLayer({
 	resources,
 	terrainIndex,
 	terrainId,
+	isWorld,
 }: ThreeDTargetingLayerProps) {
 	const { request } = useSnapshot(targetingStore);
 	const isActive = request !== null;
@@ -61,17 +70,25 @@ export function ThreeDTargetingLayer({
 			null;
 		let pendingMove: PointerEvent | null = null;
 		let moveRafId = 0;
+		let hoverRafId = 0;
 		let lastHoverKey = "";
 		// Right-button press position, so a right-drag (camera pan) can be told
-		// apart from a right-click (cancel) at contextmenu time.
+		// apart from a right-click (cancel) at contextmenu time. World-only —
+		// in first-person the right button engages look mode, not cancel.
 		let rightDown: { x: number; y: number } | null = null;
 
-		// What the cursor is over right now, or null over empty space. Used for
-		// both the click resolution and the live hover cue / cursor shape.
-		const computeTarget = (event: PointerEvent): TargetResult | null => {
+		// What the aim is over right now, or null over empty space. Used for both
+		// the click resolution and the live hover cue / cursor shape. `event` is
+		// only consulted in world mode; first-person always aims from centre.
+		const computeTarget = (event: PointerEvent | null): TargetResult | null => {
 			const req = targetingStore.request;
 			if (!req) return null;
-			setRaycasterFromPointer(raycaster, event, resources, pointer);
+			if (isWorld) {
+				if (!event) return null;
+				setRaycasterFromPointer(raycaster, event, resources, pointer);
+			} else {
+				setRaycasterFromCenter(raycaster, resources);
+			}
 
 			if (req.allowActor) {
 				const actor = pickActorUnderPointer(
@@ -97,22 +114,15 @@ export function ThreeDTargetingLayer({
 		};
 
 		const applyCursor = (hover: TargetResult | null) => {
+			// World only: the cursor becomes the aim reticle. In first-person the
+			// pointer is locked/hidden and the crosshair (HUD) is the aim indicator.
 			el.style.cursor =
 				hover?.kind === "actor" ? TARGET_ACTOR_CURSOR : TARGET_TILE_CURSOR;
 		};
 
-		// Initial cursor before the first pointer move.
-		applyCursor(null);
-
-		const processMove = () => {
-			moveRafId = 0;
-			const event = pendingMove;
-			pendingMove = null;
-			if (!event) return;
-			const hover = computeTarget(event);
-			applyCursor(hover);
-			// Only publish when the hovered target actually changed, so the cue
-			// banner doesn't re-render on every frame of an in-tile mouse move.
+		// Publish the current hover to the cue store, but only when it actually
+		// changed, so the banner doesn't re-render every frame of a mouse move / look.
+		const publishHover = (hover: TargetResult | null) => {
 			const key = !hover
 				? ""
 				: hover.kind === "actor"
@@ -124,14 +134,35 @@ export function ThreeDTargetingLayer({
 			}
 		};
 
+		const processMove = () => {
+			moveRafId = 0;
+			const event = pendingMove;
+			pendingMove = null;
+			if (!event) return;
+			const hover = computeTarget(event);
+			applyCursor(hover);
+			publishHover(hover);
+		};
+
 		const handlePointerMove = (event: PointerEvent) => {
 			pendingMove = event;
 			if (moveRafId === 0) moveRafId = requestAnimationFrame(processMove);
 		};
 
+		// First-person: no pointer moves while looking with the aim fixed to the
+		// crosshair, so poll each frame to keep the cue tracking the camera as the
+		// player looks around (and during the enter-FP tween).
+		const tickHover = () => {
+			hoverRafId = requestAnimationFrame(tickHover);
+			publishHover(computeTarget(null));
+		};
+
 		const handlePointerDown = (event: PointerEvent) => {
 			if (event.button === 2) {
-				rightDown = { x: event.clientX, y: event.clientY };
+				// World: track the right-press so a right-click (no drag) cancels at
+				// contextmenu time. First-person: the right button engages look mode
+				// (owned by MapModeController), so leave it alone.
+				if (isWorld) rightDown = { x: event.clientX, y: event.clientY };
 				return;
 			}
 			if (event.button !== 0 || event.altKey) return;
@@ -152,11 +183,14 @@ export function ThreeDTargetingLayer({
 			const dx = event.clientX - click.startX;
 			const dy = event.clientY - click.startY;
 			// A drag past the threshold was a camera rotate, not a target click.
+			// (In first-person the pointer is locked, so the coords don't move and
+			// this always reads as a click.)
 			if (Math.hypot(dx, dy) > THREE_D_PING_INPUT.CLICK_DRAG_THRESHOLD_PX) {
 				return;
 			}
 
-			const result = computeTarget(event);
+			// World aims from the cursor; first-person from the screen-centre crosshair.
+			const result = computeTarget(isWorld ? event : null);
 			// A miss (clicked empty space) keeps targeting mode active.
 			if (!result) return;
 			targetingStore.request?.onResolve(result);
@@ -192,27 +226,34 @@ export function ThreeDTargetingLayer({
 			cancelTargeting();
 		};
 
-		el.addEventListener("pointermove", handlePointerMove);
-		el.addEventListener("pointerleave", handlePointerLeave);
 		el.addEventListener("pointerdown", handlePointerDown, true);
 		window.addEventListener("pointerup", handlePointerUp, true);
 		window.addEventListener("pointercancel", handlePointerCancel, true);
 		window.addEventListener("keydown", handleKeyDown, true);
-		el.addEventListener("contextmenu", handleContextMenu, true);
+		if (isWorld) {
+			// Initial reticle cursor before the first pointer move.
+			applyCursor(null);
+			el.addEventListener("pointermove", handlePointerMove);
+			el.addEventListener("pointerleave", handlePointerLeave);
+			el.addEventListener("contextmenu", handleContextMenu, true);
+		} else {
+			hoverRafId = requestAnimationFrame(tickHover);
+		}
 
 		return () => {
 			if (moveRafId !== 0) cancelAnimationFrame(moveRafId);
+			if (hoverRafId !== 0) cancelAnimationFrame(hoverRafId);
 			el.style.cursor = previousCursor;
 			setTargetHover(null);
-			el.removeEventListener("pointermove", handlePointerMove);
-			el.removeEventListener("pointerleave", handlePointerLeave);
 			el.removeEventListener("pointerdown", handlePointerDown, true);
 			window.removeEventListener("pointerup", handlePointerUp, true);
 			window.removeEventListener("pointercancel", handlePointerCancel, true);
 			window.removeEventListener("keydown", handleKeyDown, true);
+			el.removeEventListener("pointermove", handlePointerMove);
+			el.removeEventListener("pointerleave", handlePointerLeave);
 			el.removeEventListener("contextmenu", handleContextMenu, true);
 		};
-	}, [isActive, resources, terrainIndex, terrainId]);
+	}, [isActive, isWorld, resources, terrainIndex, terrainId]);
 
 	return null;
 }

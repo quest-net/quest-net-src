@@ -53,3 +53,21 @@ export function setRaycasterFromPointer(
 	raycaster.setFromCamera(pointer, resources.camera);
 	return rect;
 }
+
+// Screen-center in normalized device coordinates. Reused for crosshair-aimed
+// raycasts (first-person), where the pointer is locked and the aim point is
+// always the middle of the viewport rather than the cursor.
+const SCREEN_CENTER = new THREE.Vector2(0, 0);
+
+/**
+ * Point the raycaster from the scene's active camera straight through the centre
+ * of the viewport (the first-person crosshair). Unlike setRaycasterFromPointer
+ * this ignores cursor position entirely — while pointer-locked the cursor is
+ * hidden and centred, so the aim is wherever the camera is looking.
+ */
+export function setRaycasterFromCenter(
+	raycaster: THREE.Raycaster,
+	resources: ThreeDSceneResources
+): void {
+	raycaster.setFromCamera(SCREEN_CENTER, resources.camera);
+}

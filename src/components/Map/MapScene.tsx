@@ -760,13 +760,12 @@ export default function MapScene({
 						activePings={activePings}
 						onPingTile={handlePingTile}
 					/>
-					{isWorld && (
-						<ThreeDTargetingLayer
-							resources={sceneResources}
-							terrainIndex={terrainIndex}
-							terrainId={terrain.Id}
-						/>
-					)}
+					<ThreeDTargetingLayer
+						resources={sceneResources}
+						terrainIndex={terrainIndex}
+						terrainId={terrain.Id}
+						isWorld={isWorld}
+					/>
 					<ThreeDTerrainLinkLayer
 						resources={sceneResources}
 						isWorld={isWorld}
@@ -783,6 +782,18 @@ export default function MapScene({
 						onFocusChange={setLinkFocus}
 					/>
 				</>
+			)}
+			{/* First-person aim reticle: while targeting, the crosshair at screen
+			    centre is the aim point. Turns primary when it's over a valid target
+			    (targetingHover set). World mode uses the cursor reticle instead. */}
+			{targetingRequest && !isWorld && (
+				<div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
+					<span
+						className={`icon-[mdi--target] h-8 w-8 drop-shadow ${
+							targetingHover ? "text-primary" : "text-base-content/70"
+						}`}
+					/>
+				</div>
 			)}
 			{/* Item/skill targeting cue: shown while a use is waiting for a target.
 			    Sits above the DM map toolbar (z-40) and clear of its top bar. */}
