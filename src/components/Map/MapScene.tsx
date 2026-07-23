@@ -275,7 +275,7 @@ export default function MapScene({
 	}, [heroFocusActorId, campaign.GameState.Characters, campaign.GameState.Entities]);
 	useHeroOcclusion({
 		resources: sceneResources,
-		terrain,
+		terrain: terrain ?? null,
 		focusedActorPosition: heroFocusActor?.position ?? null,
 		focusedActorSize: heroFocusActor?.size ?? null,
 		isWorld,
