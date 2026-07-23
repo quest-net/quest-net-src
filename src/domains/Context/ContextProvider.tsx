@@ -4,7 +4,7 @@
 // is now purely lifecycle:
 //   1. load the persisted Context once and hydrate the proxy,
 //   2. gate the tree until that load completes,
-//   3. persist (debounced) + apply the theme whenever the proxy changes.
+//   3. persist (debounced) + apply runtime settings whenever the proxy changes.
 //
 // State itself is a module singleton (`contextStore`), so reads/writes don't go
 // through React context. Components READ via `useQuestContext()` (a Valtio
@@ -17,17 +17,22 @@ import { Context } from "./Context";
 import { ContextService } from "./ContextService";
 import { contextStore, hydrateContextStore, renderTick } from "./contextStore";
 import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
+import { SoundEffectService } from "../../services/SoundEffectService";
 
 // Trailing-debounce window for persisting the context to localStorage. Re-renders
 // are immediate (Valtio); only the (potentially expensive) serialize + write is
 // deferred so a burst of mutations collapses into a single write.
 const PERSIST_DEBOUNCE_MS = 400;
 
-function applyTheme(): void {
+function applyRuntimeAppSettings(): void {
 	document.documentElement.setAttribute(
 		"data-theme",
 		AppSettingUtils.getTheme(contextStore)
 	);
+	const sfxVolume = AppSettingUtils.getSfxVolume(contextStore);
+	if (SoundEffectService.getVolume() !== sfxVolume) {
+		SoundEffectService.setVolume(sfxVolume);
+	}
 }
 
 export function ContextProvider({ children }: { children: ReactNode }) {
@@ -42,13 +47,13 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 				(await ContextService.load()) ?? ContextService.create();
 			if (cancelled) return;
 			hydrateContextStore(loaded);
-			applyTheme();
+			applyRuntimeAppSettings();
 			setReady(true);
 		})().catch((error) => {
 			console.error("[Context] Failed to load context:", error);
 			if (cancelled) return;
 			hydrateContextStore(ContextService.create());
-			applyTheme();
+			applyRuntimeAppSettings();
 			setReady(true);
 		});
 
@@ -57,7 +62,7 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 		};
 	}, []);
 
-	// Persist (debounced) and re-apply the theme on any proxy change. Module-level
+	// Persist (debounced) and re-apply runtime settings on any proxy change. Module-level
 	// `subscribe` does NOT re-render this provider, so children keep their
 	// per-field Valtio granularity. Presence changes never reach here — they live
 	// in a separate, non-persisted store.
@@ -77,7 +82,7 @@ export function ContextProvider({ children }: { children: ReactNode }) {
 		};
 
 		const unsubscribe = subscribe(contextStore, () => {
-			applyTheme();
+			applyRuntimeAppSettings();
 			if (persistTimer) clearTimeout(persistTimer);
 			persistTimer = setTimeout(() => {
 				persistTimer = null;

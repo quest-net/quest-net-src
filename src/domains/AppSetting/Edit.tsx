@@ -31,7 +31,7 @@ export function AppSettingEdit() {
   );
 
   const [sfxVolumePercent, setSfxVolumePercent] = useState<number>(
-    Math.round(AppSettingUtils.getSfxVolume() * 100)
+    Math.round(AppSettingUtils.getSfxVolume(context) * 100)
   );
 
   const [
@@ -100,7 +100,10 @@ export function AppSettingEdit() {
       { volume: volumePercent / 100 },
       contextStore
     );
-    AppSettingUtils.setSfxVolume({ volume: sfxVolumePercent / 100 });
+    AppSettingUtils.setSfxVolume(
+      { volume: sfxVolumePercent / 100 },
+      contextStore
+    );
     AppSettingUtils.setPreserveFlyingHeightOnTileMove(
       { preserve: preserveFlyingHeightOnTileMove },
       contextStore

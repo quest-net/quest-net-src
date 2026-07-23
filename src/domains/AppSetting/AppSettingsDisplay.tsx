@@ -14,7 +14,7 @@ export function AppSettingsDisplay() {
 		AppSettingUtils.getTheme(context)
 	);
 	const [sfxVolumePercent, setSfxVolumePercent] = useState(
-		Math.round(AppSettingUtils.getSfxVolume() * 100)
+		Math.round(AppSettingUtils.getSfxVolume(context) * 100)
 	);
 	const [preserveFlyingHeightOnTileMove, setPreserveFlyingHeightOnTileMove] =
 		useState(AppSettingUtils.getPreserveFlyingHeightOnTileMove(context));
@@ -37,6 +37,7 @@ export function AppSettingsDisplay() {
 
 	useEffect(() => {
 		setTheme(AppSettingUtils.getTheme(context));
+		setSfxVolumePercent(Math.round(AppSettingUtils.getSfxVolume(context) * 100));
 		setPreserveFlyingHeightOnTileMove(
 			AppSettingUtils.getPreserveFlyingHeightOnTileMove(context)
 		);
@@ -48,8 +49,6 @@ export function AppSettingsDisplay() {
 
 	useEffect(() => {
 		if (!isOpen) return;
-
-		setSfxVolumePercent(Math.round(AppSettingUtils.getSfxVolume() * 100));
 
 		const handleClickOutside = (event: MouseEvent) => {
 			if (
@@ -87,9 +86,10 @@ export function AppSettingsDisplay() {
 			Math.min(100, Math.round(nextVolumePercent))
 		);
 		setSfxVolumePercent(clampedVolumePercent);
-		AppSettingUtils.setSfxVolume({
-			volume: clampedVolumePercent / 100,
-		});
+		AppSettingUtils.setSfxVolume(
+			{ volume: clampedVolumePercent / 100 },
+			contextStore
+		);
 	};
 
 	const handlePreserveFlyingHeightChange = (preserve: boolean) => {

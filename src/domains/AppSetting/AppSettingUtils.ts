@@ -22,6 +22,7 @@ import { markProfileUpdated } from "../Context/contextStore";
 export const PROFILE_SYNCED_APP_SETTING_KEYS = [
   "theme",
   "volume",
+  "sfxVolume",
   "performanceMode",
   "preserveFlyingHeightOnTileMove",
   "critSplashEnabled",
@@ -66,6 +67,7 @@ export const AppSettingUtils = {
     return {
       theme: "light",
       volume: 100,
+      sfxVolume: 0.5,
       preserveFlyingHeightOnTileMove: false,
       performanceMode: false,
       critSplashEnabled: true,
@@ -325,12 +327,17 @@ export const AppSettingUtils = {
   // SFX
   // ---------------------------------------------------------------------------
 
-  setSfxVolume(params: { volume: number }): void {
-    SoundEffectService.setVolume(Math.max(0, Math.min(1, params.volume)));
+  setSfxVolume(params: { volume: number }, context: Context): void {
+    const volume = Math.max(0, Math.min(1, params.volume));
+    context.AppSettings.sfxVolume = volume.toString();
+    SoundEffectService.setVolume(volume);
+    markProfileUpdated();
   },
 
-  getSfxVolume(): number {
-    return SoundEffectService.getVolume();
+  getSfxVolume(context: Context): number {
+    const parsed = Number(context.AppSettings.sfxVolume);
+    if (Number.isFinite(parsed)) return Math.max(0, Math.min(1, parsed));
+    return 0.5;
   },
 
   // ---------------------------------------------------------------------------
@@ -341,7 +348,7 @@ export const AppSettingUtils = {
     return {
       theme: this.getTheme(context),
       volume: this.getPlayerVolume(context),
-      sfxVolume: this.getSfxVolume(),
+      sfxVolume: this.getSfxVolume(context),
       preserveFlyingHeightOnTileMove:
         this.getPreserveFlyingHeightOnTileMove(context),
       performanceMode: this.getPerformanceMode(context),
