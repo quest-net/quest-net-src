@@ -148,6 +148,9 @@ export function useTerrainMeshes(
 				// Provided (world view) -> overlay enabled; null (FP) -> disabled.
 				movementHighlight: movementHighlight ?? undefined,
 				voxelAo,
+				// Stable scene-lifetime holder; the useHeroOcclusion driver mutates it
+				// each frame. Shared by every bucket so one write updates them all.
+				heroOcclusion: resources.heroOcclusion,
 			});
 			if (result.onAnimationFrame) {
 				resources.animationCallbacks.add(result.onAnimationFrame);

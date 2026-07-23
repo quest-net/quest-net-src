@@ -18,6 +18,7 @@ import type { HoveredTile, SelectedActor } from "../MapStateProvider";
 import { THREE_D_MOVEMENT_HIGHLIGHT } from "../threeDMapConstants";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import {
+	makeHeroOcclusionVoxelSkip,
 	raycastTerrainDDA,
 	terrainDDAHitToVoxelTile,
 } from "./movement3DHelpers";
@@ -105,7 +106,10 @@ function getTileFromPointerEvent(
 		linkHits[0]?.distance ?? Infinity
 	);
 
-	const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex);
+	// See through the hero-occlusion keyhole: the ray passes the visually-erased
+	// wall and lands on the revealed floor, so a tile you can see is pickable.
+	const heroSkip = makeHeroOcclusionVoxelSkip(terrainIndex, resources.heroOcclusion);
+	const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex, heroSkip);
 
 	if (
 		terrainHit &&

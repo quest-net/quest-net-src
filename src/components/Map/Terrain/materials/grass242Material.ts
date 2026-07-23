@@ -29,6 +29,14 @@ import {
 	MOVEMENT_HIGHLIGHT_VERTEX_BEGIN,
 	MOVEMENT_HIGHLIGHT_VERTEX_HEADER,
 } from '../shaders/movementHighlightShader';
+import {
+	applyHeroOcclusionUniforms,
+	HERO_OCCLUSION_DISCARD,
+	HERO_OCCLUSION_FRAGMENT_HEADER,
+	HERO_OCCLUSION_VERTEX_BEGIN,
+	HERO_OCCLUSION_VERTEX_HEADER,
+	type HeroOcclusionUniforms,
+} from '../shaders/heroOcclusionShader';
 
 const GRASS_TEXTURE_URL = '/materials/grass_242/grass_02_base_1k.png';
 const GRASS_NORMAL_TEXTURE_URL = '/materials/grass_242/grass_02_normal_gl_1k.png';
@@ -214,6 +222,7 @@ function installGrass242Shader(
 	aoTexture: THREE.Texture | null,
 	voxelAo: VoxelAoTexture,
 	movementHighlight: MovementHighlightTexture | undefined,
+	heroOcclusion: HeroOcclusionUniforms | undefined,
 	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
@@ -225,18 +234,19 @@ function installGrass242Shader(
 			shader.uniforms.grassAoMap = { value: aoTexture };
 		}
 		applyMovementHighlightUniforms(shader, movementHighlight);
+		applyHeroOcclusionUniforms(shader, heroOcclusion);
 
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
-			['#include <common>', ...grassShaderHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER].join('\n')
+			['#include <common>', ...grassShaderHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER, ...HERO_OCCLUSION_VERTEX_HEADER].join('\n')
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...grassBeginVertex(), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN].join('\n')
+			['#include <begin_vertex>', ...grassBeginVertex(), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN, ...HERO_OCCLUSION_VERTEX_BEGIN].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...grassFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER].join('\n')
+			['#include <common>', ...grassFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER, ...HERO_OCCLUSION_FRAGMENT_HEADER].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
@@ -253,6 +263,10 @@ function installGrass242Shader(
 			);
 		}
 		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <clipping_planes_fragment>',
+			HERO_OCCLUSION_DISCARD.join('\n')
+		);
+		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <dithering_fragment>',
 			MOVEMENT_HIGHLIGHT_DITHERING.join('\n')
 		);
@@ -262,7 +276,7 @@ function installGrass242Shader(
 export const createGrass242Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { movementHighlight, voxelAo, performanceMode = false } = params;
+	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;
 	const texture = getGrassTexture(performanceMode);
 	const normalTexture = performanceMode ? null : getGrassNormalTexture();
 	const roughnessTexture = performanceMode ? null : getGrassRoughnessTexture();
@@ -273,7 +287,7 @@ export const createGrass242Material: MaterialFactory = (
 		vertexColors: false,
 	});
 
-	installGrass242Shader(material, texture, normalTexture, roughnessTexture, aoTexture, voxelAo, movementHighlight, performanceMode);
+	installGrass242Shader(material, texture, normalTexture, roughnessTexture, aoTexture, voxelAo, movementHighlight, heroOcclusion, performanceMode);
 
 	return { material, castShadow: true, receiveShadow: true };
 };
@@ -281,7 +295,7 @@ export const createGrass242Material: MaterialFactory = (
 const grass242Material: TerrainMaterial = {
 	bucketKey: 'grass_242',
 	occlusionGroup: 'solid',
-	shaderVersion: 4,
+	shaderVersion: 6,
 	geometry: {
 		vertexColors: false,
 	},

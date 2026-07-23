@@ -42,6 +42,14 @@ import {
 	MOVEMENT_HIGHLIGHT_VERTEX_BEGIN,
 	MOVEMENT_HIGHLIGHT_VERTEX_HEADER,
 } from '../shaders/movementHighlightShader';
+import {
+	applyHeroOcclusionUniforms,
+	HERO_OCCLUSION_DISCARD,
+	HERO_OCCLUSION_FRAGMENT_HEADER,
+	HERO_OCCLUSION_VERTEX_BEGIN,
+	HERO_OCCLUSION_VERTEX_HEADER,
+	type HeroOcclusionUniforms,
+} from '../shaders/heroOcclusionShader';
 
 // ---------------------------------------------------------------------------
 // Tuning knobs
@@ -277,28 +285,34 @@ function installWater241Shader(
 	timeUniform: { value: number },
 	voxelAo: VoxelAoTexture,
 	movementHighlight: MovementHighlightTexture | undefined,
+	heroOcclusion: HeroOcclusionUniforms | undefined,
 	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
 		shader.uniforms.uWaterTime = timeUniform;
 		applyMovementHighlightUniforms(shader, movementHighlight);
+		applyHeroOcclusionUniforms(shader, heroOcclusion);
 
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
-			['#include <common>', ...waterCommonVertexHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER].join('\n')
+			['#include <common>', ...waterCommonVertexHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER, ...HERO_OCCLUSION_VERTEX_HEADER].join('\n')
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...waterCommonVertexBegin(performanceMode), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN].join('\n')
+			['#include <begin_vertex>', ...waterCommonVertexBegin(performanceMode), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN, ...HERO_OCCLUSION_VERTEX_BEGIN].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...waterCommonFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER].join('\n')
+			['#include <common>', ...waterCommonFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER, ...HERO_OCCLUSION_FRAGMENT_HEADER].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
 			waterColorFragment(performanceMode).join('\n')
+		);
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <clipping_planes_fragment>',
+			HERO_OCCLUSION_DISCARD.join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <dithering_fragment>',
@@ -314,7 +328,7 @@ function installWater241Shader(
 export const createWater241Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { movementHighlight, voxelAo, performanceMode = false } = params;
+	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;
 
 	// Per-instance time uniform. onAnimationFrame writes into this object;
 	// because three.js holds the same { value } reference inside its uniforms
@@ -333,7 +347,7 @@ export const createWater241Material: MaterialFactory = (
 		depthWrite: true,
 	});
 
-	installWater241Shader(material, timeUniform, voxelAo, movementHighlight, performanceMode);
+	installWater241Shader(material, timeUniform, voxelAo, movementHighlight, heroOcclusion, performanceMode);
 
 	const onAnimationFrame = (timeMs: number) => {
 		timeUniform.value = timeMs * 0.001;
@@ -359,7 +373,7 @@ const water241Material: TerrainMaterial = {
 	// so the surface still renders where it meets the bank/floor.
 	occlusionGroup: 'water_241',
 	// Bump on shader-source change to invalidate the program cache.
-	shaderVersion: 8,
+	shaderVersion: 10,
 	geometry: {
 		vertexColors: false,
 		// Preserve voxel faces so terrain resolution controls the water mesh

@@ -1,9 +1,19 @@
 import * as THREE from "three";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import {
+	type VoxelTerrainIndex,
+	voxelCenterToWorld,
+} from "../../../utils/terrain/data/VoxelTerrainIndex";
 import { raycastVoxelIndex } from "../../../utils/terrain/raycast/VoxelRaycast";
 import { ACTOR_TOKEN_OCCLUSION } from "../Actors3D/actorTokenConstants";
 import type { ActorKind } from "../Actors3D/actorTokenTypes";
+import {
+	type HeroOcclusionUniforms,
+	isHeroOccludedPoint,
+} from "../Terrain/shaders/heroOcclusionShader";
+
+/** A "treat this voxel as empty" predicate for see-through picking. */
+export type VoxelSkipPredicate = (vx: number, vy: number, vz: number) => boolean;
 
 export interface PickedVoxelTile {
 	x: number;
@@ -53,24 +63,23 @@ export interface TerrainDDAHit {
 export function raycastTerrainDDA(
 	ray: THREE.Ray,
 	index: VoxelTerrainIndex,
+	skipVoxel?: VoxelSkipPredicate,
 ): TerrainDDAHit | null {
-	const hit = raycastVoxelIndex(ray, index);
+	const hit = raycastVoxelIndex(ray, index, skipVoxel);
 	if (!hit) return null;
 
 	const { vx, vy, vz, nx, ny, nz } = hit;
 	const res = index.resolution;
 	const halfVoxel = 0.5 / res;
 
-	// World-space center of the hit voxel.
-	const cx = vx / res - index.width  / 2 + halfVoxel;
-	const cy = (vy + 0.5) / res - 0.5;
-	const cz = vz / res - index.length / 2 + halfVoxel;
+	// World-space center of the hit voxel (shared voxel->world transform).
+	const center = voxelCenterToWorld(index, vx, vy, vz);
 
 	// Face center: displace voxel center by half a voxel along the face normal.
 	const point = new THREE.Vector3(
-		cx + nx * halfVoxel,
-		cy + ny * halfVoxel,
-		cz + nz * halfVoxel,
+		center.x + nx * halfVoxel,
+		center.y + ny * halfVoxel,
+		center.z + nz * halfVoxel,
 	);
 
 	const distance = ray.origin.distanceTo(point);
@@ -104,14 +113,16 @@ export function pickActorUnderPointer(
 	raycaster: THREE.Raycaster,
 	actorPickTargets: THREE.Object3D[],
 	terrainIndex: VoxelTerrainIndex,
-	options?: { ignoreOcclusion?: boolean },
+	options?: { ignoreOcclusion?: boolean; skipVoxel?: VoxelSkipPredicate },
 ): { actorId: string; kind: ActorKind } | null {
 	const actorHits = raycaster.intersectObjects(actorPickTargets, true);
 	if (actorHits.length === 0) return null;
 
+	// See-through picking: the occlusion test skips the hero-occlusion keyhole
+	// voxels, so an actor revealed through the cutout is not culled as occluded.
 	const occlusionHit = options?.ignoreOcclusion
 		? null
-		: raycastTerrainDDA(raycaster.ray, terrainIndex);
+		: raycastTerrainDDA(raycaster.ray, terrainIndex, options?.skipVoxel);
 
 	for (const hit of actorHits) {
 		if (
@@ -127,6 +138,40 @@ export function pickActorUnderPointer(
 		if (actorId && kind) return { actorId, kind };
 	}
 	return null;
+}
+
+/**
+ * Build a see-through voxel-skip predicate from the live hero-occlusion uniforms,
+ * for gameplay pointer picking (tile + actor). The returned predicate reports true
+ * for voxels the terrain shader is currently discarding, so a DDA raycast passes
+ * through the same keyhole the player sees.
+ *
+ * Returns `undefined` when the cutout is disabled (feature off / no focused actor
+ * / first-person), so callers fall through to normal opaque picking. The live
+ * uniform scalars are snapshotted once here so a single pick uses one consistent
+ * frame; the predicate itself allocates nothing per voxel.
+ */
+export function makeHeroOcclusionVoxelSkip(
+	index: VoxelTerrainIndex,
+	hero: HeroOcclusionUniforms,
+): VoxelSkipPredicate | undefined {
+	if (hero.enabled.value !== 1) return undefined;
+	const params = {
+		camX: hero.camPos.value.x,
+		camY: hero.camPos.value.y,
+		camZ: hero.camPos.value.z,
+		actorX: hero.actorPos.value.x,
+		actorY: hero.actorPos.value.y,
+		actorZ: hero.actorPos.value.z,
+		radius: hero.radius.value,
+		coneScale: hero.coneScale.value,
+		cutY: hero.cutY.value,
+		cutSign: hero.cutSign.value,
+	};
+	return (vx, vy, vz) => {
+		const c = voxelCenterToWorld(index, vx, vy, vz);
+		return isHeroOccludedPoint(c.x, c.y, c.z, params);
+	};
 }
 
 // ---------------------------------------------------------------------------

@@ -81,6 +81,27 @@ export interface VoxelTerrainIndex {
 	isVoxelOccupiedAtTile(tileX: number, tileY: number, voxelY: number): boolean;
 }
 
+/**
+ * World-space center of voxel (vx, vy, vz). This is the single source of truth for
+ * the voxel->world transform used by raycastTerrainDDA (hit-face math) and by
+ * gameplay see-through picking (testing a candidate voxel against the
+ * hero-occlusion cutout). Returns a plain object to keep this module THREE-free.
+ */
+export function voxelCenterToWorld(
+	index: Pick<VoxelTerrainIndex, "resolution" | "width" | "length">,
+	vx: number,
+	vy: number,
+	vz: number
+): { x: number; y: number; z: number } {
+	const res = index.resolution;
+	const halfVoxel = 0.5 / res;
+	return {
+		x: vx / res - index.width / 2 + halfVoxel,
+		y: (vy + 0.5) / res - 0.5,
+		z: vz / res - index.length / 2 + halfVoxel,
+	};
+}
+
 const REVISION_NONE = "none";
 
 /**

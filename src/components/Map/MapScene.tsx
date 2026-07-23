@@ -70,6 +70,7 @@ import {
 } from './Terrain/hooks/useMapSceneCore';
 import { MapModeController, type MapViewMode } from './MapModeController';
 import { useViewedTerrain } from './useViewedTerrain';
+import { useHeroOcclusion } from './useHeroOcclusion';
 
 export type CameraPreference = 'ortho' | 'perspective' | 'freecam';
 
@@ -256,6 +257,30 @@ export default function MapScene({
 		}
 		return null;
 	}, [pingActiveActorId, campaign.GameState.Characters, campaign.GameState.Entities]);
+
+	// Hero-occlusion cutout: fade terrain between the camera and the focused actor
+	// so a token hidden behind geometry stays visible. Focus = the player's played
+	// actor (SelectedCharacters), or the DM's inspector selection (selectedActor).
+	const heroOcclusionEnabled = AppSettingUtils.getHeroOcclusionEnabled(context);
+	const heroFocusActorId = isDM
+		? selectedActor?.id ?? null
+		: context.User.SelectedCharacters?.[campaign.RoomCode] ?? null;
+	const heroFocusActor = useMemo(() => {
+		if (!heroFocusActorId) return null;
+		const character = campaign.GameState.Characters.find((c) => c.Id === heroFocusActorId);
+		if (character) return { position: character.Position, size: character.Size ?? null };
+		const entity = campaign.GameState.Entities.find((e) => e.Id === heroFocusActorId);
+		if (entity) return { position: entity.Position, size: entity.Size ?? null };
+		return null;
+	}, [heroFocusActorId, campaign.GameState.Characters, campaign.GameState.Entities]);
+	useHeroOcclusion({
+		resources: sceneResources,
+		terrain,
+		focusedActorPosition: heroFocusActor?.position ?? null,
+		focusedActorSize: heroFocusActor?.size ?? null,
+		isWorld,
+		enabled: heroOcclusionEnabled,
+	});
 
 	// Terrain id -> name, for the link's "leads to ___" hover/prompt label.
 	const terrainNamesById = useMemo(() => {

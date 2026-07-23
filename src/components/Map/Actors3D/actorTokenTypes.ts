@@ -1,6 +1,7 @@
 import type * as THREE from "three";
 import type { ActorSize, Position } from "../../../domains/Actor/Actor";
 import type { FogVolumeTexture } from "../mapVolumetricFog";
+import type { HeroOcclusionUniforms } from "../Terrain/materials/materialTypes";
 
 export type ActorKind = "character" | "entity";
 
@@ -38,6 +39,14 @@ export interface ThreeDSceneResources {
 		heightLevels: number;
 		length: number;
 	};
+	/**
+	 * Shared hero-occlusion cutout uniforms bound (by reference) into every
+	 * terrain material. Seeded disabled at scene init; the useHeroOcclusion driver
+	 * mutates it each frame (camera + focused-actor world position, enabled flag).
+	 * A single holder for the scene lifetime, so no rebind is needed on terrain
+	 * rebuild.
+	 */
+	heroOcclusion: HeroOcclusionUniforms;
 	/**
 	 * Per-frame callbacks driven by the map's main render loop. Overlay
 	 * layers register here instead of starting independent RAF loops.

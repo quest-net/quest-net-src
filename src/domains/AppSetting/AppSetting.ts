@@ -9,6 +9,8 @@ export interface AppSettings {
   cameraPreference?: "ortho" | "perspective" | "freecam";
   /** When false, natural crits show as normal log alerts instead of the full-screen splash. Defaults to enabled. */
   critSplashEnabled?: boolean;
+  /** When false, disables the hero-occlusion cutout that reveals the focused actor behind terrain. Defaults to enabled. */
+  heroOcclusionEnabled?: boolean;
   imagePromptTemplate?: string;
 
   /** The selected image generation provider ID (e.g. "google-gemini-flash") */

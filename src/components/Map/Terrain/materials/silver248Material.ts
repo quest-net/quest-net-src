@@ -45,6 +45,14 @@ import {
 	MOVEMENT_HIGHLIGHT_VERTEX_BEGIN,
 	MOVEMENT_HIGHLIGHT_VERTEX_HEADER,
 } from '../shaders/movementHighlightShader';
+import {
+	applyHeroOcclusionUniforms,
+	HERO_OCCLUSION_DISCARD,
+	HERO_OCCLUSION_FRAGMENT_HEADER,
+	HERO_OCCLUSION_VERTEX_BEGIN,
+	HERO_OCCLUSION_VERTEX_HEADER,
+	type HeroOcclusionUniforms,
+} from '../shaders/heroOcclusionShader';
 
 // ---------------------------------------------------------------------------
 // Tuning knobs
@@ -184,27 +192,33 @@ function installSilver248Shader(
 	material: THREE.MeshStandardMaterial,
 	voxelAo: VoxelAoTexture,
 	movementHighlight: MovementHighlightTexture | undefined,
+	heroOcclusion: HeroOcclusionUniforms | undefined,
 	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
 		applyMovementHighlightUniforms(shader, movementHighlight);
+		applyHeroOcclusionUniforms(shader, heroOcclusion);
 
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
-			['#include <common>', ...silverCommonVertexHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER].join('\n')
+			['#include <common>', ...silverCommonVertexHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER, ...HERO_OCCLUSION_VERTEX_HEADER].join('\n')
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...silverCommonVertexBegin(), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN].join('\n')
+			['#include <begin_vertex>', ...silverCommonVertexBegin(), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN, ...HERO_OCCLUSION_VERTEX_BEGIN].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...silverCommonFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER].join('\n')
+			['#include <common>', ...silverCommonFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER, ...HERO_OCCLUSION_FRAGMENT_HEADER].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
 			silverColorFragment(performanceMode).join('\n')
+		);
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <clipping_planes_fragment>',
+			HERO_OCCLUSION_DISCARD.join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <dithering_fragment>',
@@ -220,7 +234,7 @@ function installSilver248Shader(
 export const createSilver248Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { movementHighlight, voxelAo, performanceMode = false } = params;
+	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;
 
 	const material = new THREE.MeshStandardMaterial({
 		color: SILVER_SWATCH,
@@ -232,7 +246,7 @@ export const createSilver248Material: MaterialFactory = (
 		depthWrite: true,
 	});
 
-	installSilver248Shader(material, voxelAo, movementHighlight, performanceMode);
+	installSilver248Shader(material, voxelAo, movementHighlight, heroOcclusion, performanceMode);
 
 	// No onAnimationFrame -- static pattern, no time uniform.
 	return {
@@ -250,7 +264,7 @@ export const createSilver248Material: MaterialFactory = (
 const silver248Material: TerrainMaterial = {
 	bucketKey: 'silver_248',
 	occlusionGroup: 'solid',
-	shaderVersion: 3,
+	shaderVersion: 5,
 	geometry: {
 		vertexColors: false,
 		preserveVoxelFaces: false,

@@ -46,6 +46,14 @@ import {
 	MOVEMENT_HIGHLIGHT_VERTEX_BEGIN,
 	MOVEMENT_HIGHLIGHT_VERTEX_HEADER,
 } from '../shaders/movementHighlightShader';
+import {
+	applyHeroOcclusionUniforms,
+	HERO_OCCLUSION_DISCARD,
+	HERO_OCCLUSION_FRAGMENT_HEADER,
+	HERO_OCCLUSION_VERTEX_BEGIN,
+	HERO_OCCLUSION_VERTEX_HEADER,
+	type HeroOcclusionUniforms,
+} from '../shaders/heroOcclusionShader';
 
 // ---------------------------------------------------------------------------
 // Tuning knobs
@@ -273,24 +281,26 @@ function installLava245Shader(
 	timeUniform: { value: number },
 	voxelAo: VoxelAoTexture,
 	movementHighlight: MovementHighlightTexture | undefined,
+	heroOcclusion: HeroOcclusionUniforms | undefined,
 	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
 		shader.uniforms.uLavaTime = timeUniform;
 		applyMovementHighlightUniforms(shader, movementHighlight);
+		applyHeroOcclusionUniforms(shader, heroOcclusion);
 
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
-			['#include <common>', ...lavaCommonVertexHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER].join('\n')
+			['#include <common>', ...lavaCommonVertexHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER, ...HERO_OCCLUSION_VERTEX_HEADER].join('\n')
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...lavaCommonVertexBegin(performanceMode), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN].join('\n')
+			['#include <begin_vertex>', ...lavaCommonVertexBegin(performanceMode), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN, ...HERO_OCCLUSION_VERTEX_BEGIN].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...lavaCommonFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER].join('\n')
+			['#include <common>', ...lavaCommonFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER, ...HERO_OCCLUSION_FRAGMENT_HEADER].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
@@ -299,6 +309,10 @@ function installLava245Shader(
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <emissivemap_fragment>',
 			lavaEmissiveFragment().join('\n')
+		);
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <clipping_planes_fragment>',
+			HERO_OCCLUSION_DISCARD.join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <dithering_fragment>',
@@ -314,7 +328,7 @@ function installLava245Shader(
 export const createLava245Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { movementHighlight, voxelAo, performanceMode = false } = params;
+	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;
 
 	// Per-instance time uniform. onAnimationFrame writes into this object;
 	// THREE.js holds the same { value } reference in its uniforms table so
@@ -334,7 +348,7 @@ export const createLava245Material: MaterialFactory = (
 		depthWrite: true,
 	});
 
-	installLava245Shader(material, timeUniform, voxelAo, movementHighlight, performanceMode);
+	installLava245Shader(material, timeUniform, voxelAo, movementHighlight, heroOcclusion, performanceMode);
 
 	const onAnimationFrame = (timeMs: number) => {
 		timeUniform.value = timeMs * 0.001;
@@ -359,7 +373,7 @@ const lava245Material: TerrainMaterial = {
 	// stays hollow), but lava emits faces against solid terrain so the surface
 	// renders where it meets rock walls and floors.
 	occlusionGroup: 'lava_245',
-	shaderVersion: 2,
+	shaderVersion: 4,
 	geometry: {
 		vertexColors: false,
 		// Preserve per-voxel faces so terrain resolution controls mesh density

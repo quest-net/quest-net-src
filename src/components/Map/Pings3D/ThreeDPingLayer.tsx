@@ -6,7 +6,10 @@ import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrain
 import type { ActivePing } from "../hooks/useActivePings";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import { terrainHeightToWorldY } from "../Actors3D/actorTokenPlacement";
-import { raycastTerrainDDA } from "../Movement3D/movement3DHelpers";
+import {
+	makeHeroOcclusionVoxelSkip,
+	raycastTerrainDDA,
+} from "../Movement3D/movement3DHelpers";
 import { disposeObject3D, setRaycasterFromPointer } from "../mapSceneUtils";
 import {
 	THREE_D_PING_INPUT,
@@ -195,7 +198,9 @@ function getPingTileFromPointer(
 ): { x: number; y: number; h: number } | null {
 	setRaycasterFromPointer(raycaster, event, resources, pointer);
 
-	const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex);
+	// See through the hero-occlusion keyhole so a ping lands on the revealed tile.
+	const heroSkip = makeHeroOcclusionVoxelSkip(terrainIndex, resources.heroOcclusion);
+	const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex, heroSkip);
 	if (!terrainHit) return null;
 
 	return {

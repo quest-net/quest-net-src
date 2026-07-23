@@ -52,13 +52,26 @@ interface VoxelRaycastSpace {
 	tW: number;
 	tL: number;
 	hasVoxel(vx: number, vy: number, vz: number): boolean;
+	/**
+	 * Optional "treat as empty" predicate. When it returns true for an occupied
+	 * voxel, the DDA passes through as if the voxel were air. Used by gameplay
+	 * pointer picking to see through the hero-occlusion keyhole (the same voxels
+	 * the terrain shader visually discards); omitted everywhere else, so the
+	 * traversal is unchanged. Kept fully generic here -- callers own the meaning.
+	 */
+	skipVoxel?(vx: number, vy: number, vz: number): boolean;
 }
 
 function raycastVoxelSpace(
 	ray: THREE.Ray,
 	space: VoxelRaycastSpace
 ): VoxelRayHit | null {
-	const { vW, vH, vL, resolution, tW, tL, hasVoxel } = space;
+	const { vW, vH, vL, resolution, tW, tL, hasVoxel, skipVoxel } = space;
+	// A voxel counts as solid only if occupied AND not skipped (see skipVoxel).
+	const isSolid = skipVoxel
+		? (vx: number, vy: number, vz: number) =>
+				hasVoxel(vx, vy, vz) && !skipVoxel(vx, vy, vz)
+		: hasVoxel;
 
 	// Transform ray origin into fractional voxel coordinates.
 	// Direction is also scaled by resolution so tDelta values are in the same
@@ -150,7 +163,7 @@ function raycastVoxelSpace(
 	let vz = Math.min(Math.max(Math.floor(ez), 0), vL - 1);
 
 	// Check the entry voxel itself.
-	if (hasVoxel(vx, vy, vz)) {
+	if (isSolid(vx, vy, vz)) {
 		return { vx, vy, vz, nx, ny, nz };
 	}
 
@@ -200,7 +213,7 @@ function raycastVoxelSpace(
 		// We started inside the grid, so any out-of-bounds step means we exited.
 		if (vx < 0 || vx >= vW || vy < 0 || vy >= vH || vz < 0 || vz >= vL) break;
 
-		if (hasVoxel(vx, vy, vz)) {
+		if (isSolid(vx, vy, vz)) {
 			return { vx, vy, vz, nx, ny, nz };
 		}
 	}
@@ -249,10 +262,15 @@ export function raycastVoxelGrid(
  * Use this from gameplay-map call sites that already hold an index
  * (ThreeDMovementLayer, ThreeDActorLayer, ThreeDPingLayer) so they
  * don't need to expose or copy the raw grid buffer.
+ *
+ * `skipVoxel` is an optional "treat as empty" predicate (see VoxelRaycastSpace):
+ * gameplay pointer picking passes one that mirrors the hero-occlusion cutout, so
+ * the ray sees through the same keyhole the terrain shader draws.
  */
 export function raycastVoxelIndex(
 	ray: THREE.Ray,
 	index: VoxelTerrainIndex,
+	skipVoxel?: (vx: number, vy: number, vz: number) => boolean,
 ): VoxelRayHit | null {
 	return raycastVoxelSpace(ray, {
 		vW: index.voxelWidth,
@@ -262,5 +280,6 @@ export function raycastVoxelIndex(
 		tW: index.width,
 		tL: index.length,
 		hasVoxel: (vx, vy, vz) => index.hasVoxel(vx, vy, vz),
+		skipVoxel,
 	});
 }

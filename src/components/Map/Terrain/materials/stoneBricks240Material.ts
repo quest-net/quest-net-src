@@ -29,6 +29,14 @@ import {
 	MOVEMENT_HIGHLIGHT_VERTEX_BEGIN,
 	MOVEMENT_HIGHLIGHT_VERTEX_HEADER,
 } from '../shaders/movementHighlightShader';
+import {
+	applyHeroOcclusionUniforms,
+	HERO_OCCLUSION_DISCARD,
+	HERO_OCCLUSION_FRAGMENT_HEADER,
+	HERO_OCCLUSION_VERTEX_BEGIN,
+	HERO_OCCLUSION_VERTEX_HEADER,
+	type HeroOcclusionUniforms,
+} from '../shaders/heroOcclusionShader';
 
 const STONE_BRICKS_TEXTURE_URL = '/materials/bricks_240/bricks_256x256.png';
 const STONE_BRICKS_SWATCH = '#8f8f8f';
@@ -118,24 +126,30 @@ function installStoneBricks240Shader(
 	texture: THREE.Texture,
 	voxelAo: VoxelAoTexture,
 	movementHighlight: MovementHighlightTexture | undefined,
+	heroOcclusion: HeroOcclusionUniforms | undefined,
 	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
 		shader.uniforms.stoneBricksMap = { value: texture };
 		applyMovementHighlightUniforms(shader, movementHighlight);
+		applyHeroOcclusionUniforms(shader, heroOcclusion);
 
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
-			['#include <common>', ...stoneBricksShaderHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER].join('\n')
+			['#include <common>', ...stoneBricksShaderHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER, ...HERO_OCCLUSION_VERTEX_HEADER].join('\n')
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...stoneBricksBeginVertex(), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN].join('\n')
+			['#include <begin_vertex>', ...stoneBricksBeginVertex(), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN, ...HERO_OCCLUSION_VERTEX_BEGIN].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...stoneBricksFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER].join('\n')
+			['#include <common>', ...stoneBricksFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER, ...HERO_OCCLUSION_FRAGMENT_HEADER].join('\n')
+		);
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <clipping_planes_fragment>',
+			HERO_OCCLUSION_DISCARD.join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
@@ -151,7 +165,7 @@ function installStoneBricks240Shader(
 export const createStoneBricks240Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { movementHighlight, voxelAo, performanceMode = false } = params;
+	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;
 	const texture = getStoneBricksTexture(performanceMode);
 	const material = new THREE.MeshStandardMaterial({
 		roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
@@ -159,7 +173,7 @@ export const createStoneBricks240Material: MaterialFactory = (
 		vertexColors: false,
 	});
 
-	installStoneBricks240Shader(material, texture, voxelAo, movementHighlight, performanceMode);
+	installStoneBricks240Shader(material, texture, voxelAo, movementHighlight, heroOcclusion, performanceMode);
 
 	return { material, castShadow: true, receiveShadow: true };
 };
@@ -167,7 +181,7 @@ export const createStoneBricks240Material: MaterialFactory = (
 const stoneBricks240Material: TerrainMaterial = {
 	bucketKey: 'stonebricks_240',
 	occlusionGroup: 'solid',
-	shaderVersion: 3,
+	shaderVersion: 5,
 	geometry: {
 		vertexColors: false,
 	},

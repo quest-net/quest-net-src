@@ -27,6 +27,7 @@ import { useSnapshot } from "valtio";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import {
+	makeHeroOcclusionVoxelSkip,
 	pickActorUnderPointer,
 	raycastTerrainDDA,
 	terrainDDAHitToVoxelTile,
@@ -90,11 +91,15 @@ export function ThreeDTargetingLayer({
 				setRaycasterFromCenter(raycaster, resources);
 			}
 
+			// See through the hero-occlusion keyhole for both actor and position aim.
+			const heroSkip = makeHeroOcclusionVoxelSkip(terrainIndex, resources.heroOcclusion);
+
 			if (req.allowActor) {
 				const actor = pickActorUnderPointer(
 					raycaster,
 					resources.actorPickTargets,
-					terrainIndex
+					terrainIndex,
+					{ skipVoxel: heroSkip }
 				);
 				// Any actor is a valid target unless explicitly excluded.
 				if (actor && actor.actorId !== req.excludeActorId) {
@@ -103,7 +108,7 @@ export function ThreeDTargetingLayer({
 			}
 
 			if (req.allowPosition) {
-				const hit = raycastTerrainDDA(raycaster.ray, terrainIndex);
+				const hit = raycastTerrainDDA(raycaster.ray, terrainIndex, heroSkip);
 				if (hit) {
 					const tile = terrainDDAHitToVoxelTile(hit);
 					return { kind: "position", terrainId, x: tile.x, y: tile.y, h: tile.h };

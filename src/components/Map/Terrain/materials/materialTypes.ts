@@ -14,6 +14,43 @@ export interface MovementHighlightTexture {
 }
 
 // ---------------------------------------------------------------------------
+// HeroOcclusion resource
+//
+// Shared uniform holder for the hero-occlusion cutout (see heroOcclusionShader).
+// Unlike the AO / movement-highlight textures, the SAME `{ value }` objects are
+// bound into every bucket material's shader.uniforms, so one per-frame write by
+// the driver (useHeroOcclusion) updates every terrain material at once. The
+// values are plain JS objects (no GPU resource) -- creation is cheap and teardown
+// is a no-op.
+// ---------------------------------------------------------------------------
+
+export interface HeroOcclusionUniforms {
+	/** 1 = cutout active this frame, 0 = disabled (single coherent branch). */
+	enabled: { value: number };
+	/** Focused actor world position (cutout aims here). */
+	actorPos: { value: THREE.Vector3 };
+	/** Active camera world position (sightline origin). */
+	camPos: { value: THREE.Vector3 };
+	/** Cone radius (world units) at the actor. */
+	radius: { value: number };
+	/** Cone widening factor toward the camera. */
+	coneScale: { value: number };
+	/** Dither band width (world units) at the cone edge. */
+	feather: { value: number };
+	/**
+	 * World-Y of the height cut plane. Only geometry on the camera's side of this
+	 * plane is eligible to be cut, so the floor under the actor (camera above) or
+	 * the ceiling over it (camera below) is never erased. Paired with `cutSign`.
+	 */
+	cutY: { value: number };
+	/**
+	 * Which side of `cutY` is cut: +1 = above the plane (camera higher than the
+	 * actor), -1 = below it (camera lower). Set per-frame by the driver.
+	 */
+	cutSign: { value: number };
+}
+
+// ---------------------------------------------------------------------------
 // Material factory contract
 // ---------------------------------------------------------------------------
 
@@ -34,6 +71,14 @@ export interface MaterialFactoryParams {
 	 * `createPlaceholderVoxelAoTexture()` is fine when no terrain is loaded.
 	 */
 	voxelAo: VoxelAoTexture;
+	/**
+	 * Shared hero-occlusion cutout uniforms. The SAME holder is passed to every
+	 * bucket of a terrain so one per-frame write updates them all. Omit for
+	 * pre-warm: `applyHeroOcclusionUniforms` binds a disabled placeholder holder,
+	 * so the program still compiles the (always-present, uniform-gated) cutout
+	 * branch and matches the real program cache key.
+	 */
+	heroOcclusion?: HeroOcclusionUniforms;
 }
 
 export interface MaterialFactoryResult {

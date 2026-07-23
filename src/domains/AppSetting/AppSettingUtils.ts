@@ -21,6 +21,7 @@ export const PROFILE_SYNCED_APP_SETTING_KEYS = [
   "performanceMode",
   "preserveFlyingHeightOnTileMove",
   "critSplashEnabled",
+  "heroOcclusionEnabled",
   "imagePromptTemplate",
   "imageService",
   "imageApiKeys",
@@ -63,6 +64,7 @@ export const AppSettingUtils = {
       preserveFlyingHeightOnTileMove: false,
       performanceMode: false,
       critSplashEnabled: true,
+      heroOcclusionEnabled: true,
     };
   },
 
@@ -155,6 +157,19 @@ export const AppSettingUtils = {
   /** Defaults to enabled when the setting has never been set. */
   getCritSplashEnabled(context: Context): boolean {
     return context.AppSettings.critSplashEnabled !== "false";
+  },
+
+  setHeroOcclusionEnabled(
+    params: { enabled: boolean },
+    context: Context
+  ): void {
+    context.AppSettings.heroOcclusionEnabled = params.enabled ? "true" : "false";
+    markProfileUpdated();
+  },
+
+  /** Defaults to enabled when the setting has never been set. */
+  getHeroOcclusionEnabled(context: Context): boolean {
+    return context.AppSettings.heroOcclusionEnabled !== "false";
   },
 
   // ---------------------------------------------------------------------------
@@ -298,6 +313,7 @@ export const AppSettingUtils = {
         this.getPreserveFlyingHeightOnTileMove(context),
       performanceMode: this.getPerformanceMode(context),
       critSplashEnabled: this.getCritSplashEnabled(context),
+      heroOcclusionEnabled: this.getHeroOcclusionEnabled(context),
       imagePromptTemplate: this.getImagePromptTemplate(context),
       imageService: this.getImageService(context),
       imageApiKeys: getJson<Record<string, string>>(context, "imageApiKeys"),

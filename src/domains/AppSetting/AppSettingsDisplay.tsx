@@ -24,6 +24,9 @@ export function AppSettingsDisplay() {
 	const [critSplashEnabled, setCritSplashEnabled] = useState(
 		AppSettingUtils.getCritSplashEnabled(context)
 	);
+	const [heroOcclusionEnabled, setHeroOcclusionEnabled] = useState(
+		AppSettingUtils.getHeroOcclusionEnabled(context)
+	);
 	const [cloudBusy, setCloudBusy] = useState(false);
 	const windowRef = useRef<HTMLDivElement>(null);
 	const buttonRef = useRef<HTMLButtonElement>(null);
@@ -35,6 +38,7 @@ export function AppSettingsDisplay() {
 		);
 		setPerformanceMode(AppSettingUtils.getPerformanceMode(context));
 		setCritSplashEnabled(AppSettingUtils.getCritSplashEnabled(context));
+		setHeroOcclusionEnabled(AppSettingUtils.getHeroOcclusionEnabled(context));
 	}, [context]);
 
 	useEffect(() => {
@@ -100,6 +104,11 @@ export function AppSettingsDisplay() {
 	const handleCritSplashChange = (enabled: boolean) => {
 		setCritSplashEnabled(enabled);
 		AppSettingUtils.setCritSplashEnabled({ enabled }, contextStore);
+	};
+
+	const handleHeroOcclusionChange = (enabled: boolean) => {
+		setHeroOcclusionEnabled(enabled);
+		AppSettingUtils.setHeroOcclusionEnabled({ enabled }, contextStore);
 	};
 
 	const cloudConfigured = CloudBackupService.isConfigured();
@@ -229,6 +238,22 @@ export function AppSettingsDisplay() {
 									handleCritSplashChange(event.target.checked)
 								}
 								aria-label="Crit splash animation"
+							/>
+						</div>
+
+						<div className="flex items-center justify-between gap-4">
+							<div className="flex items-center gap-2">
+								<span className="icon-[mdi--eye-arrow-right] w-5 h-5 opacity-70" />
+								<span className="font-medium">See-Through Terrain</span>
+							</div>
+							<input
+								type="checkbox"
+								className="toggle toggle-primary toggle-sm"
+								checked={heroOcclusionEnabled}
+								onChange={(event) =>
+									handleHeroOcclusionChange(event.target.checked)
+								}
+								aria-label="See-through terrain for focused actor"
 							/>
 						</div>
 

@@ -49,6 +49,14 @@ import {
 	MOVEMENT_HIGHLIGHT_VERTEX_BEGIN,
 	MOVEMENT_HIGHLIGHT_VERTEX_HEADER,
 } from '../shaders/movementHighlightShader';
+import {
+	applyHeroOcclusionUniforms,
+	HERO_OCCLUSION_DISCARD,
+	HERO_OCCLUSION_FRAGMENT_HEADER,
+	HERO_OCCLUSION_VERTEX_BEGIN,
+	HERO_OCCLUSION_VERTEX_HEADER,
+	type HeroOcclusionUniforms,
+} from '../shaders/heroOcclusionShader';
 
 // ---------------------------------------------------------------------------
 // Tuning knobs
@@ -312,6 +320,7 @@ function installFlesh250Shader(
 	timeUniform: { value: number },
 	voxelAo: VoxelAoTexture,
 	movementHighlight: MovementHighlightTexture | undefined,
+	heroOcclusion: HeroOcclusionUniforms | undefined,
 	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
@@ -319,18 +328,23 @@ function installFlesh250Shader(
 		shader.uniforms.uFleshTime = timeUniform;
 		shader.uniforms.uFleshNoise = { value: texture };
 		applyMovementHighlightUniforms(shader, movementHighlight);
+		applyHeroOcclusionUniforms(shader, heroOcclusion);
 
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
-			['#include <common>', ...fleshVertexHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER].join('\n')
+			['#include <common>', ...fleshVertexHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER, ...HERO_OCCLUSION_VERTEX_HEADER].join('\n')
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...fleshBeginVertex(), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN].join('\n')
+			['#include <begin_vertex>', ...fleshBeginVertex(), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN, ...HERO_OCCLUSION_VERTEX_BEGIN].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...fleshFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER].join('\n')
+			['#include <common>', ...fleshFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER, ...HERO_OCCLUSION_FRAGMENT_HEADER].join('\n')
+		);
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <clipping_planes_fragment>',
+			HERO_OCCLUSION_DISCARD.join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
@@ -350,7 +364,7 @@ function installFlesh250Shader(
 export const createFlesh250Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { movementHighlight, voxelAo, performanceMode = false } = params;
+	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;
 
 	const noiseTexture = getFleshNoiseTexture();
 	const timeUniform = { value: 0 };
@@ -363,7 +377,7 @@ export const createFlesh250Material: MaterialFactory = (
 		depthWrite: true,
 	});
 
-	installFlesh250Shader(material, noiseTexture, timeUniform, voxelAo, movementHighlight, performanceMode);
+	installFlesh250Shader(material, noiseTexture, timeUniform, voxelAo, movementHighlight, heroOcclusion, performanceMode);
 
 	const onAnimationFrame = (timeMs: number) => {
 		timeUniform.value = timeMs * 0.001;
@@ -387,7 +401,7 @@ const flesh250Material: TerrainMaterial = {
 	// Flesh-to-flesh shared faces are culled so a solid flesh block is hollow
 	// inside. Flesh against solid terrain emits faces normally.
 	occlusionGroup: 'flesh_250',
-	shaderVersion: 4,
+	shaderVersion: 6,
 	geometry: {
 		vertexColors: false,
 	},

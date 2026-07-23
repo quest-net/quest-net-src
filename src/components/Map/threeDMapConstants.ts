@@ -141,6 +141,32 @@ export const THREE_D_MOVEMENT_HIGHLIGHT = {
 	HOVER_RENDER_ORDER: 82,
 } as const;
 
+export const THREE_D_HERO_OCCLUSION = {
+	// World-space radius (in tactical units, ~1 = one tile) of the sightline cone
+	// at the focused actor. Fragments within this radius of the camera->actor axis
+	// AND in front of the actor are dither-discarded, opening a "keyhole" onto the
+	// actor.
+	RADIUS: 1.25,
+	// How much wider the cone is near the camera than at the actor. 1 = a straight
+	// cylinder; >1 flares toward the camera so a wall right in front of the lens is
+	// cut generously while the hole stays tight around the actor.
+	CONE_SCALE: 2.6,
+	// Width (world units) of the dithered fade band just outside the solid cone
+	// radius, so the cutout edge dissolves instead of hard-cutting.
+	FEATHER: 0.7,
+	// Do not cut geometry within this distance of the actor along the sightline, so
+	// the actor's own tile / immediate surroundings are never carved away.
+	ACTOR_MARGIN: 0.6,
+	// Vertical offset (world units) added to the actor's ground position so the
+	// cone aims at the torso rather than the feet.
+	TORSO_OFFSET_Y: 0.9,
+	// Vertical slack (world units) kept between the height cut plane and the actor
+	// itself: cutting downward from above, the plane sits this far ABOVE the feet so
+	// the floor the actor stands on is never carved; cutting upward from below, this
+	// far BELOW the head so the ceiling directly overhead survives.
+	CUT_PLANE_EPSILON: 0.15,
+} as const;
+
 export const THREE_D_STICKER_TEXTURE = {
 	SIZE: 256,
 	FONT_SIZE: 142,

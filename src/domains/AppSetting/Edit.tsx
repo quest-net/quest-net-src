@@ -49,6 +49,10 @@ export function AppSettingEdit() {
     AppSettingUtils.getCritSplashEnabled(context)
   );
 
+  const [heroOcclusionEnabled, setHeroOcclusionEnabled] = useState<boolean>(
+    AppSettingUtils.getHeroOcclusionEnabled(context)
+  );
+
   // --- Image generation settings ---
   const [imageService, setImageService] = useState<string>(
     AppSettingUtils.getImageService(context)
@@ -107,6 +111,10 @@ export function AppSettingEdit() {
     );
     AppSettingUtils.setCritSplashEnabled(
       { enabled: critSplashEnabled },
+      contextStore
+    );
+    AppSettingUtils.setHeroOcclusionEnabled(
+      { enabled: heroOcclusionEnabled },
       contextStore
     );
 
@@ -292,6 +300,23 @@ export function AppSettingEdit() {
                 <p className="text-xs opacity-70">
                   Plays a full-screen cut-in when an actor rolls a natural crit.
                   When off, crits show as a normal log alert instead.
+                </p>
+              </div>
+
+              <div className="form-control">
+                <label className="label cursor-pointer justify-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-primary"
+                    checked={heroOcclusionEnabled}
+                    onChange={(e) => setHeroOcclusionEnabled(e.target.checked)}
+                  />
+                  <span className="label-text">See-through terrain for focused actor</span>
+                </label>
+                <p className="text-xs opacity-70">
+                  Fades away terrain between the camera and your selected actor
+                  so a token hidden behind walls or indoors stays visible. When
+                  off, terrain is always drawn solid.
                 </p>
               </div>
             </div>

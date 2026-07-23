@@ -17,6 +17,7 @@ import {
 	createPlaceholderVoxelAoTexture,
 	TERRAIN_MATERIAL_REGISTRY,
 } from "../materials";
+import { createHeroOcclusionUniforms } from "../shaders/heroOcclusionShader";
 
 // ---------------------------------------------------------------------------
 // Shared scene bootstrap for the map.
@@ -219,6 +220,7 @@ export function useMapSceneCore(
 			domElement: renderer.domElement,
 			occlusionTargets: [],
 			movementHighlight,
+			heroOcclusion: createHeroOcclusionUniforms(),
 			animationCallbacks: new Set(),
 			requestShadowUpdate: () => {
 				renderer.shadowMap.needsUpdate = true;
@@ -248,6 +250,7 @@ export function useMapSceneCore(
 					performanceMode,
 					movementHighlight: dummyHighlight,
 					voxelAo: dummyVoxelAo,
+					heroOcclusion: resources.heroOcclusion,
 				});
 				const warmMesh = new THREE.Mesh(dummyGeo, result.material);
 				scene.add(warmMesh);

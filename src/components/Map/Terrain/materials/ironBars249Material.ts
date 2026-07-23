@@ -40,6 +40,14 @@ import {
 	MOVEMENT_HIGHLIGHT_VERTEX_BEGIN,
 	MOVEMENT_HIGHLIGHT_VERTEX_HEADER,
 } from '../shaders/movementHighlightShader';
+import {
+	applyHeroOcclusionUniforms,
+	HERO_OCCLUSION_DISCARD,
+	HERO_OCCLUSION_FRAGMENT_HEADER,
+	HERO_OCCLUSION_VERTEX_BEGIN,
+	HERO_OCCLUSION_VERTEX_HEADER,
+	type HeroOcclusionUniforms,
+} from '../shaders/heroOcclusionShader';
 
 // ---------------------------------------------------------------------------
 // Tuning knobs
@@ -154,28 +162,34 @@ function installIronBars249Shader(
 	texture: THREE.Texture,
 	voxelAo: VoxelAoTexture,
 	movementHighlight: MovementHighlightTexture | undefined,
+	heroOcclusion: HeroOcclusionUniforms | undefined,
 	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
 		shader.uniforms.ironBarsMap = { value: texture };
 		applyMovementHighlightUniforms(shader, movementHighlight);
+		applyHeroOcclusionUniforms(shader, heroOcclusion);
 
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
-			['#include <common>', ...ironBarsVertexHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER].join('\n')
+			['#include <common>', ...ironBarsVertexHeader(), ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER, ...HERO_OCCLUSION_VERTEX_HEADER].join('\n')
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...ironBarsBeginVertex(), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN].join('\n')
+			['#include <begin_vertex>', ...ironBarsBeginVertex(), ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN, ...HERO_OCCLUSION_VERTEX_BEGIN].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...ironBarsFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER].join('\n')
+			['#include <common>', ...ironBarsFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER, ...HERO_OCCLUSION_FRAGMENT_HEADER].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
 			ironBarsColorFragment().join('\n')
+		);
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <clipping_planes_fragment>',
+			HERO_OCCLUSION_DISCARD.join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <dithering_fragment>',
@@ -191,7 +205,7 @@ function installIronBars249Shader(
 export const createIronBars249Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
-	const { movementHighlight, voxelAo, performanceMode = false } = params;
+	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;
 	const texture = getIronBarsTexture(performanceMode);
 
 	const material = new THREE.MeshStandardMaterial({
@@ -204,7 +218,7 @@ export const createIronBars249Material: MaterialFactory = (
 		alphaTest: IRON_BARS_ALPHA_TEST,
 	});
 
-	installIronBars249Shader(material, texture, voxelAo, movementHighlight, performanceMode);
+	installIronBars249Shader(material, texture, voxelAo, movementHighlight, heroOcclusion, performanceMode);
 
 	return {
 		material,
@@ -224,7 +238,7 @@ const ironBars249Material: TerrainMaterial = {
 	// face. The gaps in the bars mean you can see through to the other side, so
 	// shared faces must be emitted rather than discarded.
 	occlusionGroup: 'ironbars_249',
-	shaderVersion: 2,
+	shaderVersion: 4,
 	geometry: {
 		vertexColors: false,
 	},

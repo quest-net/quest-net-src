@@ -39,7 +39,10 @@ import {
 	getStandeeBottomOffset,
 	isActorAirborne,
 } from "./actorTokenPlacement";
-import { raycastTerrainDDA } from "../Movement3D/movement3DHelpers";
+import {
+	makeHeroOcclusionVoxelSkip,
+	raycastTerrainDDA,
+} from "../Movement3D/movement3DHelpers";
 import { disposeObject3D, setRaycasterFromPointer } from "../mapSceneUtils";
 import { targetingStore } from "../Targeting/targetingStore";
 
@@ -1352,7 +1355,17 @@ export function ThreeDActorLayer({
 			// Precise pick first: raycast against the (1.25x) pick meshes.
 			// Eat hits that are clearly behind terrain.
 			const actorHits = raycaster.intersectObjects(resources.actorPickTargets, true);
-			const occlusionHit = raycastTerrainDDA(raycaster.ray, terrainIndexRef.current);
+			// See-through: an actor revealed through the hero-occlusion keyhole is not
+			// culled as occluded (orthogonal to the x-ray bypass below).
+			const heroSkip = makeHeroOcclusionVoxelSkip(
+				terrainIndexRef.current,
+				resources.heroOcclusion
+			);
+			const occlusionHit = raycastTerrainDDA(
+				raycaster.ray,
+				terrainIndexRef.current,
+				heroSkip
+			);
 			for (const hit of actorHits) {
 				if (
 					!xRayActorsRef.current &&

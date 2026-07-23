@@ -30,6 +30,14 @@ import {
 	MOVEMENT_HIGHLIGHT_VERTEX_BEGIN,
 	MOVEMENT_HIGHLIGHT_VERTEX_HEADER,
 } from '../shaders/movementHighlightShader';
+import {
+	applyHeroOcclusionUniforms,
+	HERO_OCCLUSION_DISCARD,
+	HERO_OCCLUSION_FRAGMENT_HEADER,
+	HERO_OCCLUSION_VERTEX_BEGIN,
+	HERO_OCCLUSION_VERTEX_HEADER,
+	type HeroOcclusionUniforms,
+} from '../shaders/heroOcclusionShader';
 
 // ---------------------------------------------------------------------------
 // Shader installation -- AO + movement-highlight overlay (the overlay is gated
@@ -41,23 +49,29 @@ function installDefaultShader(
 	material: THREE.MeshStandardMaterial,
 	voxelAo: VoxelAoTexture,
 	movementHighlight: MovementHighlightTexture | undefined,
+	heroOcclusion: HeroOcclusionUniforms | undefined,
 	performanceMode: boolean
 ): void {
 	material.onBeforeCompile = (shader) => {
 		applyVoxelAoUniforms(shader, voxelAo);
 		applyMovementHighlightUniforms(shader, movementHighlight);
+		applyHeroOcclusionUniforms(shader, heroOcclusion);
 
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <common>',
-			['#include <common>', ...VOXEL_AO_VERTEX_HEADER, ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER].join('\n')
+			['#include <common>', ...VOXEL_AO_VERTEX_HEADER, ...MOVEMENT_HIGHLIGHT_VERTEX_HEADER, ...HERO_OCCLUSION_VERTEX_HEADER].join('\n')
 		);
 		shader.vertexShader = shader.vertexShader.replace(
 			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...VOXEL_AO_VERTEX_BEGIN, ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN].join('\n')
+			['#include <begin_vertex>', ...VOXEL_AO_VERTEX_BEGIN, ...MOVEMENT_HIGHLIGHT_VERTEX_BEGIN, ...HERO_OCCLUSION_VERTEX_BEGIN].join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <common>',
-			['#include <common>', ...getVoxelAoFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER].join('\n')
+			['#include <common>', ...getVoxelAoFragmentHeader(performanceMode), ...MOVEMENT_HIGHLIGHT_FRAGMENT_HEADER, ...HERO_OCCLUSION_FRAGMENT_HEADER].join('\n')
+		);
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <clipping_planes_fragment>',
+			HERO_OCCLUSION_DISCARD.join('\n')
 		);
 		shader.fragmentShader = shader.fragmentShader.replace(
 			'#include <color_fragment>',
@@ -75,7 +89,7 @@ function installDefaultShader(
 // ---------------------------------------------------------------------------
 
 export const createDefaultMaterial: MaterialFactory = (params: MaterialFactoryParams): MaterialFactoryResult => {
-	const { movementHighlight, voxelAo, performanceMode = false } = params;
+	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;
 
 	const material = new THREE.MeshStandardMaterial({
 		roughness: THREE_D_TERRAIN_MATERIAL.ROUGHNESS,
@@ -83,7 +97,7 @@ export const createDefaultMaterial: MaterialFactory = (params: MaterialFactoryPa
 		vertexColors: true,
 	});
 
-	installDefaultShader(material, voxelAo, movementHighlight, performanceMode);
+	installDefaultShader(material, voxelAo, movementHighlight, heroOcclusion, performanceMode);
 	// customProgramCacheKey is set by the registry wrapper.
 
 	return { material, castShadow: true, receiveShadow: true };
@@ -96,7 +110,7 @@ export const createDefaultMaterial: MaterialFactory = (params: MaterialFactoryPa
 const defaultMaterial: TerrainMaterial = {
 	bucketKey: 'default',
 	occlusionGroup: 'solid',
-	shaderVersion: 2,
+	shaderVersion: 4,
 	factory: createDefaultMaterial,
 	// No `special` block: this is the catch-all material for palette indices 0-239
 	// and any unassigned special index.
