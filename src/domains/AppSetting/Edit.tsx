@@ -1,158 +1,49 @@
 // domains/AppSetting/Edit.tsx
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuestContext } from "../Context/ContextProvider";
 import { contextStore } from "../Context/contextStore";
-import { useIsOffscreen, FloatingActionBar } from "../../components/Form/Form";
 import { AppSettingUtils } from "./AppSettingUtils";
 import { ToggleButton } from "../../components/ui/ToggleButton";
-import { FloatingActionButton } from "../../components/ui/FloatingActionButton";
 import {
   PROVIDER_REGISTRY,
   DEFAULT_PROVIDER_ID,
 } from "../../services/ImageGenerationService";
+import { HeroOcclusionRadiusControl } from "./HeroOcclusionRadiusControl";
 
 export function AppSettingEdit() {
   const context = useQuestContext();
   const navigate = useNavigate();
 
-  // Floating save/cancel bar when the footer actions scroll offscreen.
-  const footerRef = useRef<HTMLDivElement>(null);
-  const footerOffscreen = useIsOffscreen(footerRef, true);
-
-  // --- General settings ---
-  const [theme, setTheme] = useState<"light" | "dark">(
-    AppSettingUtils.getTheme(context)
+  // Context-backed settings update immediately. The prompt keeps a local draft
+  // so clearing it can remain visibly empty while persistence uses the default.
+  const theme = AppSettingUtils.getTheme(context);
+  const volumePercent = Math.round(
+    AppSettingUtils.getPlayerVolume(context) * 100
   );
-
-  const [volumePercent, setVolumePercent] = useState<number>(
-    Math.round(AppSettingUtils.getPlayerVolume(context) * 100)
+  const sfxVolumePercent = Math.round(
+    AppSettingUtils.getSfxVolume(context) * 100
   );
-
-  const [sfxVolumePercent, setSfxVolumePercent] = useState<number>(
-    Math.round(AppSettingUtils.getSfxVolume(context) * 100)
-  );
-
-  const [
-    preserveFlyingHeightOnTileMove,
-    setPreserveFlyingHeightOnTileMove,
-  ] = useState<boolean>(
-    AppSettingUtils.getPreserveFlyingHeightOnTileMove(context)
-  );
-
-  const [performanceMode, setPerformanceMode] = useState<boolean>(
-    AppSettingUtils.getPerformanceMode(context)
-  );
-
-  const [critSplashEnabled, setCritSplashEnabled] = useState<boolean>(
-    AppSettingUtils.getCritSplashEnabled(context)
-  );
-
-  const [heroOcclusionEnabled, setHeroOcclusionEnabled] = useState<boolean>(
-    AppSettingUtils.getHeroOcclusionEnabled(context)
-  );
-
-  // --- Image generation settings ---
-  const [imageService, setImageService] = useState<string>(
-    AppSettingUtils.getImageService(context)
-  );
-
-  // Per-provider key state: { [providerId]: apiKey }
-  const [apiKeys, setApiKeys] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
-    for (const provider of PROVIDER_REGISTRY) {
-      initial[provider.id] =
-        AppSettingUtils.getProviderApiKey(context, provider.id) ?? "";
-    }
-    return initial;
-  });
-
-  // Per-provider secret state: { [providerId]: apiSecret }
-  const [apiSecrets, setApiSecrets] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
-    for (const provider of PROVIDER_REGISTRY) {
-      if (provider.requiresSecret) {
-        initial[provider.id] =
-          AppSettingUtils.getProviderApiSecret(context, provider.id) ?? "";
-      }
-    }
-    return initial;
-  });
+  const preserveFlyingHeightOnTileMove =
+    AppSettingUtils.getPreserveFlyingHeightOnTileMove(context);
+  const performanceMode = AppSettingUtils.getPerformanceMode(context);
+  const critSplashEnabled = AppSettingUtils.getCritSplashEnabled(context);
+  const heroOcclusionEnabled =
+    AppSettingUtils.getHeroOcclusionEnabled(context);
+  const heroOcclusionRadius =
+    AppSettingUtils.getHeroOcclusionRadius(context);
+  const imageService = AppSettingUtils.getImageService(context);
+  const [performanceModeChanged, setPerformanceModeChanged] = useState(false);
 
   const [imagePromptTemplate, setImagePromptTemplate] = useState<string>(
     AppSettingUtils.getImagePromptTemplate(context)
   );
 
-  const [isSaving, setIsSaving] = useState(false);
-
   // Derived: the provider object for the currently selected service
   const selectedProvider =
     PROVIDER_REGISTRY.find((p) => p.id === imageService) ??
     PROVIDER_REGISTRY.find((p) => p.id === DEFAULT_PROVIDER_ID)!;
-
-  const handleSave = () => {
-    setIsSaving(true);
-
-    // General — writes target the proxy store (Valtio re-renders consumers).
-    AppSettingUtils.setTheme({ theme }, contextStore);
-    AppSettingUtils.setPlayerVolume(
-      { volume: volumePercent / 100 },
-      contextStore
-    );
-    AppSettingUtils.setSfxVolume(
-      { volume: sfxVolumePercent / 100 },
-      contextStore
-    );
-    AppSettingUtils.setPreserveFlyingHeightOnTileMove(
-      { preserve: preserveFlyingHeightOnTileMove },
-      contextStore
-    );
-    AppSettingUtils.setPerformanceMode(
-      { enabled: performanceMode },
-      contextStore
-    );
-    AppSettingUtils.setCritSplashEnabled(
-      { enabled: critSplashEnabled },
-      contextStore
-    );
-    AppSettingUtils.setHeroOcclusionEnabled(
-      { enabled: heroOcclusionEnabled },
-      contextStore
-    );
-
-    // Image service selection
-    AppSettingUtils.setImageService({ providerId: imageService }, contextStore);
-
-    // Save ALL entered keys (so switching back to a provider doesn't lose its key)
-    for (const provider of PROVIDER_REGISTRY) {
-      const key = apiKeys[provider.id]?.trim();
-      AppSettingUtils.setProviderApiKey(
-        { providerId: provider.id, apiKey: key || undefined },
-        contextStore
-      );
-      if (provider.requiresSecret) {
-        const secret = apiSecrets[provider.id]?.trim();
-        AppSettingUtils.setProviderApiSecret(
-          { providerId: provider.id, apiSecret: secret || undefined },
-          contextStore
-        );
-      }
-    }
-
-    // Prompt template
-    AppSettingUtils.setImagePromptTemplate(
-      { template: imagePromptTemplate },
-      contextStore
-    );
-
-    setIsSaving(false);
-    navigate("/");
-  };
-
-  const handleCancel = () => {
-    navigate(-1);
-  };
 
   return (
     <div className="min-h-screen bg-base-200">
@@ -184,7 +75,9 @@ export function AppSettingEdit() {
                   <ToggleButton
                     active={theme === "light"}
                     className="btn-sm join-item"
-                    onClick={() => setTheme("light")}
+                    onClick={() =>
+                      AppSettingUtils.setTheme({ theme: "light" }, contextStore)
+                    }
                   >
                     <span className="icon-[mdi--white-balance-sunny] w-4 h-4 mr-1" />
                     Light
@@ -192,7 +85,9 @@ export function AppSettingEdit() {
                   <ToggleButton
                     active={theme === "dark"}
                     className="btn-sm join-item"
-                    onClick={() => setTheme("dark")}
+                    onClick={() =>
+                      AppSettingUtils.setTheme({ theme: "dark" }, contextStore)
+                    }
                   >
                     <span className="icon-[mdi--weather-night] w-4 h-4 mr-1" />
                     Dark
@@ -218,7 +113,10 @@ export function AppSettingEdit() {
                   max={100}
                   value={volumePercent}
                   onChange={(e) =>
-                    setVolumePercent(Number(e.target.value) || 0)
+                    AppSettingUtils.setPlayerVolume(
+                      { volume: (Number(e.target.value) || 0) / 100 },
+                      contextStore
+                    )
                   }
                   className="range range-primary"
                 />
@@ -243,7 +141,10 @@ export function AppSettingEdit() {
                   max={100}
                   value={sfxVolumePercent}
                   onChange={(e) =>
-                    setSfxVolumePercent(Number(e.target.value) || 0)
+                    AppSettingUtils.setSfxVolume(
+                      { volume: (Number(e.target.value) || 0) / 100 },
+                      contextStore
+                    )
                   }
                   className="range range-secondary"
                 />
@@ -260,7 +161,10 @@ export function AppSettingEdit() {
                     className="toggle toggle-primary"
                     checked={preserveFlyingHeightOnTileMove}
                     onChange={(e) =>
-                      setPreserveFlyingHeightOnTileMove(e.target.checked)
+                      AppSettingUtils.setPreserveFlyingHeightOnTileMove(
+                        { preserve: e.target.checked },
+                        contextStore
+                      )
                     }
                   />
                   <span className="label-text">
@@ -279,15 +183,25 @@ export function AppSettingEdit() {
                     type="checkbox"
                     className="toggle toggle-primary"
                     checked={performanceMode}
-                    onChange={(e) => setPerformanceMode(e.target.checked)}
+                    onChange={(e) => {
+                      AppSettingUtils.setPerformanceMode(
+                        { enabled: e.target.checked },
+                        contextStore
+                      );
+                      setPerformanceModeChanged(true);
+                    }}
                   />
                   <span className="label-text">Performance mode</span>
                 </label>
                 <p className="text-xs opacity-70">
                   Uses lower renderer quality and simplified voxel terrain for
-                  older laptops. Refresh after changing this from the quick
-                  settings menu.
+                  older laptops. Refresh to apply this change.
                 </p>
+                {performanceModeChanged && (
+                  <p className="text-xs text-warning">
+                    Refresh to apply performance mode.
+                  </p>
+                )}
               </div>
 
               <div className="form-control">
@@ -296,7 +210,12 @@ export function AppSettingEdit() {
                     type="checkbox"
                     className="toggle toggle-primary"
                     checked={critSplashEnabled}
-                    onChange={(e) => setCritSplashEnabled(e.target.checked)}
+                    onChange={(e) =>
+                      AppSettingUtils.setCritSplashEnabled(
+                        { enabled: e.target.checked },
+                        contextStore
+                      )
+                    }
                   />
                   <span className="label-text">Crit splash animation</span>
                 </label>
@@ -312,7 +231,12 @@ export function AppSettingEdit() {
                     type="checkbox"
                     className="toggle toggle-primary"
                     checked={heroOcclusionEnabled}
-                    onChange={(e) => setHeroOcclusionEnabled(e.target.checked)}
+                    onChange={(e) =>
+                      AppSettingUtils.setHeroOcclusionEnabled(
+                        { enabled: e.target.checked },
+                        contextStore
+                      )
+                    }
                   />
                   <span className="label-text">See-through terrain for focused actor</span>
                 </label>
@@ -321,6 +245,18 @@ export function AppSettingEdit() {
                   so a token hidden behind walls or indoors stays visible. When
                   off, terrain is always drawn solid.
                 </p>
+                <div className="mt-3">
+                  <HeroOcclusionRadiusControl
+                    value={heroOcclusionRadius}
+                    disabled={!heroOcclusionEnabled}
+                    onChange={(radius) =>
+                      AppSettingUtils.setHeroOcclusionRadius(
+                        { radius },
+                        contextStore
+                      )
+                    }
+                  />
+                </div>
               </div>
             </div>
           </section>
@@ -341,7 +277,12 @@ export function AppSettingEdit() {
                 <select
                   className="select select-bordered w-full"
                   value={imageService}
-                  onChange={(e) => setImageService(e.target.value)}
+                  onChange={(e) =>
+                    AppSettingUtils.setImageService(
+                      { providerId: e.target.value },
+                      contextStore
+                    )
+                  }
                 >
                   {PROVIDER_REGISTRY.map((provider) => (
                     <option key={provider.id} value={provider.id}>
@@ -373,12 +314,20 @@ export function AppSettingEdit() {
                   placeholder={
                     selectedProvider.apiKeyPlaceholder ?? "Paste your key here"
                   }
-                  value={apiKeys[selectedProvider.id] ?? ""}
+                  value={
+                    AppSettingUtils.getProviderApiKey(
+                      context,
+                      selectedProvider.id
+                    ) ?? ""
+                  }
                   onChange={(e) =>
-                    setApiKeys((prev) => ({
-                      ...prev,
-                      [selectedProvider.id]: e.target.value,
-                    }))
+                    AppSettingUtils.setProviderApiKey(
+                      {
+                        providerId: selectedProvider.id,
+                        apiKey: e.target.value || undefined,
+                      },
+                      contextStore
+                    )
                   }
                   autoComplete="off"
                 />
@@ -394,12 +343,20 @@ export function AppSettingEdit() {
                     type="password"
                     className="input input-bordered w-full"
                     placeholder="Paste your secret key here"
-                    value={apiSecrets[selectedProvider.id] ?? ""}
+                    value={
+                      AppSettingUtils.getProviderApiSecret(
+                        context,
+                        selectedProvider.id
+                      ) ?? ""
+                    }
                     onChange={(e) =>
-                      setApiSecrets((prev) => ({
-                        ...prev,
-                        [selectedProvider.id]: e.target.value,
-                      }))
+                      AppSettingUtils.setProviderApiSecret(
+                        {
+                          providerId: selectedProvider.id,
+                          apiSecret: e.target.value || undefined,
+                        },
+                        contextStore
+                      )
                     }
                     autoComplete="off"
                   />
@@ -419,7 +376,13 @@ export function AppSettingEdit() {
                   className="textarea textarea-bordered w-full font-mono text-sm"
                   rows={5}
                   value={imagePromptTemplate}
-                  onChange={(e) => setImagePromptTemplate(e.target.value)}
+                  onChange={(e) => {
+                    setImagePromptTemplate(e.target.value);
+                    AppSettingUtils.setImagePromptTemplate(
+                      { template: e.target.value },
+                      contextStore
+                    );
+                  }}
                 />
                 <p className="text-xs opacity-70">
                   You can use the following placeholders, which will be filled
@@ -450,51 +413,8 @@ export function AppSettingEdit() {
             </div>
           </section>
 
-          {/* Footer actions */}
-          <div ref={footerRef} className="flex justify-between mt-4">
-            <button className="btn btn-ghost" onClick={handleCancel}>
-              Cancel
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={handleSave}
-              disabled={isSaving}
-            >
-              {isSaving ? (
-                <>
-                  <span className="loading loading-spinner loading-sm" />
-                  Saving...
-                </>
-              ) : (
-                "Save Settings"
-              )}
-            </button>
-          </div>
         </div>
       </div>
-
-      <FloatingActionBar show={footerOffscreen}>
-        <FloatingActionButton
-          onClick={handleCancel}
-          data-tip="Cancel"
-          aria-label="Cancel"
-        >
-          <span className="icon-[mdi--close] h-5 w-5" />
-        </FloatingActionButton>
-        <FloatingActionButton
-          onClick={handleSave}
-          variant="primary"
-          disabled={isSaving}
-          data-tip="Save Settings"
-          aria-label="Save Settings"
-        >
-          {isSaving ? (
-            <span className="loading loading-spinner loading-sm" />
-          ) : (
-            <span className="icon-[mdi--content-save] h-5 w-5" />
-          )}
-        </FloatingActionButton>
-      </FloatingActionBar>
     </div>
   );
 }
