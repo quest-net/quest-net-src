@@ -5,6 +5,7 @@ import { AppSettingUtils } from "./AppSettingUtils";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 import { CloudBackupService } from "../../services/CloudBackupService";
 import { loginAndSync, disconnect as cloudDisconnect } from "../../components/cloudBackupUi";
+import { HeroOcclusionRadiusControl } from "./HeroOcclusionRadiusControl";
 
 export function AppSettingsDisplay() {
 	const context = useQuestContext();
@@ -27,6 +28,9 @@ export function AppSettingsDisplay() {
 	const [heroOcclusionEnabled, setHeroOcclusionEnabled] = useState(
 		AppSettingUtils.getHeroOcclusionEnabled(context)
 	);
+	const [heroOcclusionRadius, setHeroOcclusionRadius] = useState(
+		AppSettingUtils.getHeroOcclusionRadius(context)
+	);
 	const [cloudBusy, setCloudBusy] = useState(false);
 	const windowRef = useRef<HTMLDivElement>(null);
 	const buttonRef = useRef<HTMLButtonElement>(null);
@@ -39,6 +43,7 @@ export function AppSettingsDisplay() {
 		setPerformanceMode(AppSettingUtils.getPerformanceMode(context));
 		setCritSplashEnabled(AppSettingUtils.getCritSplashEnabled(context));
 		setHeroOcclusionEnabled(AppSettingUtils.getHeroOcclusionEnabled(context));
+		setHeroOcclusionRadius(AppSettingUtils.getHeroOcclusionRadius(context));
 	}, [context]);
 
 	useEffect(() => {
@@ -111,6 +116,11 @@ export function AppSettingsDisplay() {
 		AppSettingUtils.setHeroOcclusionEnabled({ enabled }, contextStore);
 	};
 
+	const handleHeroOcclusionRadiusChange = (radius: number) => {
+		setHeroOcclusionRadius(radius);
+		AppSettingUtils.setHeroOcclusionRadius({ radius }, contextStore);
+	};
+
 	const cloudConfigured = CloudBackupService.isConfigured();
 	const cloud = AppSettingUtils.getCloudBackup(context);
 	const cloudConnected = cloud?.connected === true;
@@ -155,7 +165,7 @@ export function AppSettingsDisplay() {
 					ref={windowRef}
 					className="absolute top-full left-0 mt-2 w-80 bg-base-100 border-2 border-base-300 rounded-lg shadow-xl z-50"
 				>
-					<div className="p-4 space-y-4">
+					<div className="p-4">
 						<div className="flex items-center justify-between">
 							<h3 className="font-bold text-lg">App Settings</h3>
 							<button
@@ -169,7 +179,7 @@ export function AppSettingsDisplay() {
 							</button>
 						</div>
 
-						<div className="space-y-2">
+						<div className="mt-3 space-y-2 pb-2">
 							<label className="font-medium">Theme</label>
 							<div className="join w-full">
 								<ToggleButton
@@ -191,7 +201,7 @@ export function AppSettingsDisplay() {
 							</div>
 						</div>
 
-						<div className="space-y-2">
+						<div className="space-y-2 border-t border-base-300/40 py-2">
 							<div className="flex items-center justify-between gap-3">
 								<label className="font-medium">Sound Effects</label>
 								<span className="text-sm opacity-70">{sfxVolumePercent}%</span>
@@ -209,7 +219,7 @@ export function AppSettingsDisplay() {
 							/>
 						</div>
 
-						<div className="flex items-center justify-between gap-4">
+						<div className="flex items-center justify-between gap-4 border-t border-base-300/40 py-2">
 							<div className="flex items-center gap-2">
 								<span className="icon-[mdi--feather] w-5 h-5 opacity-70" />
 								<span className="font-medium">Keep Flying Height</span>
@@ -225,7 +235,7 @@ export function AppSettingsDisplay() {
 							/>
 						</div>
 
-						<div className="flex items-center justify-between gap-4">
+						<div className="flex items-center justify-between gap-4 border-t border-base-300/40 py-2">
 							<div className="flex items-center gap-2">
 								<span className="icon-[game-icons--trophy] w-5 h-5 opacity-70" />
 								<span className="font-medium">Crit Splash</span>
@@ -241,23 +251,31 @@ export function AppSettingsDisplay() {
 							/>
 						</div>
 
-						<div className="flex items-center justify-between gap-4">
-							<div className="flex items-center gap-2">
-								<span className="icon-[mdi--eye-arrow-right] w-5 h-5 opacity-70" />
-								<span className="font-medium">See-Through Terrain</span>
+						<div className="space-y-2 border-t border-base-300/40 py-2">
+							<div className="flex items-center justify-between gap-4">
+								<div className="flex items-center gap-2">
+									<span className="icon-[mdi--eye-arrow-right] w-5 h-5 opacity-70" />
+									<span className="font-medium">See-Through Terrain</span>
+								</div>
+								<input
+									type="checkbox"
+									className="toggle toggle-primary toggle-sm"
+									checked={heroOcclusionEnabled}
+									onChange={(event) =>
+										handleHeroOcclusionChange(event.target.checked)
+									}
+									aria-label="See-through terrain for focused actor"
+								/>
 							</div>
-							<input
-								type="checkbox"
-								className="toggle toggle-primary toggle-sm"
-								checked={heroOcclusionEnabled}
-								onChange={(event) =>
-									handleHeroOcclusionChange(event.target.checked)
-								}
-								aria-label="See-through terrain for focused actor"
+							<HeroOcclusionRadiusControl
+								value={heroOcclusionRadius}
+								disabled={!heroOcclusionEnabled}
+								compact
+								onChange={handleHeroOcclusionRadiusChange}
 							/>
 						</div>
 
-						<div className="space-y-1">
+						<div className="space-y-1 border-t border-base-300/40 py-2">
 							<div className="flex items-center justify-between gap-4">
 								<div className="flex items-center gap-2">
 									<span className="icon-[mdi--speedometer] w-5 h-5 opacity-70" />
@@ -281,7 +299,7 @@ export function AppSettingsDisplay() {
 						</div>
 
 						{cloudConfigured && (
-							<div className="space-y-2 border-t border-base-300 pt-3">
+							<div className="space-y-2 border-t border-base-300/40 pt-2">
 								<div className="flex items-center gap-2">
 									<span className="icon-[mdi--cloud] w-5 h-5 opacity-70" />
 									<span className="font-medium">Cloud backup</span>

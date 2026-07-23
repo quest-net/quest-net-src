@@ -39,6 +39,8 @@ interface UseHeroOcclusionParams {
 	isWorld: boolean;
 	/** AppSettings master toggle. */
 	enabled: boolean;
+	/** Personal world-space radius preference (roughly one unit per tactical tile). */
+	radius: number;
 }
 
 export function useHeroOcclusion({
@@ -48,10 +50,25 @@ export function useHeroOcclusion({
 	focusedActorSize,
 	isWorld,
 	enabled,
+	radius,
 }: UseHeroOcclusionParams): void {
 	// Latest inputs, read inside the per-frame callback without re-registering it.
-	const stateRef = useRef({ terrain, focusedActorPosition, focusedActorSize, isWorld, enabled });
-	stateRef.current = { terrain, focusedActorPosition, focusedActorSize, isWorld, enabled };
+	const stateRef = useRef({
+		terrain,
+		focusedActorPosition,
+		focusedActorSize,
+		isWorld,
+		enabled,
+		radius,
+	});
+	stateRef.current = {
+		terrain,
+		focusedActorPosition,
+		focusedActorSize,
+		isWorld,
+		enabled,
+		radius,
+	};
 
 	useEffect(() => {
 		if (!resources) return;
@@ -76,6 +93,9 @@ export function useHeroOcclusion({
 		const tick = (): void => {
 			const state = stateRef.current;
 			const pos = state.focusedActorPosition;
+			// Rendering and pointer picking both read this shared uniform holder, so
+			// changing the preference updates the visible and clickable cutout together.
+			hero.radius.value = state.radius;
 			if (!state.enabled || !state.isWorld || !state.terrain || !pos) {
 				hero.enabled.value = 0;
 				lastTerrain = null;

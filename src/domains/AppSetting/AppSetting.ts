@@ -11,6 +11,8 @@ export interface AppSettings {
   critSplashEnabled?: boolean;
   /** When false, disables the hero-occlusion cutout that reveals the focused actor behind terrain. Defaults to enabled. */
   heroOcclusionEnabled?: boolean;
+  /** World-space radius of the focused-actor terrain cutout. Roughly one unit per tactical tile. */
+  heroOcclusionRadius?: number;
   imagePromptTemplate?: string;
 
   /** The selected image generation provider ID (e.g. "google-gemini-flash") */
@@ -28,6 +30,22 @@ export interface AppSettings {
    */
   imageApiSecrets?: Record<string, string>;
 }
+
+/**
+ * The UI exposes four friendly stops, while persistence stores the actual
+ * world-space value so hand-edited/custom radii remain representable.
+ */
+export const HERO_OCCLUSION_RADIUS_SETTING = {
+  DEFAULT: 1.25,
+  MIN: 1.25,
+  MAX: 10,
+  PRESETS: [
+    { label: "Tight", value: 1.25 },
+    { label: "Small", value: 2.5 },
+    { label: "Medium", value: 4 },
+    { label: "Wide", value: 6 },
+  ],
+} as const;
 
 export const DEFAULT_IMAGE_PROMPT =
   'Produce a square image that will serve as an icon for a {ObjectType} ' +

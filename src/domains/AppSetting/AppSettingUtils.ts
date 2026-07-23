@@ -3,7 +3,11 @@
 import { isDmAccess } from "../../utils/UrlParser";
 import { Context } from "../Context/Context";
 import type { CameraPreference } from "../../components/Map/MapScene";
-import { AppSettings, DEFAULT_IMAGE_PROMPT } from "./AppSetting";
+import {
+  AppSettings,
+  DEFAULT_IMAGE_PROMPT,
+  HERO_OCCLUSION_RADIUS_SETTING,
+} from "./AppSetting";
 import { SoundEffectService } from "../../services/SoundEffectService";
 import { DEFAULT_PROVIDER_ID } from "../../services/ImageGenerationService";
 import { markProfileUpdated } from "../Context/contextStore";
@@ -22,6 +26,7 @@ export const PROFILE_SYNCED_APP_SETTING_KEYS = [
   "preserveFlyingHeightOnTileMove",
   "critSplashEnabled",
   "heroOcclusionEnabled",
+  "heroOcclusionRadius",
   "imagePromptTemplate",
   "imageService",
   "imageApiKeys",
@@ -65,6 +70,7 @@ export const AppSettingUtils = {
       performanceMode: false,
       critSplashEnabled: true,
       heroOcclusionEnabled: true,
+      heroOcclusionRadius: HERO_OCCLUSION_RADIUS_SETTING.DEFAULT,
     };
   },
 
@@ -170,6 +176,33 @@ export const AppSettingUtils = {
   /** Defaults to enabled when the setting has never been set. */
   getHeroOcclusionEnabled(context: Context): boolean {
     return context.AppSettings.heroOcclusionEnabled !== "false";
+  },
+
+  setHeroOcclusionRadius(
+    params: { radius: number },
+    context: Context
+  ): void {
+    const requested = Number.isFinite(params.radius)
+      ? params.radius
+      : HERO_OCCLUSION_RADIUS_SETTING.DEFAULT;
+    const radius = Math.max(
+      HERO_OCCLUSION_RADIUS_SETTING.MIN,
+      Math.min(HERO_OCCLUSION_RADIUS_SETTING.MAX, requested)
+    );
+    context.AppSettings.heroOcclusionRadius = radius.toString();
+    markProfileUpdated();
+  },
+
+  /** Defaults to the original 1.25-tile cutout and safely accepts custom values. */
+  getHeroOcclusionRadius(context: Context): number {
+    const parsed = Number(context.AppSettings.heroOcclusionRadius);
+    if (!Number.isFinite(parsed)) {
+      return HERO_OCCLUSION_RADIUS_SETTING.DEFAULT;
+    }
+    return Math.max(
+      HERO_OCCLUSION_RADIUS_SETTING.MIN,
+      Math.min(HERO_OCCLUSION_RADIUS_SETTING.MAX, parsed)
+    );
   },
 
   // ---------------------------------------------------------------------------
@@ -314,6 +347,7 @@ export const AppSettingUtils = {
       performanceMode: this.getPerformanceMode(context),
       critSplashEnabled: this.getCritSplashEnabled(context),
       heroOcclusionEnabled: this.getHeroOcclusionEnabled(context),
+      heroOcclusionRadius: this.getHeroOcclusionRadius(context),
       imagePromptTemplate: this.getImagePromptTemplate(context),
       imageService: this.getImageService(context),
       imageApiKeys: getJson<Record<string, string>>(context, "imageApiKeys"),

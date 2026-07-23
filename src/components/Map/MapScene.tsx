@@ -262,6 +262,7 @@ export default function MapScene({
 	// so a token hidden behind geometry stays visible. Focus = the player's played
 	// actor (SelectedCharacters), or the DM's inspector selection (selectedActor).
 	const heroOcclusionEnabled = AppSettingUtils.getHeroOcclusionEnabled(context);
+	const heroOcclusionRadius = AppSettingUtils.getHeroOcclusionRadius(context);
 	const heroFocusActorId = isDM
 		? selectedActor?.id ?? null
 		: context.User.SelectedCharacters?.[campaign.RoomCode] ?? null;
@@ -280,6 +281,7 @@ export default function MapScene({
 		focusedActorSize: heroFocusActor?.size ?? null,
 		isWorld,
 		enabled: heroOcclusionEnabled,
+		radius: heroOcclusionRadius,
 	});
 
 	// Terrain id -> name, for the link's "leads to ___" hover/prompt label.

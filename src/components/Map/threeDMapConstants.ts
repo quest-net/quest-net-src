@@ -1,3 +1,5 @@
+import { HERO_OCCLUSION_RADIUS_SETTING } from "../../domains/AppSetting/AppSetting";
+
 export const THREE_D_MAP_RENDERER = {
 	MAX_PIXEL_RATIO: 1.5,
 	PERFORMANCE_MAX_PIXEL_RATIO: 0.85,
@@ -146,7 +148,7 @@ export const THREE_D_HERO_OCCLUSION = {
 	// at the focused actor. Fragments within this radius of the camera->actor axis
 	// AND in front of the actor are dither-discarded, opening a "keyhole" onto the
 	// actor.
-	RADIUS: 1.25,
+	RADIUS: HERO_OCCLUSION_RADIUS_SETTING.DEFAULT,
 	// How much wider the cone is near the camera than at the actor. 1 = a straight
 	// cylinder; >1 flares toward the camera so a wall right in front of the lens is
 	// cut generously while the hole stays tight around the actor.
