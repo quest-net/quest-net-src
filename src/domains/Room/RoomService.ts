@@ -30,6 +30,17 @@ function buildTurnConfig(): TurnServerConfig[] | undefined {
 // Built once at module load; the env values are inlined at build time.
 const TURN_CONFIG = buildTurnConfig();
 
+// Public Nostr relays routinely emit NOTICE / non-OK responses and failed
+// announces that Trystero logs as warnings. None of it is actionable at
+// runtime -- our own recovery (useRelayWatchdog, useAutoReconnect) keys off
+// socket close events and peer health, not these logs -- and the volume buries
+// real errors in the console during a long session.
+//
+// Kept ON in dev, where they're the only visibility into relay behaviour and
+// connection debugging is exactly what we're usually doing. Flip this constant
+// to silence dev too. (Trystero 0.25.3+.)
+const WARN_ON_RELAY_FAILURE = import.meta.env.DEV;
+
 /**
  * Optional callbacks passed to `joinRoom` (Trystero 0.23+).
  *
@@ -72,10 +83,13 @@ export const RoomService = {
 
 		// `turnConfig` is APPENDED to Trystero's default STUN list (it does not
 		// replace it), so direct ICE still works and TURN is only a fallback.
+		// Omitted entirely rather than passed as undefined when unconfigured.
 		return joinRoom(
-			TURN_CONFIG
-				? { appId: APP_ID, turnConfig: TURN_CONFIG }
-				: { appId: APP_ID },
+			{
+				appId: APP_ID,
+				relayConfig: { warnOnRelayFailure: WARN_ON_RELAY_FAILURE },
+				...(TURN_CONFIG ? { turnConfig: TURN_CONFIG } : {}),
+			},
 			roomCode,
 			callbacks
 		);

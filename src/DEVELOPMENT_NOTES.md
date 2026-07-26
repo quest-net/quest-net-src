@@ -91,6 +91,18 @@ events via `getRelaySockets()` and, on one, forces a full `leave()` +
 pool. This is the mechanism that keeps a long-lived DM room reliably joinable.
 It re-attaches to fresh sockets after each recovery via `actionServiceSwapVersion`.
 
+### Relay warning suppression
+
+`RoomService` passes `relayConfig.warnOnRelayFailure` (Trystero 0.25.3+), set to
+`import.meta.env.DEV`. Public Nostr relays routinely emit NOTICE / non-OK
+responses and failed announces; none of it is actionable at runtime (our
+recovery keys off socket closes and peer health, not these logs) and the volume
+buries real errors over a long session.
+
+**Debugging note:** this means a production build logs *no* Trystero relay
+warnings. If you're diagnosing relay behaviour against a deployed build, flip
+`WARN_ON_RELAY_FAILURE` in `RoomService.ts` or reproduce in dev.
+
 ### Phantom peer eviction (ping-failure based)
 
 Trystero only drops a peer from `getPeers()` when its `RTCPeerConnection` fires
