@@ -1,23 +1,47 @@
 // domains/Room/PeerStatus.tsx
 import { useState, useRef, useEffect } from "react";
-import { PeerInfo } from "../../hooks/usePeerTracking";
+import { ConnectionStatus, PeerInfo } from "../../hooks/usePeerTracking";
 import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 
 interface PeerStatusProps {
-	connectionStatus: "online" | "connected";
+	connectionStatus: ConnectionStatus;
 	peers: PeerInfo[];
 	selfPeer: PeerInfo;
 	totalInRoom: number;
+	/** True when the DM is reachable (always true for the DM themselves). */
+	isDmConnected: boolean;
 }
 
-export function PeerStatus({ connectionStatus, peers, selfPeer, totalInRoom }: PeerStatusProps) {
+const STATUS_LABEL: Record<ConnectionStatus, string> = {
+	online: "Searching",
+	partial: "No host",
+	connected: "Connected",
+};
+
+export function PeerStatus({
+	connectionStatus,
+	peers,
+	selfPeer,
+	totalInRoom,
+	isDmConnected,
+}: PeerStatusProps) {
 	const [isOpen, setIsOpen] = useState(false);
 	const context = useQuestContext();
 	const windowRef = useRef<HTMLDivElement>(null);
 	const badgeRef = useRef<HTMLButtonElement>(null);
 
 	const campaign = CampaignUtils.getActiveCampaign(context);
+
+	// Peers whose handshake User hasn't landed yet could still turn out to be
+	// the DM, so "partial" means something different while any are pending:
+	// still negotiating vs. genuinely no host in the room.
+	const hasUnidentifiedPeers = peers.some((peer) => !peer.user);
+
+	const sortedPeers = [...peers].sort((a, b) => {
+		const rank = (peer: PeerInfo) => (peer.user?.Role === "dm" ? 0 : 1);
+		return rank(a) - rank(b);
+	});
 
 	useEffect(() => {
 		if (!isOpen) return;
@@ -37,8 +61,23 @@ export function PeerStatus({ connectionStatus, peers, selfPeer, totalInRoom }: P
 		return () => document.removeEventListener("mousedown", handleClickOutside);
 	}, [isOpen]);
 
+	// Green is reserved for "actually in the session". Being meshed with other
+	// players while the DM link is missing stays amber — that used to read as
+	// green and made a half-joined player look fully connected.
 	const getBadgeColorClass = () => {
-		return connectionStatus === "online" ? "badge-warning" : "badge-success";
+		return connectionStatus === "connected" ? "badge-success" : "badge-warning";
+	};
+
+	const getBadgeTitle = () => {
+		if (connectionStatus === "connected") {
+			return `Connected to the host — ${totalInRoom} in room`;
+		}
+		if (connectionStatus === "partial") {
+			return hasUnidentifiedPeers
+				? "Connected to peers — identifying the host"
+				: "Not connected to the host — you're not in the session yet";
+		}
+		return "Searching for the room";
 	};
 
 	// Looks up the character name a peer has selected for this campaign.
@@ -123,16 +162,28 @@ export function PeerStatus({ connectionStatus, peers, selfPeer, totalInRoom }: P
 		);
 	};
 
+	// aria-label carries the status itself rather than a static string: colour
+	// and the title tooltip are both unavailable to screen readers, and
+	// "connected to peers but not the host" is the distinction worth conveying.
 	return (
 		<div className="relative">
 			<button
 				ref={badgeRef}
 				onClick={() => setIsOpen(!isOpen)}
 				className={`badge badge-lg ${getBadgeColorClass()} gap-2 cursor-pointer transition-all hover:brightness-95`}
-				aria-label="Peer connection status"
+				aria-label={getBadgeTitle()}
+				title={getBadgeTitle()}
 			>
 				{connectionStatus === "online" ? (
 					<span className="icon-[eos-icons--compass] w-5 h-5"></span>
+				) : connectionStatus === "partial" ? (
+					<>
+						{/* motion-safe: this pulse is indefinite (the partial state can
+						    last minutes), unlike the transient spin pulses elsewhere.
+						    CritSplash/AudioVisualizer honour the same preference. */}
+						<span className="icon-[mdi--shield-crown-outline] w-4 h-4 motion-safe:animate-pulse"></span>
+						{totalInRoom}
+					</>
 				) : (
 					<>
 						<span className="icon-[mdi--access-point-network] w-4 h-4"></span>
@@ -154,13 +205,45 @@ export function PeerStatus({ connectionStatus, peers, selfPeer, totalInRoom }: P
 							</span>
 						</div>
 
-						<div className="space-y-2">
-							{/* Local user always shown first */}
+						{/* The whole point of the room is the DM. Call it out before the
+						    roster when the link is missing — a green-looking mesh of
+						    players is otherwise indistinguishable from a live session. */}
+						{!isDmConnected && (
+							<div className="alert alert-warning mb-3 py-2 text-sm">
+								<span className="icon-[mdi--shield-crown-outline] w-4 h-4 shrink-0"></span>
+								<div>
+									<p className="font-semibold">
+										{hasUnidentifiedPeers
+											? "Identifying the host"
+											: "Not connected to the host"}
+									</p>
+									{/* Both cases really do self-recover: useAutoReconnect
+									    treats "no DM" as unhealthy for players
+									    (requireDmConnection), so the room recycles here just
+									    as it does at 0 peers. */}
+									<p className="mt-1 opacity-80">
+										{peers.length > 0
+											? "You're connected to other players, but nothing you do reaches the game until the host connects."
+											: "You're in the room but haven't reached anyone yet."}{" "}
+										Retrying automatically.
+									</p>
+								</div>
+							</div>
+						)}
+
+						{/* Capped + scrollable: a full table (1 DM + 5 players) is ~6
+						    rows at ~95px, which overflowed the viewport with no way to
+						    reach the lower rows or the status footer. */}
+						<div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+							{/* Local user always shown first, then the host, then the rest,
+							    so the connection that actually matters is easy to find. */}
 							{renderPeerRow(selfPeer, true)}
-							{peers.map((peer) => renderPeerRow(peer, false))}
+							{sortedPeers.map((peer) => renderPeerRow(peer, false))}
 						</div>
 
-						{peers.length === 0 && (
+						{/* Suppressed when the banner is up: it already says we haven't
+						    reached anyone, so both together just read as repetition. */}
+						{peers.length === 0 && isDmConnected && (
 							<p className="text-center text-sm opacity-70 mt-3">
 								No other peers connected
 							</p>
@@ -170,13 +253,15 @@ export function PeerStatus({ connectionStatus, peers, selfPeer, totalInRoom }: P
 							<div className="flex items-center gap-2 text-sm">
 								<div
 									className={`w-2 h-2 rounded-full ${
-										connectionStatus === "online" ? "bg-warning" : "bg-success"
+										connectionStatus === "connected"
+											? "bg-success"
+											: "bg-warning"
 									}`}
 								></div>
 								<span className="opacity-70">
 									Status:{" "}
-									<span className="font-semibold capitalize">
-										{connectionStatus}
+									<span className="font-semibold">
+										{STATUS_LABEL[connectionStatus]}
 									</span>
 								</span>
 							</div>

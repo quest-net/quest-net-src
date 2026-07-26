@@ -41,6 +41,32 @@
   a hard error with the underlying message. After `ready`, peer-level join
   failures are treated as transient and `useAutoReconnect` handles them.
 
+### Player half-joined recovery (`requireDmConnection`)
+
+A player can mesh with the other players while the DM link never forms (or
+silently drops). The room looks alive — several peers, pings flowing — but the
+DM is the authority for every action, so nothing that player does reaches the
+game and their state is frozen at whatever they last received.
+
+This state used to be invisible on both sides:
+
+- **UI**: `usePeerTracking` reported `connected` on any peer, so the badge went
+  green and a half-joined player looked fully in the session. The status is now
+  three-valued — `online` (no peers) / `partial` (peers, no DM) / `connected` —
+  and green is reserved for a reachable DM (`isDmConnected`, trivially true for
+  the DM). `PeerStatus` explains the `partial` case rather than just colouring it.
+- **Recovery**: `useAutoReconnect` recycled at 0 peers, and this shape never
+  hits 0 — so it never fired and the player stayed stuck indefinitely.
+  `requireDmConnection` (set for player routes in `CampaignView`) makes "DM
+  unreachable" count as unhealthy, so the room recycles here like any other
+  disconnect. The DM has no DM to reach and keeps the peer-count signal.
+
+Two deliberate details: the reconnect delay doubles as the handshake grace
+window (`getDmPeerId()` is undefined until a peer's `User` payload lands, so an
+in-flight handshake must not be read as "no DM"), and the `partial` case uses
+the slower cold-start cadence rather than the fast path — the room is alive, and
+each recycle also drops our links to the other players.
+
 ### DM signaling recovery (`useRelayWatchdog`)
 
 The DM's discoverability depends on its relay subscriptions staying live: new
@@ -54,9 +80,9 @@ Trystero 0.25.1 reconnects relay sockets and re-sends `REQ` subscriptions
 automatically *when a socket actually closes*, with capped/jittered backoff.
 But it has **no liveness check**: `makeSocket` (in `@trystero-p2p/core`) only
 reacts to `socket.onclose`, and a silently-dead socket stays `readyState === 1`
-so sends are dropped with no error and no reconnect ever triggers. And
-`useAutoReconnect` only recycles at **0 peers**, which never happens while the
-DM still has players. So neither covers a DM whose signaling degrades
+so sends are dropped with no error and no reconnect ever triggers. And on a DM
+route `useAutoReconnect` only recycles at **0 peers**, which never happens while
+the DM still has players. So neither covers a DM whose signaling degrades
 mid-session.
 
 `useRelayWatchdog` (DM-only) is the backstop: it listens for relay socket close

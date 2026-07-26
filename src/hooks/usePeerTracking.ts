@@ -13,6 +13,15 @@ export interface PeerInfo {
 	ping: number | null;
 }
 
+/**
+ * - `online`    — in the room, but no peers at all yet.
+ * - `partial`   — connected to peers, but NOT to the DM. The mesh is up, yet
+ *                 nothing this client does can reach the authority, so the
+ *                 session hasn't really started.
+ * - `connected` — the DM is reachable (or we *are* the DM).
+ */
+export type ConnectionStatus = "online" | "partial" | "connected";
+
 export interface PeerTrackingData {
 	/** Remote peers only — does not include the local user. */
 	peers: PeerInfo[];
@@ -20,7 +29,16 @@ export interface PeerTrackingData {
 	selfPeer: PeerInfo;
 	/** Total people in the room: peers.length + 1 (self). */
 	totalInRoom: number;
-	connectionStatus: "online" | "connected";
+	connectionStatus: ConnectionStatus;
+	/**
+	 * True when the DM is reachable — trivially true for the DM themselves.
+	 * This, not raw peer count, is what "in the session" means: the DM is the
+	 * authority for every action, so a player meshed only with other players
+	 * is still a spectator on stale state.
+	 */
+	isDmConnected: boolean;
+	/** peerId of the connected DM, if their User payload has arrived. */
+	dmPeerId: string | undefined;
 	canAccessActor: (actorId: string) => boolean;
 }
 
@@ -81,8 +99,14 @@ export function usePeerTracking(): PeerTrackingData {
 
 	const totalInRoom = peers.length + 1;
 
-	const connectionStatus: "online" | "connected" =
-		peers.length === 0 ? "online" : "connected";
+	// A player can be meshed with other players while the DM link is still
+	// missing (or has silently dropped). Peer count alone therefore can't say
+	// whether we're in the session — only the DM's presence can.
+	const dmPeerId = peers.find((peer) => peer.user?.Role === "dm")?.peerId;
+	const isDmConnected = context.User.Role === "dm" || dmPeerId !== undefined;
+
+	const connectionStatus: ConnectionStatus =
+		peers.length === 0 ? "online" : isDmConnected ? "connected" : "partial";
 
 	const canAccessActor = (actorId: string): boolean => {
 		if (context.User.Role === "dm") return true;
@@ -95,6 +119,8 @@ export function usePeerTracking(): PeerTrackingData {
 		selfPeer,
 		totalInRoom,
 		connectionStatus,
+		isDmConnected,
+		dmPeerId,
 		canAccessActor,
 	};
 }

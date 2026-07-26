@@ -104,6 +104,12 @@ export function CampaignView() {
 			checkIntervalMs: 10000,
 			reconnectDelayMs: 8000,
 			peerlessReconnectDelayMs: isDMRoute ? 30000 : 20000,
+			// A player connected to other players but NOT the DM used to be
+			// invisible to recovery: peer count never hits 0 in that shape, so
+			// the room never recycled and they sat in a half-joined session
+			// indefinitely. Requiring the DM link makes that state recoverable.
+			// The DM has no DM to reach, so peer count remains their signal.
+			requireDmConnection: !isDMRoute,
 			// maxAttempts is Infinity by default - unlimited retries!
 		},
 		onReconnect
