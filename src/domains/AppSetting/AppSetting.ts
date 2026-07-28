@@ -1,12 +1,15 @@
+import type { MapCameraMode } from "../../utils/camera/CameraModes";
+
 export interface AppSettings {
   theme: "light" | "dark"; // I haven't implemented this yet
   volume: number; // percentage. This is used when a player may want a different volume than the DM chose
   sfxVolume?: number; // 0-1. Sound effects volume (stickers, etc.), separate from music
   preserveFlyingHeightOnTileMove?: boolean;
   performanceMode?: boolean;
-  /** World-view map camera framing. `freecam` is DM-only. Device-local (not
-   *  profile-synced) — camera framing can reasonably differ per device. */
-  cameraPreference?: "ortho" | "perspective" | "freecam";
+  /** Unified map camera mode. `freecam` is DM-only; actor modes need a
+   *  controlled actor to anchor to. Device-local (not profile-synced) — camera
+   *  choice can reasonably differ per device. */
+  cameraMode?: MapCameraMode;
   /** When false, natural crits show as normal log alerts instead of the full-screen splash. Defaults to enabled. */
   critSplashEnabled?: boolean;
   /** When false, disables the hero-occlusion cutout that reveals the focused actor behind terrain. Defaults to enabled. */

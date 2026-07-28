@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { PING_DURATION_MS } from "../../../domains/Ping/Ping";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import type { MapInteractionMode } from "../../../utils/camera/CameraModes";
 import type { ActivePing } from "../hooks/useActivePings";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import { terrainHeightToWorldY } from "../Actors3D/actorTokenPlacement";
@@ -22,6 +23,8 @@ interface ThreeDPingLayerProps {
 	terrainIndex: VoxelTerrainIndex;
 	activePings: ActivePing[];
 	onPingTile: (tile: { x: number; y: number; h: number }) => void;
+	/** Placing a ping is a cursor gesture, so it is inert under "actor-look". */
+	interactionMode: MapInteractionMode;
 }
 
 interface PingVisual {
@@ -220,6 +223,7 @@ export function ThreeDPingLayer({
 	terrainIndex,
 	activePings,
 	onPingTile,
+	interactionMode,
 }: ThreeDPingLayerProps) {
 	const pingSignature = useMemo(
 		() => createPingSignature(activePings),
@@ -232,10 +236,15 @@ export function ThreeDPingLayer({
 		[pingSignature]
 	);
 	const onPingTileRef = useRef(onPingTile);
+	const interactionModeRef = useRef(interactionMode);
 
 	useEffect(() => {
 		onPingTileRef.current = onPingTile;
 	}, [onPingTile]);
+
+	useEffect(() => {
+		interactionModeRef.current = interactionMode;
+	}, [interactionMode]);
 
 	useEffect(() => {
 		if (pingEntries.length === 0) return;
@@ -310,6 +319,7 @@ export function ThreeDPingLayer({
 		} | null = null;
 
 		const handlePointerDown = (event: PointerEvent) => {
+			if (interactionModeRef.current !== "world-pointer") return;
 			if (!isPingGesture(event)) return;
 			if (resources.dragState.active) return;
 

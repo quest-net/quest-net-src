@@ -2,7 +2,11 @@
 
 import { isDmAccess } from "../../utils/UrlParser";
 import { Context } from "../Context/Context";
-import type { CameraPreference } from "../../components/Map/MapScene";
+import {
+  FALLBACK_CAMERA_MODE,
+  isMapCameraMode,
+  type MapCameraMode,
+} from "../../utils/camera/CameraModes";
 import {
   AppSettings,
   DEFAULT_IMAGE_PROMPT,
@@ -124,22 +128,23 @@ export const AppSettingUtils = {
   },
 
   /**
-   * World-view map camera framing. Defaults to isometric. `freecam` is a
-   * DM-only mode, so it's gated here the same way volume is: a player who has
-   * `freecam` persisted (e.g. a former DM) reads back as isometric.
+   * Unified map camera mode. Free Camera is gated here because role is known
+   * without campaign state; the controlled-actor and device preconditions need
+   * campaign/layout state and are handled by getCameraModeDisabledReason at the
+   * call sites. Anything unavailable or unrecognised reads back as the fallback.
    */
-  getCameraPreference(context: Context): CameraPreference {
-    const value = context.AppSettings.cameraPreference;
-    if (value === "perspective") return "perspective";
-    if (value === "freecam" && isDmAccess()) return "freecam";
-    return "ortho";
+  getCameraMode(context: Context): MapCameraMode {
+    const value = context.AppSettings.cameraMode;
+    if (!isMapCameraMode(value)) return FALLBACK_CAMERA_MODE;
+    if (value === "freecam" && !isDmAccess()) return FALLBACK_CAMERA_MODE;
+    return value;
   },
 
-  setCameraPreference(
-    params: { preference: CameraPreference },
+  setCameraMode(
+    params: { mode: MapCameraMode },
     context: Context
   ): void {
-    context.AppSettings.cameraPreference = params.preference;
+    context.AppSettings.cameraMode = params.mode;
   },
 
   setPerformanceMode(

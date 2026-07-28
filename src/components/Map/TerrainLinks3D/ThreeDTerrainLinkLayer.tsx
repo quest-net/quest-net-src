@@ -2,7 +2,9 @@
 //
 // Renders terrain links as invisible, pickable hitboxes (1 tile wide/deep, 2
 // tactical units tall) at each link anchor on the rendered terrain, and drives
-// the link interaction in both world and first-person views.
+// the link interaction. Hover and click are cursor gestures, so they are live
+// only under the "world-pointer" interaction mode; traversal itself works from
+// any camera, since it is driven by the controlled actor's position.
 //
 // Links have no visible geometry of their own (the DM signals them with cosmetic
 // stamps). Hovering a link's hitbox reveals where it leads (unless locked, for
@@ -23,6 +25,7 @@ import {
 } from "../../../domains/TerrainLink/TerrainLink";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import type { MapInteractionMode } from "../../../utils/camera/CameraModes";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
 import { setRaycasterFromPointer } from "../mapSceneUtils";
 import { raycastTerrainDDA } from "../Movement3D/movement3DHelpers";
@@ -66,7 +69,9 @@ interface LinkBoxData {
 
 interface ThreeDTerrainLinkLayerProps {
 	resources: ThreeDSceneResources;
-	isWorld: boolean;
+	/** Link hover/click and DM authoring are cursor-driven, so they are inert
+	 *  while an actor camera owns the pointer. */
+	interactionMode: MapInteractionMode;
 	terrain: VoxelTerrain;
 	terrainIndex: VoxelTerrainIndex;
 	links: TerrainLink[];
@@ -100,7 +105,7 @@ function focusSignature(focus: TerrainLinkInteractionFocus | null): string {
 
 export function ThreeDTerrainLinkLayer({
 	resources,
-	isWorld,
+	interactionMode,
 	terrain,
 	terrainIndex,
 	links,
@@ -113,6 +118,7 @@ export function ThreeDTerrainLinkLayer({
 	onToggleLinkLocked,
 	onFocusChange,
 }: ThreeDTerrainLinkLayerProps) {
+	const worldPointer = interactionMode === "world-pointer";
 	// Live values read by the long-lived input effect without re-subscribing.
 	const controlledActorRef = useRef(controlledActor);
 	const terrainNamesRef = useRef(terrainNamesById);
@@ -208,7 +214,7 @@ export function ThreeDTerrainLinkLayer({
 			screen: { x: number; y: number } | null
 		): TerrainLinkInteractionFocus | null => {
 			const data = box.userData as LinkBoxData;
-			const authoring = isWorld && isDMRef.current && showLinkMarkersRef.current;
+			const authoring = worldPointer && isDMRef.current && showLinkMarkersRef.current;
 			if (authoring) {
 				return {
 					linkId: data.linkId,
@@ -249,12 +255,12 @@ export function ThreeDTerrainLinkLayer({
 		const isInteractiveLinkBox = (target: THREE.Object3D): boolean => {
 			const box = target as THREE.Mesh;
 			if (!box.userData?.linkId) return false;
-			if (isWorld && isDMRef.current && showLinkMarkersRef.current) return true;
+			if (worldPointer && isDMRef.current && showLinkMarkersRef.current) return true;
 			return buildFocus(box, null) !== null;
 		};
 		const isTerrainBlockingLinkBox = (target: THREE.Object3D): boolean =>
 			!!target.userData?.linkId &&
-			isWorld &&
+			worldPointer &&
 			isDMRef.current &&
 			showLinkMarkersRef.current;
 
@@ -269,7 +275,7 @@ export function ThreeDTerrainLinkLayer({
 			const hits = raycaster.intersectObjects(boxesRef.current, false);
 			if (hits.length === 0) return null;
 			const hit = hits[0];
-			if (!(isWorld && isDMRef.current && showLinkMarkersRef.current)) {
+			if (!(worldPointer && isDMRef.current && showLinkMarkersRef.current)) {
 				// A link buried behind/under terrain (closer terrain hit) reads as hidden.
 				const terrainHit = raycastTerrainDDA(raycaster.ray, terrainIndex);
 				if (terrainHit && terrainHit.distance + OCCLUSION_EPSILON < hit.distance) {
@@ -319,7 +325,7 @@ export function ThreeDTerrainLinkLayer({
 		};
 
 		// ----- World view: pointer hover + click -----
-		if (isWorld) {
+		if (worldPointer) {
 			let pendingMove: PointerEvent | null = null;
 			let rafId = 0;
 
@@ -517,7 +523,7 @@ export function ThreeDTerrainLinkLayer({
 			}
 			emitFocus(null);
 		};
-	}, [resources, isWorld, terrainIndex]);
+	}, [resources, worldPointer, terrainIndex]);
 
 	return null;
 }

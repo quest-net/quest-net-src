@@ -10,6 +10,7 @@
 import * as THREE from "three";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { CameraRig, type CameraRigConfig } from "../../../utils/camera/CameraRig";
+import { MAP_FOLLOW_RIG_CONFIG } from "../../Map/threeDMapConstants";
 import { installEditorTerrainShader } from "./editorTerrainShader";
 
 const EDITOR_PIXEL_RATIO = 1;
@@ -40,6 +41,11 @@ const EDITOR_CAMERA_RIG_CONFIG: CameraRigConfig = {
 		speedStep: 1.15,
 		initialDistanceMultiplier: 1.3,
 	},
+	// The editor has no actors, so it never offers Follow (see
+	// ACTORLESS_RIG_CAMERA_MODES in the toolbar). The rig still requires the
+	// block; sharing the map's keeps a second set of tuning numbers from
+	// existing at all.
+	follow: MAP_FOLLOW_RIG_CONFIG,
 };
 
 export interface EditorSceneResources {

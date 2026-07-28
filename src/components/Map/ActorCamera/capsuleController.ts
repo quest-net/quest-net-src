@@ -8,12 +8,12 @@ import {
 } from "../Actors3D/actorTokenConstants";
 import { actorToGroundWorld, getEyeHeight } from "./actor";
 import {
-	FIRST_PERSON_CONTROLS,
-	FIRST_PERSON_PHYSICS,
+	ACTOR_CONTROLS,
+	ACTOR_CAPSULE_PHYSICS,
 } from "./constants";
-import type { FirstPersonActor } from "./types";
+import type { LocomotionActor } from "./types";
 
-export interface FirstPersonCapsuleState {
+export interface ActorCapsuleState {
 	position: THREE.Vector3;
 	velocity: THREE.Vector3;
 	grounded: boolean;
@@ -85,12 +85,12 @@ function pointIntervalDistance(value: number, min: number, max: number): number 
 	return 0;
 }
 
-function getCapsuleDimensions(actor: FirstPersonActor): CapsuleDimensions {
+function getCapsuleDimensions(actor: LocomotionActor): CapsuleDimensions {
 	const size = actor.actor.Size ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.SIZE;
-	const radius = FIRST_PERSON_PHYSICS.RADIUS_BY_SIZE[size];
+	const radius = ACTOR_CAPSULE_PHYSICS.RADIUS_BY_SIZE[size];
 	const height = Math.max(
 		radius * 2 + 0.05,
-		getEyeHeight(actor.actor) + FIRST_PERSON_PHYSICS.CAPSULE_HEAD_CLEARANCE
+		getEyeHeight(actor.actor) + ACTOR_CAPSULE_PHYSICS.CAPSULE_HEAD_CLEARANCE
 	);
 	return { radius, height };
 }
@@ -99,7 +99,7 @@ function getHorizontalBounds(
 	terrain: VoxelTerrain,
 	dimensions: CapsuleDimensions
 ): { minX: number; maxX: number; minZ: number; maxZ: number } {
-	const inset = dimensions.radius + FIRST_PERSON_PHYSICS.COLLISION_EPSILON;
+	const inset = dimensions.radius + ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON;
 	return {
 		minX: -terrain.Width / 2 + inset,
 		maxX: terrain.Width / 2 - inset,
@@ -110,8 +110,8 @@ function getHorizontalBounds(
 
 function getStepHeight(index: VoxelTerrainIndex): number {
 	return Math.min(
-		FIRST_PERSON_PHYSICS.STEP_HEIGHT,
-		index.voxelSize + FIRST_PERSON_PHYSICS.STEP_HEIGHT_MARGIN
+		ACTOR_CAPSULE_PHYSICS.STEP_HEIGHT,
+		index.voxelSize + ACTOR_CAPSULE_PHYSICS.STEP_HEIGHT_MARGIN
 	);
 }
 
@@ -124,12 +124,12 @@ function clampPositionToBounds(
 	const nextX = clamp(position.x, bounds.minX, bounds.maxX);
 	const nextZ = clamp(position.z, bounds.minZ, bounds.maxZ);
 	const changed =
-		Math.abs(nextX - position.x) > FIRST_PERSON_PHYSICS.COLLISION_EPSILON ||
-		Math.abs(nextZ - position.z) > FIRST_PERSON_PHYSICS.COLLISION_EPSILON;
+		Math.abs(nextX - position.x) > ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON ||
+		Math.abs(nextZ - position.z) > ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON;
 	position.x = nextX;
 	position.z = nextZ;
-	if (position.y < FIRST_PERSON_PHYSICS.MIN_WORLD_Y) {
-		position.y = FIRST_PERSON_PHYSICS.MIN_WORLD_Y;
+	if (position.y < ACTOR_CAPSULE_PHYSICS.MIN_WORLD_Y) {
+		position.y = ACTOR_CAPSULE_PHYSICS.MIN_WORLD_Y;
 		return true;
 	}
 	return changed;
@@ -156,7 +156,7 @@ function capsuleIntersectsAabb(
 	const dz = pointIntervalDistance(position.z, minZ, maxZ);
 	return (
 		dx * dx + dy * dy + dz * dz <
-		radius * radius - FIRST_PERSON_PHYSICS.COLLISION_EPSILON
+		radius * radius - ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON
 	);
 }
 
@@ -244,7 +244,7 @@ function liftOutOfTerrain(
 	terrain: VoxelTerrain,
 	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
-	state: FirstPersonCapsuleState
+	state: ActorCapsuleState
 ): void {
 	if (!capsuleIntersectsTerrain(terrain, index, dimensions, state.position)) {
 		return;
@@ -264,11 +264,11 @@ function moveAxis(
 	terrain: VoxelTerrain,
 	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
-	state: FirstPersonCapsuleState,
+	state: ActorCapsuleState,
 	axis: "x" | "y" | "z",
 	delta: number
 ): AxisMoveResult {
-	if (Math.abs(delta) <= FIRST_PERSON_PHYSICS.COLLISION_EPSILON) {
+	if (Math.abs(delta) <= ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON) {
 		return { blocked: false };
 	}
 
@@ -282,10 +282,10 @@ function moveAxis(
 		const clampedTarget = clamp(target, min, max);
 		hitBounds =
 			Math.abs(clampedTarget - target) >
-			FIRST_PERSON_PHYSICS.COLLISION_EPSILON;
+			ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON;
 		target = clampedTarget;
-	} else if (target < FIRST_PERSON_PHYSICS.MIN_WORLD_Y) {
-		target = FIRST_PERSON_PHYSICS.MIN_WORLD_Y;
+	} else if (target < ACTOR_CAPSULE_PHYSICS.MIN_WORLD_Y) {
+		target = ACTOR_CAPSULE_PHYSICS.MIN_WORLD_Y;
 		hitBounds = true;
 	}
 
@@ -320,7 +320,7 @@ function moveHorizontalAxes(
 	terrain: VoxelTerrain,
 	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
-	state: FirstPersonCapsuleState,
+	state: ActorCapsuleState,
 	deltaX: number,
 	deltaZ: number
 ): AxisMoveResult {
@@ -385,7 +385,7 @@ function snapToGround(
 	terrain: VoxelTerrain,
 	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
-	state: FirstPersonCapsuleState,
+	state: ActorCapsuleState,
 	maxDistance: number
 ): boolean {
 	const groundY = findGroundBelow(
@@ -420,7 +420,7 @@ function findStepUpGroundY(
 	const maxY = startY + maxStepHeight;
 	const scanStep = Math.max(
 		index.voxelSize / 4,
-		FIRST_PERSON_PHYSICS.COLLISION_EPSILON * 4
+		ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON * 4
 	);
 	const steps = Math.max(1, Math.ceil(maxStepHeight / scanStep));
 	let blockedY = startY;
@@ -456,7 +456,7 @@ function horizontalProgress(
 	deltaZ: number
 ): number {
 	const length = Math.hypot(deltaX, deltaZ);
-	if (length <= FIRST_PERSON_PHYSICS.COLLISION_EPSILON) return 0;
+	if (length <= ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON) return 0;
 	return ((to.x - from.x) * deltaX + (to.z - from.z) * deltaZ) / length;
 }
 
@@ -464,7 +464,7 @@ function tryGroundedEndpointMove(
 	terrain: VoxelTerrain,
 	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
-	state: FirstPersonCapsuleState,
+	state: ActorCapsuleState,
 	deltaX: number,
 	deltaZ: number,
 	stepHeight: number
@@ -484,8 +484,8 @@ function tryGroundedEndpointMove(
 
 	const groundDelta = groundY - state.position.y;
 	if (
-		groundDelta > stepHeight + FIRST_PERSON_PHYSICS.COLLISION_EPSILON ||
-		groundDelta < -FIRST_PERSON_PHYSICS.STEP_DOWN_SNAP_DISTANCE
+		groundDelta > stepHeight + ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON ||
+		groundDelta < -ACTOR_CAPSULE_PHYSICS.STEP_DOWN_SNAP_DISTANCE
 	) {
 		return false;
 	}
@@ -505,13 +505,13 @@ function applyHorizontalMoveWithStep(
 	terrain: VoxelTerrain,
 	index: VoxelTerrainIndex,
 	dimensions: CapsuleDimensions,
-	state: FirstPersonCapsuleState,
+	state: ActorCapsuleState,
 	deltaX: number,
 	deltaZ: number
 ): void {
 	const originalPosition = state.position.clone();
 	const originalVelocity = state.velocity.clone();
-	const normalState: FirstPersonCapsuleState = {
+	const normalState: ActorCapsuleState = {
 		position: originalPosition.clone(),
 		velocity: originalVelocity.clone(),
 		grounded: state.grounded,
@@ -528,7 +528,7 @@ function applyHorizontalMoveWithStep(
 	if (
 		!normalResult.blocked ||
 		!state.grounded ||
-		Math.hypot(deltaX, deltaZ) <= FIRST_PERSON_PHYSICS.COLLISION_EPSILON
+		Math.hypot(deltaX, deltaZ) <= ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON
 	) {
 		state.position.copy(normalState.position);
 		state.velocity.copy(normalState.velocity);
@@ -550,7 +550,7 @@ function applyHorizontalMoveWithStep(
 		return;
 	}
 
-	const stepState: FirstPersonCapsuleState = {
+	const stepState: ActorCapsuleState = {
 		position: originalPosition
 			.clone()
 			.add(new THREE.Vector3(0, stepHeight, 0)),
@@ -576,12 +576,12 @@ function applyHorizontalMoveWithStep(
 		index,
 		dimensions,
 		stepState.position,
-		stepHeight + FIRST_PERSON_PHYSICS.GROUND_SNAP_DISTANCE
+		stepHeight + ACTOR_CAPSULE_PHYSICS.GROUND_SNAP_DISTANCE
 	);
 	if (
 		groundY === null ||
 		groundY - originalPosition.y >
-			stepHeight + FIRST_PERSON_PHYSICS.COLLISION_EPSILON
+			stepHeight + ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON
 	) {
 		state.position.copy(normalState.position);
 		state.velocity.copy(normalState.velocity);
@@ -608,11 +608,11 @@ function applyHorizontalMoveWithStep(
 		deltaZ
 	);
 	const steppedUp =
-		groundY - originalPosition.y >= FIRST_PERSON_PHYSICS.STEP_UP_MIN_HEIGHT;
+		groundY - originalPosition.y >= ACTOR_CAPSULE_PHYSICS.STEP_UP_MIN_HEIGHT;
 	if (
 		(!steppedUp && stepProgress <= normalProgress + 0.015) ||
 		(steppedUp &&
-			stepProgress + FIRST_PERSON_PHYSICS.STEP_PROGRESS_TOLERANCE <
+			stepProgress + ACTOR_CAPSULE_PHYSICS.STEP_PROGRESS_TOLERANCE <
 				normalProgress)
 	) {
 		state.position.copy(normalState.position);
@@ -627,28 +627,28 @@ function applyHorizontalMoveWithStep(
 }
 
 function applyGroundedAndAirVelocity(
-	state: FirstPersonCapsuleState,
+	state: ActorCapsuleState,
 	wishX: number,
 	wishZ: number,
 	jumpPressed: boolean,
 	dt: number
 ): void {
-	const desiredX = wishX * FIRST_PERSON_CONTROLS.MOVE_UNITS_PER_SECOND;
-	const desiredZ = wishZ * FIRST_PERSON_CONTROLS.MOVE_UNITS_PER_SECOND;
+	const desiredX = wishX * ACTOR_CONTROLS.MOVE_UNITS_PER_SECOND;
+	const desiredZ = wishZ * ACTOR_CONTROLS.MOVE_UNITS_PER_SECOND;
 	const wishActive =
-		Math.hypot(wishX, wishZ) > FIRST_PERSON_PHYSICS.COLLISION_EPSILON;
+		Math.hypot(wishX, wishZ) > ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON;
 
 	if (state.grounded && jumpPressed) {
 		state.velocity.y = Math.sqrt(
-			2 * FIRST_PERSON_PHYSICS.GRAVITY * FIRST_PERSON_PHYSICS.JUMP_HEIGHT
+			2 * ACTOR_CAPSULE_PHYSICS.GRAVITY * ACTOR_CAPSULE_PHYSICS.JUMP_HEIGHT
 		);
 		state.grounded = false;
 	}
 
 	if (wishActive) {
 		const acceleration = state.grounded
-			? FIRST_PERSON_PHYSICS.GROUND_ACCELERATION
-			: FIRST_PERSON_PHYSICS.AIR_ACCELERATION;
+			? ACTOR_CAPSULE_PHYSICS.GROUND_ACCELERATION
+			: ACTOR_CAPSULE_PHYSICS.AIR_ACCELERATION;
 		const next = moveVectorToward(
 			state.velocity.x,
 			state.velocity.z,
@@ -659,48 +659,48 @@ function applyGroundedAndAirVelocity(
 		state.velocity.x = next.x;
 		state.velocity.z = next.z;
 	} else if (state.grounded) {
-		const frictionDelta = FIRST_PERSON_PHYSICS.GROUND_FRICTION * dt;
+		const frictionDelta = ACTOR_CAPSULE_PHYSICS.GROUND_FRICTION * dt;
 		state.velocity.x = moveToward(state.velocity.x, 0, frictionDelta);
 		state.velocity.z = moveToward(state.velocity.z, 0, frictionDelta);
 	} else {
-		const drag = Math.max(0, 1 - FIRST_PERSON_PHYSICS.AIR_DRAG * dt);
+		const drag = Math.max(0, 1 - ACTOR_CAPSULE_PHYSICS.AIR_DRAG * dt);
 		state.velocity.x *= drag;
 		state.velocity.z *= drag;
 	}
 
-	state.velocity.y -= FIRST_PERSON_PHYSICS.GRAVITY * dt;
+	state.velocity.y -= ACTOR_CAPSULE_PHYSICS.GRAVITY * dt;
 }
 
 function applyFlyingVelocity(
-	state: FirstPersonCapsuleState,
+	state: ActorCapsuleState,
 	wishX: number,
 	wishZ: number,
 	verticalInput: number,
 	dt: number
 ): void {
-	const desiredX = wishX * FIRST_PERSON_CONTROLS.MOVE_UNITS_PER_SECOND;
-	const desiredZ = wishZ * FIRST_PERSON_CONTROLS.MOVE_UNITS_PER_SECOND;
-	const desiredY = verticalInput * FIRST_PERSON_CONTROLS.FLY_UNITS_PER_SECOND;
+	const desiredX = wishX * ACTOR_CONTROLS.MOVE_UNITS_PER_SECOND;
+	const desiredZ = wishZ * ACTOR_CONTROLS.MOVE_UNITS_PER_SECOND;
+	const desiredY = verticalInput * ACTOR_CONTROLS.FLY_UNITS_PER_SECOND;
 	const nextHorizontal = moveVectorToward(
 		state.velocity.x,
 		state.velocity.z,
 		desiredX,
 		desiredZ,
-		FIRST_PERSON_PHYSICS.FLY_ACCELERATION * dt
+		ACTOR_CAPSULE_PHYSICS.FLY_ACCELERATION * dt
 	);
 	state.velocity.x = nextHorizontal.x;
 	state.velocity.z = nextHorizontal.z;
 	state.velocity.y = moveToward(
 		state.velocity.y,
 		desiredY,
-		FIRST_PERSON_PHYSICS.FLY_ACCELERATION * dt
+		ACTOR_CAPSULE_PHYSICS.FLY_ACCELERATION * dt
 	);
 
 	if (
-		Math.hypot(wishX, wishZ) <= FIRST_PERSON_PHYSICS.COLLISION_EPSILON &&
+		Math.hypot(wishX, wishZ) <= ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON &&
 		verticalInput === 0
 	) {
-		const damping = Math.max(0, 1 - FIRST_PERSON_PHYSICS.FLY_DAMPING * dt);
+		const damping = Math.max(0, 1 - ACTOR_CAPSULE_PHYSICS.FLY_DAMPING * dt);
 		state.velocity.multiplyScalar(damping);
 	}
 	state.grounded = false;
@@ -726,10 +726,10 @@ function getWishDirection(input: CapsuleFrameInput): THREE.Vector3 {
 	return wish;
 }
 
-export function createFirstPersonCapsuleState(
-	actor: FirstPersonActor,
+export function createActorCapsuleState(
+	actor: LocomotionActor,
 	terrain: VoxelTerrain
-): FirstPersonCapsuleState {
+): ActorCapsuleState {
 	return {
 		position: actorToGroundWorld(actor, terrain),
 		velocity: new THREE.Vector3(),
@@ -737,11 +737,11 @@ export function createFirstPersonCapsuleState(
 	};
 }
 
-export function stepFirstPersonCapsuleController(
+export function stepActorCapsuleController(
 	terrain: VoxelTerrain,
 	index: VoxelTerrainIndex,
-	actor: FirstPersonActor,
-	state: FirstPersonCapsuleState,
+	actor: LocomotionActor,
+	state: ActorCapsuleState,
 	input: CapsuleFrameInput
 ): void {
 	const dt = Math.max(0, input.dt);
@@ -773,8 +773,8 @@ export function stepFirstPersonCapsuleController(
 	const substeps = Math.max(
 		1,
 		Math.min(
-			FIRST_PERSON_PHYSICS.MAX_SUBSTEPS,
-			Math.ceil(maxDistance / FIRST_PERSON_PHYSICS.MAX_SUBSTEP_DISTANCE)
+			ACTOR_CAPSULE_PHYSICS.MAX_SUBSTEPS,
+			Math.ceil(maxDistance / ACTOR_CAPSULE_PHYSICS.MAX_SUBSTEP_DISTANCE)
 		)
 	);
 	const subDt = dt / substeps;
@@ -810,14 +810,14 @@ export function stepFirstPersonCapsuleController(
 		);
 		if (verticalResult.blocked) {
 			state.grounded = wasMovingDown;
-		} else if (deltaY > FIRST_PERSON_PHYSICS.COLLISION_EPSILON) {
+		} else if (deltaY > ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON) {
 			state.grounded = false;
 		}
 
 		if (state.velocity.y <= 0) {
 			const snapDistance = state.grounded
-				? FIRST_PERSON_PHYSICS.STEP_DOWN_SNAP_DISTANCE
-				: FIRST_PERSON_PHYSICS.GROUND_SNAP_DISTANCE;
+				? ACTOR_CAPSULE_PHYSICS.STEP_DOWN_SNAP_DISTANCE
+				: ACTOR_CAPSULE_PHYSICS.GROUND_SNAP_DISTANCE;
 			state.grounded = snapToGround(
 				terrain,
 				index,
@@ -831,9 +831,9 @@ export function stepFirstPersonCapsuleController(
 	clampPositionToBounds(terrain, dimensions, state.position);
 }
 
-export function firstPersonCapsuleToRulesPosition(
+export function actorCapsuleToRulesPosition(
 	terrain: VoxelTerrain,
-	state: FirstPersonCapsuleState,
+	state: ActorCapsuleState,
 	index?: VoxelTerrainIndex | null,
 	canFly = false
 ): Position {
@@ -882,14 +882,14 @@ export function firstPersonCapsuleToRulesPosition(
 	};
 }
 
-export function isFirstPersonCapsuleSettled(
-	state: FirstPersonCapsuleState,
+export function isActorCapsuleSettled(
+	state: ActorCapsuleState,
 	canFly: boolean
 ): boolean {
 	const speedSq = state.velocity.lengthSq();
 	const thresholdSq =
-		FIRST_PERSON_PHYSICS.SETTLED_SPEED *
-		FIRST_PERSON_PHYSICS.SETTLED_SPEED;
+		ACTOR_CAPSULE_PHYSICS.SETTLED_SPEED *
+		ACTOR_CAPSULE_PHYSICS.SETTLED_SPEED;
 	if (canFly) return speedSq <= thresholdSq;
 
 	return state.grounded && speedSq <= thresholdSq;
@@ -906,7 +906,7 @@ export function isFirstPersonCapsuleSettled(
 // Walkers are pulled horizontally only (vertical stays with gravity/ground);
 // flyers are pulled in full 3D toward the turn-start cell.
 export function applyRangeContainment(
-	state: FirstPersonCapsuleState,
+	state: ActorCapsuleState,
 	targetX: number,
 	targetY: number,
 	targetZ: number,
@@ -916,7 +916,7 @@ export function applyRangeContainment(
 	const dy = canFly ? targetY - state.position.y : 0;
 	const dz = targetZ - state.position.z;
 	const distSq = dx * dx + dy * dy + dz * dz;
-	if (distSq <= FIRST_PERSON_PHYSICS.COLLISION_EPSILON) return;
+	if (distSq <= ACTOR_CAPSULE_PHYSICS.COLLISION_EPSILON) return;
 
 	const dist = Math.sqrt(distSq);
 	const inX = dx / dist;
@@ -928,7 +928,7 @@ export function applyRangeContainment(
 		state.velocity.x * inX +
 		(canFly ? state.velocity.y * inY : 0) +
 		state.velocity.z * inZ;
-	const targetAlong = Math.max(along, FIRST_PERSON_PHYSICS.RANGE_RETURN_SPEED);
+	const targetAlong = Math.max(along, ACTOR_CAPSULE_PHYSICS.RANGE_RETURN_SPEED);
 	const delta = targetAlong - along;
 	if (delta <= 0) return;
 

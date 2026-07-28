@@ -1,12 +1,14 @@
 import type { MovementOverlayState } from "./types";
 import { formatMovementValue } from "./movement";
 import type { TerrainLinkInteractionFocus } from "../TerrainLinks3D/ThreeDTerrainLinkLayer";
+import type { ActorCameraMode } from "../../../utils/camera/CameraModes";
+import { CAMERA_CONTROL_LAYOUT } from "../CameraModeDropdown";
 
-interface FirstPersonHudProps {
+interface ActorCameraHudProps {
+	cameraMode: ActorCameraMode;
 	isPointerLocked: boolean;
 	movementOverlay: MovementOverlayState;
 	canFly?: boolean;
-	onExitFirstPerson?: () => void;
 	linkFocus?: TerrainLinkInteractionFocus | null;
 }
 
@@ -52,28 +54,31 @@ function MovementOverlayText({
 	);
 }
 
-export function FirstPersonHud({
+export function ActorCameraHud({
+	cameraMode,
 	isPointerLocked,
 	movementOverlay,
 	canFly,
-	onExitFirstPerson,
 	linkFocus,
-}: FirstPersonHudProps) {
+}: ActorCameraHudProps) {
+	const isFollow = cameraMode === "follow";
+	// First Person hides the world toolbars, so the control hint sits beside the
+	// camera dropdown. Follow keeps them, so it drops to the next line.
+	const hintPlacement = isFollow
+		? CAMERA_CONTROL_LAYOUT.below
+		: CAMERA_CONTROL_LAYOUT.beside;
 	return (
 		<>
-			<div className="absolute left-3 top-3 z-20 flex items-center gap-2">
-				<div className="tooltip tooltip-right" data-tip="Return to world view">
-					<button
-						className="btn btn-sm btn-square btn-neutral"
-						onClick={onExitFirstPerson}
-						aria-label="Return to world view"
-					>
-						<span className="icon-[mdi--map] w-5 h-5" />
-					</button>
-				</div>
-				<div className="badge badge-neutral gap-1">
+			<div
+				className={`absolute z-20 flex items-center gap-2 ${hintPlacement}`}
+			>
+				<div className="badge badge-neutral h-8 gap-1 px-3">
 					<span className="icon-[mdi--mouse-right-click] w-4 h-4" />
-					{isPointerLocked ? "Look mode" : "Hold right click"}
+					{isPointerLocked
+						? isFollow
+							? "Follow movement"
+							: "Look mode"
+						: "Hold right click"}
 				</div>
 				{isPointerLocked && (
 					<div className="badge badge-neutral gap-2 whitespace-nowrap">
@@ -107,7 +112,11 @@ export function FirstPersonHud({
 				)}
 			</div>
 			{movementOverlay && (
-				<div className="absolute left-1/2 top-3 -translate-x-1/2 z-20">
+				<div
+					className={`absolute left-1/2 -translate-x-1/2 z-20 ${
+						isFollow ? CAMERA_CONTROL_LAYOUT.belowTop : "top-3"
+					}`}
+				>
 					<div className="rounded bg-base-100/90 border border-base-300 px-3 py-1 shadow text-sm font-semibold">
 						<MovementOverlayText movementOverlay={movementOverlay} />
 					</div>
@@ -130,24 +139,24 @@ export function FirstPersonHud({
 }
 
 interface MissingActorMessageProps {
-	onExitFirstPerson?: () => void;
+	onLeaveActorCamera?: () => void;
 }
 
 export function MissingActorMessage({
-	onExitFirstPerson,
+	onLeaveActorCamera,
 }: MissingActorMessageProps) {
 	return (
 		<div className="w-full h-full grid place-items-center bg-base-200/60 text-base-content">
 			<div className="text-center max-w-sm px-4">
-				<div className="font-semibold">First-person mode needs an active actor.</div>
+				<div className="font-semibold">This camera mode needs an active actor.</div>
 				<div className="text-sm opacity-70 mt-1">
 					Players use their selected character. DMs can use impersonation.
 				</div>
-				{onExitFirstPerson && (
+				{onLeaveActorCamera && (
 					<div className="tooltip tooltip-top mt-4" data-tip="Return to world view">
 						<button
 							className="btn btn-sm btn-square btn-neutral"
-							onClick={onExitFirstPerson}
+							onClick={onLeaveActorCamera}
 							aria-label="Return to world view"
 						>
 							<span className="icon-[mdi--map] w-5 h-5" />

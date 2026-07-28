@@ -3,7 +3,8 @@
 // Map input layer active only while a targeting request is pending (see
 // targetingStore). It resolves the next click into either an actor (clicking a
 // token) or a position (clicking a terrain tile) and invokes the request's
-// onResolve callback. Escape / right-click cancels.
+// onResolve callback. Escape cancels everywhere; right-click also cancels in
+// ordinary orbit modes, but remains reserved for actor look in Follow/FP.
 //
 // While active it also tracks what the cursor is over (publishing it to
 // targetingStore.hover so the cue banner can name the current target) and swaps
@@ -19,7 +20,7 @@
 // first-person mode the pointer is locked, so the aim is the screen-centre
 // crosshair (raycast from the FP camera through the middle of the viewport). The
 // resolve/hover logic is shared — only the ray origin and a few input details
-// differ (see the `isWorld` branches).
+// differ (see the `worldPointer` branches).
 
 import { useEffect } from "react";
 import * as THREE from "three";
@@ -40,6 +41,7 @@ import {
 	targetingStore,
 	type TargetResult,
 } from "./targetingStore";
+import type { MapInteractionMode } from "../../../utils/camera/CameraModes";
 import { TARGET_ACTOR_CURSOR, TARGET_TILE_CURSOR } from "./targetingCursors";
 
 interface ThreeDTargetingLayerProps {
@@ -47,16 +49,22 @@ interface ThreeDTargetingLayerProps {
 	terrainIndex: VoxelTerrainIndex;
 	/** The terrain being targeted; stamped onto resolved position targets. */
 	terrainId: string;
-	/** World view (cursor-aimed) vs first-person (crosshair-aimed). */
-	isWorld: boolean;
+	/** Where the aim point comes from: the cursor under "world-pointer", the
+	 *  screen centre crosshair under "actor-look". */
+	interactionMode: MapInteractionMode;
+	/** Whether a stationary right click cancels the targeting request. False in
+	 *  the actor camera modes, which reserve right click for look mode. */
+	cancelWithRightClick: boolean;
 }
 
 export function ThreeDTargetingLayer({
 	resources,
 	terrainIndex,
 	terrainId,
-	isWorld,
+	interactionMode,
+	cancelWithRightClick,
 }: ThreeDTargetingLayerProps) {
+	const worldPointer = interactionMode === "world-pointer";
 	const { request } = useSnapshot(targetingStore);
 	const isActive = request !== null;
 
@@ -84,7 +92,7 @@ export function ThreeDTargetingLayer({
 		const computeTarget = (event: PointerEvent | null): TargetResult | null => {
 			const req = targetingStore.request;
 			if (!req) return null;
-			if (isWorld) {
+			if (worldPointer) {
 				if (!event) return null;
 				setRaycasterFromPointer(raycaster, event, resources, pointer);
 			} else {
@@ -164,10 +172,11 @@ export function ThreeDTargetingLayer({
 
 		const handlePointerDown = (event: PointerEvent) => {
 			if (event.button === 2) {
-				// World: track the right-press so a right-click (no drag) cancels at
-				// contextmenu time. First-person: the right button engages look mode
-				// (owned by MapModeController), so leave it alone.
-				if (isWorld) rightDown = { x: event.clientX, y: event.clientY };
+				// Ordinary orbit modes track this press so a stationary right click
+				// cancels at contextmenu time. Actor cameras reserve it for look mode.
+				if (cancelWithRightClick) {
+					rightDown = { x: event.clientX, y: event.clientY };
+				}
 				return;
 			}
 			if (event.button !== 0 || event.altKey) return;
@@ -195,7 +204,7 @@ export function ThreeDTargetingLayer({
 			}
 
 			// World aims from the cursor; first-person from the screen-centre crosshair.
-			const result = computeTarget(isWorld ? event : null);
+			const result = computeTarget(worldPointer ? event : null);
 			// A miss (clicked empty space) keeps targeting mode active.
 			if (!result) return;
 			targetingStore.request?.onResolve(result);
@@ -235,12 +244,14 @@ export function ThreeDTargetingLayer({
 		window.addEventListener("pointerup", handlePointerUp, true);
 		window.addEventListener("pointercancel", handlePointerCancel, true);
 		window.addEventListener("keydown", handleKeyDown, true);
-		if (isWorld) {
+		if (worldPointer) {
 			// Initial reticle cursor before the first pointer move.
 			applyCursor(null);
 			el.addEventListener("pointermove", handlePointerMove);
 			el.addEventListener("pointerleave", handlePointerLeave);
-			el.addEventListener("contextmenu", handleContextMenu, true);
+			if (cancelWithRightClick) {
+				el.addEventListener("contextmenu", handleContextMenu, true);
+			}
 		} else {
 			hoverRafId = requestAnimationFrame(tickHover);
 		}
@@ -258,7 +269,14 @@ export function ThreeDTargetingLayer({
 			el.removeEventListener("pointerleave", handlePointerLeave);
 			el.removeEventListener("contextmenu", handleContextMenu, true);
 		};
-	}, [isActive, isWorld, resources, terrainIndex, terrainId]);
+	}, [
+		isActive,
+		worldPointer,
+		cancelWithRightClick,
+		resources,
+		terrainIndex,
+		terrainId,
+	]);
 
 	return null;
 }

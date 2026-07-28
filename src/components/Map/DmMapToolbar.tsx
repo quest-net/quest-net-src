@@ -1,7 +1,7 @@
 // components/Map/DmMapToolbar.tsx
 //
 // The DM's full-width map toolbar (world mode only). Left side carries the map
-// controls (first-person, camera mode, actor X-ray); a divider separates them
+// controls (camera mode, actor X-ray); a divider separates them
 // from a row of terrain tabs.
 //
 // The tabs are deliberately rectangular with solid backgrounds rather than the
@@ -20,7 +20,7 @@
 // useViewedTerrain).
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CameraPreference } from "./MapScene";
+import type { MapCameraMode } from "../../utils/camera/CameraModes";
 import { CameraModeDropdown } from "./CameraModeDropdown";
 import { useViewedTerrain } from "./useViewedTerrain";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
@@ -44,14 +44,14 @@ const TAB_INACTIVE =
 
 interface DmMapToolbarProps {
 	campaign: Campaign;
-	cameraPreference: CameraPreference;
-	onCameraPreferenceChange: (mode: CameraPreference) => void;
+	cameraMode: MapCameraMode;
+	onCameraModeChange: (mode: MapCameraMode) => void;
+	cameraModes: readonly MapCameraMode[];
+	getCameraModeDisabledReason: (mode: MapCameraMode) => string | undefined;
 	xRayActors: boolean;
 	onToggleXRay: () => void;
 	showTerrainLinks: boolean;
 	onToggleTerrainLinks: () => void;
-	showFirstPersonButton: boolean;
-	onEnterFirstPerson: () => void;
 }
 
 function TabInner({ name }: { name: string }) {
@@ -65,14 +65,14 @@ function TabInner({ name }: { name: string }) {
 
 export function DmMapToolbar({
 	campaign,
-	cameraPreference,
-	onCameraPreferenceChange,
+	cameraMode,
+	onCameraModeChange,
+	cameraModes,
+	getCameraModeDisabledReason,
 	xRayActors,
 	onToggleXRay,
 	showTerrainLinks,
 	onToggleTerrainLinks,
-	showFirstPersonButton,
-	onEnterFirstPerson,
 }: DmMapToolbarProps) {
 	const { viewedTerrainId, viewedTerrainIds, setViewedTerrain, clearViewedTerrain } =
 		useViewedTerrain();
@@ -230,20 +230,11 @@ export function DmMapToolbar({
 		<div className="absolute inset-x-0 top-0 z-40 flex items-center gap-2 border-b-2 border-base-300 bg-base-200/50 px-2 backdrop-blur-sm">
 			{/* Map controls */}
 			<div className="join shrink-0 shadow-sm">
-				{showFirstPersonButton && (
-					<button
-						className="btn btn-sm btn-neutral join-item tooltip tooltip-bottom"
-						data-tip="First-person mode"
-						onClick={onEnterFirstPerson}
-						aria-label="Enter first-person mode"
-					>
-						<span className="icon-[mdi--camera-control] w-5 h-5" />
-					</button>
-				)}
 				<CameraModeDropdown
-					value={cameraPreference}
-					onChange={onCameraPreferenceChange}
-					showFreecam
+					value={cameraMode}
+					onChange={onCameraModeChange}
+					modes={cameraModes}
+					getDisabledReason={getCameraModeDisabledReason}
 					joinItem
 				/>
 				<button

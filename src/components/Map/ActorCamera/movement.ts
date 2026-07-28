@@ -2,7 +2,7 @@ import type { MovementSettings } from "../../../domains/CampaignSetting/Campaign
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { calculateVoxelMovementRange } from "../../../domains/VoxelTerrain/VoxelMovementUtilities";
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants";
-import type { FirstPersonActor } from "./types";
+import type { LocomotionActor } from "./types";
 
 // Extra cost units the FP lookup explores past the move budget purely so the
 // combat overage readout ("+N") has a little headroom before it flips to the
@@ -31,7 +31,7 @@ function getMovementLookupBudget(moveSpeed: number): number {
 
 export function createMovementCostLookup(
 	terrain: VoxelTerrain,
-	actor: FirstPersonActor,
+	actor: LocomotionActor,
 	isCombatActive: boolean,
 	movementSettings: MovementSettings
 ): Map<string, number> {

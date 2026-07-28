@@ -1,16 +1,23 @@
 // components/Map/MapScene.tsx
 //
 // The single persistent map component. It owns ONE shared scene (renderer,
-// lights, post-processing, terrain meshes) via useMapSceneCore + a MapModeController
-// that hosts both camera systems. Toggling between the world view and the
-// first-person view swaps the active camera + input + mode-specific layers in
-// place -- the WebGL stack, terrain geometry, materials and compiled shaders all
-// stay resident, so there is no teardown/rebuild stutter on a view switch.
+// lights, post-processing, terrain meshes) via useMapSceneCore + a
+// MapModeController that hosts both camera systems. Switching camera modes swaps
+// the active camera + input + mode-specific layers in place -- the WebGL stack,
+// terrain geometry, materials and compiled shaders all stay resident, so there
+// is no teardown/rebuild stutter on a mode switch.
 //
-// World-view logic (movement range, click-to-move, actor drag, framing) lives
-// here directly. First-person logic lives in <FirstPersonView>, which plugs its
-// capsule simulation into the shared MapModeController. The actor/sticker/ping
-// layers are rendered once here and shared by both modes.
+// Two independent axes run through this file, and conflating them is what the
+// prop names here are careful to avoid:
+//   - cameraMode      -- which camera renders (and so whether world layers show)
+//   - interactionMode -- who owns the pointer. Follow renders the world but
+//                        takes the pointer while right click is held, so map
+//                        input layers gate on THIS, and stay mounted regardless.
+//
+// World-pointer logic (movement range, click-to-move, actor drag, framing) lives
+// here directly. <ControlledActorLocomotion> plugs one shared capsule runtime
+// into MapModeController for First Person and Follow. The actor/sticker/ping
+// layers are rendered once here and shared by every mode.
 //
 // Addon imports use three/examples/jsm/ -- see CLAUDE.md for why.
 
@@ -18,6 +25,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSnapshot } from 'valtio';
 import * as THREE from 'three';
 import type { CameraRigConfig } from '../../utils/camera/CameraRig';
+import {
+	isActorCameraMode,
+	type MapCameraMode,
+	type MapInteractionMode,
+} from '../../utils/camera/CameraModes';
 import type { Character } from '../../domains/Character/Character';
 import type { Entity } from '../../domains/Entity/Entity';
 import type { Position } from '../../domains/Actor/Actor';
@@ -48,14 +60,17 @@ import { useActiveStickers } from './hooks/useActiveStickers';
 import { useActivePings } from './hooks/useActivePings';
 import { PING_DURATION_MS } from '../../domains/Ping/Ping';
 import { usePeerTracking } from '../../hooks/usePeerTracking';
-import { findFirstPersonActor } from './FirstPerson/actor';
-import FirstPersonView from './FirstPerson/FirstPersonView';
+import { findControlledActor } from './ActorCamera/actor';
+import ControlledActorLocomotion from './ActorCamera/ControlledActorLocomotion';
 import {
 	THREE_D_MAP_CAMERA,
 	THREE_D_MAP_CONTROLS,
+	THREE_D_MAP_FOLLOW_CAMERA,
 	THREE_D_MAP_FREECAM,
 	THREE_D_MAP_RENDERER,
+	MAP_FOLLOW_RIG_CONFIG,
 } from './threeDMapConstants';
+import type { TrackedActorVisual } from './Actors3D/actorTokenTypes';
 import {
 	createTerrainSignature,
 	useVoxelTerrainGeometryWorker,
@@ -68,11 +83,9 @@ import {
 	type MapSceneController,
 	type MapSceneControllerContext,
 } from './Terrain/hooks/useMapSceneCore';
-import { MapModeController, type MapViewMode } from './MapModeController';
+import { MapModeController } from './MapModeController';
 import { useViewedTerrain } from './useViewedTerrain';
 import { useHeroOcclusion } from './useHeroOcclusion';
-
-export type CameraPreference = 'ortho' | 'perspective' | 'freecam';
 
 // Map tuning for the shared CameraRig (owned by MapModeController). Per-terrain
 // ortho framing, pan limits and shadow camera are still driven by the effects
@@ -110,6 +123,7 @@ const MAP_CAMERA_RIG_CONFIG: CameraRigConfig = {
 		speedStep: 1.15,
 		initialDistanceMultiplier: THREE_D_MAP_CAMERA.PERSPECTIVE_DISTANCE_MULTIPLIER,
 	},
+	follow: MAP_FOLLOW_RIG_CONFIG,
 };
 
 interface MapSceneProps {
@@ -118,13 +132,12 @@ interface MapSceneProps {
 	entities?: Entity[];
 	xRayActors?: boolean;
 	showTerrainLinks?: boolean;
-	cameraPreference?: CameraPreference;
-	viewMode?: MapViewMode;
+	cameraMode?: MapCameraMode;
 	/** Pause the render loop while the map is mounted but not visible (e.g. the
 	 *  DM has switched to another tab). Keeps the WebGL scene resident. */
 	paused?: boolean;
 	onReady?: () => void;
-	onExitFirstPerson?: () => void;
+	onLeaveActorCamera?: () => void;
 }
 
 function getPanLimitRadius(width: number, length: number, maxElevation: number): number {
@@ -157,17 +170,16 @@ export default function MapScene({
 	entities = [],
 	xRayActors = false,
 	showTerrainLinks = false,
-	cameraPreference = 'ortho',
-	viewMode = 'world',
+	cameraMode = 'ortho',
 	paused = false,
 	onReady,
-	onExitFirstPerson,
+	onLeaveActorCamera,
 }: MapSceneProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const controllerRef = useRef<MapModeController | null>(null);
 	const directionalLightRef = useRef<THREE.DirectionalLight | null>(null);
 	const hasFramedTerrainRef = useRef(false);
-	const viewModeInitializedRef = useRef(false);
+	const cameraModeInitializedRef = useRef(false);
 	// Keep a stable ref to onReady so the terrain/scene effects don't need it as a dep.
 	const onReadyRef = useRef(onReady);
 	useEffect(() => { onReadyRef.current = onReady; });
@@ -193,8 +205,29 @@ export default function MapScene({
 	const lastPingTimeRef = useRef(0);
 	const performanceModeRef = useRef(AppSettingUtils.getPerformanceMode(context));
 	const performanceMode = performanceModeRef.current;
+	const [actorPointerLocked, setActorPointerLocked] = useState(false);
 
-	const isWorld = viewMode === 'world';
+	// Which camera renders, and which scheme owns the pointer, are two different
+	// questions -- Follow renders the world but takes the pointer while right
+	// click is held. `isWorld` answers the first (are the world layers visible),
+	// `interactionMode` the second (do map layers accept cursor input).
+	const isWorld = cameraMode !== 'first-person';
+	const usesActorLocomotion = isActorCameraMode(cameraMode);
+	const interactionMode: MapInteractionMode =
+		cameraMode === 'first-person' ||
+		(cameraMode === 'follow' && actorPointerLocked)
+			? 'actor-look'
+			: 'world-pointer';
+	const worldPointer = interactionMode === 'world-pointer';
+	const handleTrackedActorVisualChange = useCallback(
+		(visual: TrackedActorVisual | null) => {
+			controllerRef.current?.setFollowActorVisual(
+				visual,
+				THREE_D_MAP_FOLLOW_CAMERA.ANCHOR_HEIGHT_Y
+			);
+		},
+		[]
+	);
 
 	// One MapModeController for the scene's lifetime. The shared core
 	// (useMapSceneCore) owns renderer/scene/lights/post/pre-warm/RAF/resize/stats/
@@ -211,7 +244,9 @@ export default function MapScene({
 			setActiveCamera
 		);
 		controllerRef.current = controller;
-		controller.rig.controls.maxTargetRadius = THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS;
+		// Through the rig rather than onto `controls` directly, so the value is
+		// recorded and survives a follow excursion (follow releases the clamp).
+		controller.rig.setOrthoPanLimit(THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS);
 		controller.onResize(container.clientWidth || 1, container.clientHeight || 1);
 		return controller;
 	};
@@ -222,6 +257,12 @@ export default function MapScene({
 		createController,
 		paused,
 	});
+
+	useEffect(() => {
+		const controller = controllerRef.current;
+		if (!sceneResources || !controller) return;
+		return controller.subscribePointerLock(setActorPointerLocked);
+	}, [sceneResources]);
 
 	const isDM = context.User.Role === "dm";
 	const imageService = (actionService as any)?.imageService ?? null;
@@ -292,19 +333,19 @@ export default function MapScene({
 	}, [campaign.VoxelTerrains]);
 
 	const [linkFocus, setLinkFocus] = useState<TerrainLinkInteractionFocus | null>(null);
-	const liveFirstPersonRulesPositionRef = useRef<Position | null>(null);
+	const liveActorRulesPositionRef = useRef<Position | null>(null);
 	const getControlledLinkActorPosition = useCallback((): Position | null => {
-		if (!isWorld && liveFirstPersonRulesPositionRef.current) {
-			return liveFirstPersonRulesPositionRef.current;
+		if (usesActorLocomotion && liveActorRulesPositionRef.current) {
+			return liveActorRulesPositionRef.current;
 		}
 		return controlledActorForLinks?.position ?? null;
-	}, [controlledActorForLinks, isWorld]);
-	const handleLiveFirstPersonRulesPositionChange = useCallback((position: Position | null) => {
-		liveFirstPersonRulesPositionRef.current = position;
+	}, [controlledActorForLinks, usesActorLocomotion]);
+	const handleLiveActorRulesPositionChange = useCallback((position: Position | null) => {
+		liveActorRulesPositionRef.current = position;
 	}, []);
 	useEffect(() => {
-		if (isWorld) liveFirstPersonRulesPositionRef.current = null;
-	}, [isWorld]);
+		if (!usesActorLocomotion) liveActorRulesPositionRef.current = null;
+	}, [usesActorLocomotion]);
 	const restrictMovementToRange =
 		shouldRestrictPlayerMovementToRange(
 			context.User.Role,
@@ -314,22 +355,25 @@ export default function MapScene({
 	const preserveFlyingHeightOnTileMove =
 		AppSettingUtils.getPreserveFlyingHeightOnTileMove(context);
 
-	// The first-person actor (used to hide the controlled actor's own standee in
-	// the shared layer while in first-person mode).
-	const firstPersonActor = useMemo(
+	// The controlled actor: the player's played character, or the DM's impersonated
+	// actor. Drives BOTH first-person (whose standee is hidden while inside it) and
+	// the follow camera's anchor -- resolved in either view mode, since follow lives
+	// in the world view while first-person does not.
+	//
+	// Deliberately NOT heroFocusActorId above: that resolves to the DM's inspector
+	// selection, so anchoring the camera to it would yank the view onto whatever
+	// token the DM last clicked.
+	const controlledActor = useMemo(
 		() =>
-			isWorld
-				? null
-				: findFirstPersonActor(
-						isDM ? "dm" : "player",
-						campaign.RoomCode,
-						context.User.SelectedCharacters,
-						context.User.ImpersonatedActors,
-						characters,
-						entities
-				  ),
+			findControlledActor(
+				isDM ? "dm" : "player",
+				campaign.RoomCode,
+				context.User.SelectedCharacters,
+				context.User.ImpersonatedActors,
+				characters,
+				entities
+			),
 		[
-			isWorld,
 			isDM,
 			campaign.RoomCode,
 			context.User.SelectedCharacters,
@@ -338,6 +382,7 @@ export default function MapScene({
 			entities,
 		]
 	);
+	const firstPersonActor = isWorld ? null : controlledActor;
 	const visibleCharacters = useMemo(
 		() =>
 			firstPersonActor?.kind === "character"
@@ -544,7 +589,7 @@ export default function MapScene({
 		) => {
 			if (!actionService) return;
 			if (!isWorld) {
-				liveFirstPersonRulesPositionRef.current = destination;
+				liveActorRulesPositionRef.current = destination;
 			}
 			actionService.execute("actor:move", {
 				actorId: actor.id,
@@ -651,27 +696,27 @@ export default function MapScene({
 		}
 	}, [sceneResources, terrainSignature]);
 
-	// Apply the world camera preference (ortho/perspective/freecam). Stored on the
-	// controller and re-applied when returning from first-person.
+	// One public mode drives both the rig-owned world cameras and First Person.
+	// The first application skips the transition because there is no previous
+	// rendered pose to fly from.
 	useEffect(() => {
 		const controller = controllerRef.current;
 		if (!sceneResources || !controller) return;
-		controller.setWorldCameraPreference(cameraPreference);
+		const immediate = !cameraModeInitializedRef.current;
+		cameraModeInitializedRef.current = true;
+		controller.setCameraMode(cameraMode, immediate);
 		requestResize();
-	}, [sceneResources, cameraPreference, requestResize]);
+	}, [sceneResources, cameraMode, requestResize]);
 
-	// Drive the view-mode switch. The very first application (once the scene is
-	// up) is immediate; subsequent toggles tween.
-	useEffect(() => {
-		const controller = controllerRef.current;
-		if (!sceneResources || !controller) return;
-		if (!viewModeInitializedRef.current) {
-			viewModeInitializedRef.current = true;
-			controller.setViewMode(viewMode, true);
-		} else {
-			controller.setViewMode(viewMode);
-		}
-	}, [sceneResources, viewMode]);
+	// The Follow anchor is NOT computed here. ThreeDActorLayer registers the
+	// followed token's rendered THREE.Group (handleTrackedActorVisualChange
+	// above) and the controller reads its world transform every frame, which is
+	// the only source that covers click-to-move animation, height dragging,
+	// capsule movement, remote live poses and authoritative repositioning at
+	// once. A second canonical-position anchor computed from the campaign state
+	// would only ever be a frame-late duplicate of it -- and would silently
+	// anchor to the wrong grid when the actor is on another terrain, since the
+	// token (correctly) is not rendered at all in that case.
 
 	// Terrain meshes, AO, movement-highlight, and fog volume. World view paints
 	// movement range so movementHighlight is enabled.
@@ -750,8 +795,18 @@ export default function MapScene({
 						onActorSelect={handleActorSelect}
 						canControlActor={isWorld ? canControlActor : undefined}
 						onActorDragEnd={isWorld ? handleActorDragEnd : undefined}
+						interactionMode={interactionMode}
+						trackedActor={
+							cameraMode === 'follow' && controlledActor
+								? { id: controlledActor.id, kind: controlledActor.kind }
+								: null
+						}
+						onTrackedActorVisualChange={handleTrackedActorVisualChange}
 						draggableHeightRange={draggableHeightRange}
 					/>
+					{/* Stays MOUNTED while Follow holds the pointer, and gates its input
+					    on interactionMode instead: unmounting would tear down and rebuild
+					    the highlight InstancedMesh on every right-click press. */}
 					{isWorld && (
 						<ThreeDMovementLayer
 							resources={sceneResources}
@@ -768,6 +823,7 @@ export default function MapScene({
 							restrictMovementToRange={restrictMovementToRange}
 							preserveFlyingHeightOnTileMove={preserveFlyingHeightOnTileMove}
 							isCombatActive={isCombatActive}
+							interactionMode={interactionMode}
 							onHoveredTileChange={updateHoveredTile}
 							onMoveSelectedActor={handleMoveSelectedActor}
 						/>
@@ -786,16 +842,21 @@ export default function MapScene({
 						terrainIndex={terrainIndex}
 						activePings={activePings}
 						onPingTile={handlePingTile}
+						interactionMode={interactionMode}
 					/>
 					<ThreeDTargetingLayer
 						resources={sceneResources}
 						terrainIndex={terrainIndex}
 						terrainId={terrain.Id}
-						isWorld={isWorld}
+						interactionMode={interactionMode}
+						// Right click is the actor-look button in both actor camera
+						// modes, so it must not double as "cancel targeting" there --
+						// including in Follow while still unlocked.
+						cancelWithRightClick={!usesActorLocomotion}
 					/>
 					<ThreeDTerrainLinkLayer
 						resources={sceneResources}
-						isWorld={isWorld}
+						interactionMode={interactionMode}
 						terrain={terrain}
 						terrainIndex={terrainIndex}
 						links={campaign.TerrainLinks}
@@ -803,7 +864,7 @@ export default function MapScene({
 						controlledActor={controlledActorForLinks}
 						getControlledActorPosition={getControlledLinkActorPosition}
 						isDM={isDM}
-						showLinkMarkers={isWorld && isDM && showTerrainLinks}
+						showLinkMarkers={worldPointer && isDM && showTerrainLinks}
 						onTraverse={handleLinkTraverse}
 						onToggleLinkLocked={handleToggleLinkLocked}
 						onFocusChange={setLinkFocus}
@@ -813,7 +874,7 @@ export default function MapScene({
 			{/* First-person aim reticle: while targeting, the crosshair at screen
 			    centre is the aim point. Turns primary when it's over a valid target
 			    (targetingHover set). World mode uses the cursor reticle instead. */}
-			{targetingRequest && !isWorld && (
+			{targetingRequest && !worldPointer && (
 				<div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center">
 					<span
 						className={`icon-[mdi--target] h-8 w-8 drop-shadow ${
@@ -846,7 +907,7 @@ export default function MapScene({
 				</div>
 			)}
 			{/* World-view link hover tooltip: follows the cursor, reveals destination. */}
-			{hasTerrain && isWorld && linkFocus?.screen && (
+			{hasTerrain && worldPointer && linkFocus?.screen && (
 				<div
 					className="pointer-events-none fixed z-40 -translate-x-1/2 -translate-y-[140%] whitespace-nowrap rounded bg-base-100/90 border border-base-300 px-3 py-1.5 text-sm font-semibold text-base-content shadow"
 					style={{ left: linkFocus.screen.x, top: linkFocus.screen.y }}
@@ -880,13 +941,14 @@ export default function MapScene({
 					)}
 				</div>
 			)}
-			{sceneResources && !isWorld && controller && (
-				<FirstPersonView
+			{sceneResources && usesActorLocomotion && controller && (
+				<ControlledActorLocomotion
 					controller={controller}
+					cameraMode={cameraMode}
 					terrain={terrain ?? null}
 					terrainIndex={terrainIndex}
-					onExitFirstPerson={onExitFirstPerson}
-					onLiveRulesPositionChange={handleLiveFirstPersonRulesPositionChange}
+					onUnavailable={onLeaveActorCamera}
+					onLiveRulesPositionChange={handleLiveActorRulesPositionChange}
 					linkFocus={linkFocus}
 				/>
 			)}
@@ -903,8 +965,8 @@ export default function MapScene({
 							<button className="btn btn-primary btn-sm" onClick={retryTerrainGeometry}>
 								Retry
 							</button>
-							{!isWorld && onExitFirstPerson && (
-								<button className="btn btn-neutral btn-sm" onClick={onExitFirstPerson}>
+							{!isWorld && onLeaveActorCamera && (
+								<button className="btn btn-neutral btn-sm" onClick={onLeaveActorCamera}>
 									Exit first-person
 								</button>
 							)}

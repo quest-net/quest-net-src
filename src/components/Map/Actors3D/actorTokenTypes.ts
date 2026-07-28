@@ -26,6 +26,13 @@ export interface ActorTokenDescriptor {
 	canFly: boolean;
 }
 
+/** Imperative bridge for camera/control systems that must follow the exact
+ * rendered token transform without driving React state every frame. */
+export interface TrackedActorVisual {
+	object: THREE.Object3D;
+	setLocalPosition: (position: THREE.Vector3 | null) => void;
+}
+
 export interface ThreeDSceneResources {
 	scene: THREE.Scene;
 	camera: THREE.Camera;

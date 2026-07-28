@@ -100,14 +100,22 @@ Each domain typically has a model file (`Domain.ts`), an actions file (`DomainAc
 
 ### Map (`src/components/Map/`)
 
-3D voxel renderer built on Three.js. `MapScene.tsx` is the root component; it owns ONE persistent scene (via `useMapSceneCore`) shared by both the world view and the first-person view, so toggling between them swaps only the camera/input/mode-specific layers instead of rebuilding the WebGL stack. `MapModeController.ts` hosts both camera systems (the isometric/perspective/freecam `CameraRig` and a first-person `PerspectiveCamera`) and tweens between them; `FirstPerson/FirstPersonView.tsx` holds the capsule-walking sim + HUD. The world view sets up an orthographic camera with isometric framing, OrbitControls (pan/zoom/rotate), PCFSoft shadows, post-processing effects, and custom DDA raycasting (Amanatides & Woo algorithm — no external BVH library). Map state is provided by `MapStateProvider.tsx`. The voxel terrain editor preview also renders `MapScene` (world mode, no actors). Key sub-directories:
+3D voxel renderer built on Three.js. `MapScene.tsx` is the root component; it owns ONE persistent scene (via `useMapSceneCore`) shared by every camera mode, so switching modes swaps only the camera/input/mode-specific layers instead of rebuilding the WebGL stack.
+
+The five user-facing camera modes — first person, follow, isometric (`ortho`), perspective, freecam — are defined once in `src/utils/camera/CameraModes.ts`, which also owns the narrower unions each subsystem accepts (`RigCameraMode`, `ActorCameraMode`, `ActorlessRigCameraMode`), the ordered lists the UI renders, and `getCameraModeDisabledReason` — the single answer to "can this mode be selected right now, and why not", used by the dropdown, the player mobile menu, and `Main`'s fallback effect alike. The persisted setting is `AppSettings.cameraMode`.
+
+`MapModeController.ts` hosts both camera systems (the ortho/perspective/freecam/follow `CameraRig` and a first-person eye `PerspectiveCamera`), tweens between them, and owns actor look state plus pointer-lock/keyboard input. `ActorCamera/ControlledActorLocomotion.tsx` holds the capsule-walking sim shared by first person and follow; it owns no camera and consumes a camera-relative movement yaw. Follow's orbit boom lives in `CameraRig` as a `THREE.Spherical` anchored to the followed token's rendered `THREE.Group`, which `ThreeDActorLayer` registers via `TrackedActorVisual`.
+
+A separate `MapInteractionMode` (`world-pointer` | `actor-look`) governs pointer behaviour, because follow renders the world but takes the pointer while right click is held. Map input layers gate on that, not on the camera mode, and stay mounted either way.
+
+The world view sets up an orthographic camera with isometric framing, OrbitControls (pan/zoom/rotate), PCFSoft shadows, post-processing effects, and custom DDA raycasting (Amanatides & Woo algorithm — no external BVH library). Map state is provided by `MapStateProvider.tsx`. The voxel terrain editor preview also renders `MapScene` (world mode, no actors). Key sub-directories:
 
 - **Actors3D/** (`ThreeDActorLayer.tsx`) — Renders actor standees (cutout images) with selection highlights and height-dragging for Z placement.
 - **Movement3D/** (`ThreeDMovementLayer.tsx`) — Movement range highlighting via shader-patched MeshStandardMaterial, Dijkstra pathfinding for movement costs, raycasting for tile selection.
 - **Stickers3D/** (`ThreeDStickerLayer.tsx`) — Emoji stickers placed on terrain surfaces.
 - **Pings3D/** (`ThreeDPingLayer.tsx`) — Animated ping markers.
 - **Terrain/** — Voxel terrain geometry (`VoxelTerrainGeometryUtils.ts`, web worker `voxelGeometryWorker.ts`), named palette materials (one `MeshStandardMaterial` per special palette index: `stoneBricks240`, `water241`, `grass242`, `light243`, `wood244`, `lava245`, `glass246`, `gold247`, `silver248`, `ironBars249`, `flesh250`, plus `defaultMaterial`), and AO shader (`voxelAoShader.ts`).
-- **FirstPerson/** — First-person view mode with capsule controller and HUD.
+- **ActorCamera/** — The controlled-actor camera modes (first person + follow): capsule controller, movement rules, pose sync, and the shared HUD. Symbols prefixed `ACTOR_`/`Actor` are shared by both modes; `FIRST_PERSON_CAMERA` is the eye camera specifically.
 
 Supporting files: `terrainEnvironment.ts` (apply lighting/background to scene), `shadowCameraBounds.ts`, `mapPostProcessing.ts`, `threeDMapConstants.ts` (camera, lighting, shadow, controls, and material tuning constants).
 

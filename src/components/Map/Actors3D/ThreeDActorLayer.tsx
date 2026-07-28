@@ -10,8 +10,13 @@ import {
 	canStandVoxel,
 	getMaxActorHeight,
 } from "../../../domains/VoxelTerrain/VoxelMovementUtilities";
+import type { MapInteractionMode } from "../../../utils/camera/CameraModes";
 import type { SelectedActor } from "../MapStateProvider";
-import type { ActorTokenDescriptor, ThreeDSceneResources } from "./actorTokenTypes";
+import type {
+	ActorTokenDescriptor,
+	ThreeDSceneResources,
+	TrackedActorVisual,
+} from "./actorTokenTypes";
 import {
 	ACTOR_TOKEN_BASE,
 	ACTOR_TOKEN_COLORS,
@@ -76,6 +81,9 @@ interface ThreeDActorLayerProps {
 	} | null;
 	onActorClick: (actor: SelectedActor) => void;
 	onActorSelect: (actor: SelectedActor) => void;
+	/** Selection and height dragging are cursor gestures, so they are inert
+	 *  under "actor-look". Rendering is unaffected. */
+	interactionMode: MapInteractionMode;
 	/**
 	 * Returns true when the user is allowed to height-drag this actor.
 	 * Non-controllable actors still toggle selection on tap.
@@ -85,6 +93,9 @@ interface ThreeDActorLayerProps {
 	 * Called when a height drag commits a new h for the actor's current tile.
 	 */
 	onActorDragEnd?: (actor: SelectedActor, position: Position) => void;
+	/** Actor whose exact rendered transform should be exposed to Follow. */
+	trackedActor?: Pick<SelectedActor, "id" | "kind"> | null;
+	onTrackedActorVisualChange?: (visual: TrackedActorVisual | null) => void;
 	/**
 	 * When set, the selected actor's height drag (the flying "ladder") is
 	 * clamped to this reachable rules-height span at its current column instead
@@ -894,8 +905,11 @@ export function ThreeDActorLayer({
 	imageService,
 	onActorClick,
 	onActorSelect,
+	interactionMode,
 	canControlActor,
 	onActorDragEnd,
+	trackedActor,
+	onTrackedActorVisualChange,
 	draggableHeightRange,
 }: ThreeDActorLayerProps) {
 	// Stash callable/external dependencies in refs so a fresh ImageService
@@ -906,8 +920,14 @@ export function ThreeDActorLayer({
 	const imageServiceRef = useRef(imageService);
 	const onActorClickRef = useRef(onActorClick);
 	const onActorSelectRef = useRef(onActorSelect);
+	const interactionModeRef = useRef(interactionMode);
 	const canControlActorRef = useRef(canControlActor);
 	const onActorDragEndRef = useRef(onActorDragEnd);
+	const trackedActorKeyRef = useRef<string | null>(
+		trackedActor ? getActorKey(trackedActor.kind, trackedActor.id) : null
+	);
+	const onTrackedActorVisualChangeRef = useRef(onTrackedActorVisualChange);
+	const trackedActorVisualRef = useRef<TrackedActorVisual | null>(null);
 	const draggableHeightRangeRef = useRef(draggableHeightRange);
 	const selectedActorRef = useRef(selectedActor);
 	const xRayActorsRef = useRef(xRayActors);
@@ -937,6 +957,11 @@ export function ThreeDActorLayer({
 	);
 	const { actionService } = useActionService();
 
+	trackedActorKeyRef.current = trackedActor
+		? getActorKey(trackedActor.kind, trackedActor.id)
+		: null;
+	onTrackedActorVisualChangeRef.current = onTrackedActorVisualChange;
+
 	descriptorsByKeyRef.current = createDescriptorMap(
 		characters,
 		entities,
@@ -954,6 +979,10 @@ export function ThreeDActorLayer({
 	useEffect(() => {
 		onActorSelectRef.current = onActorSelect;
 	}, [onActorSelect]);
+
+	useEffect(() => {
+		interactionModeRef.current = interactionMode;
+	}, [interactionMode]);
 
 	useEffect(() => {
 		canControlActorRef.current = canControlActor;
@@ -1080,6 +1109,75 @@ export function ThreeDActorLayer({
 		return getActorGroundPosition(actor, currentTerrain);
 	};
 
+	/** Ease `group` from wherever it currently sits to `target`, or snap when it
+	 *  is already effectively there. The single implementation of "a token's
+	 *  destination changed"; both the visual rebuild and the tracked-actor
+	 *  local-pose release go through it. */
+	const animateActorGroupTo = (
+		actorKey: string,
+		group: THREE.Group,
+		from: THREE.Vector3,
+		target: THREE.Vector3
+	) => {
+		if (
+			from.distanceToSquared(target) <=
+			ACTOR_TOKEN_MOVEMENT_ANIMATION.POSITION_EPSILON
+		) {
+			group.position.copy(target);
+			moveAnimationsRef.current.delete(actorKey);
+			return;
+		}
+		moveAnimationsRef.current.set(actorKey, {
+			group,
+			from: from.clone(),
+			to: target,
+			startedAt: performance.now(),
+			durationMs: getMovementAnimationDuration(from, target),
+		});
+		scheduleMoveAnimationTick();
+	};
+
+	const publishTrackedActorVisual = (
+		actorKey: string,
+		group: THREE.Group
+	) => {
+		if (trackedActorKeyRef.current !== actorKey) return;
+		const visual: TrackedActorVisual = {
+			object: group,
+			setLocalPosition: (position) => {
+				// Taking the override: the capsule owns this token's transform, so
+				// any in-flight click-to-move animation is abandoned.
+				if (position) {
+					moveAnimationsRef.current.delete(actorKey);
+					group.position.copy(position);
+					return;
+				}
+
+				// Releasing it: hand the token back to its canonical destination,
+				// easing rather than snapping so the handover is not a visible jump.
+				const descriptor = descriptorsByKeyRef.current.get(actorKey);
+				if (!descriptor) return;
+				const target = getActorRenderTarget(
+					actorKey,
+					descriptor,
+					terrainRef.current
+				);
+				targetPositionsRef.current.set(actorKey, target.clone());
+				animateActorGroupTo(actorKey, group, group.position, target);
+			},
+		};
+		trackedActorVisualRef.current = visual;
+		onTrackedActorVisualChangeRef.current?.(visual);
+	};
+
+	const clearTrackedActorVisual = (group?: THREE.Object3D) => {
+		const current = trackedActorVisualRef.current;
+		if (!current || (group && current.object !== group)) return;
+		current.setLocalPosition(null);
+		trackedActorVisualRef.current = null;
+		onTrackedActorVisualChangeRef.current?.(null);
+	};
+
 	// Imperative live-pose subscription. Each pose packet only retargets the
 	// affected follower vector and lets the rAF chase do the motion; when a pose
 	// disappears (expiry, peer loss), the token eases back to its authoritative
@@ -1183,6 +1281,8 @@ export function ThreeDActorLayer({
 			clearFlightGuide();
 		}
 
+		clearTrackedActorVisual(visual.group);
+
 		layerGroupRef.current?.remove(visual.group);
 		removePickTarget(visual.pickMesh);
 		disposeObject3D(visual.group);
@@ -1269,6 +1369,7 @@ export function ThreeDActorLayer({
 		};
 		selectionHandlesRef.current.set(actorKey, handles);
 		actorGroupsRef.current.set(actorKey, actorGroup);
+		publishTrackedActorVisual(actorKey, actorGroup);
 		targetPositionsRef.current.set(actorKey, targetPosition.clone());
 		visualHandlesRef.current.set(actorKey, {
 			group: actorGroup,
@@ -1284,22 +1385,13 @@ export function ThreeDActorLayer({
 		const visual = visualHandlesRef.current.get(actorKey);
 		if (visual) applyActorXRay(visual, xRayActorsRef.current);
 
-		if (
-			previousVisualPosition &&
-			previousVisualPosition.distanceToSquared(targetPosition) >
-				ACTOR_TOKEN_MOVEMENT_ANIMATION.POSITION_EPSILON
-		) {
-			moveAnimationsRef.current.set(actorKey, {
-				group: actorGroup,
-				from: previousVisualPosition.clone(),
-				to: targetPosition,
-				startedAt: performance.now(),
-				durationMs: getMovementAnimationDuration(
-					previousVisualPosition,
-					targetPosition
-				),
-			});
-			scheduleMoveAnimationTick();
+		if (previousVisualPosition) {
+			animateActorGroupTo(
+				actorKey,
+				actorGroup,
+				previousVisualPosition,
+				targetPosition
+			);
 		}
 
 		const currentSelected = selectedActorRef.current;
@@ -1308,6 +1400,24 @@ export function ThreeDActorLayer({
 			getActorKey(currentSelected.kind, currentSelected.id) === actorKey;
 		applySelection(handles, isSelected);
 	};
+
+	// Republish whenever the tracked actor changes. React runs the cleanup below
+	// before re-running this body, so the previous registration is already
+	// released by the time we get here.
+	useEffect(() => {
+		const actorKey = trackedActor
+			? getActorKey(trackedActor.kind, trackedActor.id)
+			: null;
+		const group = actorKey ? actorGroupsRef.current.get(actorKey) : undefined;
+		if (actorKey && group) {
+			publishTrackedActorVisual(actorKey, group);
+		} else {
+			// No actor tracked, or its token has not been built yet -- the visual is
+			// published from createActorVisual when it appears.
+			onTrackedActorVisualChangeRef.current?.(null);
+		}
+		return () => clearTrackedActorVisual();
+	}, [trackedActor?.kind, trackedActor?.id, onTrackedActorVisualChange]);
 
 	useEffect(() => {
 		const group = new THREE.Group();
@@ -1644,6 +1754,7 @@ export function ThreeDActorLayer({
 		};
 
 		const handlePointerDown = (event: PointerEvent) => {
+			if (interactionModeRef.current !== "world-pointer") return;
 			if (event.button !== 0) return;
 			if (event.altKey) return;
 			// While the map is in item/skill targeting mode, the targeting layer

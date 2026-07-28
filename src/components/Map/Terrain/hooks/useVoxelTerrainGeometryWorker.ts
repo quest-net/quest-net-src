@@ -91,7 +91,7 @@ const geometryBufferCache = new Map<string, VoxelGeometryBufferPayload>();
 /**
  * Back-compat alias: `createTerrainRevision` is the canonical name (lives in
  * VoxelTerrainIndex). Keep the old name re-exported so existing call sites
- * (MapScene, FirstPersonView) don't churn.
+ * (MapScene and the shared actor locomotion runtime) don't churn.
  */
 export const createTerrainSignature = createTerrainRevision;
 

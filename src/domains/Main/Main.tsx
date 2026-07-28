@@ -3,7 +3,7 @@
 import { useQuestContext } from "../Context/ContextProvider";
 import { contextStore, forceContextRerender } from "../Context/contextStore";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
-import MapScene, { type CameraPreference } from "../../components/Map/MapScene";
+import MapScene from "../../components/Map/MapScene";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MapStateProvider, useMapState } from "../../components/Map/MapStateProvider";
 import { useViewedTerrain } from "../../components/Map/useViewedTerrain";
@@ -29,14 +29,26 @@ import { StatusCollection } from "../Status/Collection";
 import { StickerPicker } from "../../components/pickers/StickerPicker";
 import { SharedInventoryDisplay } from "../SharedInventory/SharedInventoryDisplay";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
-import { findFirstPersonActor } from "../../components/Map/FirstPerson/actor";
+import { findControlledActor } from "../../components/Map/ActorCamera/actor";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import { CameraModeDropdown } from "../../components/Map/CameraModeDropdown";
+import {
+	CameraModeDropdown,
+	CAMERA_CONTROL_LAYOUT,
+} from "../../components/Map/CameraModeDropdown";
 import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
 import { ToggleButton } from "../../components/ui/ToggleButton";
+import {
+	DM_CAMERA_MODES,
+	FALLBACK_CAMERA_MODE,
+	getCameraModeDisabledReason,
+	isActorCameraMode,
+	isCameraModeAvailable,
+	PLAYER_CAMERA_MODES,
+	type CameraModeAvailability,
+	type MapCameraMode,
+} from "../../utils/camera/CameraModes";
 
 type TopTab = "music" | "calendar" | "terrain" | "combat";
-type MapViewMode = "world" | "first-person";
 type PlayerBottomTab =
 	| "character"
 	| "equipment"
@@ -89,17 +101,16 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 	// The top tab section (audio/calendar/terrain/combat) can be collapsed to
 	// just its tab row to give the bottom content more room.
 	const [topTabsCollapsed, setTopTabsCollapsed] = useState(false);
-	const [mapViewMode, setMapViewMode] = useState<MapViewMode>("world");
 	const [xRayActors, setXRayActors] = useState(false);
 	const [showTerrainLinks, setShowTerrainLinks] = useState(false);
 	// Camera preference lives in Context.AppSettings (like the other map
 	// preferences) so the player's mobile header hamburger — a sibling of <Main>
 	// — can drive the same value we feed to <MapScene>. The getter gates the
 	// DM-only `freecam` mode away for players.
-	const cameraPreference = AppSettingUtils.getCameraPreference(context);
-	const setCameraPreference = useCallback(
-		(preference: CameraPreference) =>
-			AppSettingUtils.setCameraPreference({ preference }, contextStore),
+	const cameraMode = AppSettingUtils.getCameraMode(context);
+	const setCameraMode = useCallback(
+		(mode: MapCameraMode) =>
+			AppSettingUtils.setCameraMode({ mode }, contextStore),
 		[]
 	);
 	const [mapReady, setMapReady] = useState(false);
@@ -156,7 +167,7 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 			),
 		[campaign.GameState.Entities, renderedTerrainId]
 	);
-	const firstPersonActor = findFirstPersonActor(
+	const controlledActor = findControlledActor(
 		isDM ? "dm" : "player",
 		campaign.RoomCode,
 		context.User.SelectedCharacters,
@@ -164,13 +175,27 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 		campaign.GameState.Characters,
 		campaign.GameState.Entities
 	);
-	const firstPersonActorId = firstPersonActor?.id ?? null;
-	const firstPersonActorTerrainId = firstPersonActor?.actor.Position.terrainId ?? null;
-	const firstPersonActorOnRenderedTerrain =
-		firstPersonActorTerrainId !== null &&
-		firstPersonActorTerrainId === renderedTerrainId;
-	const showFirstPersonButton =
-		!isDM || (firstPersonActorId !== null && firstPersonActorOnRenderedTerrain);
+	const controlledActorId = controlledActor?.id ?? null;
+	const controlledActorTerrainId = controlledActor?.actor.Position.terrainId ?? null;
+	const controlledActorOnRenderedTerrain =
+		controlledActorTerrainId !== null &&
+		controlledActorTerrainId === renderedTerrainId;
+	const isFirstPerson = cameraMode === "first-person";
+	const usesActorCamera = isActorCameraMode(cameraMode);
+	const cameraModes = isDM ? DM_CAMERA_MODES : PLAYER_CAMERA_MODES;
+	const cameraAvailability = useMemo<CameraModeAvailability>(
+		() => ({
+			isDM,
+			hasControlledActor: controlledActorId !== null,
+			isTouchLayout: isMobile,
+		}),
+		[isDM, controlledActorId, isMobile]
+	);
+	const cameraModeDisabledReason = useCallback(
+		(mode: MapCameraMode) =>
+			getCameraModeDisabledReason(mode, cameraAvailability),
+		[cameraAvailability]
+	);
 
 	// Hide Shared Inventories tab when none are configured. Tracking the count
 	// (rather than the array reference) keeps the effect from firing on every
@@ -311,21 +336,33 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 		}
 	}, [bottomTabs, activeBottomTab]);
 
+	// Fall back the moment the active mode stops qualifying -- losing the
+	// controlled actor, or a layout change that takes First Person away. This
+	// asks the same question the dropdown asks to disable an entry, so a mode can
+	// never stay active while its own menu item reads as unavailable.
 	useEffect(() => {
-		if (mapViewMode !== "first-person" || !isDM) return;
-		if (!firstPersonActorId) {
-			setMapViewMode("world");
+		if (!isCameraModeAvailable(cameraMode, cameraAvailability)) {
+			setCameraMode(FALLBACK_CAMERA_MODE);
 			return;
 		}
-		if (!firstPersonActorOnRenderedTerrain && firstPersonActorTerrainId) {
-			setViewedTerrain(firstPersonActorTerrainId);
+		// For a DM, the viewed terrain follows the impersonated actor; a player's
+		// rendered terrain already derives from their selected character.
+		if (
+			usesActorCamera &&
+			isDM &&
+			!controlledActorOnRenderedTerrain &&
+			controlledActorTerrainId
+		) {
+			setViewedTerrain(controlledActorTerrainId);
 		}
 	}, [
-		firstPersonActorId,
-		firstPersonActorOnRenderedTerrain,
-		firstPersonActorTerrainId,
+		cameraMode,
+		cameraAvailability,
+		usesActorCamera,
+		controlledActorOnRenderedTerrain,
+		controlledActorTerrainId,
 		isDM,
-		mapViewMode,
+		setCameraMode,
 		setViewedTerrain,
 	]);
 
@@ -443,18 +480,17 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 			<div className="flex h-full relative">
 				{/* Left 70%: Map */}
 				<div className="flex-1 overflow-hidden relative isolate">
-					<SceneDisplay dmToolbar={isDM && mapViewMode === "world"} />
+					<SceneDisplay dmToolbar={isDM && !isFirstPerson} />
 					<MapScene
 						characters={visibleCharacters}
 						entities={visibleEntities}
 						terrain={hydratedRenderedTerrain}
 						xRayActors={isDM && xRayActors}
-						showTerrainLinks={isDM && mapViewMode === "world" && showTerrainLinks}
-						cameraPreference={cameraPreference}
-						viewMode={mapViewMode}
+						showTerrainLinks={isDM && !isFirstPerson && showTerrainLinks}
+						cameraMode={cameraMode}
 						paused={!active}
 						onReady={() => setMapReady(true)}
-						onExitFirstPerson={() => setMapViewMode("world")}
+						onLeaveActorCamera={() => setCameraMode("ortho")}
 					/>
 					{renderedTerrain && (!hydratedRenderedTerrain || !mapReady) && (
 						<div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-base-200/95 text-base-content">
@@ -464,42 +500,46 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 							</span>
 						</div>
 					)}
-					{mapViewMode === "world" && isDM && (
+					{!isFirstPerson && isDM && (
 						<DmMapToolbar
 							campaign={campaign}
-							cameraPreference={cameraPreference}
-							onCameraPreferenceChange={setCameraPreference}
+							cameraMode={cameraMode}
+							onCameraModeChange={setCameraMode}
+							cameraModes={cameraModes}
+							getCameraModeDisabledReason={cameraModeDisabledReason}
 							xRayActors={xRayActors}
 							onToggleXRay={() => setXRayActors((current) => !current)}
 							showTerrainLinks={showTerrainLinks}
 							onToggleTerrainLinks={() => setShowTerrainLinks((current) => !current)}
-							showFirstPersonButton={showFirstPersonButton}
-							onEnterFirstPerson={() => setMapViewMode("first-person")}
 						/>
 					)}
-					{/* Player map controls (first-person + camera mode). Hidden on
-					    mobile: first-person is desktop-only and camera mode lives in
-					    the header hamburger there. */}
-					{mapViewMode === "world" && !isDM && !isMobile && (
-						<div className="absolute left-3 top-3 z-20">
-							<div className="join shadow-sm">
-								{showFirstPersonButton && (
-									<button
-										className="btn btn-sm btn-neutral join-item tooltip tooltip-right"
-										data-tip="First-person mode"
-										onClick={() => setMapViewMode("first-person")}
-										aria-label="Enter first-person mode"
-									>
-										<span className="icon-[mdi--camera-control] w-5 h-5" />
-									</button>
-								)}
+					{/* Player camera control. Mobile keeps the same mode list in the
+					    header hamburger. */}
+					{!isFirstPerson && !isDM && !isMobile && (
+						<div className={`absolute z-20 ${CAMERA_CONTROL_LAYOUT.anchor}`}>
+							<div className="shadow-sm">
 								<CameraModeDropdown
-									value={cameraPreference}
-									onChange={setCameraPreference}
-									showFreecam={false}
-									joinItem
+									value={cameraMode}
+									onChange={setCameraMode}
+									modes={cameraModes}
+									getDisabledReason={cameraModeDisabledReason}
 								/>
 							</div>
+						</div>
+					)}
+					{/* The common selector remains reachable in First Person even though
+					    the world-only DM toolbar is hidden. Players use the mobile header
+					    menu on touch-sized layouts. */}
+					{isFirstPerson && (isDM || !isMobile) && (
+						<div
+							className={`absolute z-50 shadow-sm ${CAMERA_CONTROL_LAYOUT.anchor}`}
+						>
+							<CameraModeDropdown
+								value={cameraMode}
+								onChange={setCameraMode}
+								modes={cameraModes}
+								getDisabledReason={cameraModeDisabledReason}
+							/>
 						</div>
 					)}
 					<DiceRoller />

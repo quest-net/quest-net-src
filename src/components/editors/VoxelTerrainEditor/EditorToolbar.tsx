@@ -17,6 +17,7 @@ import type {
 	EditorTool,
 	EditGranularityType,
 } from "./editorTypes";
+import { ACTORLESS_RIG_CAMERA_MODES } from "../../../utils/camera/CameraModes";
 import { CameraModeDropdown } from "../../Map/CameraModeDropdown";
 import { ToggleButton } from "../../ui/ToggleButton";
 import {
@@ -406,6 +407,7 @@ export function EditorToolbar(props: EditorToolbarProps) {
 					<CameraModeDropdown
 						value={cameraMode}
 						onChange={onSelectCameraMode}
+						modes={ACTORLESS_RIG_CAMERA_MODES}
 						freecamSpeedMult={freecamSpeedMult}
 						dropdownEnd
 					/>

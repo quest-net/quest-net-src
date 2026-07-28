@@ -1,11 +1,10 @@
-// components/Map/FirstPerson/FirstPersonView.tsx
+// components/Map/ActorCamera/ControlledActorLocomotion.tsx
 //
-// First-person logic for the shared map scene. Unlike the old FirstPersonMap,
-// this does NOT create its own renderer/scene/terrain -- MapScene owns the
-// persistent scene and the actor/sticker/ping layers. This component plugs the
-// capsule simulation, pointer-look, and position commits into the shared
-// MapModeController (which owns the first-person camera + input), and renders
-// only the first-person HUD / missing-actor message.
+// Camera-independent controlled-actor locomotion for the shared map scene.
+// It owns the capsule, movement rules, live pose sync, and settled commits used
+// by both First Person and Follow. MapModeController owns camera placement/look
+// and supplies camera-relative movement yaw. This component stays mounted while
+// switching between those two modes and renders their shared movement HUD.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -21,16 +20,16 @@ import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants
 import { useMapState } from "../MapStateProvider";
 import {
 	actorPositionToGroundWorld,
-	findFirstPersonActor,
+	findControlledActor,
 	getEyeHeight,
 } from "./actor";
 import {
 	applyRangeContainment,
-	createFirstPersonCapsuleState,
-	firstPersonCapsuleToRulesPosition,
-	isFirstPersonCapsuleSettled,
-	stepFirstPersonCapsuleController,
-	type FirstPersonCapsuleState,
+	createActorCapsuleState,
+	actorCapsuleToRulesPosition,
+	isActorCapsuleSettled,
+	stepActorCapsuleController,
+	type ActorCapsuleState,
 } from "./capsuleController";
 import {
 	tileKey,
@@ -39,18 +38,19 @@ import {
 } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	FIRST_PERSON_CAMERA,
-	FIRST_PERSON_CONTROLS,
+	ACTOR_CONTROLS,
 	MOVEMENT_STATE_UPDATE_MS,
 } from "./constants";
-import { FirstPersonHud, MissingActorMessage } from "./FirstPersonHud";
+import { ActorCameraHud, MissingActorMessage } from "./ActorCameraHud";
 import { createMovementCostLookup } from "./movement";
 import type { TerrainLinkInteractionFocus } from "../TerrainLinks3D/ThreeDTerrainLinkLayer";
 import type {
-	FirstPersonActor,
-	FirstPersonFrameInput,
+	LocomotionActor,
+	ActorLocomotionFrameInput,
 	MovementOverlayState,
 } from "./types";
 import type { MapModeController } from "../MapModeController";
+import type { ActorCameraMode } from "../../../utils/camera/CameraModes";
 
 const PENDING_MOVE_TIMEOUT_MS = 2000;
 const ACTOR_POSE_SEND_INTERVAL_MS = 80;
@@ -61,19 +61,20 @@ const ACTOR_POSE_MIN_DISTANCE_SQ = 0.0004;
 // token to a stale authoritative tile. The gate closes as soon as the DM
 // confirms the move, so steady-state traffic cost is zero.
 const ACTOR_POSE_HEARTBEAT_MS = 300;
-const EMPTY_FIRST_PERSON_KEYS: ReadonlySet<string> = new Set();
+const EMPTY_ACTOR_CONTROL_KEYS: ReadonlySet<string> = new Set();
 const MOVEMENT_OVERAGE_EPSILON = 0.0001;
 
-interface FirstPersonViewProps {
+interface ControlledActorLocomotionProps {
 	controller: MapModeController;
+	cameraMode: ActorCameraMode;
 	terrain: VoxelTerrain | null;
 	terrainIndex: VoxelTerrainIndex | null;
-	onExitFirstPerson?: () => void;
+	onUnavailable?: () => void;
 	onLiveRulesPositionChange?: (position: Position | null) => void;
 	linkFocus?: TerrainLinkInteractionFocus | null;
 }
 
-function getActorMoveSpeed(actor: FirstPersonActor): number {
+function getActorMoveSpeed(actor: LocomotionActor): number {
 	return actor.actor.MoveSpeed ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.MOVE_SPEED;
 }
 
@@ -108,34 +109,27 @@ function getMovementCostFromLookup(
 	return bestCost;
 }
 
-export default function FirstPersonView({
+export default function ControlledActorLocomotion({
 	controller,
+	cameraMode,
 	terrain,
 	terrainIndex,
-	onExitFirstPerson,
+	onUnavailable,
 	onLiveRulesPositionChange,
 	linkFocus,
-}: FirstPersonViewProps) {
-	// The first-person camera is owned by the shared controller; mirror it into a
-	// ref so the existing camera-from-body code reads it unchanged.
-	const cameraRef = useRef<THREE.PerspectiveCamera>(controller.firstPersonCamera);
-	useEffect(() => {
-		cameraRef.current = controller.firstPersonCamera;
-	}, [controller]);
+}: ControlledActorLocomotionProps) {
+	const cameraModeRef = useRef(cameraMode);
+	cameraModeRef.current = cameraMode;
 
-	const capsuleStateRef = useRef<FirstPersonCapsuleState | null>(null);
+	const capsuleStateRef = useRef<ActorCapsuleState | null>(null);
 	const capsuleInitializedRef = useRef(false);
-	const cameraPositionInitializedRef = useRef(false);
-	const desiredCameraPositionRef = useRef(new THREE.Vector3());
-	const yawRef = useRef(0);
-	const pitchRef = useRef(0);
 	const lastSentKeyRef = useRef("");
 	const lastMovementInputAtRef = useRef(0);
 	const spaceWasPressedRef = useRef(false);
 	const pendingSyncPositionRef = useRef<Position | null>(null);
 	const onLiveRulesPositionChangeRef = useRef(onLiveRulesPositionChange);
-	// Tracks the last position committed to the DM and when it was sent.
-	// Used to suppress rubber-banding (see the original FirstPersonMap notes).
+	// Tracks the last position committed to the DM and when it was sent, so an
+	// authoritative echo of our own move does not rubber-band the body back.
 	const lastSentPositionRef = useRef<Position | null>(null);
 	const lastSentAtRef = useRef(0);
 	const lastPoseSentAtRef = useRef(0);
@@ -151,14 +145,14 @@ export default function FirstPersonView({
 		},
 		[]
 	);
-	const hadFirstPersonActorRef = useRef(false);
+	const hadControlledActorRef = useRef(false);
 	const lastStateUpdateRef = useRef(0);
-	const activeActorRef = useRef<FirstPersonActor | null>(null);
+	const activeActorRef = useRef<LocomotionActor | null>(null);
 	const actionServiceRef = useRef<ReturnType<typeof useActionService>["actionService"]>(null);
 	const terrainRef = useRef(terrain);
 	const voxelTerrainIndexRef = useRef<VoxelTerrainIndex | null>(null);
 	const movementCostLookupRef = useRef<Map<string, number> | null>(null);
-	const canControlFirstPersonActorRef = useRef(false);
+	const canControlActorRef = useRef(false);
 	const isCombatActiveRef = useRef(false);
 	const restrictMovementToRangeRef = useRef(false);
 	const turnStartWorldRef = useRef<THREE.Vector3 | null>(null);
@@ -191,7 +185,7 @@ export default function FirstPersonView({
 	const userRole = context.User.Role === "dm" ? "dm" : "player";
 	const actor = useMemo(
 		() =>
-			findFirstPersonActor(
+			findControlledActor(
 				userRole,
 				campaign.RoomCode,
 				context.User.SelectedCharacters,
@@ -215,7 +209,7 @@ export default function FirstPersonView({
 	const actorTurnStartY = actor?.actor.TurnStartPosition?.y;
 	const actorTurnStartH = actor?.actor.TurnStartPosition?.h;
 	const isCombatActive = campaign.GameState.CombatState?.isActive ?? false;
-	const canControlFirstPersonActor = actor ? canAccessActor(actor.id) : false;
+	const canControlLocomotionActor = actor ? canAccessActor(actor.id) : false;
 	const actorOnTerrain =
 		!!terrain && !!actor && actor.actor.Position.terrainId === terrain.Id;
 	const voxelTerrainIndex = terrainIndex;
@@ -227,7 +221,7 @@ export default function FirstPersonView({
 		);
 
 	const movementCostLookup = useMemo(() => {
-		if (!terrain || !actor || !actorOnTerrain || !canControlFirstPersonActor) return null;
+		if (!terrain || !actor || !actorOnTerrain || !canControlLocomotionActor) return null;
 		return createMovementCostLookup(
 			terrain,
 			actor,
@@ -238,7 +232,7 @@ export default function FirstPersonView({
 		terrain,
 		actor?.id,
 		actorOnTerrain,
-		canControlFirstPersonActor,
+		canControlLocomotionActor,
 		isCombatActive,
 		campaign.Settings.MovementSettings,
 		actorPositionX,
@@ -272,8 +266,8 @@ export default function FirstPersonView({
 	}, [movementCostLookup]);
 
 	useEffect(() => {
-		canControlFirstPersonActorRef.current = canControlFirstPersonActor;
-	}, [canControlFirstPersonActor]);
+		canControlActorRef.current = canControlLocomotionActor;
+	}, [canControlLocomotionActor]);
 
 	useEffect(() => {
 		isCombatActiveRef.current = isCombatActive;
@@ -298,13 +292,15 @@ export default function FirstPersonView({
 		lastSentKeyRef.current = "";
 		capsuleInitializedRef.current = false;
 		capsuleStateRef.current = null;
-		cameraPositionInitializedRef.current = false;
+		// Clearing the pose also disarms eye-camera smoothing, so the new actor /
+		// terrain is snapped to rather than glided toward.
+		controller.setControlledActorPose(null);
 		pendingSyncPositionRef.current = null;
 		lastSentPositionRef.current = null;
 		lastPoseSentAtRef.current = 0;
 		lastPoseSentPositionRef.current = null;
 		spaceWasPressedRef.current = false;
-	}, [actor?.id, actor?.kind, terrainFramingKey]);
+	}, [actor?.id, actor?.kind, terrainFramingKey, controller]);
 
 	useEffect(() => {
 		if (!actor) return;
@@ -325,7 +321,7 @@ export default function FirstPersonView({
 	const commitActorPosition = useCallback((position: Position): boolean => {
 		const currentActor = activeActorRef.current;
 		const service = actionServiceRef.current;
-		if (!currentActor || !service || !canControlFirstPersonActorRef.current) {
+		if (!currentActor || !service || !canControlActorRef.current) {
 			return false;
 		}
 
@@ -359,7 +355,7 @@ export default function FirstPersonView({
 			!currentActor ||
 			!currentTerrain ||
 			!service ||
-			!canControlFirstPersonActorRef.current
+			!canControlActorRef.current
 		) {
 			return;
 		}
@@ -404,47 +400,12 @@ export default function FirstPersonView({
 		if (
 			currentActor &&
 			state &&
-			isFirstPersonCapsuleSettled(state, currentActor.actor.CanFly ?? false)
+			isActorCapsuleSettled(state, currentActor.actor.CanFly ?? false)
 		) {
 			flushPendingPosition();
 		}
 		spaceWasPressedRef.current = false;
 	}, [flushPendingPosition]);
-
-	const updateCameraFromBody = useCallback(
-		(
-			dt: number,
-			positionSmoothing: number = FIRST_PERSON_CAMERA.POSITION_SMOOTHING
-		) => {
-			const camera = cameraRef.current;
-			const currentActor = activeActorRef.current;
-			const state = capsuleStateRef.current;
-			if (!camera || !currentActor || !state) return;
-
-			desiredCameraPositionRef.current.set(
-				state.position.x,
-				state.position.y + getEyeHeight(currentActor.actor),
-				state.position.z
-			);
-			if (!cameraPositionInitializedRef.current) {
-				camera.position.copy(desiredCameraPositionRef.current);
-				cameraPositionInitializedRef.current = true;
-			} else if (dt > 0) {
-				const alpha = 1 - Math.exp(-positionSmoothing * dt);
-				camera.position.lerp(desiredCameraPositionRef.current, alpha);
-				if (
-					camera.position.distanceToSquared(desiredCameraPositionRef.current) <
-					0.000001
-				) {
-					camera.position.copy(desiredCameraPositionRef.current);
-				}
-			}
-			camera.rotation.order = "YXZ";
-			camera.rotation.y = yawRef.current;
-			camera.rotation.x = pitchRef.current;
-		},
-		[]
-	);
 
 	const updateMovementOverlay = useCallback((now: number, rulesPosition: Position) => {
 		const activeActor = activeActorRef.current;
@@ -501,17 +462,8 @@ export default function FirstPersonView({
 		);
 	}, []);
 
-	const handleLookDelta = useCallback((movementX: number, movementY: number) => {
-		yawRef.current -= movementX * FIRST_PERSON_CONTROLS.MOUSE_SENSITIVITY;
-		pitchRef.current = THREE.MathUtils.clamp(
-			pitchRef.current - movementY * FIRST_PERSON_CONTROLS.MOUSE_SENSITIVITY,
-			-FIRST_PERSON_CAMERA.PITCH_LIMIT,
-			FIRST_PERSON_CAMERA.PITCH_LIMIT
-		);
-	}, []);
-
 	const handleFrame = useCallback(
-		(now: number, dt: number, input: FirstPersonFrameInput) => {
+		(now: number, dt: number, input: ActorLocomotionFrameInput) => {
 			const currentTerrain = terrainRef.current;
 			const currentActor = activeActorRef.current;
 			const index = voxelTerrainIndexRef.current;
@@ -536,7 +488,7 @@ export default function FirstPersonView({
 							// The commit never landed; clear the dedup key so re-walking
 							// to the same tile can commit again.
 							lastSentKeyRef.current = "";
-							capsuleStateRef.current = createFirstPersonCapsuleState(
+							capsuleStateRef.current = createActorCapsuleState(
 								currentActor,
 								currentTerrain
 							);
@@ -552,17 +504,17 @@ export default function FirstPersonView({
 				index &&
 				currentActor &&
 				actorOnCurrentTerrain &&
-				canControlFirstPersonActorRef.current
+				canControlActorRef.current
 			) {
 				if (!capsuleStateRef.current) {
-					capsuleStateRef.current = createFirstPersonCapsuleState(
+					capsuleStateRef.current = createActorCapsuleState(
 						currentActor,
 						currentTerrain
 					);
 					capsuleInitializedRef.current = true;
 				}
 
-				const keys = input.pointerLocked ? input.keys : EMPTY_FIRST_PERSON_KEYS;
+				const keys = input.pointerLocked ? input.keys : EMPTY_ACTOR_CONTROL_KEYS;
 				const forwardInput =
 					(keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
 				const rightInput =
@@ -585,7 +537,7 @@ export default function FirstPersonView({
 
 				const state = capsuleStateRef.current;
 				const wasPosition = state.position.clone();
-				const wasSettled = isFirstPersonCapsuleSettled(
+				const wasSettled = isActorCapsuleSettled(
 					state,
 					currentActor.actor.CanFly ?? false
 				);
@@ -597,7 +549,7 @@ export default function FirstPersonView({
 					pendingSyncPositionRef.current !== null;
 				if (shouldSimulate) {
 					cameraSmoothing = FIRST_PERSON_CAMERA.ACTIVE_POSITION_SMOOTHING;
-					stepFirstPersonCapsuleController(
+					stepActorCapsuleController(
 						currentTerrain,
 						index,
 						currentActor,
@@ -607,12 +559,12 @@ export default function FirstPersonView({
 							rightInput,
 							verticalInput,
 							jumpPressed,
-							yaw: yawRef.current,
+							yaw: input.yaw,
 							dt,
 						}
 					);
 
-					let rulesPosition = firstPersonCapsuleToRulesPosition(
+					let rulesPosition = actorCapsuleToRulesPosition(
 						currentTerrain,
 						state,
 						index,
@@ -645,7 +597,7 @@ export default function FirstPersonView({
 									target.z,
 									currentActor.actor.CanFly ?? false
 								);
-								rulesPosition = firstPersonCapsuleToRulesPosition(
+								rulesPosition = actorCapsuleToRulesPosition(
 									currentTerrain,
 									state,
 									index,
@@ -656,7 +608,7 @@ export default function FirstPersonView({
 					}
 					onLiveRulesPositionChangeRef.current?.(rulesPosition);
 
-					const settled = isFirstPersonCapsuleSettled(
+					const settled = isActorCapsuleSettled(
 						state,
 						currentActor.actor.CanFly ?? false
 					);
@@ -678,7 +630,7 @@ export default function FirstPersonView({
 						!jumpPressed &&
 						pendingSyncPositionRef.current &&
 						now - lastMovementInputAtRef.current >=
-							FIRST_PERSON_CONTROLS.SYNC_IDLE_DEBOUNCE_MS
+							ACTOR_CONTROLS.SYNC_IDLE_DEBOUNCE_MS
 					) {
 						flushPendingPosition();
 					}
@@ -695,7 +647,7 @@ export default function FirstPersonView({
 				if (
 					state &&
 					actorOnCurrentTerrain &&
-					canControlFirstPersonActorRef.current &&
+					canControlActorRef.current &&
 					(pendingSyncPositionRef.current !== null ||
 						lastSentPositionRef.current !== null) &&
 					now - lastPoseSentAtRef.current >= ACTOR_POSE_HEARTBEAT_MS
@@ -704,36 +656,57 @@ export default function FirstPersonView({
 				}
 			}
 
-			updateCameraFromBody(dt, cameraSmoothing);
+			const liveState = capsuleStateRef.current;
+			const ownsFollowVisual =
+				cameraModeRef.current === "follow" &&
+				!!currentActor &&
+				!!liveState &&
+				(input.pointerLocked ||
+					!isActorCapsuleSettled(
+						liveState,
+						currentActor.actor.CanFly ?? false
+					) ||
+					pendingSyncPositionRef.current !== null ||
+					lastSentPositionRef.current !== null);
+			controller.setControlledActorPose(liveState?.position ?? null, {
+				eyeHeight: currentActor ? getEyeHeight(currentActor.actor) : 0,
+				positionSmoothing: cameraSmoothing,
+				driveFollowVisual: ownsFollowVisual,
+			});
 		},
 		[
+			controller,
 			flushPendingPosition,
 			sendCurrentActorPose,
-			updateCameraFromBody,
 			updateMovementOverlay,
 		]
 	);
 
-	// Plug the capsule sim / look / commit handlers into the shared controller.
+	// Plug the shared capsule sim and commit handlers into the map controller.
 	useEffect(() => {
-		controller.setFirstPersonHandlers({
+		controller.setActorLocomotionHandlers({
 			onFrame: handleFrame,
-			onLookDelta: handleLookDelta,
 			onControlReleased: commitCurrentPosition,
 		});
-		return () => controller.setFirstPersonHandlers(null);
-	}, [controller, handleFrame, handleLookDelta, commitCurrentPosition]);
+		return () => {
+			controller.setControlledActorPose(null);
+			controller.setActorLocomotionHandlers(null);
+		};
+	}, [
+		controller,
+		handleFrame,
+		commitCurrentPosition,
+	]);
 
 	// Mirror the controller's pointer-lock state for the HUD.
 	useEffect(() => {
 		setIsPointerLocked(controller.isPointerLocked);
-		controller.setPointerLockListener(setIsPointerLocked);
-		return () => controller.setPointerLockListener(null);
+		return controller.subscribePointerLock(setIsPointerLocked);
 	}, [controller]);
 
-	// Commit any pending position when leaving first-person (unmount). The
+	// Commit any pending position when leaving actor-controlled modes (unmount).
 	// controller exits pointer lock itself, but our handlers are unregistered
-	// before its setViewMode('world') runs, so flush here directly. Unlike the
+	// before its camera-mode effect runs, so flush here directly. Unlike the
 	// settled-gated control-release path, this flush is unconditional: exiting
 	// mid-air/mid-slide should commit the last rules position (already
 	// surface-clamped for walkers) rather than silently roll the token back.
@@ -750,7 +723,7 @@ export default function FirstPersonView({
 
 	useEffect(() => {
 		if (actor) {
-			hadFirstPersonActorRef.current = true;
+			hadControlledActorRef.current = true;
 			return;
 		}
 
@@ -764,11 +737,11 @@ export default function FirstPersonView({
 			document.exitPointerLock();
 		}
 
-		if (hadFirstPersonActorRef.current) {
-			hadFirstPersonActorRef.current = false;
-			onExitFirstPerson?.();
+		if (hadControlledActorRef.current) {
+			hadControlledActorRef.current = false;
+			onUnavailable?.();
 		}
-	}, [actor, isPointerLocked, onExitFirstPerson]);
+	}, [actor, isPointerLocked, onUnavailable]);
 
 	useEffect(() => {
 		if (!terrain || !actor || !actorOnTerrain) {
@@ -778,8 +751,8 @@ export default function FirstPersonView({
 		}
 
 		const authoritative = roundVoxelPosition(actor.actor.Position);
-		const authoritativeState = createFirstPersonCapsuleState(actor, terrain);
-		const authoritativeRules = firstPersonCapsuleToRulesPosition(
+		const authoritativeState = createActorCapsuleState(actor, terrain);
+		const authoritativeRules = actorCapsuleToRulesPosition(
 			terrain,
 			authoritativeState,
 			voxelTerrainIndex,
@@ -789,7 +762,7 @@ export default function FirstPersonView({
 			capsuleStateRef.current = authoritativeState;
 			capsuleInitializedRef.current = true;
 		}
-		const currentRules = firstPersonCapsuleToRulesPosition(
+		const currentRules = actorCapsuleToRulesPosition(
 			terrain,
 			capsuleStateRef.current,
 			voxelTerrainIndex,
@@ -829,15 +802,13 @@ export default function FirstPersonView({
 			}
 		}
 
-		const camera = cameraRef.current;
-		if (camera) {
-			const direction = new THREE.Vector3();
-			camera.getWorldDirection(direction);
-			if (direction.lengthSq() > 0) {
-				yawRef.current = Math.atan2(-direction.x, -direction.z);
-			}
+		const liveState = capsuleStateRef.current;
+		if (liveState) {
+			controller.setControlledActorPose(liveState.position, {
+				eyeHeight: getEyeHeight(actor.actor),
+				driveFollowVisual: false,
+			});
 		}
-		updateCameraFromBody(0);
 	}, [
 		terrain,
 		actor?.id,
@@ -846,22 +817,22 @@ export default function FirstPersonView({
 		actorPositionX,
 		actorPositionY,
 		actorPositionH,
-		updateCameraFromBody,
+		controller,
 	]);
 
 	return (
 		<>
 			{!actor && (
 				<div className="absolute inset-0 z-30">
-					<MissingActorMessage onExitFirstPerson={onExitFirstPerson} />
+					<MissingActorMessage onLeaveActorCamera={onUnavailable} />
 				</div>
 			)}
 			{actor && (
-				<FirstPersonHud
+				<ActorCameraHud
+					cameraMode={cameraMode}
 					isPointerLocked={isPointerLocked}
 					movementOverlay={movementOverlay}
 					canFly={actor.actor.CanFly ?? false}
-					onExitFirstPerson={onExitFirstPerson}
 					linkFocus={linkFocus}
 				/>
 			)}

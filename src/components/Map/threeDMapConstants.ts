@@ -1,4 +1,5 @@
 import { HERO_OCCLUSION_RADIUS_SETTING } from "../../domains/AppSetting/AppSetting";
+import type { FollowConfig } from "../../utils/camera/CameraRig";
 
 export const THREE_D_MAP_RENDERER = {
 	MAX_PIXEL_RATIO: 1.5,
@@ -168,6 +169,58 @@ export const THREE_D_HERO_OCCLUSION = {
 	// far BELOW the head so the ceiling directly overhead survives.
 	CUT_PLANE_EPSILON: 0.15,
 } as const;
+
+// Once upward aim would pull the Follow camera below this height above the
+// actor's GROUND position, it stops descending. Slightly above zero tracks the
+// top of the token base and avoids seating the camera inside the terrain.
+const FOLLOW_UPWARD_CAMERA_FLOOR_HEIGHT_Y = 0.1;
+
+// Actor-anchored third-person camera. Every distance here is ACTOR-scaled
+// (1 world unit = 1 tactical tile), deliberately NOT derived from terrain
+// extents the way perspective/freecam framing is -- that is the whole point of
+// the mode. Perspective mode's terrain-derived framing puts you ~50 units back
+// on a 64x64 terrain, which is why it reads as a distorted overview rather than
+// a camera that follows your character.
+export const THREE_D_MAP_FOLLOW_CAMERA = {
+	// Narrower than PERSPECTIVE_FOV (75). Follow sits close behind the actor,
+	// where a wide lens exaggerates every orbit swing. The perspective camera is
+	// SHARED across perspective/freecam/follow, so CameraRig applies this on
+	// follow entry and restores PERSPECTIVE_FOV on leaving.
+	FOV: 58,
+	// Orbit distance on entry, and the absolute dolly clamp.
+	INITIAL_DISTANCE: 9,
+	MIN_DISTANCE: 3,
+	MAX_DISTANCE: 30,
+	// Height above the actor's ground position for the Follow orbit anchor. This
+	// IS the hero-occlusion torso offset, not merely equal to it: sharing the one
+	// value keeps the orbit pivot and the occlusion cone apex at the same point,
+	// so the sightline keyhole stays centred in the viewport instead of drifting.
+	ANCHOR_HEIGHT_Y: THREE_D_HERO_OCCLUSION.TORSO_OFFSET_Y,
+	// The camera floor, expressed relative to the anchor because that is the
+	// frame CameraRig positions in. Negative: the floor sits below the torso.
+	UPWARD_CAMERA_FLOOR_OFFSET_FROM_ANCHOR:
+		FOLLOW_UPWARD_CAMERA_FLOOR_HEIGHT_Y - THREE_D_HERO_OCCLUSION.TORSO_OFFSET_Y,
+	// Follow matches First Person's near-vertical pitch range. When aim rises far
+	// enough, CameraRig floors the camera at the offset above and shortens the
+	// horizontal boom instead of pushing the camera into the terrain.
+	MIN_POLAR_ANGLE: 0.08,
+	MAX_POLAR_ANGLE: Math.PI - 0.08,
+} as const;
+
+/** The Follow block every CameraRig is built with. CameraRigConfig requires it,
+ *  so consumers that never offer Follow (the voxel terrain editor, which has no
+ *  actors to anchor to) share this one rather than inventing a second set of
+ *  numbers that would silently drift from the map's. */
+export const MAP_FOLLOW_RIG_CONFIG: FollowConfig = {
+	fov: THREE_D_MAP_FOLLOW_CAMERA.FOV,
+	initialDistance: THREE_D_MAP_FOLLOW_CAMERA.INITIAL_DISTANCE,
+	minDistance: THREE_D_MAP_FOLLOW_CAMERA.MIN_DISTANCE,
+	maxDistance: THREE_D_MAP_FOLLOW_CAMERA.MAX_DISTANCE,
+	minPolarAngle: THREE_D_MAP_FOLLOW_CAMERA.MIN_POLAR_ANGLE,
+	maxPolarAngle: THREE_D_MAP_FOLLOW_CAMERA.MAX_POLAR_ANGLE,
+	upwardCameraFloorOffsetFromAnchor:
+		THREE_D_MAP_FOLLOW_CAMERA.UPWARD_CAMERA_FLOOR_OFFSET_FROM_ANCHOR,
+};
 
 export const THREE_D_STICKER_TEXTURE = {
 	SIZE: 256,

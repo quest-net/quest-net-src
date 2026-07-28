@@ -1,6 +1,15 @@
+// Tuning for the controlled-actor camera modes.
+//
+// The FIRST_PERSON_ prefix is load-bearing, not leftover: those values describe
+// the eye camera specifically and are meaningless to Follow, which is framed by
+// THREE_D_MAP_FOLLOW_CAMERA instead. Everything shared by both modes -- input
+// sensitivity, capsule physics, the movement key set -- carries an ACTOR_
+// prefix.
+
 import { ACTOR_TOKEN_PLACEMENT } from "../Actors3D/actorTokenConstants";
 import { THREE_D_MAP_RENDERER } from "../threeDMapConstants";
 
+/** First-person eye camera only. */
 export const FIRST_PERSON_CAMERA = {
 	FOV: 72,
 	NEAR: 0.04,
@@ -16,14 +25,15 @@ export const FIRST_PERSON_CAMERA = {
 	PITCH_LIMIT: Math.PI / 2 - 0.08,
 } as const;
 
-export const FIRST_PERSON_CONTROLS = {
+/** Shared by First Person and Follow. */
+export const ACTOR_CONTROLS = {
 	MOUSE_SENSITIVITY: 0.0022,
 	MOVE_UNITS_PER_SECOND: 4.2,
 	FLY_UNITS_PER_SECOND: 3.2,
 	SYNC_IDLE_DEBOUNCE_MS: 450,
 } as const;
 
-export const FIRST_PERSON_PHYSICS = {
+export const ACTOR_CAPSULE_PHYSICS = {
 	GRAVITY: 22,
 	JUMP_HEIGHT: 1.15,
 	GROUND_ACCELERATION: 42,
@@ -64,7 +74,7 @@ export const FIRST_PERSON_PHYSICS = {
 	},
 } as const;
 
-export const FIRST_PERSON_KEY_CODES = [
+export const ACTOR_CONTROL_KEY_CODES = [
 	"KeyW",
 	"KeyA",
 	"KeyS",

@@ -14,6 +14,7 @@ import {
 	canStandVoxel,
 	type VoxelMovementTile,
 } from "../../../domains/VoxelTerrain/VoxelMovementUtilities";
+import type { MapInteractionMode } from "../../../utils/camera/CameraModes";
 import type { HoveredTile, SelectedActor } from "../MapStateProvider";
 import { THREE_D_MOVEMENT_HIGHLIGHT } from "../threeDMapConstants";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
@@ -56,6 +57,10 @@ interface ThreeDMovementLayerProps {
 	restrictMovementToRange: boolean;
 	preserveFlyingHeightOnTileMove: boolean;
 	isCombatActive: boolean;
+	/** Pointer input is ignored under "actor-look" (Follow holding the pointer,
+	 *  or first person). The layer stays mounted so the highlight geometry is not
+	 *  rebuilt every time the user presses and releases right click. */
+	interactionMode: MapInteractionMode;
 	onHoveredTileChange: (tile: HoveredTile | null) => void;
 	onMoveSelectedActor: (position: { x: number; y: number; h: number }) => void;
 }
@@ -231,6 +236,7 @@ export function ThreeDMovementLayer({
 	restrictMovementToRange,
 	preserveFlyingHeightOnTileMove,
 	isCombatActive,
+	interactionMode,
 	onHoveredTileChange,
 	onMoveSelectedActor,
 }: ThreeDMovementLayerProps) {
@@ -254,10 +260,20 @@ export function ThreeDMovementLayer({
 		preserveFlyingHeightOnTileMove
 	);
 	const isCombatActiveRef = useRef(isCombatActive);
+	const interactionModeRef = useRef(interactionMode);
 	const charactersRef = useRef(characters);
 	const entitiesRef = useRef(entities);
 	const onHoveredTileChangeRef = useRef(onHoveredTileChange);
 	const onMoveSelectedActorRef = useRef(onMoveSelectedActor);
+
+	// Leaving world-pointer interaction drops any hover the cursor left behind,
+	// so a stale highlighted tile is not still sitting there on return.
+	useEffect(() => {
+		if (interactionMode === "world-pointer") return;
+		hoveredTileRef.current = null;
+		onHoveredTileChangeRef.current(null);
+		resources.domElement.style.cursor = "";
+	}, [interactionMode, resources]);
 
 	useEffect(() => {
 		movementRangeMapRef.current = movementRangeMap;
@@ -269,6 +285,7 @@ export function ThreeDMovementLayer({
 		restrictMovementToRangeRef.current = restrictMovementToRange;
 		preserveFlyingHeightOnTileMoveRef.current = preserveFlyingHeightOnTileMove;
 		isCombatActiveRef.current = isCombatActive;
+		interactionModeRef.current = interactionMode;
 		charactersRef.current = characters;
 		entitiesRef.current = entities;
 		onHoveredTileChangeRef.current = onHoveredTileChange;
@@ -283,6 +300,7 @@ export function ThreeDMovementLayer({
 		restrictMovementToRange,
 		preserveFlyingHeightOnTileMove,
 		isCombatActive,
+		interactionMode,
 		characters,
 		entities,
 		onHoveredTileChange,
@@ -555,6 +573,7 @@ export function ThreeDMovementLayer({
 		};
 
 		const handlePointerMove = (event: PointerEvent) => {
+			if (interactionModeRef.current !== "world-pointer") return;
 			pendingPointerMove = event;
 			if (pointerMoveRafId !== 0) return;
 			pointerMoveRafId = requestAnimationFrame(processPointerMove);
@@ -583,6 +602,7 @@ export function ThreeDMovementLayer({
 		} | null = null;
 
 		const handlePointerDown = (event: PointerEvent) => {
+			if (interactionModeRef.current !== "world-pointer") return;
 			if (event.button !== 0) return;
 			// While the map is in item/skill targeting mode, clicks resolve a
 			// target instead of moving the selected actor.

@@ -8,18 +8,18 @@ import { getActorGroundPosition } from "../Actors3D/actorTokenPlacement";
 import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants";
 import type { ActorTokenDescriptor } from "../Actors3D/actorTokenTypes";
 import { FIRST_PERSON_CAMERA } from "./constants";
-import type { FirstPersonActor } from "./types";
+import type { LocomotionActor } from "./types";
 
-export type FirstPersonRole = "dm" | "player";
+export type ControlledActorRole = "dm" | "player";
 
-export function findFirstPersonActor(
-	role: FirstPersonRole,
+export function findControlledActor(
+	role: ControlledActorRole,
 	roomCode: string,
 	selectedCharacters: Record<string, string>,
 	impersonatedActors: Record<string, string> | undefined,
 	characters: Character[],
 	entities: Entity[]
-): FirstPersonActor | null {
+): LocomotionActor | null {
 	const actorId =
 		role === "player"
 			? selectedCharacters[roomCode]
@@ -40,7 +40,7 @@ export function findFirstPersonActor(
 }
 
 export function actorPositionToGroundWorld(
-	actor: FirstPersonActor,
+	actor: LocomotionActor,
 	terrain: VoxelTerrain,
 	position: Position
 ): THREE.Vector3 {
@@ -48,7 +48,7 @@ export function actorPositionToGroundWorld(
 }
 
 export function actorToGroundWorld(
-	actor: FirstPersonActor,
+	actor: LocomotionActor,
 	terrain: VoxelTerrain
 ): THREE.Vector3 {
 	return actorPositionToGroundWorld(actor, terrain, actor.actor.Position);
@@ -60,7 +60,7 @@ export function getEyeHeight(actor: Character | Entity): number {
 }
 
 function createActorDescriptor(
-	actor: FirstPersonActor,
+	actor: LocomotionActor,
 	position: Position
 ): ActorTokenDescriptor {
 	return {
