@@ -41,6 +41,25 @@ const TURN_CONFIG = buildTurnConfig();
 // to silence dev too. (Trystero 0.25.3+.)
 const WARN_ON_RELAY_FAILURE = import.meta.env.DEV;
 
+// How many Nostr relays to signal through. Trystero's default is 5 out of a
+// 47-relay pool, and the pick is a deterministic shuffle seeded on `appId` --
+// so every quest-net client in every session signals through the SAME 5
+// relays. Peer discovery and offer/answer exchange all ride those sockets, so
+// if a couple of them are slow, rate-limiting, or unreachable from a given
+// ISP, a peer's announcements reach some of the room and not the rest. That
+// produces a stable partial mesh (the "split brain" reported upstream in
+// trystero#189 / #161), and it gets likelier as the room grows, since more
+// peers means more announce traffic converging on that same fixed set.
+//
+// Widening the set is the cheap experiment: more independent paths for the
+// same announcements. Cost is more open WebSockets per client and
+// proportionally more announce traffic -- at ~5.3s per announce that's still
+// on the order of a KB/s, negligible next to a stuck session.
+//
+// TUNING: this is here to be experimented with. Raise if partial meshes
+// persist, lower if relay connections themselves become the problem.
+const RELAY_REDUNDANCY = 15;
+
 /**
  * Optional callbacks passed to `joinRoom` (Trystero 0.23+).
  *
@@ -87,7 +106,10 @@ export const RoomService = {
 		return joinRoom(
 			{
 				appId: APP_ID,
-				relayConfig: { warnOnRelayFailure: WARN_ON_RELAY_FAILURE },
+				relayConfig: {
+					warnOnRelayFailure: WARN_ON_RELAY_FAILURE,
+					redundancy: RELAY_REDUNDANCY,
+				},
 				...(TURN_CONFIG ? { turnConfig: TURN_CONFIG } : {}),
 			},
 			roomCode,

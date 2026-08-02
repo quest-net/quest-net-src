@@ -91,6 +91,29 @@ events via `getRelaySockets()` and, on one, forces a full `leave()` +
 pool. This is the mechanism that keeps a long-lived DM room reliably joinable.
 It re-attaches to fresh sockets after each recovery via `actionServiceSwapVersion`.
 
+### Relay redundancy (partial-mesh experiment)
+
+`RoomService` sets `relayConfig.redundancy` (see `RELAY_REDUNDANCY`). Trystero's
+default is **5** relays out of a 47-relay pool, picked by a deterministic
+shuffle seeded on `appId` — so every quest-net client, in every session, signals
+through the *same* 5 relays. All peer discovery and offer/answer exchange rides
+those sockets.
+
+The hypothesis is that this is behind the stable partial meshes we see (DM
+reachable by one player but not the rest). It matches the scale-dependence
+reported upstream — [trystero#189](https://github.com/dmotz/trystero/discussions/189)
+("split brain" past ~5 peers) and
+[trystero#161](https://github.com/dmotz/trystero/issues/161) (partial meshes at
+3+ members, "fixed by all parties refreshing a bunch of times") — better than
+the NAT-traversal explanation does, since we already run TURN. More peers means
+more announce traffic (~5.3s interval each) converging on the same fixed 5
+relays, and public Nostr relays commonly rate-limit.
+
+Raising the count is **strictly additive**: the shuffle is unchanged, so the
+original 5 relays are still the first 5: we only ever add paths, never swap one
+out. This is an experiment — if partial meshes persist, raise it; if the relay
+connections themselves become the problem, lower it.
+
 ### Relay warning suppression
 
 `RoomService` passes `relayConfig.warnOnRelayFailure` (Trystero 0.25.3+), set to
