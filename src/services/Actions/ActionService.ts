@@ -21,14 +21,10 @@ import { ActorPoseService } from "../ActorPoseService";
 import { ScriptEngine } from "../Scripting/ScriptEngine";
 
 const PING_INTERVAL_MS = 3000;
-// A ping that doesn't pong within this window counts as a failure. room.ping()
-// never times out on its own — a silently-dead data channel leaves it pending
-// forever — so this bound is what surfaces a dead connection. Kept under
-// PING_INTERVAL_MS so at most one ping is outstanding per tick.
-const PING_TIMEOUT_MS = 2500;
-// Consecutive ping failures before we treat the peer as gone and force-close
-// its connection (~3 ticks of silence).
-const MAX_PING_FAILURES = 3;
+// Only bounds the promise so it can't hang forever (room.ping() never settles
+// on its own). A timeout means "no RTT sample", nothing more. Generous because
+// ping shares one ordered data channel with bulk terrain/image transfers.
+const PING_TIMEOUT_MS = 15000;
 const PEER_RECONCILE_INTERVAL_MS = 2000;
 
 export class ActionService {
@@ -56,7 +52,6 @@ export class ActionService {
 	public peerUsers: Map<string, User> = new Map();
 	public peerPings: Map<string, number> = new Map();
 	private pingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
-	private pingFailures: Map<string, number> = new Map();
 	private peerReconcileInterval?: ReturnType<typeof setInterval>;
 	private lastBroadcastUserJson = "";
 
@@ -340,28 +335,25 @@ export class ActionService {
 		}
 	}
 
+	/**
+	 * Samples round-trip time for the presence UI. Purely informational — a
+	 * missed pong does nothing. Peer liveness is Trystero's job (`onPeerLeave` /
+	 * `getPeers()`); see DEVELOPMENT_NOTES for why ping-based eviction was
+	 * removed.
+	 */
 	private startPinging(peerId: string) {
 		this.stopPinging(peerId);
 		let pinging = false;
 		const tick = async () => {
-			// Skip if a ping is still outstanding so failures are counted once
-			// per tick and we never stack pings on a slow/dead link.
+			// Never stack pings: on a busy channel the previous may still be queued.
 			if (pinging) return;
 			pinging = true;
 			try {
 				const ms = await this.pingWithTimeout(peerId);
 				this.peerPings.set(peerId, ms);
-				this.pingFailures.delete(peerId);
-				// Presence-only re-render (transient, separate non-persisted store).
 				bumpPresence();
 			} catch {
-				// Count consecutive failures; a sustained run means the
-				// connection is dead even if Trystero hasn't noticed.
-				const failures = (this.pingFailures.get(peerId) ?? 0) + 1;
-				this.pingFailures.set(peerId, failures);
-				if (failures >= MAX_PING_FAILURES) {
-					this.evictDeadPeer(peerId);
-				}
+				// No sample this tick; the UI keeps the last known value.
 			} finally {
 				pinging = false;
 			}
@@ -370,11 +362,6 @@ export class ActionService {
 		this.pingIntervals.set(peerId, setInterval(tick, PING_INTERVAL_MS));
 	}
 
-	/**
-	 * Pings a peer, rejecting if no pong arrives within PING_TIMEOUT_MS.
-	 * room.ping() stays pending forever on a silently-dead data channel, so we
-	 * bound it here to turn that silence into a detectable failure.
-	 */
 	private async pingWithTimeout(peerId: string): Promise<number> {
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const timeout = new Promise<number>((_, reject) => {
@@ -390,27 +377,6 @@ export class ActionService {
 		}
 	}
 
-	/**
-	 * Treats a peer that has stopped responding to pings as gone. Trystero only
-	 * drops a peer when its RTCPeerConnection fires a close event, which never
-	 * happens for a silently-dead connection (tab killed, sleep, NAT drop) — so
-	 * the peer would otherwise linger in getPeers() forever, keeping peer count
-	 * above 0 and blocking peerless reconnects. Force-closing the connection
-	 * makes Trystero notice and reap it (firing onPeerLeave -> forgetPeer).
-	 */
-	private evictDeadPeer(peerId: string): void {
-		console.warn(
-			`[ActionService] Peer ${peerId} unresponsive after ${MAX_PING_FAILURES} pings; closing its connection.`
-		);
-		try {
-			this.room.getPeers()[peerId]?.close();
-		} catch (error) {
-			console.error(`[ActionService] Error closing dead peer ${peerId}:`, error);
-		}
-		// Drop local state now in case the close event is slow or never fires.
-		this.forgetPeer(peerId);
-	}
-
 	private stopPinging(peerId: string) {
 		const interval = this.pingIntervals.get(peerId);
 		if (interval) {
@@ -418,7 +384,6 @@ export class ActionService {
 			this.pingIntervals.delete(peerId);
 		}
 		this.peerPings.delete(peerId);
-		this.pingFailures.delete(peerId);
 	}
 
 	/**
@@ -733,7 +698,6 @@ export class ActionService {
 		this.terrainTransferService.cleanup();
 		this.pingIntervals.forEach(clearInterval);
 		this.pingIntervals.clear();
-		this.pingFailures.clear();
 		this.peerPings.clear();
 		this.peerUsers.clear();
 		this.connectedPeerIds.clear();

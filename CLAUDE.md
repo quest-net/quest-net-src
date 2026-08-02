@@ -63,7 +63,7 @@ src/
 ├── domains/            # Feature domains (model + actions + UI per domain)
 ├── services/           # Actions/, StateSync, ImageService, SoundEffectService,
 │                       #   TerrainStorageService, ImageGenerationService, etc.
-├── hooks/              # usePeerTracking, useAutoReconnect, useRelayWatchdog
+├── hooks/              # usePeerTracking, useAutoReconnect
 ├── utils/              # DiceUtils, FolderUtils, terrain/, Audio/, LocalStorageUtilities, etc.
 ├── migrations/         # Version migration scripts
 ├── data/               # Static data (defaultVoxelStamps.ts)
@@ -164,7 +164,7 @@ Trystero channels: `actionReq`, `stateSync`, `actorPose`, `userReq`, `userUpdate
 
 Initial peer identity is exchanged via the `onPeerHandshake` callback (passed to `joinRoom` in `CampaignView`). Runtime user updates flow through `userUpdate`; missing metadata is repaired via `userReq`.
 
-Connection recovery has three layers. **`useAutoReconnect`** recycles the room (leave + rejoin) when *this* peer's connection stops being useful (peer loss, browser sleep/wake) — gated on 0 peers for the DM, and on "DM unreachable" for players via `requireDmConnection`, since a player meshed only with other players never hits 0 peers yet can't reach the authority. That same "is the DM reachable" test drives the peer badge: `usePeerTracking` reports `online` / `partial` / `connected` and only turns green on `connected`. **`useRelayWatchdog`** (DM-only) forces a full leave + rejoin when a Nostr relay socket closes: Trystero 0.25.1 auto-resubscribes on a real reconnect but has no liveness check for silently-dead sockets, and a DM with players never hits 0 peers, so this watchdog is what keeps a long-lived DM room discoverable to new joiners. **Ping-failure eviction** in `ActionService` force-closes a peer's `RTCPeerConnection` after repeated ping timeouts, so Trystero reaps phantom peers (uncleanly-dropped connections that never fired a close event).
+Connection recovery leans on Trystero rather than second-guessing it — peer liveness comes from `onPeerJoin`/`onPeerLeave`/`getPeers()`, and relay sockets reconnect and re-subscribe on their own. The app adds only **`useAutoReconnect`**, which recycles the room (leave + rejoin) at **0 peers**, plus browser sleep/wake. Pings are display-only. The half-joined state (connected to players but not the DM) is surfaced, not acted on: `usePeerTracking` reports `online` / `partial` / `connected` and only turns green on `connected`. Ping-based eviction, `useRelayWatchdog`, and player-side "DM unreachable" recycling were all removed — each force-closed connections that were merely slow, which on a weak link degraded into teardown loops. See `src/DEVELOPMENT_NOTES.md` before adding any new automatic teardown.
 
 See `src/DEVELOPMENT_NOTES.md` for full networking constraints and implementation details.
 

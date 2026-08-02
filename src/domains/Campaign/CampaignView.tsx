@@ -5,7 +5,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import { contextStore } from "../Context/contextStore";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { useAutoReconnect } from "../../hooks/useAutoReconnect";
-import { useRelayWatchdog } from "../../hooks/useRelayWatchdog";
 import { CampaignUtils } from "./CampaignUtils";
 import { ContextService } from "../Context/ContextService";
 import { RoomService } from "../Room/RoomService";
@@ -84,45 +83,22 @@ export function CampaignView() {
 		setReconnectTrigger((prev) => prev + 1);
 	};
 
+	// Stays enabled while a player is still waiting for the DM, and after a
+	// retryable join timeout — that window is exactly when reconnection is
+	// needed, and gating on "ready" alone left first-time joiners with a single
+	// attempt and no retry.
 	useAutoReconnect(
 		{
-			// Reconnect not just when connected ("ready"), but also while a
-			// player is still waiting for the DM and after a *retryable* join
-			// timeout. Previously this was gated on "ready" alone, which meant
-			// a first-time joiner's connection machinery was switched off during
-			// exactly the window it was needed: a single ~15s shot, then a
-			// dead-end error with no retry. Now the room keeps recycling (the
-			// player's peerless cadence) until the DM becomes reachable.
 			enabled:
 				state.status === "ready" ||
 				state.status === "waiting-for-dm" ||
 				(state.status === "error" && !!state.retryable),
-			// Trystero 0.22+ pauses relay reconnects when the browser is offline
-			// and resumes when it comes back, so the previous 5s/3s tuning was
-			// over-aggressive. Loosen to give the library time to recover before
-			// we leave-and-rejoin the room ourselves.
 			checkIntervalMs: 10000,
 			reconnectDelayMs: 8000,
 			peerlessReconnectDelayMs: isDMRoute ? 30000 : 20000,
-			// A player connected to other players but NOT the DM used to be
-			// invisible to recovery: peer count never hits 0 in that shape, so
-			// the room never recycled and they sat in a half-joined session
-			// indefinitely. Requiring the DM link makes that state recoverable.
-			// The DM has no DM to reach, so peer count remains their signal.
-			requireDmConnection: !isDMRoute,
-			// maxAttempts is Infinity by default - unlimited retries!
 		},
 		onReconnect
 	);
-
-	// DM-only relay watchdog. Trystero 0.25.1 auto-resubscribes when a relay
-	// socket actually closes, but it has no liveness check for silently-dead
-	// sockets, and useAutoReconnect only fires at 0 peers — so a DM with
-	// players can quietly become unreachable to NEW joiners with no error.
-	// This forces a full leave()+joinRoom() recovery on relay socket close,
-	// which empirically keeps a long-lived DM room reliably joinable. See
-	// useRelayWatchdog.ts.
-	useRelayWatchdog(isDMRoute && state.status === "ready", onReconnect);
 
 	useEffect(() => {
 		// Validate identifier

@@ -4,23 +4,17 @@
 //
 //   actionService            -- an identity-STABLE proxy over the live underlying
 //                               instance. Property reads and method calls forward
-//                               to whatever ActionService is currently active.
-//                               Safe to put in useEffect dep arrays without
-//                               re-firing on relay-watchdog reconnect cycles.
+//                               to whatever ActionService is currently active,
+//                               so it's safe in useEffect deps across reconnects.
 //   actionServiceSwapVersion -- a monotonic counter that bumps every time the
 //                               underlying instance is replaced. Use this in
 //                               deps when an effect genuinely needs to re-attach
-//                               on swap (e.g. useRelayWatchdog needs the new
-//                               room's fresh WebSocket objects).
+//                               to the new room's objects on swap.
 //
-// Why this matters: useRelayWatchdog tears the room down and rebuilds it on
-// relay socket closes (which happen routinely on relays with idle timeouts,
-// e.g. wss://relay.mostr.pub). Before this split, every component that put
-// actionService in its useEffect deps -- ImageDisplay, the slot displays,
-// TerrainDisplay, FirstPersonMap, etc. -- re-fired on every cycle, refetching
-// image blobs, recreating object URLs, and churning closures. Over an hour
-// that adds up to a steady FPS decay even though the heap stays bounded (GC
-// pauses between frames).
+// Why this matters: reconnects rebuild the room. Before this split, every
+// component with actionService in its deps -- ImageDisplay, the slot displays,
+// TerrainDisplay, etc. -- re-fired on each cycle, refetching image blobs and
+// recreating object URLs, which decayed FPS over a long session.
 
 import {
 	createContext,

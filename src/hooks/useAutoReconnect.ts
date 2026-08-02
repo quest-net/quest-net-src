@@ -4,20 +4,11 @@ import { useActionService } from "../services/Actions/ActionServiceProvider";
 
 interface AutoReconnectConfig {
 	enabled: boolean;
-	checkIntervalMs?: number; // How often to check connection health (default: 5000ms)
+	checkIntervalMs?: number; // How often to check for peers (default: 5000ms)
 	reconnectDelayMs?: number; // How long to wait before attempting reconnect (default: 3000ms)
-	peerlessReconnectDelayMs?: number; // Slow recycle for rooms that have never been healthy (disabled by default)
+	peerlessReconnectDelayMs?: number; // Slow recycle for rooms that have never had a peer (off by default)
 	sleepDriftThresholdMs?: number; // Timer drift that implies the browser slept (default: max(3 checks, 30s))
 	maxAttempts?: number; // Max reconnect attempts (default: Infinity for unlimited)
-	/**
-	 * When true, having peers is not enough — the DM must be reachable for the
-	 * connection to count as healthy. Set for players: the DM is the authority
-	 * for every action, so a player meshed only with other players is stuck on
-	 * stale state with nothing to recover them. Peer count never hits 0 in that
-	 * shape, so without this the room would never recycle. Leave false for the
-	 * DM, who has no DM to connect to.
-	 */
-	requireDmConnection?: boolean;
 }
 
 interface ReconnectState {
@@ -43,17 +34,15 @@ export function useAutoReconnect(
 	const sleepDriftThresholdMs =
 		config.sleepDriftThresholdMs ?? Math.max(checkIntervalMs * 3, 30000);
 	const maxAttempts = config.maxAttempts ?? Infinity;
-	const requireDmConnection = config.requireDmConnection ?? false;
 
-	const unhealthySinceRef = useRef<number | null>(null);
+	const zeroPeersSinceRef = useRef<number | null>(null);
 	const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const attemptCountRef = useRef(0);
 	const onReconnectRef = useRef(onReconnect);
 	const lastCheckTimeRef = useRef<number | null>(null);
-	// Latches once this room has ever reached a healthy connection. We don't want
-	// to use the fast reconnect path for a room that has never connected at all.
-	// Rooms can opt into a slower cold-start recycle cadence separately.
-	const hasEverBeenHealthyRef = useRef(false);
+	// Latches once this room has ever had a peer. A room that has never connected
+	// at all uses the slower peerless cadence instead of the fast recovery path.
+	const hasEverHadPeersRef = useRef(false);
 
 	// Update the ref when the callback changes
 	useEffect(() => {
@@ -62,7 +51,7 @@ export function useAutoReconnect(
 
 	useEffect(() => {
 		if (!config.enabled || !actionService) {
-			unhealthySinceRef.current = null;
+			zeroPeersSinceRef.current = null;
 			lastCheckTimeRef.current = null;
 			if (reconnectTimeoutRef.current) {
 				clearTimeout(reconnectTimeoutRef.current);
@@ -77,31 +66,7 @@ export function useAutoReconnect(
 			return;
 		}
 
-		/**
-		 * "Healthy" means the connection is actually good for something, not
-		 * merely non-empty. For a player that requires the DM specifically —
-		 * being meshed with five other players while the DM link is missing is
-		 * a session you cannot participate in, and it pins peer count above 0
-		 * forever, which is exactly the state the old peer-count check treated
-		 * as fine.
-		 *
-		 * Note the DM lookup goes through the ActionService proxy, which
-		 * re-resolves against the live instance on every call — so this stays
-		 * correct across reconnect swaps even from inside the interval closure.
-		 */
-		const getHealth = () => {
-			const hasPeers = Object.keys(room.getPeers()).length > 0;
-			if (!hasPeers) return { healthy: false, hasPeers };
-			if (!requireDmConnection) return { healthy: true, hasPeers };
-			// getDmPeerId is undefined while a peer's handshake User payload is
-			// still in flight. That transient miss needs no special-casing: the
-			// reconnect delay below doubles as the grace window, and a handshake
-			// over an established data channel resolves far inside it.
-			// Optional call: the provider proxy resolves methods to undefined in
-			// the brief teardown window where the inner instance is already gone.
-			const healthy = actionService.getDmPeerId?.() !== undefined;
-			return { healthy, hasPeers };
-		};
+		const hasPeers = () => Object.keys(room.getPeers()).length > 0;
 
 		const didTimerDrift = (now: number) => {
 			const lastCheckTime = lastCheckTimeRef.current;
@@ -137,14 +102,14 @@ export function useAutoReconnect(
 					isReconnecting: false,
 				}));
 
-				// Reset the unhealthy timer to give the new connection time to establish.
-				unhealthySinceRef.current = Date.now();
+				// Give the new connection time to establish before counting again.
+				zeroPeersSinceRef.current = Date.now();
 			}, 500);
 		};
 
 		const checkPeers = () => {
 			const now = Date.now();
-			const { healthy, hasPeers } = getHealth();
+			const connected = hasPeers();
 			const timerDrifted = didTimerDrift(now);
 			lastCheckTimeRef.current = now;
 
@@ -153,10 +118,9 @@ export function useAutoReconnect(
 				return;
 			}
 
-			if (healthy) {
-				// Real connection! Latch the "ever connected" flag and reset state.
-				hasEverBeenHealthyRef.current = true;
-				unhealthySinceRef.current = null;
+			if (connected) {
+				hasEverHadPeersRef.current = true;
+				zeroPeersSinceRef.current = null;
 				attemptCountRef.current = 0;
 
 				setState((prev) => {
@@ -179,67 +143,38 @@ export function useAutoReconnect(
 				return;
 			}
 
-			// Unhealthy. The fast path exists for a TOTAL connection loss, where
-			// recycling costs nothing because there is nothing to lose. "Peers
-			// but no DM" is a different animal: the room is alive and every
-			// recycle also drops our links to the other players, so it takes the
-			// calmer cold-start cadence and gives the DM room to show up. Rooms
-			// that have never connected only reconnect when the caller opts into
-			// that cadence at all.
-			//
-			// For the DM (requireDmConnection false) unhealthy always means zero
-			// peers, so this reduces to the original behaviour.
-			const activeReconnectDelayMs =
-				hasEverBeenHealthyRef.current && !hasPeers
-					? reconnectDelayMs
-					: peerlessReconnectDelayMs;
+			// A room that previously had peers takes the fast recovery path; one
+			// that has never connected only recycles if the caller opted into the
+			// slower peerless cadence.
+			const activeReconnectDelayMs = hasEverHadPeersRef.current
+				? reconnectDelayMs
+				: peerlessReconnectDelayMs;
 
 			if (activeReconnectDelayMs === undefined) {
 				return;
 			}
 
-			// Start tracking when we first noticed the connection was unhealthy
-			if (unhealthySinceRef.current === null) {
-				unhealthySinceRef.current = now;
+			if (zeroPeersSinceRef.current === null) {
+				zeroPeersSinceRef.current = now;
 			}
 
-			const timeSinceUnhealthy = now - unhealthySinceRef.current;
-
-			// If we've been unhealthy longer than the active reconnect delay,
-			// recycle the room.
-			if (timeSinceUnhealthy >= activeReconnectDelayMs) {
+			if (now - zeroPeersSinceRef.current >= activeReconnectDelayMs) {
 				scheduleReconnect(now);
 			}
 		};
 
 		const handleWake = () => {
 			const now = Date.now();
-			const { healthy, hasPeers } = getHealth();
+			const connected = hasPeers();
 			const timerDrifted = didTimerDrift(now);
 			lastCheckTimeRef.current = now;
 
-			if (healthy) {
-				// Healthy — reset the unhealthy timer.
-				unhealthySinceRef.current = null;
+			if (connected) {
+				zeroPeersSinceRef.current = null;
 				return;
 			}
 
-			// Unhealthy but peers are present means "no DM yet", which can just be
-			// an in-flight handshake — and a wake event can easily land inside
-			// that window (tab switch right after joining). Zero peers on wake is
-			// a strong enough signal to recycle immediately; this is not, so hand
-			// it to the delayed checkPeers path instead of tearing down a
-			// connection that is still coming up.
-			if (hasPeers && !timerDrifted) {
-				if (unhealthySinceRef.current === null) {
-					unhealthySinceRef.current = now;
-				}
-				return;
-			}
-
-			// Apply the same cold-start guard as checkPeers: rooms that haven't
-			// opted into cold reconnection should not reconnect on wake.
-			const activeReconnectDelayMs = hasEverBeenHealthyRef.current
+			const activeReconnectDelayMs = hasEverHadPeersRef.current
 				? reconnectDelayMs
 				: peerlessReconnectDelayMs;
 
@@ -247,7 +182,7 @@ export function useAutoReconnect(
 				return;
 			}
 
-			unhealthySinceRef.current = now;
+			zeroPeersSinceRef.current = now;
 			scheduleReconnect(now);
 		};
 
@@ -291,7 +226,6 @@ export function useAutoReconnect(
 		peerlessReconnectDelayMs,
 		sleepDriftThresholdMs,
 		maxAttempts,
-		requireDmConnection,
 	]);
 
 	return state;

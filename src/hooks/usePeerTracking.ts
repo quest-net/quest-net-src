@@ -13,13 +13,7 @@ export interface PeerInfo {
 	ping: number | null;
 }
 
-/**
- * - `online`    — in the room, but no peers at all yet.
- * - `partial`   — connected to peers, but NOT to the DM. The mesh is up, yet
- *                 nothing this client does can reach the authority, so the
- *                 session hasn't really started.
- * - `connected` — the DM is reachable (or we *are* the DM).
- */
+/** `partial` = connected to peers but not the DM, so nothing reaches the authority. */
 export type ConnectionStatus = "online" | "partial" | "connected";
 
 export interface PeerTrackingData {
@@ -27,34 +21,21 @@ export interface PeerTrackingData {
 	peers: PeerInfo[];
 	/** The local user as a PeerInfo, for display alongside peers. */
 	selfPeer: PeerInfo;
-	/** Total people in the room: peers.length + 1 (self). */
+	/** peers.length + 1 (self). */
 	totalInRoom: number;
 	connectionStatus: ConnectionStatus;
-	/**
-	 * True when the DM is reachable — trivially true for the DM themselves.
-	 * This, not raw peer count, is what "in the session" means: the DM is the
-	 * authority for every action, so a player meshed only with other players
-	 * is still a spectator on stale state.
-	 */
+	/** Trivially true for the DM themselves. */
 	isDmConnected: boolean;
-	/** peerId of the connected DM, if their User payload has arrived. */
-	dmPeerId: string | undefined;
 	canAccessActor: (actorId: string) => boolean;
 }
 
 /**
- * Reads peer presence and ping data from ActionService and re-broadcasts
- * the local User when it changes. Peer state itself (User payloads, pings)
- * is owned by ActionService — see `recordPeerUser` / `broadcastSelf` there.
+ * Reads peer presence and ping data from ActionService and re-broadcasts the
+ * local User when it changes. Peer state is owned by ActionService — see
+ * `recordPeerUser` / `broadcastSelf` there.
  *
- * Initial peer User exchange happens via the joinRoom handshake, set up
- * in `CampaignView`. Runtime updates (e.g., character selection) flow
- * through the `userUpdate` action.
- *
- * NOTE: Reads `context.ActiveCampaign` as nullable — during the brief
- * navigation window between campaigns, ActiveCampaign can be null while
- * the parent view is mid-transition. The actor-resolver helpers all
- * gracefully degrade to "no actor" in that case rather than throwing.
+ * `ActiveCampaign` is read as nullable: it can be null mid-navigation between
+ * campaigns, so the actor helpers degrade to "no actor" rather than throwing.
  */
 export function usePeerTracking(): PeerTrackingData {
 	const { actionService } = useActionService();
@@ -62,16 +43,13 @@ export function usePeerTracking(): PeerTrackingData {
 	const campaign = context.ActiveCampaign;
 	const roomCode = campaign?.RoomCode;
 
-	// Peer presence + pings live on the ActionService instance (transient, never
-	// persisted), and ActionService bumps presenceStore.version whenever they
-	// change. Subscribing here re-renders this hook on each change so the peer
-	// list/pings below stay current.
+	// Peer presence/pings are transient state on ActionService; it bumps
+	// presenceStore.version on change, so subscribing here keeps this current.
 	const { version: presenceVersion } = useSnapshot(presenceStore);
 	void presenceVersion;
 
-	// Re-broadcast our User whenever it changes (character selection, etc.).
 	// ActionService dedupes against the last broadcast, so calling this from
-	// multiple components is a no-op after the first one.
+	// multiple components is a no-op after the first.
 	const userJson = JSON.stringify(context.User);
 	useEffect(() => {
 		actionService?.broadcastSelf();
@@ -89,8 +67,6 @@ export function usePeerTracking(): PeerTrackingData {
 		})
 	);
 
-	// Represent the local user as a PeerInfo so the UI can include them in the
-	// room list alongside remote peers. selfId is Trystero's ID for this peer.
 	const selfPeer: PeerInfo = {
 		peerId: selfId as string,
 		user: context.User,
@@ -99,11 +75,11 @@ export function usePeerTracking(): PeerTrackingData {
 
 	const totalInRoom = peers.length + 1;
 
-	// A player can be meshed with other players while the DM link is still
-	// missing (or has silently dropped). Peer count alone therefore can't say
-	// whether we're in the session — only the DM's presence can.
-	const dmPeerId = peers.find((peer) => peer.user?.Role === "dm")?.peerId;
-	const isDmConnected = context.User.Role === "dm" || dmPeerId !== undefined;
+	// Peer count alone can't say whether we're in the session — a player can be
+	// meshed with other players while the DM link is missing.
+	const isDmConnected =
+		context.User.Role === "dm" ||
+		peers.some((peer) => peer.user?.Role === "dm");
 
 	const connectionStatus: ConnectionStatus =
 		peers.length === 0 ? "online" : isDmConnected ? "connected" : "partial";
@@ -120,7 +96,6 @@ export function usePeerTracking(): PeerTrackingData {
 		totalInRoom,
 		connectionStatus,
 		isDmConnected,
-		dmPeerId,
 		canAccessActor,
 	};
 }
