@@ -6,7 +6,10 @@ import type { Room } from "./Room";
 
 const APP_ID = "quest-net";
 
-const METERED_RELAY = "standard.relay.metered.ca";
+// Must match the host the dashboard issues credentials for. `standard.` and
+// `global.` are different servers and creds are not interchangeable — pointing
+// at the wrong one fails TURN auth silently, leaving the app on STUN only.
+const METERED_RELAY = "global.relay.metered.ca";
 const TURN_USERNAME = import.meta.env.VITE_TURN_USERNAME as string | undefined;
 const TURN_CREDENTIAL = import.meta.env.VITE_TURN_CREDENTIAL as
 	| string
