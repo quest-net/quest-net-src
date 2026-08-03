@@ -102,7 +102,10 @@ export function TerrainEdit({
 		return () => {
 			isMounted = false;
 		};
-	}, [campaign, terrain]);
+		// An open editor owns its draft. Only changing the source campaign or
+		// terrain should reload it; unrelated campaign actions must leave it mounted.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [campaign?.Id, terrain?.Id]);
 
 	const handleDelete = () => {
 		if (!actionService || !terrain) return;
