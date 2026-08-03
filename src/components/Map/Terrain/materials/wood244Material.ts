@@ -37,53 +37,12 @@ import {
 	HERO_OCCLUSION_VERTEX_HEADER,
 	type HeroOcclusionUniforms,
 } from '../shaders/heroOcclusionShader';
+import { createTerrainColorTextureGetter } from './terrainColorTexture';
 
 const WOOD_TEXTURE_URL = '/materials/wood_244/wood_256x256.png';
 const WOOD_SWATCH = '#8b5a2b';
 const WOOD_TEXTURE_REPEAT = 1.0;
-const WOOD_ANISOTROPY = 8;
-const WOOD_PERFORMANCE_ANISOTROPY = 1;
-
-let cachedTexture: THREE.Texture | null = null;
-let cachedPerformanceTexture: THREE.Texture | null = null;
-
-function configureWoodTexture(
-	texture: THREE.Texture,
-	performanceMode: boolean
-): THREE.Texture {
-	texture.colorSpace = THREE.SRGBColorSpace;
-	texture.wrapS = THREE.RepeatWrapping;
-	texture.wrapT = THREE.RepeatWrapping;
-	texture.magFilter = THREE.LinearFilter;
-	texture.minFilter = performanceMode
-		? THREE.LinearFilter
-		: THREE.LinearMipmapLinearFilter;
-	texture.anisotropy = performanceMode
-		? WOOD_PERFORMANCE_ANISOTROPY
-		: WOOD_ANISOTROPY;
-	texture.generateMipmaps = !performanceMode;
-	return texture;
-}
-
-function getWoodTexture(performanceMode: boolean): THREE.Texture {
-	if (performanceMode) {
-		if (!cachedPerformanceTexture) {
-			cachedPerformanceTexture = configureWoodTexture(
-				new THREE.TextureLoader().load(WOOD_TEXTURE_URL),
-				true
-			);
-		}
-		return cachedPerformanceTexture;
-	}
-
-	if (!cachedTexture) {
-		cachedTexture = configureWoodTexture(
-			new THREE.TextureLoader().load(WOOD_TEXTURE_URL),
-			false
-		);
-	}
-	return cachedTexture;
-}
+const getWoodTexture = createTerrainColorTextureGetter(WOOD_TEXTURE_URL);
 
 function woodShaderHeader(): string[] {
 	return [

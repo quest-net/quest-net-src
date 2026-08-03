@@ -217,3 +217,29 @@ export function applyHeroOcclusionUniforms(
 	shader.uniforms.uHeroCutY = h.cutY;
 	shader.uniforms.uHeroCutSign = h.cutSign;
 }
+
+/** Install hero occlusion as a material's only onBeforeCompile shader patch. */
+export function installHeroOcclusionShader(
+	material: THREE.Material,
+	heroOcclusion: HeroOcclusionUniforms | undefined
+): void {
+	material.onBeforeCompile = (shader) => {
+		applyHeroOcclusionUniforms(shader, heroOcclusion);
+		shader.vertexShader = shader.vertexShader.replace(
+			'#include <common>',
+			['#include <common>', ...HERO_OCCLUSION_VERTEX_HEADER].join('\n')
+		);
+		shader.vertexShader = shader.vertexShader.replace(
+			'#include <begin_vertex>',
+			['#include <begin_vertex>', ...HERO_OCCLUSION_VERTEX_BEGIN].join('\n')
+		);
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <common>',
+			['#include <common>', ...HERO_OCCLUSION_FRAGMENT_HEADER].join('\n')
+		);
+		shader.fragmentShader = shader.fragmentShader.replace(
+			'#include <clipping_planes_fragment>',
+			HERO_OCCLUSION_DISCARD.join('\n')
+		);
+	};
+}

@@ -123,8 +123,8 @@ export const VOXEL_AO_VERTEX_BEGIN: readonly string[] = [
 	'vVoxelAoWorldNormal = normalize(mat3(modelMatrix) * normal);',
 ];
 
-/** Append after `#include <common>` in the fragment shader. */
-export const VOXEL_AO_FRAGMENT_HEADER: readonly string[] = [
+/** Build the shared fragment chunk; performance mode only changes AO depth. */
+const createVoxelAoFragmentHeader = (darkestStop: number): readonly string[] => [
 	'uniform highp sampler3D voxelAoOccupancy;',
 	'uniform vec3 voxelAoOrigin;',
 	'uniform vec3 voxelAoSize;',
@@ -154,40 +154,14 @@ export const VOXEL_AO_FRAGMENT_HEADER: readonly string[] = [
 	'	sides += sampleVoxelAoOccupancy(base + T2 * r);',
 	'	sides += sampleVoxelAoOccupancy(base - T2 * r);',
 	'	float occ = sides / 4.0;',
-	'	return mix(0.45, 1.0, 1.0 - occ);',
+	`	return mix(${darkestStop.toFixed(2)}, 1.0, 1.0 - occ);`,
 	'}',
 ];
 
-export const VOXEL_AO_FRAGMENT_HEADER_PERFORMANCE: readonly string[] = [
-	'uniform highp sampler3D voxelAoOccupancy;',
-	'uniform vec3 voxelAoOrigin;',
-	'uniform vec3 voxelAoSize;',
-	'uniform float voxelAoRadius;',
-	'uniform float voxelAoVoxelSize;',
-	'varying vec3 vVoxelAoWorldPosition;',
-	'varying vec3 vVoxelAoWorldNormal;',
-	'float sampleVoxelAoOccupancy(vec3 worldPos) {',
-	'	vec3 uvw = (worldPos - voxelAoOrigin) / voxelAoSize;',
-	'	if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0)))) return 0.0;',
-	'	return texture(voxelAoOccupancy, uvw).r;',
-	'}',
-	'float computeVoxelAo(vec3 worldPos, vec3 normal) {',
-	'	vec3 absN = abs(normal);',
-	'	vec3 T1; vec3 T2;',
-	'	if (absN.y > 0.5)      { T1 = vec3(1.0, 0.0, 0.0); T2 = vec3(0.0, 0.0, 1.0); }',
-	'	else if (absN.x > 0.5) { T1 = vec3(0.0, 1.0, 0.0); T2 = vec3(0.0, 0.0, 1.0); }',
-	'	else                   { T1 = vec3(1.0, 0.0, 0.0); T2 = vec3(0.0, 1.0, 0.0); }',
-	'	vec3 base = worldPos + normal * (voxelAoVoxelSize * 0.5);',
-	'	float r = voxelAoRadius;',
-	'	float sides = 0.0;',
-	'	sides += sampleVoxelAoOccupancy(base + T1 * r);',
-	'	sides += sampleVoxelAoOccupancy(base - T1 * r);',
-	'	sides += sampleVoxelAoOccupancy(base + T2 * r);',
-	'	sides += sampleVoxelAoOccupancy(base - T2 * r);',
-	'	float occ = sides / 4.0;',
-	'	return mix(0.52, 1.0, 1.0 - occ);',
-	'}',
-];
+/** Append after `#include <common>` in the fragment shader. */
+export const VOXEL_AO_FRAGMENT_HEADER = createVoxelAoFragmentHeader(0.45);
+export const VOXEL_AO_FRAGMENT_HEADER_PERFORMANCE =
+	createVoxelAoFragmentHeader(0.52);
 
 export function getVoxelAoFragmentHeader(
 	performanceMode = false

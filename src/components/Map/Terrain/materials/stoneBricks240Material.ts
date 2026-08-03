@@ -37,53 +37,14 @@ import {
 	HERO_OCCLUSION_VERTEX_HEADER,
 	type HeroOcclusionUniforms,
 } from '../shaders/heroOcclusionShader';
+import { createTerrainColorTextureGetter } from './terrainColorTexture';
 
 const STONE_BRICKS_TEXTURE_URL = '/materials/bricks_240/bricks_256x256.png';
 const STONE_BRICKS_SWATCH = '#8f8f8f';
 const STONE_BRICKS_TEXTURE_REPEAT = 1.0;
-const STONE_BRICKS_ANISOTROPY = 8;
-const STONE_BRICKS_PERFORMANCE_ANISOTROPY = 1;
-
-let cachedTexture: THREE.Texture | null = null;
-let cachedPerformanceTexture: THREE.Texture | null = null;
-
-function configureStoneBricksTexture(
-	texture: THREE.Texture,
-	performanceMode: boolean
-): THREE.Texture {
-	texture.colorSpace = THREE.SRGBColorSpace;
-	texture.wrapS = THREE.RepeatWrapping;
-	texture.wrapT = THREE.RepeatWrapping;
-	texture.magFilter = THREE.LinearFilter;
-	texture.minFilter = performanceMode
-		? THREE.LinearFilter
-		: THREE.LinearMipmapLinearFilter;
-	texture.anisotropy = performanceMode
-		? STONE_BRICKS_PERFORMANCE_ANISOTROPY
-		: STONE_BRICKS_ANISOTROPY;
-	texture.generateMipmaps = !performanceMode;
-	return texture;
-}
-
-function getStoneBricksTexture(performanceMode: boolean): THREE.Texture {
-	if (performanceMode) {
-		if (!cachedPerformanceTexture) {
-			cachedPerformanceTexture = configureStoneBricksTexture(
-				new THREE.TextureLoader().load(STONE_BRICKS_TEXTURE_URL),
-				true
-			);
-		}
-		return cachedPerformanceTexture;
-	}
-
-	if (!cachedTexture) {
-		cachedTexture = configureStoneBricksTexture(
-			new THREE.TextureLoader().load(STONE_BRICKS_TEXTURE_URL),
-			false
-		);
-	}
-	return cachedTexture;
-}
+const getStoneBricksTexture = createTerrainColorTextureGetter(
+	STONE_BRICKS_TEXTURE_URL
+);
 
 function stoneBricksShaderHeader(): string[] {
 	return [

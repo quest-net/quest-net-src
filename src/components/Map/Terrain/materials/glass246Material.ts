@@ -19,14 +19,7 @@ import type {
 	MaterialFactoryResult,
 	TerrainMaterial,
 } from './materialTypes';
-import {
-	applyHeroOcclusionUniforms,
-	HERO_OCCLUSION_DISCARD,
-	HERO_OCCLUSION_FRAGMENT_HEADER,
-	HERO_OCCLUSION_VERTEX_BEGIN,
-	HERO_OCCLUSION_VERTEX_HEADER,
-	type HeroOcclusionUniforms,
-} from '../shaders/heroOcclusionShader';
+import { installHeroOcclusionShader } from '../shaders/heroOcclusionShader';
 
 // ---------------------------------------------------------------------------
 // Tuning knobs
@@ -53,35 +46,6 @@ const GLASS_OPACITY = 0.22;
 // Factory
 // ---------------------------------------------------------------------------
 
-// Glass carries no AO / movement-highlight patch, so this installs ONLY the
-// hero-occlusion cutout (its own self-contained world-position varying). Without
-// it a glass pane -- though see-through -- would still tint/refract over an actor
-// behind it and defeat the cutout on adjacent solid walls seen through the glass.
-function installGlass246HeroShader(
-	material: THREE.MeshStandardMaterial,
-	heroOcclusion: HeroOcclusionUniforms | undefined
-): void {
-	material.onBeforeCompile = (shader) => {
-		applyHeroOcclusionUniforms(shader, heroOcclusion);
-		shader.vertexShader = shader.vertexShader.replace(
-			'#include <common>',
-			['#include <common>', ...HERO_OCCLUSION_VERTEX_HEADER].join('\n')
-		);
-		shader.vertexShader = shader.vertexShader.replace(
-			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...HERO_OCCLUSION_VERTEX_BEGIN].join('\n')
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <common>',
-			['#include <common>', ...HERO_OCCLUSION_FRAGMENT_HEADER].join('\n')
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <clipping_planes_fragment>',
-			HERO_OCCLUSION_DISCARD.join('\n')
-		);
-	};
-}
-
 export const createGlass246Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
@@ -99,7 +63,7 @@ export const createGlass246Material: MaterialFactory = (
 		depthWrite: false,
 	});
 
-	installGlass246HeroShader(material, heroOcclusion);
+	installHeroOcclusionShader(material, heroOcclusion);
 
 	return {
 		material,

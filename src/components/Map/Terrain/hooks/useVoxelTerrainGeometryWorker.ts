@@ -5,6 +5,7 @@ import { getVoxelCount } from "../../../../utils/terrain/data/VoxelDataUtils";
 import { resolveTerrainVoxels } from "../../../../utils/terrain/data/terrainPayloadStore";
 import { createVoxelTerrainBufferGeometry } from "../geometry/VoxelTerrainGeometryUtils";
 import type {
+	VoxelTerrainBuffers,
 	VoxelTerrainFogVolume,
 	VoxelTerrainOccupancy,
 } from "../geometry/VoxelTerrainGeometryUtils";
@@ -15,16 +16,7 @@ import { toPlain } from "../../../../utils/toPlain";
 // Worker protocol types
 // ---------------------------------------------------------------------------
 
-interface BucketBufferEntry {
-	key: string;
-	positions: Float32Array;
-	normals: Float32Array;
-	colors?: Float32Array;
-	surfaceDeformStrength?: Float32Array;
-	tileHeights: Float32Array;
-	highlightStrengths: Float32Array;
-	indices: Uint32Array;
-}
+type BucketBufferEntry = VoxelTerrainBuffers & { key: string };
 
 interface VoxelGeometryWorkerResponse {
 	buildId: number;
@@ -47,18 +39,8 @@ type VoxelGeometryWorkerMessage =
 // plus the voxel-occupancy snapshot used by the per-fragment AO shader.
 // ---------------------------------------------------------------------------
 
-interface BucketBufferPayload {
-	positions: Float32Array;
-	normals: Float32Array;
-	colors?: Float32Array;
-	surfaceDeformStrength?: Float32Array;
-	tileHeights: Float32Array;
-	highlightStrengths: Float32Array;
-	indices: Uint32Array;
-}
-
 interface VoxelGeometryBufferPayload {
-	buckets: Map<string, BucketBufferPayload>;
+	buckets: Map<string, VoxelTerrainBuffers>;
 	occupancy: VoxelTerrainOccupancy;
 	fogVolume: VoxelTerrainFogVolume | null;
 }
@@ -121,7 +103,7 @@ function cacheGeometryBuffers(
 function payloadFromWorkerResponse(
 	data: VoxelGeometryWorkerResponse
 ): VoxelGeometryBufferPayload {
-	const map = new Map<string, BucketBufferPayload>();
+	const map = new Map<string, VoxelTerrainBuffers>();
 	for (const entry of data.buckets) {
 		const { key, ...buffers } = entry;
 		map.set(key, buffers);

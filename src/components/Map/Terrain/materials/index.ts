@@ -77,6 +77,16 @@ export const TERRAIN_MATERIALS: readonly TerrainMaterial[] = [
 	fog251Material,
 ];
 
+type SpecialTerrainMaterial = TerrainMaterial & {
+	special: NonNullable<TerrainMaterial['special']>;
+};
+
+const SPECIAL_TERRAIN_MATERIALS: readonly SpecialTerrainMaterial[] =
+	TERRAIN_MATERIALS.filter(
+		(material): material is SpecialTerrainMaterial =>
+			material.special !== undefined
+	);
+
 // ---------------------------------------------------------------------------
 // Re-exported types (so consumers can import everything from one place)
 // ---------------------------------------------------------------------------
@@ -112,8 +122,7 @@ export interface SpecialMaterialSwatch {
 }
 
 export const SPECIAL_MATERIAL_SWATCHES: readonly SpecialMaterialSwatch[] =
-	TERRAIN_MATERIALS
-		.filter((m): m is TerrainMaterial & { special: NonNullable<TerrainMaterial['special']> } => m.special !== undefined)
+	SPECIAL_TERRAIN_MATERIALS
 		.map((m) => ({
 			index: m.special.paletteIndex,
 			label: m.special.label,
@@ -176,22 +185,19 @@ export function groupSpecialMaterialSwatches(): SpecialMaterialSwatchGroup[] {
 // ---------------------------------------------------------------------------
 
 const BUCKET_BY_PALETTE_INDEX: ReadonlyMap<number, string> = new Map(
-	TERRAIN_MATERIALS
-		.filter((m): m is TerrainMaterial & { special: NonNullable<TerrainMaterial['special']> } => m.special !== undefined)
+	SPECIAL_TERRAIN_MATERIALS
 		.map((m) => [m.special.paletteIndex, m.bucketKey] as const)
 );
 
 const DEFAULT_OCCLUSION_GROUP = defaultMaterial.occlusionGroup ?? defaultMaterial.bucketKey;
 
 const OCCLUSION_GROUP_BY_PALETTE_INDEX: ReadonlyMap<number, string> = new Map(
-	TERRAIN_MATERIALS
-		.filter((m): m is TerrainMaterial & { special: NonNullable<TerrainMaterial['special']> } => m.special !== undefined)
+	SPECIAL_TERRAIN_MATERIALS
 		.map((m) => [m.special.paletteIndex, m.occlusionGroup ?? m.bucketKey] as const)
 );
 
 const GEOMETRY_BY_PALETTE_INDEX: ReadonlyMap<number, TerrainMaterial['geometry']> = new Map(
-	TERRAIN_MATERIALS
-		.filter((m): m is TerrainMaterial & { special: NonNullable<TerrainMaterial['special']> } => m.special !== undefined)
+	SPECIAL_TERRAIN_MATERIALS
 		.map((m) => [m.special.paletteIndex, m.geometry] as const)
 );
 
@@ -201,8 +207,7 @@ const DEFAULT_GEOMETRY = defaultMaterial.geometry;
 // collision / movement / raycast (but still rendered). Built once at module
 // load; lookups are constant-time.
 const PASSABLE_PALETTE_INDICES: ReadonlySet<number> = new Set(
-	TERRAIN_MATERIALS
-		.filter((m): m is TerrainMaterial & { special: NonNullable<TerrainMaterial['special']> } => m.special !== undefined)
+	SPECIAL_TERRAIN_MATERIALS
 		.filter((m) => m.passable === true)
 		.map((m) => m.special.paletteIndex)
 );
@@ -220,8 +225,7 @@ export function isPassableMaterial(colorIndex: number): boolean {
 // greedy-meshed render buckets and the AO occupancy snapshot; routed instead
 // into the fog-density volume the volumetric pass raymarches.
 const VOLUMETRIC_PALETTE_INDICES: ReadonlySet<number> = new Set(
-	TERRAIN_MATERIALS
-		.filter((m): m is TerrainMaterial & { special: NonNullable<TerrainMaterial['special']> } => m.special !== undefined)
+	SPECIAL_TERRAIN_MATERIALS
 		.filter((m) => m.volumetric === true)
 		.map((m) => m.special.paletteIndex)
 );
@@ -363,8 +367,7 @@ export const MATERIAL_LOOKUP: MaterialLookupTables = buildMaterialLookupTables()
 // ---------------------------------------------------------------------------
 
 const EDITOR_COLOR_BY_PALETTE_INDEX: ReadonlyMap<number, number> = new Map(
-	TERRAIN_MATERIALS
-		.filter((m): m is TerrainMaterial & { special: NonNullable<TerrainMaterial['special']> } => m.special !== undefined)
+	SPECIAL_TERRAIN_MATERIALS
 		.map((m) => [m.special.paletteIndex, parseInt(m.special.swatchColor.slice(1), 16)] as const)
 );
 

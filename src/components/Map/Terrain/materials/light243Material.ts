@@ -11,48 +11,12 @@ import type {
 	MaterialFactoryResult,
 	TerrainMaterial,
 } from './materialTypes';
-import {
-	applyHeroOcclusionUniforms,
-	HERO_OCCLUSION_DISCARD,
-	HERO_OCCLUSION_FRAGMENT_HEADER,
-	HERO_OCCLUSION_VERTEX_BEGIN,
-	HERO_OCCLUSION_VERTEX_HEADER,
-	type HeroOcclusionUniforms,
-} from '../shaders/heroOcclusionShader';
+import { installHeroOcclusionShader } from '../shaders/heroOcclusionShader';
 
 const LIGHT_SWATCH = '#ffd166';
 const LIGHT_ROUGHNESS = 0.35;
 const LIGHT_METALNESS = 0.0;
 const LIGHT_EMISSIVE_INTENSITY = 3.5;
-
-// Light blocks carry no AO / movement-highlight patch, so this installs ONLY the
-// hero-occlusion cutout. Light voxels are `passable` (raycasts already ignore
-// them) but they still RENDER as emissive surfaces, so a glowing lamp/window wall
-// in front of the focused actor would otherwise hide it.
-function installLight243HeroShader(
-	material: THREE.MeshStandardMaterial,
-	heroOcclusion: HeroOcclusionUniforms | undefined
-): void {
-	material.onBeforeCompile = (shader) => {
-		applyHeroOcclusionUniforms(shader, heroOcclusion);
-		shader.vertexShader = shader.vertexShader.replace(
-			'#include <common>',
-			['#include <common>', ...HERO_OCCLUSION_VERTEX_HEADER].join('\n')
-		);
-		shader.vertexShader = shader.vertexShader.replace(
-			'#include <begin_vertex>',
-			['#include <begin_vertex>', ...HERO_OCCLUSION_VERTEX_BEGIN].join('\n')
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <common>',
-			['#include <common>', ...HERO_OCCLUSION_FRAGMENT_HEADER].join('\n')
-		);
-		shader.fragmentShader = shader.fragmentShader.replace(
-			'#include <clipping_planes_fragment>',
-			HERO_OCCLUSION_DISCARD.join('\n')
-		);
-	};
-}
 
 export const createLight243Material: MaterialFactory = (
 	params: MaterialFactoryParams
@@ -67,7 +31,7 @@ export const createLight243Material: MaterialFactory = (
 		vertexColors: false,
 	});
 
-	installLight243HeroShader(material, heroOcclusion);
+	installHeroOcclusionShader(material, heroOcclusion);
 
 	return {
 		material,

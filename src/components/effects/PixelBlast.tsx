@@ -38,7 +38,7 @@ const createTouchTexture = () => {
   if (!ctx) throw new Error('2D context not available');
   ctx.fillStyle = 'black';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const texture = new THREE.Texture(canvas);
+  const texture = new THREE.CanvasTexture(canvas);
   texture.minFilter = THREE.LinearFilter;
   texture.magFilter = THREE.LinearFilter;
   texture.generateMipmaps = false;
@@ -325,6 +325,56 @@ void main(){
 
 const MAX_CLICKS = 10;
 
+type PixelBlastRuntime = {
+  renderer: THREE.WebGLRenderer;
+  scene: THREE.Scene;
+  camera: THREE.OrthographicCamera;
+  material: THREE.ShaderMaterial;
+  timer: THREE.Timer;
+  clickIx: number;
+  uniforms: {
+    uResolution: { value: THREE.Vector2 };
+    uTime: { value: number };
+    uColor: { value: THREE.Color };
+    uClickPos: { value: THREE.Vector2[] };
+    uClickTimes: { value: Float32Array };
+    uShapeType: { value: number };
+    uPixelSize: { value: number };
+    uScale: { value: number };
+    uDensity: { value: number };
+    uPixelJitter: { value: number };
+    uEnableRipples: { value: number };
+    uRippleSpeed: { value: number };
+    uRippleThickness: { value: number };
+    uRippleIntensity: { value: number };
+    uEdgeFade: { value: number };
+  };
+  resizeObserver?: ResizeObserver;
+  raf?: number;
+  quad?: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+  timeOffset?: number;
+  composer?: EffectComposer;
+  touch?: ReturnType<typeof createTouchTexture>;
+  liquidEffect?: Effect;
+};
+
+function disposePixelBlastRuntime(
+  runtime: PixelBlastRuntime,
+  container: HTMLElement
+): void {
+  runtime.resizeObserver?.disconnect();
+  runtime.timer.dispose();
+  if (runtime.raf !== undefined) cancelAnimationFrame(runtime.raf);
+  runtime.quad?.geometry.dispose();
+  runtime.material.dispose();
+  runtime.composer?.dispose();
+  runtime.touch?.texture.dispose();
+  runtime.renderer.dispose();
+
+  const canvas = runtime.renderer.domElement;
+  if (canvas.parentElement === container) container.removeChild(canvas);
+}
+
 const PixelBlast: React.FC<PixelBlastProps> = ({
   variant = 'square',
   pixelSize = 3,
@@ -353,38 +403,7 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
   const visibilityRef = useRef({ visible: true });
   const speedRef = useRef(speed);
 
-  const threeRef = useRef<{
-    renderer: THREE.WebGLRenderer;
-    scene: THREE.Scene;
-    camera: THREE.OrthographicCamera;
-    material: THREE.ShaderMaterial;
-    clock: THREE.Clock;
-    clickIx: number;
-    uniforms: {
-      uResolution: { value: THREE.Vector2 };
-      uTime: { value: number };
-      uColor: { value: THREE.Color };
-      uClickPos: { value: THREE.Vector2[] };
-      uClickTimes: { value: Float32Array };
-      uShapeType: { value: number };
-      uPixelSize: { value: number };
-      uScale: { value: number };
-      uDensity: { value: number };
-      uPixelJitter: { value: number };
-      uEnableRipples: { value: number };
-      uRippleSpeed: { value: number };
-      uRippleThickness: { value: number };
-      uRippleIntensity: { value: number };
-      uEdgeFade: { value: number };
-    };
-    resizeObserver?: ResizeObserver;
-    raf?: number;
-    quad?: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
-    timeOffset?: number;
-    composer?: EffectComposer;
-    touch?: ReturnType<typeof createTouchTexture>;
-    liquidEffect?: Effect;
-  } | null>(null);
+  const threeRef = useRef<PixelBlastRuntime | null>(null);
   const prevConfigRef = useRef<any>(null);
   useEffect(() => {
     const container = containerRef.current;
@@ -403,14 +422,7 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
     }
     if (mustReinit) {
       if (threeRef.current) {
-        const t = threeRef.current;
-        t.resizeObserver?.disconnect();
-        cancelAnimationFrame(t.raf!);
-        t.quad?.geometry.dispose();
-        t.material.dispose();
-        t.composer?.dispose();
-        t.renderer.dispose();
-        if (t.renderer.domElement.parentElement === container) container.removeChild(t.renderer.domElement);
+        disposePixelBlastRuntime(threeRef.current, container);
         threeRef.current = null;
       }
       const canvas = document.createElement('canvas');
@@ -459,14 +471,20 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
       const quadGeom = new THREE.PlaneGeometry(2, 2);
       const quad = new THREE.Mesh(quadGeom, material);
       scene.add(quad);
-      const clock = new THREE.Clock();
+      // Timer replaces the deprecated Clock (r183). connect(document) uses the
+      // Page Visibility API so a backgrounded tab does not accumulate a huge
+      // delta and snap the effect forward on return.
+      const timer = new THREE.Timer();
+      timer.connect(document);
+      let composer: EffectComposer | undefined;
+      let touch: ReturnType<typeof createTouchTexture> | undefined;
+      let liquidEffect: Effect | undefined;
       const setSize = () => {
         const w = container.clientWidth || 1;
         const h = container.clientHeight || 1;
         renderer.setSize(w, h, false);
         uniforms.uResolution.value.set(renderer.domElement.width, renderer.domElement.height);
-        if (threeRef.current?.composer)
-          threeRef.current.composer.setSize(renderer.domElement.width, renderer.domElement.height);
+        composer?.setSize(w, h, false);
         uniforms.uPixelSize.value = pixelSize * renderer.getPixelRatio();
       };
       setSize();
@@ -481,9 +499,6 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
         return Math.random();
       };
       const timeOffset = randomFloat() * 1000;
-      let composer: EffectComposer | undefined;
-      let touch: ReturnType<typeof createTouchTexture> | undefined;
-      let liquidEffect: Effect | undefined;
       if (liquid) {
         touch = createTouchTexture();
         touch.radiusScale = liquidRadius;
@@ -518,7 +533,7 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
         if (composer && composer.passes.length > 0) composer.passes.forEach(p => ((p as any).renderToScreen = false));
         composer.addPass(noisePass);
       }
-      if (composer) composer.setSize(renderer.domElement.width, renderer.domElement.height);
+      if (composer) setSize();
       const mapToPixels = (e: PointerEvent) => {
         const rect = renderer.domElement.getBoundingClientRect();
         const scaleX = renderer.domElement.width / rect.width;
@@ -553,10 +568,14 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
       let raf = 0;
       const animate = () => {
         if (autoPauseOffscreen && !visibilityRef.current.visible) {
+          // Rebase the timer each skipped frame so the paused interval is not
+          // replayed as one huge delta when the effect scrolls back into view.
+          timer.reset();
           raf = requestAnimationFrame(animate);
           return;
         }
-        uniforms.uTime.value = timeOffset + clock.getElapsedTime() * speedRef.current;
+        timer.update();
+        uniforms.uTime.value = timeOffset + timer.getElapsed() * speedRef.current;
         if (liquidEffect) (liquidEffect as any).uniforms.get('uTime').value = uniforms.uTime.value;
         if (composer) {
           if (touch) touch.update();
@@ -578,7 +597,7 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
         scene,
         camera,
         material,
-        clock,
+        timer,
         clickIx: 0,
         uniforms,
         resizeObserver: ro,
@@ -616,14 +635,7 @@ const PixelBlast: React.FC<PixelBlastProps> = ({
     return () => {
       if (threeRef.current && mustReinit) return;
       if (!threeRef.current) return;
-      const t = threeRef.current;
-      t.resizeObserver?.disconnect();
-      cancelAnimationFrame(t.raf!);
-      t.quad?.geometry.dispose();
-      t.material.dispose();
-      t.composer?.dispose();
-      t.renderer.dispose();
-      if (t.renderer.domElement.parentElement === container) container.removeChild(t.renderer.domElement);
+      disposePixelBlastRuntime(threeRef.current, container);
       threeRef.current = null;
     };
   }, [

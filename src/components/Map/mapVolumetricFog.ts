@@ -384,12 +384,14 @@ function buildMarchMaterial(steps: number): THREE.ShaderMaterial {
 export class VolumetricFogPass extends Pass {
 	private fogCamera: THREE.Camera | null;
 	private elapsed = 0;
+	private disposed = false;
 	private readonly marchMaterial: THREE.ShaderMaterial;
 	private readonly compositorMaterial: THREE.ShaderMaterial;
 	private readonly fogRenderTarget: THREE.WebGLRenderTarget;
 	private readonly placeholderFogTexture: THREE.Data3DTexture;
 	private readonly placeholderBlueNoise: THREE.DataTexture;
 	private readonly noiseTexture: THREE.Data3DTexture;
+	private blueNoiseTexture: THREE.Texture | null = null;
 
 	constructor(camera: THREE.Camera | null, steps: number) {
 		super('VolumetricFogPass');
@@ -422,6 +424,11 @@ export class VolumetricFogPass extends Pass {
 		});
 
 		loadBlueNoiseTexture((texture) => {
+			if (this.disposed) {
+				texture.dispose();
+				return;
+			}
+			this.blueNoiseTexture = texture;
 			this.marchMaterial.uniforms.uBlueNoise.value = texture;
 			this.marchMaterial.uniforms.uBlueNoiseRes.value =
 				(texture.image as { width: number }).width;
@@ -511,12 +518,16 @@ export class VolumetricFogPass extends Pass {
 	}
 
 	override dispose(): void {
+		if (this.disposed) return;
+		this.disposed = true;
 		this.marchMaterial.dispose();
 		this.compositorMaterial.dispose();
 		this.fogRenderTarget.dispose();
 		this.placeholderFogTexture.dispose();
 		this.placeholderBlueNoise.dispose();
 		this.noiseTexture.dispose();
+		this.blueNoiseTexture?.dispose();
+		this.blueNoiseTexture = null;
 		super.dispose();
 	}
 }

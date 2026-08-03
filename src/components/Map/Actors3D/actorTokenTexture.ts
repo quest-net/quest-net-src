@@ -236,12 +236,7 @@ function drawPlaceholderToken(
 function createTextureFromCanvas(canvas: HTMLCanvasElement): THREE.CanvasTexture {
 	const texture = new THREE.CanvasTexture(canvas);
 	texture.colorSpace = THREE.SRGBColorSpace;
-	texture.needsUpdate = true;
 	return texture;
-}
-
-function clamp01(value: number): number {
-	return Math.max(0, Math.min(1, value));
 }
 
 function getAlphaPickBounds(
@@ -269,10 +264,10 @@ function getAlphaPickBounds(
 
 	const padding = px(ACTOR_TOKEN_PICK.BOUNDS_PADDING_PX, size);
 	return {
-		minU: clamp01((minX - padding) / size),
-		maxU: clamp01((maxX + 1 + padding) / size),
-		minV: clamp01(1 - (maxY + 1 + padding) / size),
-		maxV: clamp01(1 - (minY - padding) / size),
+		minU: THREE.MathUtils.clamp((minX - padding) / size, 0, 1),
+		maxU: THREE.MathUtils.clamp((maxX + 1 + padding) / size, 0, 1),
+		minV: THREE.MathUtils.clamp(1 - (maxY + 1 + padding) / size, 0, 1),
+		maxV: THREE.MathUtils.clamp(1 - (minY - padding) / size, 0, 1),
 	};
 }
 

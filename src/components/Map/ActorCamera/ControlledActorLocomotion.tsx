@@ -536,7 +536,6 @@ export default function ControlledActorLocomotion({
 				}
 
 				const state = capsuleStateRef.current;
-				const wasPosition = state.position.clone();
 				const wasSettled = isActorCapsuleSettled(
 					state,
 					currentActor.actor.CanFly ?? false
@@ -548,6 +547,7 @@ export default function ControlledActorLocomotion({
 					!wasSettled ||
 					pendingSyncPositionRef.current !== null;
 				if (shouldSimulate) {
+					const wasPosition = state.position.clone();
 					cameraSmoothing = FIRST_PERSON_CAMERA.ACTIVE_POSITION_SMOOTHING;
 					stepActorCapsuleController(
 						currentTerrain,

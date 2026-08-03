@@ -22,7 +22,10 @@
 
 import * as THREE from 'three';
 import type { VoxelTerrain } from '../../../../domains/VoxelTerrain/VoxelTerrain';
-import type { VoxelTerrainOccupancy } from './VoxelTerrainGeometryUtils';
+import type {
+	VoxelTerrainBuffers,
+	VoxelTerrainOccupancy,
+} from './VoxelTerrainGeometryUtils';
 import { chooseOccupancyDownsampleFactor } from './VoxelTerrainGeometryConstants';
 import { MATERIAL_LOOKUP } from '../materials';
 import { getVoxelTerrainResolution } from '../../../../utils/terrain/data/VoxelTerrainIndex';
@@ -84,16 +87,7 @@ function getMesher(): Promise<VoxelMesherType> {
 	return mesherPromise;
 }
 
-interface BucketMessageEntry {
-	key: string;
-	positions: Float32Array;
-	normals: Float32Array;
-	colors?: Float32Array;
-	surfaceDeformStrength?: Float32Array;
-	tileHeights: Float32Array;
-	highlightStrengths: Float32Array;
-	indices: Uint32Array;
-}
+type BucketMessageEntry = VoxelTerrainBuffers & { key: string };
 
 function getTransferableBuffer(view: ArrayBufferView): ArrayBuffer {
 	const { buffer } = view;

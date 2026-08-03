@@ -48,6 +48,7 @@ import {
 	HERO_OCCLUSION_VERTEX_HEADER,
 	type HeroOcclusionUniforms,
 } from '../shaders/heroOcclusionShader';
+import { createTerrainColorTextureGetter } from './terrainColorTexture';
 
 // ---------------------------------------------------------------------------
 // Tuning knobs
@@ -56,8 +57,6 @@ import {
 const IRON_BARS_TEXTURE_URL = '/materials/iron_bars_249/iron_bars_256x256.png';
 const IRON_BARS_SWATCH = '#6b6b6b';
 const IRON_BARS_TEXTURE_REPEAT = 1.0;
-const IRON_BARS_ANISOTROPY = 8;
-const IRON_BARS_PERFORMANCE_ANISOTROPY = 1;
 
 const IRON_BARS_ROUGHNESS = 0.55;
 const IRON_BARS_METALNESS = 0.45;
@@ -65,50 +64,9 @@ const IRON_BARS_METALNESS = 0.45;
 // Alpha threshold for the cutout. Pixels with alpha below this are discarded.
 const IRON_BARS_ALPHA_TEST = 0.5;
 
-// ---------------------------------------------------------------------------
-// Texture cache
-// ---------------------------------------------------------------------------
-
-let cachedTexture: THREE.Texture | null = null;
-let cachedPerformanceTexture: THREE.Texture | null = null;
-
-function configureIronBarsTexture(
-	texture: THREE.Texture,
-	performanceMode: boolean
-): THREE.Texture {
-	texture.colorSpace = THREE.SRGBColorSpace;
-	texture.wrapS = THREE.RepeatWrapping;
-	texture.wrapT = THREE.RepeatWrapping;
-	texture.magFilter = THREE.LinearFilter;
-	texture.minFilter = performanceMode
-		? THREE.LinearFilter
-		: THREE.LinearMipmapLinearFilter;
-	texture.anisotropy = performanceMode
-		? IRON_BARS_PERFORMANCE_ANISOTROPY
-		: IRON_BARS_ANISOTROPY;
-	texture.generateMipmaps = !performanceMode;
-	return texture;
-}
-
-function getIronBarsTexture(performanceMode: boolean): THREE.Texture {
-	if (performanceMode) {
-		if (!cachedPerformanceTexture) {
-			cachedPerformanceTexture = configureIronBarsTexture(
-				new THREE.TextureLoader().load(IRON_BARS_TEXTURE_URL),
-				true
-			);
-		}
-		return cachedPerformanceTexture;
-	}
-
-	if (!cachedTexture) {
-		cachedTexture = configureIronBarsTexture(
-			new THREE.TextureLoader().load(IRON_BARS_TEXTURE_URL),
-			false
-		);
-	}
-	return cachedTexture;
-}
+const getIronBarsTexture = createTerrainColorTextureGetter(
+	IRON_BARS_TEXTURE_URL
+);
 
 // ---------------------------------------------------------------------------
 // Shader helpers

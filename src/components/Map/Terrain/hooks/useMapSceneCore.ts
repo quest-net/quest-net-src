@@ -134,7 +134,9 @@ export function useMapSceneCore(
 		renderer.shadowMap.enabled = true;
 		renderer.shadowMap.autoUpdate = false;
 		renderer.shadowMap.needsUpdate = true;
-		renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+		// PCFShadowMap is itself soft as of r183; PCFSoftShadowMap is deprecated
+		// for WebGLRenderer and is silently downgraded to this anyway.
+		renderer.shadowMap.type = THREE.PCFShadowMap;
 		container.appendChild(renderer.domElement);
 
 		const stats = new Stats();
