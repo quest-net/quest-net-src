@@ -5,13 +5,14 @@
 // waiting on the DM's first broadcast, and the retryable "still reaching the
 // DM" state. Hard failures (bad room code, missing payload) use the plain
 // error screen in CampaignView instead — this component is only for the
-// hopeful, in-progress states.
+// hopeful, in-progress states. The 20-second transition to "retrying" is only
+// a change in UI copy; the underlying Trystero room remains mounted.
 //
 // Styling matches the rest of the app: the spinning `mdi--compass` motif from
 // Main.tsx's map loader and the base-200/base-300 palette used by the Home and
 // Campaigns pages. The backdrop is a cheap CSS gradient rather than one of the
-// WebGL backgrounds (Waves / PixelBlast) because this screen can mount and
-// unmount on every reconnect cycle.
+// WebGL backgrounds (Waves / PixelBlast) because it appears before the full
+// campaign UI is ready.
 
 import { useNavigate } from "react-router-dom";
 
@@ -37,7 +38,7 @@ const PHASE_COPY: Record<ConnectionPhase, { title: string; body: string }> = {
 	},
 	retrying: {
 		title: "Still reaching the DM…",
-		body: "We haven't heard back yet — retrying automatically until the DM comes online.",
+		body: "We haven't heard back yet — Trystero is still listening for the DM.",
 	},
 };
 
@@ -77,7 +78,7 @@ export function CampaignConnectionScreen({
 				{isRetrying && (
 					<span
 						className="loading loading-dots loading-sm text-warning"
-						aria-label="Retrying"
+						aria-label="Still connecting"
 					/>
 				)}
 

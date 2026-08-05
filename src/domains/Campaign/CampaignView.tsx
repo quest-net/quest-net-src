@@ -1,10 +1,9 @@
 // domains/Campaign/CampaignView.tsx
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { contextStore } from "../Context/contextStore";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
-import { useAutoReconnect } from "../../hooks/useAutoReconnect";
 import { CampaignUtils } from "./CampaignUtils";
 import { ContextService } from "../Context/ContextService";
 import { RoomService } from "../Room/RoomService";
@@ -24,20 +23,14 @@ interface CampaignViewState {
 	status: ViewStatus;
 	errorMessage?: string;
 	// When true, this error is a transient "couldn't reach the DM yet" state
-	// rather than a hard failure (bad room code, missing payload, etc.).
-	// useAutoReconnect stays enabled for it so the room keeps recycling, and a
-	// late first state update still flips us to "ready" (see onFirstUpdate).
+	// rather than a hard failure (bad room code, missing payload, etc.). The
+	// original Trystero room remains mounted, and a late first state update still
+	// flips us to "ready" (see onFirstUpdate).
 	retryable?: boolean;
 }
 
-// Player join tuning. This deadline must exceed Trystero's ICE-gathering
-// ceiling (15s in @trystero-p2p/core peer.mjs) so a healthy-but-slow first
-// connection isn't killed mid-handshake. It is a *soft* deadline: when it
-// fires we drop to a retryable error, useAutoReconnect keeps recycling the
-// room, and a late first state update recovers us to "ready". The DM's own
-// recovery cadences (30s peerless reconnect, up to 60s relay backoff) are all
-// longer than any single attempt, so retrying — not a longer one-shot wait —
-// is what actually gets a player in.
+// UI feedback only. Reaching this deadline changes the connection screen but
+// never leaves, recreates, or otherwise interferes with the Trystero room.
 const PLAYER_JOIN_TIMEOUT_MS = 20000;
 
 export function CampaignView() {
@@ -49,16 +42,7 @@ export function CampaignView() {
 	// is needed here.
 	const context = contextStore;
 	const { setActionService } = useActionService();
-	const [reconnectTrigger, setReconnectTrigger] = useState(0);
 	const isDMRoute = !!identifier && isGUID(identifier);
-	// True when the effect cleanup below should leave the ActionService in
-	// place rather than nullifying it. Set by onReconnect before bumping
-	// reconnectTrigger so the cleanup that follows sees it. The next effect
-	// body installs the new ActionService directly, which lets the stable
-	// proxy in ActionServiceProvider avoid the null<->proxy flicker that used
-	// to fire actionService-dep effects (ImageDisplay, slot displays, etc.)
-	// once per relay watchdog cycle.
-	const isReconnectingRef = useRef(false);
 
 	const [state, setState] = useState<CampaignViewState>({
 		status: "loading",
@@ -76,29 +60,6 @@ export function CampaignView() {
 			prev.status === "loading" ? prev : { status: "loading" }
 		);
 	}, [identifier]);
-
-	const onReconnect = () => {
-		// Set BEFORE incrementing so the about-to-fire cleanup observes it.
-		isReconnectingRef.current = true;
-		setReconnectTrigger((prev) => prev + 1);
-	};
-
-	// Stays enabled while a player is still waiting for the DM, and after a
-	// retryable join timeout — that window is exactly when reconnection is
-	// needed, and gating on "ready" alone left first-time joiners with a single
-	// attempt and no retry.
-	useAutoReconnect(
-		{
-			enabled:
-				state.status === "ready" ||
-				state.status === "waiting-for-dm" ||
-				(state.status === "error" && !!state.retryable),
-			checkIntervalMs: 10000,
-			reconnectDelayMs: 8000,
-			peerlessReconnectDelayMs: isDMRoute ? 30000 : 20000,
-		},
-		onReconnect
-	);
 
 	useEffect(() => {
 		// Validate identifier
@@ -240,24 +201,36 @@ export function CampaignView() {
 						service?.recordPeerUser(peerId, theirUser);
 					},
 					onJoinError: (details) => {
-						console.error("[CampaignView] onJoinError:", details);
-						if (!isSubscribed) return;
-						// Only convert to a hard error while we're still waiting
-						// for the DM to admit us. After we're "ready", peer-level
-						// join failures are transient and useAutoReconnect handles
-						// them.
+						console.warn("[CampaignView] onJoinError:", details);
+						if (!isSubscribed || isDM) return;
+						// Trystero reports this per peer for handshake failures and
+						// for SDP exchanges that fail to establish WebRTC. Quest-Net
+						// does not currently reject admission or configure a room
+						// password, so these are recoverable network-attempt failures.
+						// Keep the original room alive so Trystero can continue its
+						// own discovery, signaling, and ICE recovery.
 						setState((cur) => {
-							if (cur.status !== "waiting-for-dm") return cur;
+							const isJoinInProgress =
+								cur.status === "waiting-for-dm" ||
+								(cur.status === "error" && !!cur.retryable);
+							if (!isJoinInProgress) return cur;
 							const message = details.error || "unknown";
 							return {
 								status: "error",
-								errorMessage: `Couldn't join the room: ${message}`,
+								retryable: true,
+								errorMessage: `The last connection attempt failed (${message}). Trystero is still listening for the DM.`,
 							};
 						});
 					},
 				};
 
-				room = RoomService.join(roomCode!, callbacks);
+				// Trystero's documented passive mode gives the authoritative room
+				// its intended star topology: the DM announces as the sole active
+				// peer, while players listen for the DM and ignore other players.
+				room = RoomService.join(roomCode!, {
+					callbacks,
+					passive: !isDM,
+				});
 
 				// =====================================================================
 				// STEP 3: Create ActionService
@@ -283,11 +256,9 @@ export function CampaignView() {
 						}
 					});
 
-					// Soft, retryable deadline. On expiry we surface feedback but
-					// stay recoverable: useAutoReconnect keeps recycling the room
-					// (it's enabled for the retryable-error state above) and the
-					// onFirstUpdate latch above promotes us to "ready" the instant
-					// the DM is reachable.
+					// Soft, retryable deadline. On expiry we surface feedback only;
+					// the original room stays mounted and the onFirstUpdate latch
+					// promotes us to "ready" whenever the DM becomes reachable.
 					joinTimeout = setTimeout(() => {
 						if (!isSubscribed) return;
 						setState((cur) =>
@@ -296,7 +267,7 @@ export function CampaignView() {
 										status: "error",
 										retryable: true,
 										errorMessage:
-											"Still trying to reach the DM. Make sure the room code is correct and the DM is online — we'll keep retrying automatically.",
+											"Still trying to reach the DM. Make sure the room code is correct and the DM is online — Trystero is continuing to listen.",
 									}
 								: cur
 						);
@@ -338,19 +309,10 @@ export function CampaignView() {
 				service.cleanup();
 			}
 
-			// On reconnects, leave the proxy's underlying ref intact — the
-			// next effect body will install the new ActionService directly,
-			// so no actionService-dep effect needs to wake up. On true
-			// teardown (campaign switch / unmount), nullify so downstream
-			// consumers see the disconnect.
-			if (isReconnectingRef.current) {
-				isReconnectingRef.current = false;
-			} else {
-				setActionService(null);
-			}
+			setActionService(null);
 		};
 		// eslint-disable-next-line
-	}, [identifier, setActionService, navigate, reconnectTrigger]);
+	}, [identifier, setActionService, navigate]);
 
 	// =====================================================================
 	// RENDER
@@ -368,9 +330,9 @@ export function CampaignView() {
 	}
 
 	if (state.status === "error") {
-		// Retryable errors aren't dead ends: the room keeps recycling in the
-		// background and a first state update will promote us to "ready". Show
-		// a "still trying" affordance rather than a hard failure.
+		// Retryable errors aren't dead ends: the original room remains active and
+		// a first state update will promote us to "ready". Show an in-progress
+		// affordance rather than a hard failure.
 		if (state.retryable) {
 			return (
 				<CampaignConnectionScreen

@@ -208,12 +208,12 @@ export function PeerStatus({
 											? "Identifying the host"
 											: "Not connected to the host"}
 									</p>
-									{/* Only the 0-peer case self-recovers, so don't promise a
-									    retry we no longer perform. */}
+									{/* Trystero owns discovery and recovery; this status never
+									    triggers a room teardown or application retry. */}
 									<p className="mt-1 opacity-80">
 										{peers.length > 0
 											? "You're connected to other players, but nothing you do reaches the game until the host connects. Trystero keeps trying in the background; if this persists, leave and rejoin the room."
-											: "You're in the room but haven't reached anyone yet. Retrying automatically."}
+											: "You're in the room but haven't reached anyone yet. Trystero is still listening for the host."}
 									</p>
 								</div>
 							</div>

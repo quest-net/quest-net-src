@@ -29,29 +29,31 @@ export const networkingPage: WikiPage = {
 					<p>
 						Quest-Net uses Trystero rooms with app ID{" "}
 						<WikiCode>quest-net</WikiCode>. The transport is peer-to-peer after
-						signaling, but the game model is not peer-authoritative. The{" "}
+						signaling, but the required campaign room is an authority star. The{" "}
 						<WikiHighlight tone="primary">DM</WikiHighlight> owns the canonical
-						campaign state, and players send requests into that authority model.
+						campaign state and joins as an active peer. Players join with
+						Trystero's <WikiCode>passive</WikiCode> option, so they listen for the
+						DM without connecting to one another.
 					</p>
 					<WikiDiagram title="Connection shape">
 						<div className="grid items-stretch gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr]">
 							<WikiDiagramNode title="DM route" tone="primary">
-								Private URL uses the campaign GUID. The DM still joins the public
-								room with <WikiCode>Campaign.RoomCode</WikiCode>.
+								Private URL uses the campaign GUID. The DM joins the public room with{" "}
+								<WikiCode>Campaign.RoomCode</WikiCode> and announces as the active peer.
 							</WikiDiagramNode>
 							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Trystero room" tone="accent">
-								Peers meet through Nostr signaling, then communicate through
-								Trystero actions.
+								Nostr handles signaling. Trystero passive mode prevents player-player
+								campaign connections and produces a DM-centered star.
 							</WikiDiagramNode>
 							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								&lt;-
 							</div>
 							<WikiDiagramNode title="Player route" tone="secondary">
-								Public URL uses the room code. Player campaign metadata is keyed
-								by that code, not the private DM GUID.
+								Public URL uses the room code. A passive player activates after hearing
+								the DM and ignores other passive players.
 							</WikiDiagramNode>
 						</div>
 					</WikiDiagram>
@@ -98,8 +100,9 @@ export const networkingPage: WikiPage = {
 							actions.
 						</WikiFlowStep>
 						<WikiFlowStep number="5" title="Wait for first state when needed" tone="warning">
-							A new player waits up to 15 seconds for the DM's first campaign
-							broadcast before showing a connection error.
+							A new player gets a retrying screen if the first DM state has not
+							arrived after 20 seconds. Network join failures are recoverable and
+							keep the same retry cycle running.
 						</WikiFlowStep>
 					</WikiFlow>
 				</div>
@@ -331,32 +334,33 @@ export const networkingPage: WikiPage = {
 									"userUpdate rebroadcasts local User changes; userReq repairs missing metadata for peers that connected before details arrived.",
 							},
 							{
-								name: "Auto reconnect",
-								tone: "warning",
+								name: "Non-destructive waiting",
+								tone: "success",
 								detail:
-									"useAutoReconnect recycles the room after peer loss, browser sleep drift, focus, online, or pageshow recovery signals.",
+									"After 20 seconds the player sees clearer status text, but Quest-Net leaves the original room untouched so Trystero can continue discovery and ICE.",
 							},
 							{
-								name: "Relay watchdog",
-								tone: "error",
+								name: "Passive topology",
+								tone: "success",
 								detail:
-									"DM-only. Forces a leave + rejoin when a Nostr relay socket closes, rebuilding subscriptions so new players can still discover the DM after relay churn.",
+									"The DM is active and players are passive. Trystero wakes passive players for the DM while preventing player-only campaign-room meshes.",
 							},
 							{
-								name: "Phantom eviction",
+								name: "Display-only pings",
 								tone: "info",
 								detail:
-									"Repeated ping failures force-close a peer's RTCPeerConnection so Trystero reaps a silently-dead peer that never fired a close event.",
+									"Ping measures RTT for the status UI. Slow or missing pongs never force-close a connection because bulk traffic shares the same ordered data channel.",
 							},
 						]}
 					/>
-					<WikiCallout tone="warning" title="Important distinction">
+					<WikiCallout tone="info" title="Trystero owns liveness">
 						<p>
 							Existing WebRTC peer connections keep working after relay signaling
-							degrades — they are fully peer-to-peer after ICE negotiation. The
-							relay watchdog exists because new joiners still need the DM's relay
-							subscription alive, and Trystero only auto-recovers a relay socket
-							that actually fires a close event.
+							degrades — they are fully peer-to-peer after ICE negotiation.
+							Quest-Net follows Trystero's <WikiCode>getPeers</WikiCode>,{" "}
+							<WikiCode>onPeerJoin</WikiCode>, and <WikiCode>onPeerLeave</WikiCode>{" "}
+							state and does not tear down a link merely because an application
+							message is slow.
 						</p>
 					</WikiCallout>
 				</div>

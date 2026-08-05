@@ -912,7 +912,7 @@ export function ThreeDActorLayer({
 	draggableHeightRange,
 }: ThreeDActorLayerProps) {
 	// Stash callable/external dependencies in refs so a fresh ImageService
-	// (e.g., after CampaignView reconnects) or a new onActorClick callback
+	// (e.g., after a campaign switch) or a new onActorClick callback
 	// reference does NOT trigger a teardown + async texture re-load of every
 	// actor token. The build effect reads these via refs at construction time
 	// and on each pointer event.
@@ -1839,7 +1839,7 @@ export function ThreeDActorLayer({
 			shadowTexture.dispose();
 		};
 		// Intentionally NOT including imageService, onActorClick, or
-		// selectedActor: those flow through refs so a reconnect or selection
+		// selectedActor: those flow through refs so a service or selection
 		// change doesn't tear down every token and re-fetch its texture.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [resources]);

@@ -1,7 +1,11 @@
 // domains/Room/RoomService.ts
 
 import { joinRoom } from "trystero";
-import type { JoinRoomCallbacks, TurnServerConfig } from "trystero";
+import type {
+	JoinRoomCallbacks,
+	JoinRoomConfig,
+	TurnServerConfig,
+} from "trystero";
 import type { Room } from "./Room";
 
 const APP_ID = "quest-net";
@@ -47,13 +51,19 @@ const WARN_ON_RELAY_FAILURE = import.meta.env.DEV;
  *   any action receivers. Use it to exchange identity payloads. Throw/reject
  *   to deny the peer (the other side gets `onJoinError`).
  *
- * - `onJoinError` fires on join failures: bad password, handshake denial,
- *   or handshake timeout. Per-peer.
+ * - `onJoinError` fires per peer for bad passwords, handshake denial/timeout,
+ *   and SDP exchanges that do not establish a WebRTC connection.
  *
  * This is a direct re-export of trystero's `JoinRoomCallbacks` type so it
  * can never drift from the library's own definitions.
  */
 export type RoomCallbacks = JoinRoomCallbacks;
+
+/** Documented Trystero room options that Quest-Net varies per join. */
+export interface RoomJoinOptions {
+	callbacks?: RoomCallbacks;
+	passive?: JoinRoomConfig["passive"];
+}
 
 /**
  * Room lifecycle management
@@ -71,10 +81,13 @@ export const RoomService = {
 	 * Creates a new Trystero connection
 	 *
 	 * @param roomCode - The room code to join (e.g., "brave-dragon-42")
-	 * @param callbacks - Optional `joinRoom` callbacks (handshake, join error)
+	 * @param options - Documented Trystero callbacks and passive-room mode
 	 * @returns Room object with WebRTC connections
 	 */
-	join(roomCode: string | undefined, callbacks?: RoomCallbacks): Room {
+	join(
+		roomCode: string | undefined,
+		{ callbacks, passive = false }: RoomJoinOptions = {}
+	): Room {
 		if (!roomCode) {
 			roomCode = "ROOMCODE";
 		}
@@ -85,6 +98,7 @@ export const RoomService = {
 		return joinRoom(
 			{
 				appId: APP_ID,
+				passive,
 				relayConfig: { warnOnRelayFailure: WARN_ON_RELAY_FAILURE },
 				...(TURN_CONFIG ? { turnConfig: TURN_CONFIG } : {}),
 			},

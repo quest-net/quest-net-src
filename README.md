@@ -92,7 +92,7 @@ src/
   components/     Reusable UI, map, dice, form, and input components
   domains/        Campaign, character, entity, terrain, combat, item, audio, and other feature domains
   services/       Action dispatch, sync, storage, image, terrain, audio, and scripting services
-  hooks/          Peer tracking, reconnect, relay watchdog, and UI hooks
+  hooks/          Peer tracking and UI hooks
   utils/          Dice, terrain, storage, migration, folder, math, and parsing utilities
   migrations/     Versioned context and campaign migrations
   wiki/           In-app documentation pages

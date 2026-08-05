@@ -63,7 +63,7 @@ src/
 ├── domains/            # Feature domains (model + actions + UI per domain)
 ├── services/           # Actions/, StateSync, ImageService, SoundEffectService,
 │                       #   TerrainStorageService, ImageGenerationService, etc.
-├── hooks/              # usePeerTracking, useAutoReconnect
+├── hooks/              # usePeerTracking and reusable UI hooks
 ├── utils/              # DiceUtils, FolderUtils, terrain/, Audio/, LocalStorageUtilities, etc.
 ├── migrations/         # Version migration scripts
 ├── data/               # Static data (defaultVoxelStamps.ts)
@@ -164,7 +164,7 @@ Trystero channels: `actionReq`, `stateSync`, `actorPose`, `userReq`, `userUpdate
 
 Initial peer identity is exchanged via the `onPeerHandshake` callback (passed to `joinRoom` in `CampaignView`). Runtime user updates flow through `userUpdate`; missing metadata is repaired via `userReq`.
 
-Connection recovery leans on Trystero rather than second-guessing it — peer liveness comes from `onPeerJoin`/`onPeerLeave`/`getPeers()`, and relay sockets reconnect and re-subscribe on their own. The app adds only **`useAutoReconnect`**, which recycles the room (leave + rejoin) at **0 peers**, plus browser sleep/wake. Pings are display-only. The half-joined state (connected to players but not the DM) is surfaced, not acted on: `usePeerTracking` reports `online` / `partial` / `connected` and only turns green on `connected`. Ping-based eviction, `useRelayWatchdog`, and player-side "DM unreachable" recycling were all removed — each force-closed connections that were merely slow, which on a weak link degraded into teardown loops. See `src/DEVELOPMENT_NOTES.md` before adding any new automatic teardown.
+Connection recovery belongs to Trystero rather than an application watchdog — peer liveness comes from `onPeerJoin`/`onPeerLeave`/`getPeers()`, and relay sockets reconnect and re-subscribe on their own. Quest-Net does not recycle a mounted room based on peer count, elapsed time, browser wake, relay state, or application pings. The 20-second player join deadline changes UI feedback only. Pings are display-only. `usePeerTracking` may surface incomplete metadata, but never acts on it. Ping-based eviction, `useRelayWatchdog`, `useAutoReconnect`, and player-side "DM unreachable" recycling were all removed — each force-closed connections that were merely slow, which on a weak link degraded into teardown loops. See `src/DEVELOPMENT_NOTES.md` before adding any new automatic teardown.
 
 See `src/DEVELOPMENT_NOTES.md` for full networking constraints and implementation details.
 

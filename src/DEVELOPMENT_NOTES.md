@@ -17,6 +17,10 @@
 - **Strategy**: Nostr (root `trystero` package, defaults to Nostr in 0.24+)
 - **App ID**: Hardcoded as `'quest-net'`
 - **Room code**: Max 32 characters (anything longer is treated as GUID for DM)
+- **Campaign-room topology**: DM joins active; players use Trystero's documented
+  `passive` mode. Passive players listen for the active DM and do not connect to
+  one another, so the required room is an authority-centered star rather than a
+  full mesh.
 
 ### Architecture
 
@@ -36,15 +40,16 @@
 
 ### Connection error surface
 
-- `onJoinError` is wired in `CampaignView`. While the player is in the
-  `waiting-for-dm` state (no campaign yet), a join failure is converted into
-  a hard error with the underlying message. After `ready`, peer-level join
-  failures are treated as transient and `useAutoReconnect` handles them.
+- `onJoinError` is wired in `CampaignView`. Trystero fires it per peer for bad
+  passwords, admission-handshake failures/timeouts, and SDP exchanges that do
+  not establish WebRTC. Quest-Net does not currently configure a room password
+  or reject admission, so player join errors are treated as retryable network
+  attempts while the original Trystero room remains mounted.
 
 ### Connection recovery: a slow link is not a dead link
 
 The governing rule here, learned the hard way. Detecting a degraded connection
-is cheap and safe; automatically tearing one down is neither. Three mechanisms
+is cheap and safe; automatically tearing one down is neither. Several mechanisms
 that force-closed connections were removed because each fired against links that
 were still working — on a weak connection everything looks slow, and the teardown
 loops made sessions strictly worse the worse the network got.
@@ -54,15 +59,26 @@ loops made sessions strictly worse the worse the network got.
 
 What we still do:
 
-- `useAutoReconnect` recycles the room at **0 peers** only — the one case where
-  a leave+rejoin has nothing to lose. Also covers browser sleep/wake.
+- A 20-second player join deadline changes the connection screen to explanatory
+  "still listening" feedback. It does not leave, recreate, or otherwise alter
+  the Trystero room.
+- `room.leave()` is called only for a real React lifecycle teardown: leaving or
+  switching the campaign view. Peer count, elapsed time, browser wake, relay
+  state, ping latency, and missing metadata never trigger it.
 - Pings are **display-only** (RTT in `PeerStatus`); a missed pong does nothing.
-- The half-joined state (peers but no DM) is **surfaced, not acted on**:
-  `usePeerTracking` reports `online` / `partial` / `connected`, and green is
-  reserved for a reachable DM.
+- `usePeerTracking` retains its `partial` state defensively for missing or
+  unexpected metadata, but a normal passive player cannot form a player-only
+  campaign-room mesh.
 
 What was removed, and why it must not come back in the same shape:
 
+- **`useAutoReconnect`.** Recycled a zero-peer room after 20 seconds. A live
+  three-browser diagnosis showed a passive player receive the DM's offer about
+  200ms after Trystero warmed its offer pool, only for Quest-Net's timer to call
+  `room.leave()` before the player could produce an answer or ICE candidate.
+  `getPeers()` contains admitted connections, not in-progress discovery, SDP,
+  ICE, or admission handshakes; zero peers therefore does not mean the room is
+  idle. Keep user feedback timers separate from network lifecycle.
 - **Ping-based eviction.** 3 pings over a 2.5s timeout force-closed the peer.
   But Trystero's `ping` is an ordinary action on the *same single
   reliable-ordered data channel* as multi-MB terrain/image transfers, so any
@@ -81,7 +97,8 @@ What was removed, and why it must not come back in the same shape:
 - **`requireDmConnection`.** Made players recycle when the DM was unreachable.
   `getDmPeerId()` is undefined until the handshake lands, so a slow DM read as
   "no DM" and every player tore down their room every ~20s, starving the very
-  link they were waiting for.
+  link they were waiting for. Passive topology removes the need for this custom
+  role-metadata watchdog: Trystero itself prevents passive player-player links.
 
 ### Relay warning suppression
 
