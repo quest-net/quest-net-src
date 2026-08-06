@@ -11,6 +11,7 @@ import {
 	type VoxelTerrainSurroundings,
 } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { TerrainColorPicker } from "./TerrainColorPicker";
+import { clamp, parseNumber } from "../../../utils/math";
 
 const LIGHTING_INTENSITY_MIN = 0;
 const LIGHTING_INTENSITY_MAX = 3;
@@ -19,15 +20,6 @@ const LIGHTING_ROTATION_MIN = 0;
 const LIGHTING_ROTATION_MAX = 360;
 const LIGHTING_ELEVATION_MIN = 0;
 const LIGHTING_ELEVATION_MAX = 90;
-
-function clampNumber(value: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, value));
-}
-
-function numberInputValue(value: string, fallback: number): number {
-	const parsed = Number(value);
-	return Number.isFinite(parsed) ? parsed : fallback;
-}
 
 /** A range control with a muted label and a tabular value readout. */
 function SliderRow({
@@ -63,7 +55,7 @@ function SliderRow({
 				step={step}
 				value={value}
 				onChange={(e) =>
-					onChange(clampNumber(numberInputValue(e.target.value, value), min, max))
+					onChange(clamp(parseNumber(e.target.value, value), min, max))
 				}
 				disabled={disabled}
 			/>

@@ -1,7 +1,6 @@
 // src/migrations/runMigrations.ts
 import type { Migration } from "./types";
-import type { MigrationStorage } from "./MigrationStorage";
-import { DefaultMigrationStorage } from "./MigrationStorage";
+import { migrationStorage } from "./MigrationStorage";
 
 /**
  * Compares two semver-like version strings (e.g. "1.2.3").
@@ -28,22 +27,19 @@ function compareVersions(a: string, b: string): number {
  *                    must not import domain types; use `(data as any).field`.
  * @param fromVersion The version string stamped on the stored record.
  * @param migrations  List of available migrations, sorted ascending by version.
- * @param storage     Optional storage override (defaults to DefaultMigrationStorage).
  */
 export async function runMigrations(
 	data: unknown,
 	fromVersion: string,
-	migrations: Migration[],
-	storage?: MigrationStorage
+	migrations: Migration[]
 ): Promise<unknown> {
 	if (migrations.length === 0) return data;
 
-	const store = storage ?? new DefaultMigrationStorage();
 	let current = data;
 
 	for (const migration of migrations) {
 		if (compareVersions(migration.version, fromVersion) > 0) {
-			current = await migration.migrate(current, store);
+			current = await migration.migrate(current, migrationStorage);
 		}
 	}
 

@@ -16,6 +16,7 @@ import type {
   ImageProviderCredentials,
   GeneratedImageResult,
 } from "./types";
+import { sleep } from "../../utils/math";
 
 const GENERATE_ENDPOINT = "https://api.bfl.ai/v1/flux-2-pro";
 const POLL_INTERVAL_MS = 2000;
@@ -28,10 +29,6 @@ const TERMINAL_STATUSES = new Set([
   "Content Moderated",
   "Task not found",
 ]);
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export const Flux2ProProvider: ImageGenerationProvider = {
   id: "bfl-flux2-pro",

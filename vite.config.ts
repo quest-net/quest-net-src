@@ -90,7 +90,7 @@ export default defineConfig(async () => {
 						id.includes("/motion/")
 					)
 						return "vendor-motion";
-					// Everything else (trystero, colorjs.io, valtio, etc.).
+					// Everything else (trystero, valtio, etc.).
 					return "vendor";
 				},
 			},

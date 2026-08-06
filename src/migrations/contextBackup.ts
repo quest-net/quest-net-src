@@ -35,14 +35,11 @@ export async function backupContextOnce(
 	rawContext: unknown
 ): Promise<boolean> {
 	try {
-		const db = await IndexedDBUtilities.getDB();
-
-		const existing = await new Promise<unknown>((resolve, reject) => {
-			const tx = db.transaction([CONTEXT_BACKUPS_STORE_NAME], "readonly");
-			const req = tx.objectStore(CONTEXT_BACKUPS_STORE_NAME).get(backupKey);
-			req.onsuccess = () => resolve(req.result ?? null);
-			req.onerror = () => reject(req.error);
-		});
+		const existing = await IndexedDBUtilities.op(
+			CONTEXT_BACKUPS_STORE_NAME,
+			"readonly",
+			(store) => store.get(backupKey)
+		);
 
 		if (existing) {
 			return false;
@@ -55,12 +52,9 @@ export async function backupContextOnce(
 			Context: rawContext,
 		};
 
-		await new Promise<void>((resolve, reject) => {
-			const tx = db.transaction([CONTEXT_BACKUPS_STORE_NAME], "readwrite");
-			const req = tx.objectStore(CONTEXT_BACKUPS_STORE_NAME).put(record);
-			req.onsuccess = () => resolve();
-			req.onerror = () => reject(req.error);
-		});
+		await IndexedDBUtilities.op(CONTEXT_BACKUPS_STORE_NAME, "readwrite", (store) =>
+			store.put(record)
+		);
 
 		console.log(
 			`[ContextBackup] Snapshotted Context (source version "${sourceVersion}") under IndexedDB key "${backupKey}".`

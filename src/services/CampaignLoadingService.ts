@@ -34,7 +34,6 @@ export class CampaignLoadingService {
 	 */
 	static async saveCampaign(campaign: Campaign): Promise<void> {
 		await TerrainStorageService.prepareCampaignForStorage(campaign);
-		const db = await IndexedDBUtilities.getDB();
 
 		const record = {
 			Id: campaign.Id,
@@ -45,25 +44,21 @@ export class CampaignLoadingService {
 			SavedAt: Date.now(),
 		};
 
-		return new Promise((resolve, reject) => {
-			const transaction = db.transaction([CAMPAIGNS_STORE_NAME], "readwrite");
-			const store = transaction.objectStore(CAMPAIGNS_STORE_NAME);
-			const request = store.put(record);
+		try {
+			await IndexedDBUtilities.op(CAMPAIGNS_STORE_NAME, "readwrite", (store) =>
+				store.put(record)
+			);
+		} catch (error) {
+			console.error(
+				`[CampaignLoadingService] Failed to save campaign: ${campaign.Id}`,
+				error
+			);
+			throw error;
+		}
 
-			request.onsuccess = () => {
-				// Record the local change so cloud backup and the campaign list see
-				// this write — including edits that wrote no log entry.
-				markCampaignUpdated(campaign.Id);
-				resolve();
-			};
-			request.onerror = () => {
-				console.error(
-					`[CampaignLoadingService] Failed to save campaign: ${campaign.Id}`,
-					request.error
-				);
-				reject(request.error);
-			};
-		});
+		// Record the local change so cloud backup and the campaign list see this
+		// write — including edits that wrote no log entry.
+		markCampaignUpdated(campaign.Id);
 	}
 
 	/**
@@ -75,26 +70,15 @@ export class CampaignLoadingService {
 	 * Returns null if no campaign is stored under that id.
 	 */
 	static async loadCampaign(id: string): Promise<Campaign | null> {
-		const db = await IndexedDBUtilities.getDB();
-
-		const record = await new Promise<{
-			Id: string;
-			Version: string;
-			Campaign: Campaign;
-		} | null>((resolve, reject) => {
-			const transaction = db.transaction([CAMPAIGNS_STORE_NAME], "readonly");
-			const store = transaction.objectStore(CAMPAIGNS_STORE_NAME);
-			const request = store.get(id);
-
-			request.onsuccess = () => resolve(request.result ?? null);
-			request.onerror = () => {
-				console.error(
-					`[CampaignLoadingService] Failed to load campaign: ${id}`,
-					request.error
-				);
-				reject(request.error);
-			};
-		});
+		let record: { Id: string; Version: string; Campaign: Campaign } | undefined;
+		try {
+			record = await IndexedDBUtilities.op(CAMPAIGNS_STORE_NAME, "readonly", (store) =>
+				store.get(id)
+			);
+		} catch (error) {
+			console.error(`[CampaignLoadingService] Failed to load campaign: ${id}`, error);
+			throw error;
+		}
 
 		if (!record) return null;
 
@@ -129,38 +113,14 @@ export class CampaignLoadingService {
 	 * Removes a Campaign payload from IndexedDB.
 	 */
 	static async deleteCampaign(id: string): Promise<void> {
-		const db = await IndexedDBUtilities.getDB();
-
-		return new Promise((resolve, reject) => {
-			const transaction = db.transaction([CAMPAIGNS_STORE_NAME], "readwrite");
-			const store = transaction.objectStore(CAMPAIGNS_STORE_NAME);
-			const request = store.delete(id);
-
-			request.onsuccess = () => resolve();
-			request.onerror = () => {
-				console.error(
-					`[CampaignLoadingService] Failed to delete campaign: ${id}`,
-					request.error
-				);
-				reject(request.error);
-			};
-		});
-	}
-
-	/**
-	 * Lists all stored campaign ids — primarily useful for diagnostics.
-	 */
-	static async listCampaignIds(): Promise<string[]> {
-		const db = await IndexedDBUtilities.getDB();
-
-		return new Promise((resolve, reject) => {
-			const transaction = db.transaction([CAMPAIGNS_STORE_NAME], "readonly");
-			const store = transaction.objectStore(CAMPAIGNS_STORE_NAME);
-			const request = store.getAllKeys();
-
-			request.onsuccess = () => resolve(request.result as string[]);
-			request.onerror = () => reject(request.error);
-		});
+		try {
+			await IndexedDBUtilities.op(CAMPAIGNS_STORE_NAME, "readwrite", (store) =>
+				store.delete(id)
+			);
+		} catch (error) {
+			console.error(`[CampaignLoadingService] Failed to delete campaign: ${id}`, error);
+			throw error;
+		}
 	}
 
 	/**

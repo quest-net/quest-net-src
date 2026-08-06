@@ -20,10 +20,9 @@
 import type { StatSlot } from "../../../domains/Actor/Actor";
 import type { SharedInventory } from "../../../domains/SharedInventory/SharedInventory";
 import type { ScriptApiContext } from "./apiContext";
-import type { ActorRef, RefByNameOrId } from "./actorApi";
+import { resolveStatId, type ActorRef, type RefByNameOrId } from "./actorApi";
 import { ActorUtils } from "../../../domains/Actor/ActorUtils";
 import { SharedInventoryUtils } from "../../../domains/SharedInventory/SharedInventoryUtils";
-import { resolveByNameOrId } from "../../../utils/resolveByNameOrId";
 
 /**
  * Methods layered onto a live shared inventory by `wrapSharedInventory`. Reads are
@@ -61,11 +60,6 @@ export interface SharedInventoryApiMethods {
 export type SharedInventoryFacade = SharedInventory & SharedInventoryApiMethods;
 
 // ---- Internal helpers -------------------------------------------------------
-
-/** Resolve a stat NAME or definition Id to its StatDefinition Id, or undefined. */
-function resolveStatId(api: ScriptApiContext, statRef: RefByNameOrId): string | undefined {
-	return resolveByNameOrId(api.campaign().Settings.StatDefinitions, statRef)?.Id;
-}
 
 /**
  * Write one pooled stat's `Current` to `next` via `sharedInventory:editStat`. The

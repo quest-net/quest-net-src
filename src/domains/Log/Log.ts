@@ -12,7 +12,7 @@ export interface LogEntry {
 	ActorId?: string; // Who performed the action
 	TargetId?: string; // Who/what was affected
 	MentionedActorIds?: string[]; // Character IDs @mentioned in a chat message; "DM" sentinel for the DM
-	RollOutcome?: RollOutcome; // Structured crit/fumble facts, computed once at roll time (see DiceUtils.getRollOutcome). Absent on legacy entries -> text-scan fallback in isCritRoll/isFumbleRoll.
+	RollOutcome?: RollOutcome; // Structured crit/fumble facts, computed once at roll time (see DiceUtils.getRollOutcome). Absent on legacy entries, which therefore never read as crits.
 }
 
 /**

@@ -137,7 +137,10 @@ export type ActorFacade = Actor & ActorApiMethods;
  * then no-ops rather than dispatching a doomed action). (changeStat/setStat resolve
  * via ActorUtils.getStat instead — they need the slot's Current/Max to clamp.)
  */
-function resolveStatId(api: ScriptApiContext, statRef: RefByNameOrId): string | undefined {
+export function resolveStatId(
+	api: ScriptApiContext,
+	statRef: RefByNameOrId
+): string | undefined {
 	return resolveByNameOrId(api.campaign().Settings.StatDefinitions, statRef)?.Id;
 }
 

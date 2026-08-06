@@ -5,6 +5,8 @@ import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
 import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { useActionService } from "../../../services/Actions/ActionServiceProvider";
+import type { ImageService } from "../../../services/ImageService";
+import { easeInOutCubic } from "../../../utils/math";
 import { tileKey, type VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	canStandVoxel,
@@ -76,9 +78,7 @@ interface ThreeDActorLayerProps {
 	// close-up portraits. See resolveActorTokenResolution.
 	performanceMode: boolean;
 	xRayActors?: boolean;
-	imageService?: {
-		getImage(imageId: string): Promise<Blob | null>;
-	} | null;
+	imageService?: ImageService | null;
 	onActorClick: (actor: SelectedActor) => void;
 	onActorSelect: (actor: SelectedActor) => void;
 	/** Selection and height dragging are cursor gestures, so they are inert
@@ -173,10 +173,6 @@ interface ActorDragState {
 
 function getActorKey(kind: "character" | "entity", id: string): string {
 	return `${kind}:${id}`;
-}
-
-function easeInOutCubic(t: number): number {
-	return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
 function getMovementAnimationDuration(from: THREE.Vector3, to: THREE.Vector3): number {
@@ -1307,7 +1303,6 @@ export function ThreeDActorLayer({
 		pendingVisualBuildsRef.current.set(actorKey, buildVersion);
 		const visualSignature = createActorVisualSignature(actor, isDM, performanceMode);
 		const texture = await createActorTokenTexture(actor, {
-			isDM,
 			imageService: imageServiceRef.current,
 			performanceMode,
 		});

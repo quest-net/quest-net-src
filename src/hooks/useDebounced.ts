@@ -1,5 +1,5 @@
 // hooks/useDebounced.ts
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 /**
  * The standard debounce delay for committing UI edits to game state. Used
@@ -105,43 +105,3 @@ export function useDebouncedCallback<A extends unknown[]>(
 	return debounced;
 }
 
-/**
- * The app's most common debounce shape: a local mirror of an authoritative
- * value that updates instantly for responsiveness, while changes are committed
- * (synced) on a trailing debounce. The mirror resyncs whenever the external
- * value changes (a commit echo, a long rest, a peer update, etc.).
- *
- * Returns `[localValue, setValue, controls]` where calling `setValue` updates
- * the mirror immediately and schedules a debounced `onCommit`. `controls.flush`
- * commits the pending value now; `controls.cancel` discards it.
- *
- * @example
- *   const [name, setName] = useDebouncedValue(actor.Name, (v) =>
- *     actionService.execute("actor:edit", { id, name: v })
- *   );
- *   <input value={name} onChange={(e) => setName(e.target.value)} />
- */
-export function useDebouncedValue<T>(
-	external: T,
-	onCommit: (value: T) => void,
-	delay: number = DEBOUNCE_MS,
-	options: { flushOnUnmount?: boolean } = {}
-): [T, (value: T) => void, { flush: () => void; cancel: () => void }] {
-	const [local, setLocal] = useState(external);
-	const commit = useDebouncedCallback(onCommit, delay, options);
-
-	// Resync the mirror when the authoritative value changes out from under us.
-	useEffect(() => {
-		setLocal(external);
-	}, [external]);
-
-	const setValue = useCallback(
-		(value: T) => {
-			setLocal(value);
-			commit(value);
-		},
-		[commit]
-	);
-
-	return [local, setValue, { flush: commit.flush, cancel: commit.cancel }];
-}

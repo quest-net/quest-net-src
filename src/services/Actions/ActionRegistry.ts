@@ -25,10 +25,6 @@ import { DiceActions } from "../../domains/Dice/DiceActions";
 import { PingActions } from "../../domains/Ping/PingActions";
 import { StickerActions } from "../../domains/Sticker/StickerActions";
 import { TerrainLinkActions } from "../../domains/TerrainLink/TerrainLinkActions";
-// import { ItemActions } from '../domains/Item/ItemActions';
-// import { SkillActions } from '../domains/Skill/SkillActions';
-// import { CombatActions } from '../domains/Combat/CombatActions';
-// etc.
 
 export type Role = "dm" | "player";
 type ActionHandler = (params: any, context: Context) => void | Promise<void>;
@@ -280,9 +276,9 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		scriptable: true,
 	},
 
-	//   ============================================================================
-	//   ENTITY ACTIONS (uncomment when EntityActions is implemented)
-	//   ============================================================================
+	// ============================================================================
+	// ENTITY ACTIONS
+	// ============================================================================
 	"entity:create": {
 		roles: ["dm"],
 		handler: EntityActions.create,
@@ -294,7 +290,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 		scriptable: true,
 	},
 	// ============================================================================
-	// COMBAT ACTIONS (uncomment when CombatActions is implemented)
+	// COMBAT ACTIONS
 	// ============================================================================
 	"combat:start": {
 		roles: ["dm"],
@@ -325,7 +321,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	},
 
 	// ============================================================================
-	// AUDIO ACTIONS (uncomment when AudioActions is implemented)
+	// AUDIO ACTIONS
 	// ============================================================================
 	"audio:create": {
 		roles: ["dm"],
@@ -417,7 +413,7 @@ export const ACTION_REGISTRY: Record<string, ActionDefinition> = {
 	},
 
 	// ============================================================================
-	// STATUS EFFECT ACTIONS (uncomment when StatusActions is implemented)
+	// STATUS EFFECT ACTIONS
 	// ============================================================================
 	"status:give": {
 		roles: ["dm"],

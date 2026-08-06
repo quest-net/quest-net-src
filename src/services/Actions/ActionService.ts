@@ -130,8 +130,10 @@ export class ActionService {
 
 	/**
 	 * Drops all local state for a peer that is no longer transport-active.
+	 * Returns true when something was actually dropped, so a caller batching
+	 * several removals can bump presence once.
 	 */
-	private forgetPeer(peerId: string) {
+	private forgetPeer(peerId: string): boolean {
 		const wasDm =
 			this.context.User.Role === "player" &&
 			(this.peerUsers.get(peerId)?.Role === "dm" ||
@@ -140,13 +142,10 @@ export class ActionService {
 		const hadUser = this.peerUsers.delete(peerId);
 		this.stopPinging(peerId);
 		this.actorPoseService.clearForPeer(peerId);
-		if (hadConnection || hadUser) {
-			// Presence-only re-render (transient, separate non-persisted store).
-			bumpPresence();
-		}
 		if (wasDm) {
 			this.onDmConnectionLostCallback?.();
 		}
+		return hadConnection || hadUser;
 	}
 
 	/**
@@ -284,7 +283,10 @@ export class ActionService {
 		};
 
 		this.room.onPeerLeave = (peerId) => {
-			this.forgetPeer(peerId);
+			if (this.forgetPeer(peerId)) {
+				// Presence-only re-render (transient, separate non-persisted store).
+				bumpPresence();
+			}
 		};
 
 		this.peerReconcileInterval = setInterval(
@@ -339,18 +341,7 @@ export class ActionService {
 
 		for (const peerId of Array.from(this.connectedPeerIds)) {
 			if (!activePeerIds.has(peerId)) {
-				const wasDm =
-					this.context.User.Role === "player" &&
-					(this.peerUsers.get(peerId)?.Role === "dm" ||
-						this.connectedPeerIds.has(peerId));
-				this.connectedPeerIds.delete(peerId);
-				this.peerUsers.delete(peerId);
-				this.stopPinging(peerId);
-				this.actorPoseService.clearForPeer(peerId);
-				if (wasDm) {
-					this.onDmConnectionLostCallback?.();
-				}
-				didChange = true;
+				didChange = this.forgetPeer(peerId) || didChange;
 			}
 		}
 
@@ -412,7 +403,8 @@ export class ActionService {
 	}
 
 	/**
-	 * Main entry point for executing actions
+	 * Main entry point for executing actions. Fire-and-forget; await
+	 * `executeAndWait` when the caller needs the mutation to have landed.
 	 */
 	execute(actionKey: string, params: any): void {
 		void this.executeAndWait(actionKey, params).catch((error) => {
@@ -420,11 +412,7 @@ export class ActionService {
 		});
 	}
 
-	executeAndWait(actionKey: string, params: any): Promise<void> {
-		return this.executeAsync(actionKey, params);
-	}
-
-	private async executeAsync(actionKey: string, params: any): Promise<void> {
+	async executeAndWait(actionKey: string, params: any): Promise<void> {
 		// Permission check
 		if (!canPerformAction(this.context.User, actionKey)) {
 			console.warn(
@@ -465,7 +453,10 @@ export class ActionService {
 		await producer();
 		const campaign = CampaignUtils.getActiveCampaign(this.context);
 		await TerrainStorageService.packInactiveTerrains(campaign);
-		this.commitActiveCampaign(campaign);
+		// Domain actions mutate the campaign in place (Valtio already tracks
+		// that); this also covers the rare action that REPLACES ActiveCampaign
+		// wholesale. Persistence is ContextProvider's subscription, not ours.
+		this.context.ActiveCampaign = campaign;
 		// Stamp this campaign's local last-updated time so cloud backup and the
 		// campaign list reflect the edit, even when it writes no log entry.
 		markCampaignUpdated(campaign.Id);
@@ -481,18 +472,6 @@ export class ActionService {
 		// snapshot so no proxy leaks into StateSync's diffing/transport.
 		await TerrainStorageService.packInactiveTerrains(campaign);
 		this.stateSync.sendFullToPeer(this.snapshotActiveCampaign(), peerId);
-	}
-
-	/**
-	 * Pins the active campaign onto the proxy store. Domain actions mutate the
-	 * campaign in place (which Valtio already tracks); this also covers the rare
-	 * action that REPLACES context.ActiveCampaign wholesale. `this.context` is
-	 * the proxy itself, so there is no longer a stale captured-reference problem
-	 * to reconcile — and persistence is handled by ContextProvider's
-	 * subscription, not here.
-	 */
-	private commitActiveCampaign(campaign: Campaign): void {
-		this.context.ActiveCampaign = campaign;
 	}
 
 	/**

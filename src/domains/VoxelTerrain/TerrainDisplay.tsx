@@ -7,6 +7,7 @@ import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { getCampaignTerrainEnvironmentPresets } from "../CampaignSetting/CampaignSetting";
 import { ToggleButton } from "../../components/ui/ToggleButton";
+import { clamp, parseNumber } from "../../utils/math";
 import {
 	DEFAULT_VOXEL_TERRAIN_BACKGROUND_COLOR,
 	DEFAULT_VOXEL_TERRAIN_LIGHTING,
@@ -37,15 +38,6 @@ type TerrainEnvironmentUpdates = Pick<
 	VoxelTerrainEnvironmentPreset,
 	"Lighting" | "Background"
 >;
-
-function clampNumber(value: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, value));
-}
-
-function numberInputValue(value: string, fallback: number): number {
-	const parsed = Number(value);
-	return Number.isFinite(parsed) ? parsed : fallback;
-}
 
 function normalizeColor(color: string | undefined): string {
 	return color?.trim().toLowerCase() ?? "";
@@ -152,7 +144,7 @@ function EnvironmentSlider({
 				max={max}
 				step={step}
 				value={value}
-				onChange={(e) => onChange(numberInputValue(e.target.value, value))}
+				onChange={(e) => onChange(parseNumber(e.target.value, value))}
 				disabled={disabled}
 			/>
 		</label>
@@ -505,7 +497,7 @@ export default function TerrainDisplay({
 								disabled={!isInteractive}
 								onChange={(value) =>
 									updateLighting({
-										Intensity: clampNumber(
+										Intensity: clamp(
 											value,
 											LIGHTING_INTENSITY_MIN,
 											LIGHTING_INTENSITY_MAX
@@ -523,7 +515,7 @@ export default function TerrainDisplay({
 								disabled={!isInteractive}
 								onChange={(value) =>
 									updateLighting({
-										Rotation: clampNumber(
+										Rotation: clamp(
 											value,
 											LIGHTING_ROTATION_MIN,
 											LIGHTING_ROTATION_MAX
@@ -541,7 +533,7 @@ export default function TerrainDisplay({
 								disabled={!isInteractive}
 								onChange={(value) =>
 									updateLighting({
-										Elevation: clampNumber(
+										Elevation: clamp(
 											value,
 											LIGHTING_ELEVATION_MIN,
 											LIGHTING_ELEVATION_MAX

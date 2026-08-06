@@ -6,7 +6,6 @@ import type {
 import { OpfsUtilities } from "../utils/OpfsUtilities";
 import { getRandomVoxelTerrainColor } from "../utils/terrain/editor/VoxelTerrainEditorUtils";
 import { hashVoxels } from "../utils/terrain/data/VoxelDataUtils";
-import { toPlain } from "../utils/toPlain";
 import {
 	dropTerrainVoxels,
 	getMaterializedContentHash,
@@ -16,15 +15,6 @@ import {
 	resetPayloadStoreForCampaign,
 	setTerrainVoxels,
 } from "../utils/terrain/data/terrainPayloadStore";
-
-// A terrain payload as read back from durable storage (OPFS). The store keeps
-// the raw SVO bytes plus the content hash in a file header, so a read always
-// yields both -- ContentHash stays optional only to keep recordContentHash's
-// legacy fallback path (hash the bytes) intact.
-interface StoredVoxelTerrainRecord {
-	Voxels: Uint8Array;
-	ContentHash?: string;
-}
 
 /** A voxel payload plus its content identity, as exchanged over the wire / OPFS. */
 export interface TerrainPayload {
@@ -134,19 +124,28 @@ export class TerrainStorageService {
 		return `terrains/${campaignId}`;
 	}
 
-	private static async readRecord(
-		campaignId: string,
+	/**
+	 * Reads a terrain's durably-stored payload from OPFS (NOT the in-memory
+	 * buffer). Every file is written with its content hash in the header; the
+	 * re-hash is only a guard for a header that somehow lacks one. Returns null
+	 * when there is no stored record.
+	 */
+	static async readStoredPayload(
+		campaign: Campaign,
 		terrainId: string
-	): Promise<StoredVoxelTerrainRecord | null> {
+	): Promise<TerrainPayload | null> {
 		try {
 			const blob = await OpfsUtilities.load<{ contentHash?: string }>(
-				this.terrainPath(campaignId, terrainId)
+				this.terrainPath(campaign.Id, terrainId)
 			);
 			if (!blob) return null;
-			return { Voxels: blob.data, ContentHash: blob.metadata.contentHash };
+			return {
+				voxels: blob.data,
+				contentHash: blob.metadata.contentHash ?? hashVoxels(blob.data),
+			};
 		} catch (error) {
 			console.error(
-				`[TerrainStorageService] Failed to read terrain record: ${campaignId}:${terrainId}`,
+				`[TerrainStorageService] Failed to read terrain record: ${campaign.Id}:${terrainId}`,
 				error
 			);
 			throw error;
@@ -172,16 +171,12 @@ export class TerrainStorageService {
 		}
 	}
 
-	private static recordContentHash(record: StoredVoxelTerrainRecord): string {
-		return record.ContentHash ?? hashVoxels(record.Voxels);
-	}
-
+	/** Whether a stored payload is the one the canonical terrain currently expects. */
 	private static recordMatches(
-		record: StoredVoxelTerrainRecord,
+		stored: TerrainPayload,
 		terrain: VoxelTerrain
 	): boolean {
-		if (!terrain.ContentHash) return true;
-		return this.recordContentHash(record) === terrain.ContentHash;
+		return !terrain.ContentHash || stored.contentHash === terrain.ContentHash;
 	}
 
 	/**
@@ -205,8 +200,8 @@ export class TerrainStorageService {
 		terrain: VoxelTerrain
 	): Promise<Uint8Array | null> {
 		if (isTerrainHydrated(terrain)) return getTerrainVoxels(terrain.Id);
-		const record = await this.readRecord(campaign.Id, terrain.Id);
-		return record?.Voxels ?? null;
+		const stored = await this.readStoredPayload(campaign, terrain.Id);
+		return stored?.voxels ?? null;
 	}
 
 	/**
@@ -224,9 +219,9 @@ export class TerrainStorageService {
 		if (!terrain) return null;
 		if (isTerrainHydrated(terrain)) return terrain;
 
-		const record = await this.readRecord(campaign.Id, terrainId);
-		if (record && this.recordMatches(record, terrain)) {
-			setTerrainVoxels(terrainId, record.Voxels, this.recordContentHash(record));
+		const stored = await this.readStoredPayload(campaign, terrainId);
+		if (stored && this.recordMatches(stored, terrain)) {
+			setTerrainVoxels(terrainId, stored.voxels, stored.contentHash);
 			return terrain;
 		}
 
@@ -237,13 +232,9 @@ export class TerrainStorageService {
 		if (this.deltaWaiter && terrain.ContentHash) {
 			await this.deltaWaiter(terrainId, terrain.ContentHash);
 			if (isTerrainHydrated(terrain)) return terrain;
-			const refreshed = await this.readRecord(campaign.Id, terrainId);
+			const refreshed = await this.readStoredPayload(campaign, terrainId);
 			if (refreshed && this.recordMatches(refreshed, terrain)) {
-				setTerrainVoxels(
-					terrainId,
-					refreshed.Voxels,
-					this.recordContentHash(refreshed)
-				);
+				setTerrainVoxels(terrainId, refreshed.voxels, refreshed.contentHash);
 				return terrain;
 			}
 		}
@@ -271,8 +262,8 @@ export class TerrainStorageService {
 
 		// Last resort: a stale local record is better than no terrain at all
 		// (offline / DM unreachable). Eventual consistency repairs it later.
-		if (record) {
-			setTerrainVoxels(terrainId, record.Voxels, this.recordContentHash(record));
+		if (stored) {
+			setTerrainVoxels(terrainId, stored.voxels, stored.contentHash);
 			return terrain;
 		}
 
@@ -297,24 +288,7 @@ export class TerrainStorageService {
 		}
 		const terrain = campaign.VoxelTerrains.find((t) => t.Id === terrainId);
 		if (!terrain) return null;
-		const record = await this.readRecord(campaign.Id, terrainId);
-		if (!record) return null;
-		return { voxels: record.Voxels, contentHash: this.recordContentHash(record) };
-	}
-
-	/**
-	 * Reads a terrain's durably-stored payload from OPFS (NOT the in-memory
-	 * buffer). Used as a delta base when a delta arrives for a terrain this client
-	 * has cached on disk but not materialized in memory. Returns null when there
-	 * is no stored record.
-	 */
-	static async readStoredPayload(
-		campaign: Campaign,
-		terrainId: string
-	): Promise<TerrainPayload | null> {
-		const record = await this.readRecord(campaign.Id, terrainId);
-		if (!record) return null;
-		return { voxels: record.Voxels, contentHash: this.recordContentHash(record) };
+		return this.readStoredPayload(campaign, terrainId);
 	}
 
 	/**
@@ -436,25 +410,6 @@ export class TerrainStorageService {
 			await this.saveTerrain(campaign, terrain);
 			dropTerrainVoxels(terrain.Id);
 		}
-	}
-
-	/**
-	 * Returns a deep clone of the campaign with every terrain's voxels attached
-	 * inline (EditableVoxelTerrain). Used for export, where a portable, self-
-	 * contained payload is required.
-	 */
-	static async hydrateAllTerrains(campaign: Campaign): Promise<Campaign> {
-		// campaign may be the live Valtio proxy; toPlain unwraps it (structuredClone
-		// throws on proxies), then structuredClone gives a mutable deep copy.
-		const clone = structuredClone(toPlain(campaign));
-		for (const terrain of clone.VoxelTerrains ?? []) {
-			const buffered = getTerrainVoxels(terrain.Id);
-			const voxels =
-				(buffered.byteLength > 0 ? buffered : await this.loadVoxels(campaign, terrain)) ??
-				new Uint8Array(0);
-			(terrain as EditableVoxelTerrain).Voxels = voxels;
-		}
-		return clone;
 	}
 
 	/**

@@ -30,7 +30,7 @@ export class ActorPoseService {
 	constructor(context: Context) {
 		this.context = context;
 		this.pruneInterval = setInterval(
-			() => this.reconcileLiveActorPoses(),
+			() => this.pruneExpiredPoses(),
 			ACTOR_POSE_PRUNE_INTERVAL_MS
 		);
 	}
@@ -82,16 +82,13 @@ export class ActorPoseService {
 		};
 	}
 
-	public getLiveActorPoses(
-		terrainId: string,
-		actorIds?: ReadonlySet<string>
-	): Map<string, LiveActorPose> {
+	/** Unexpired poses on `terrainId`, copied so callers can't mutate ours. */
+	public getLiveActorPoses(terrainId: string): Map<string, LiveActorPose> {
 		const now = Date.now();
 		const poses = new Map<string, LiveActorPose>();
 		for (const [actorId, pose] of this.liveActorPoses) {
 			if (now - pose.receivedAt > ACTOR_POSE_TIMEOUT_MS) continue;
 			if (pose.terrainId !== terrainId) continue;
-			if (actorIds && !actorIds.has(actorId)) continue;
 			poses.set(actorId, {
 				...pose,
 				position: [...pose.position] as [number, number, number],
@@ -100,17 +97,16 @@ export class ActorPoseService {
 		return poses;
 	}
 
-	public reconcileLiveActorPoses(
-		terrainId?: string,
-		actorIds?: ReadonlySet<string>
-	): void {
+	/**
+	 * Drops poses whose sender stopped broadcasting. `getLiveActorPoses` already
+	 * filters expired entries; this exists to notify subscribers when a walking
+	 * token goes still, so its standee settles back onto its committed tile.
+	 */
+	private pruneExpiredPoses(): void {
 		const now = Date.now();
 		let changed = false;
 		for (const [actorId, pose] of Array.from(this.liveActorPoses)) {
-			const expired = now - pose.receivedAt > ACTOR_POSE_TIMEOUT_MS;
-			const wrongTerrain = terrainId !== undefined && pose.terrainId !== terrainId;
-			const actorMissing = actorIds !== undefined && !actorIds.has(actorId);
-			if (expired || wrongTerrain || actorMissing) {
+			if (now - pose.receivedAt > ACTOR_POSE_TIMEOUT_MS) {
 				this.liveActorPoses.delete(actorId);
 				changed = true;
 			}
@@ -187,7 +183,7 @@ export class ActorPoseService {
 		}
 
 		// Store poses for any terrain; consumers filter by the terrain they are
-		// rendering via getLiveActorPoses(terrainId, ...). With per-actor terrain
+		// rendering via getLiveActorPoses(terrainId). With per-actor terrain
 		// there is no single global terrain to reject against.
 		//
 		// No per-peer control check: a peer can only be in first person with an

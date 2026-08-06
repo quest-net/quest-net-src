@@ -265,7 +265,7 @@ export default function MapScene({
 	}, [sceneResources]);
 
 	const isDM = context.User.Role === "dm";
-	const imageService = (actionService as any)?.imageService ?? null;
+	const imageService = actionService?.imageService ?? null;
 	const campaign = CampaignUtils.getActiveCampaign(context);
 	const { setViewedTerrain } = useViewedTerrain();
 	const selectedActorObject = useMemo(

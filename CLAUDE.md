@@ -15,7 +15,6 @@ The sandboxed Linux shell sees a stale/truncated view of files in this repo (bas
 - **postprocessing** for post-processing effects on the 3D map
 - **gsap** and **motion** for animations
 - **react-rnd** for resizable/draggable UI panels
-- **colorjs.io** for color manipulation
 - **Trystero** (`^0.25.3`) for peer-to-peer networking (Nostr strategy by default, app ID `'quest-net'`)
 - **fast-json-patch** for delta state synchronization
 - **mathjs** for dice/formula evaluation

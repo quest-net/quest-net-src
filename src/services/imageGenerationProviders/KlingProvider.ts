@@ -14,6 +14,7 @@ import type {
   ImageProviderCredentials,
   GeneratedImageResult,
 } from "./types";
+import { sleep } from "../../utils/math";
 
 const ENDPOINT = "https://api.klingai.com/v1/images/generations";
 const MODEL = "kling-v1";
@@ -85,10 +86,6 @@ async function generateKlingJWT(
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export const KlingProvider: ImageGenerationProvider = {
   id: "kling",

@@ -1,7 +1,5 @@
 const STATE_UPDATE_COMPRESSION_MARKER = "__questNetCompressedStateUpdate";
 
-export const STATE_UPDATE_DELTA_COMPRESSION_PATCH_THRESHOLD = 64;
-
 // Trystero splits each data-channel message into ~16KB chunks (see
 // @trystero-p2p/core room.mjs: `chunkSize = 16 * 2**10 - payloadIndex`) and the
 // payload it chunks is the UTF-8 JSON encoding of our update object. A payload
@@ -11,15 +9,13 @@ export const STATE_UPDATE_DELTA_COMPRESSION_PATCH_THRESHOLD = 64;
 // into a second chunk is reliably caught. This is what stops a small-patch but
 // large-byte delta (e.g. a terrain switch carrying a multi-MB voxel string)
 // from going over the wire uncompressed.
-export const STATE_UPDATE_DELTA_COMPRESSION_BYTE_THRESHOLD = 16 * 1024;
+const COMPRESSION_BYTE_THRESHOLD = 16 * 1024;
 
 type CompressionEncoding = "gzip";
 
-export interface CompressedStateUpdateEnvelope {
+interface CompressedStateUpdateEnvelope {
 	[STATE_UPDATE_COMPRESSION_MARKER]: true;
 	encoding: CompressionEncoding;
-	originalType?: string;
-	patchCount: number;
 }
 
 export interface StateUpdateTransport<T> {
@@ -27,37 +23,7 @@ export interface StateUpdateTransport<T> {
 	metadata?: CompressedStateUpdateEnvelope;
 }
 
-interface PatchCountedUpdate {
-	type?: string;
-	patches?: unknown[];
-}
-
-/**
- * Rough UTF-8 byte estimate of a delta's serialized patches, with an early-out:
- * we only need to know whether the update crosses `limit`, never its exact size.
- * Walks patch values rather than JSON.stringify-ing the whole update, so the
- * common small-delta case stays cheap. ASCII-heavy payloads (notably base64
- * voxel strings, the case this guards) estimate exactly via `string.length`.
- */
-function estimatePatchedUpdateBytes(patches: unknown[], limit: number): number {
-	let bytes = 0;
-	for (const patch of patches) {
-		const { path, value } = patch as { path?: string; value?: unknown };
-		// Account for the op/path/punctuation overhead of each patch entry.
-		bytes += (typeof path === "string" ? path.length : 0) + 24;
-		if (typeof value === "string") {
-			bytes += value.length;
-		} else if (value && typeof value === "object") {
-			bytes += JSON.stringify(value).length;
-		} else if (value !== undefined) {
-			bytes += 12;
-		}
-		if (bytes >= limit) return bytes; // crossed the threshold — stop counting
-	}
-	return bytes;
-}
-
-export function isCompressedStateUpdateEnvelope(
+function isCompressedStateUpdateEnvelope(
 	data: unknown
 ): data is CompressedStateUpdateEnvelope {
 	return (
@@ -67,37 +33,26 @@ export function isCompressedStateUpdateEnvelope(
 	);
 }
 
-export async function compressStateUpdateForTransport<T extends PatchCountedUpdate>(
+export async function compressStateUpdateForTransport<T extends { type?: string }>(
 	update: T
 ): Promise<StateUpdateTransport<T>> {
-	const patchCount = Array.isArray(update.patches) ? update.patches.length : 0;
-	const shouldCompress =
-		update.type === "full" ||
-		(update.type === "delta" &&
-			// Compress when the delta has many patches OR when it is byte-heavy.
-			// The byte check (only evaluated for small-patch deltas, thanks to
-			// short-circuiting) catches the large-value-few-patches case that the
-			// patch count alone misses.
-			(patchCount >= STATE_UPDATE_DELTA_COMPRESSION_PATCH_THRESHOLD ||
-				estimatePatchedUpdateBytes(
-					Array.isArray(update.patches) ? update.patches : [],
-					STATE_UPDATE_DELTA_COMPRESSION_BYTE_THRESHOLD
-				) >= STATE_UPDATE_DELTA_COMPRESSION_BYTE_THRESHOLD));
-
-	if (!shouldCompress || !supportsCompressionStreams()) {
+	if (!supportsCompressionStreams()) {
 		return { data: update };
 	}
 
+	// Serialize once and measure the real thing: full sends always compress,
+	// deltas only when they would spill past a single chunk. (JSON is ASCII-heavy
+	// here, so `length` tracks the UTF-8 byte count closely enough to gate on.)
 	const json = JSON.stringify(update);
-	const data = await compressString(json);
+	if (update.type !== "full" && json.length < COMPRESSION_BYTE_THRESHOLD) {
+		return { data: update };
+	}
 
 	return {
-		data,
+		data: await compressString(json),
 		metadata: {
 			[STATE_UPDATE_COMPRESSION_MARKER]: true,
 			encoding: "gzip",
-			originalType: update.type,
-			patchCount,
 		},
 	};
 }
@@ -118,11 +73,9 @@ export async function decompressStateUpdateIfNeeded<T>(
 		throw new Error(`Unsupported state update compression: ${metadata.encoding}`);
 	}
 
-	if (!isBinaryPayload(data)) {
+	if (!(data instanceof ArrayBuffer) && !ArrayBuffer.isView(data)) {
 		throw new Error(
-			`Compressed state update payload was not binary. Received ${describeValue(
-				data
-			)}.`
+			`Compressed state update payload was not binary. Received ${typeof data}.`
 		);
 	}
 
@@ -149,16 +102,4 @@ async function decompressString(value: BufferSource): Promise<string> {
 		.stream()
 		.pipeThrough(new DecompressionStream("gzip"));
 	return new Response(stream).text();
-}
-
-function isBinaryPayload(data: unknown): data is BufferSource {
-	return data instanceof ArrayBuffer || ArrayBuffer.isView(data);
-}
-
-function describeValue(data: unknown): string {
-	if (data === null) return "null";
-	if (data === undefined) return "undefined";
-	const constructorName =
-		typeof data === "object" ? data.constructor?.name : undefined;
-	return constructorName ? `${typeof data} (${constructorName})` : typeof data;
 }

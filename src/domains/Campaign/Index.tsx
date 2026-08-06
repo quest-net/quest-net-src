@@ -246,7 +246,7 @@ export function CampaignIndex() {
 				<PixelBlast
 					variant="circle"
 					pixelSize={8}
-					color={colors.neutral.hex}
+					color={colors.neutral}
 					patternScale={5}
 					patternDensity={1.4}
 					pixelSizeJitter={1.5}

@@ -38,16 +38,6 @@ export class StateSync {
 	private hasBaseline = false;
 	private currentState: Campaign | null = null;
 	private version = 0;
-	private updateCount = 0;
-
-	// Configuration
-	// Periodic full-state fallback: send a full sync every N delta updates.
-	// In practice this never fires at normal TTRPG action rates (~dozens of
-	// actions per minute) — it would take hours to accumulate 10,000 deltas,
-	// and the counter resets on every peer join and explicit /REQUEST_FULL_SYNC.
-	// The version-mismatch detection path is the real desync recovery mechanism.
-	// Kept high intentionally; do not lower without profiling wire cost.
-	private fullStateInterval = 10000;
 
 	constructor(
 		room: Room,
@@ -91,16 +81,11 @@ export class StateSync {
 	 *   (sends a full sync to reset an optimistic player).
 	 */
 	broadcast(campaign: Campaign, force = false): void {
-		this.updateCount++;
-
-		// First broadcast (no baseline yet) or periodic fallback: send full state
-		// to recover from any desync. Only full sends sanitize the whole campaign;
-		// deltas are built from recorded ops, not a sanitized clone.
-		const shouldSendFull =
-			!this.hasBaseline ||
-			this.updateCount % this.fullStateInterval === 0;
-
-		if (shouldSendFull) {
+		// Without a baseline the receiver has nothing to patch, so the first
+		// broadcast is always a full send. Only full sends sanitize the whole
+		// campaign; deltas are built from recorded ops, not a sanitized clone.
+		// (Desync recovery is the version-mismatch -> /REQUEST_FULL_SYNC path.)
+		if (!this.hasBaseline) {
 			this.sendFull(sanitizeCampaignForPlayers(campaign));
 		} else {
 			this.broadcastDelta(campaign, force);
@@ -142,7 +127,6 @@ export class StateSync {
 				this.recorder?.discard();
 				this.hasBaseline = true;
 				this.version = 0;
-				this.updateCount = 0;
 			}
 			return;
 		}
@@ -151,10 +135,9 @@ export class StateSync {
 		// buffer -- replaying those ops as a delta on top would double-apply.
 		this.recorder?.discard();
 
-		// Players now have a baseline to apply deltas onto. Reset counters.
+		// Players now have a baseline to apply deltas onto. Reset the version.
 		this.hasBaseline = true;
 		this.version = 0;
-		this.updateCount = 0;
 	}
 
 	/**

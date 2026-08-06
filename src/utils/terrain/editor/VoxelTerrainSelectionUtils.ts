@@ -1,4 +1,5 @@
 import { isBitSet } from "../../BitsetUtils";
+import { clamp } from "../../math";
 
 export interface VoxelCoord {
 	x: number;
@@ -42,8 +43,9 @@ export type TerrainSelection =
 		colorIndex?: number;
 	};
 
+/** clamp(), but snapped to an integer voxel index (NaN -> 0). */
 function clampInt(value: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, Math.floor(value) || 0));
+	return clamp(Math.floor(value) || 0, min, max);
 }
 
 export function clampVoxelCoord(coord: VoxelCoord, dims: VoxelGridDims): VoxelCoord {

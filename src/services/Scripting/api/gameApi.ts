@@ -12,11 +12,11 @@
  * Tier discipline (mirrors the other facades): reads delegate to tier-1 utils /
  * pure helpers (`resolveByNameOrId`, `rollDiceFormula`, the active-actor reads);
  * mutations dispatch a real scriptable action through `api.action`. No new
- * mutation logic lives here — `log`/`spawnActor`/`spawnItem` all bottom out in
+ * mutation logic lives here â€” `log`/`spawnActor`/`spawnItem` all bottom out in
  * already-scriptable actions.
  */
 import type { Campaign } from "../../../domains/Campaign/Campaign";
-import type { Position, Actor } from "../../../domains/Actor/Actor";
+import type { Position } from "../../../domains/Actor/Actor";
 import type { ScriptApiContext } from "./apiContext";
 import {
 	wrapActor,
@@ -87,7 +87,7 @@ export interface GameApi {
 	log(text: string, opts?: { category?: string; level?: string; details?: string }): Promise<void>;
 	/**
 	 * Private toast to ONE player: a whisper only the target character's player
-	 * (and the DM) can see — both in the log feed and as a toast alert. `target`
+	 * (and the DM) can see â€” both in the log feed and as a toast alert. `target`
 	 * is an actor name|id|facade. -> log:create (owner visibility + mention)
 	 */
 	toast(target: ActorRef, text: string, opts?: { category?: string; level?: string; details?: string }): Promise<void>;
@@ -102,16 +102,12 @@ export interface GameApi {
 	ping(position: Position): Promise<void>;
 }
 
-/** Every active actor (characters + entities) — the read all actor-list reads share. */
-function activeActors(campaign: Campaign): Actor[] {
-	return ActorUtils.getActiveActors(campaign);
-}
-
+/** Every active actor (characters + entities) â€” the read all actor-list reads share. */
 /**
  * Build the `game` facade for one script run.
  *
  * The cross-domain singletons (`combat`/`scene`/`audio`) are built ONCE here and
- * cached in the closure — accessing `game.combat` repeatedly returns the same
+ * cached in the closure â€” accessing `game.combat` repeatedly returns the same
  * instance rather than rebuilding the facade on every property read (the inner
  * facades still re-read live campaign state on each call, so caching the wrapper
  * is safe).
@@ -143,7 +139,7 @@ export function makeGameApi(api: ScriptApiContext): GameApi {
 		},
 
 		// ---- Wrapped actor reads (shared facadeCache -> stable identity) ------
-		actors: () => activeActors(api.campaign()).map((a) => wrapActor(a, api)),
+		actors: () => ActorUtils.getActiveActors(api.campaign()).map((a) => wrapActor(a, api)),
 		party: () =>
 			api.campaign().GameState.Characters.map((a) => wrapActor(a, api)),
 		enemies: () =>
@@ -152,11 +148,11 @@ export function makeGameApi(api: ScriptApiContext): GameApi {
 			// Resolution contract: Id -> Name -> first glob -> undefined over the
 			// active actors (superset of the old glob-only makeGame.find: still
 			// globs, plus the Id-exact escape hatch).
-			const match = resolveByNameOrId(activeActors(api.campaign()), nameOrId);
+			const match = resolveByNameOrId(ActorUtils.getActiveActors(api.campaign()), nameOrId);
 			return match ? wrapActor(match, api) : undefined;
 		},
 		actorsWithStatus: (status: RefByNameOrId) =>
-			activeActors(api.campaign())
+			ActorUtils.getActiveActors(api.campaign())
 				// statusApi.has resolves the status template name/Id and checks the
 				// actor's live stacks; wrap only the carriers.
 				.filter((a) => statusApi.has(api, a, status))

@@ -151,6 +151,20 @@ export class ImageService {
 	}
 
 	/**
+	 * Reads an image blob when there may be no live service — the campaign list,
+	 * a form open outside a session, etc. With a service it is exactly
+	 * `getImage`; without one it can still serve anything already in IndexedDB.
+	 */
+	static async loadBlob(
+		imageId: string,
+		service?: ImageService | null
+	): Promise<Blob | null> {
+		if (service) return service.getImage(imageId);
+		const cached = await IndexedDBUtilities.load(imageId);
+		return (cached?.data as Blob) ?? null;
+	}
+
+	/**
 	 * Gets an image blob from cache, or fetches it from the DM on demand.
 	 */
 	async getImage(imageId: string): Promise<Blob | null> {

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { useQuestContext } from "../Context/ContextProvider";
-import { loadImageBlob } from "./ImageLoading";
+import { ImageService } from "../../services/ImageService";
 
 interface ImageDisplayProps extends React.ImgHTMLAttributes<HTMLImageElement> {
 	imageId: string | undefined;
@@ -34,10 +34,10 @@ export function ImageDisplay({ imageId, alt, ...props }: ImageDisplayProps) {
 			setIsLoading(true);
 
 			try {
-				const blob = await loadImageBlob(imageId, {
-					isDM,
-					imageService: (actionService as any)?.imageService,
-				});
+				const blob = await ImageService.loadBlob(
+					imageId,
+					actionService?.imageService
+				);
 
 				if (!isMounted) return;
 

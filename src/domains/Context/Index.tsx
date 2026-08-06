@@ -23,7 +23,7 @@ export function Home() {
 
 	const colors = useThemeColors("neutral", "primary");
 	const theme = AppSettingUtils.getTheme(context);
-	const asciiTextColor = theme == "dark" ? "#fdf9f3" : colors.primary.hex;
+	const asciiTextColor = theme == "dark" ? "#fdf9f3" : colors.primary;
 	// On narrow screens the single-line "QUEST-NET" overflows; stack it and shrink slightly.
 	const isNarrow = useIsMobile();
 
@@ -39,7 +39,7 @@ export function Home() {
 			{/* Waves Background */}
 			<div className="absolute inset-0">
 				<Waves
-					lineColor={colors.neutral.hex}
+					lineColor={colors.neutral}
 					backgroundColor="transparent"
 					waveSpeedX={0.02}
 					waveSpeedY={0.05}

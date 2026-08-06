@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { loadImageBlob } from "../../../domains/Image/ImageLoading";
+import { ImageService } from "../../../services/ImageService";
 import type { ActorSize } from "../../../domains/Actor/Actor";
 import {
 	ACTOR_TOKEN_PLACEHOLDER,
@@ -35,10 +35,7 @@ export function getActorTokenWorldSize(
 }
 
 interface TextureLoaderOptions {
-	isDM: boolean;
-	imageService?: {
-		getImage(imageId: string): Promise<Blob | null>;
-	} | null;
+	imageService?: ImageService | null;
 	// When true, all tokens rasterize at BASE_SIZE. When false, character
 	// tokens use the higher resolution (see resolveActorTokenResolution).
 	performanceMode?: boolean;
@@ -288,7 +285,7 @@ export async function createActorTokenTexture(
 	let image: HTMLImageElement | null = null;
 	if (actor.imageId) {
 		try {
-			const blob = await loadImageBlob(actor.imageId, options);
+			const blob = await ImageService.loadBlob(actor.imageId, options.imageService);
 			image = blob ? await loadImageElement(blob) : null;
 		} catch (error) {
 			console.warn(`[3DMap] Failed to load actor token image ${actor.imageId}`, error);

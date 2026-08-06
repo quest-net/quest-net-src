@@ -15,6 +15,7 @@
 // the Three.js handle meshes.
 
 import * as THREE from "three";
+import { clamp } from "../../../utils/math";
 import type { ChunkDims } from "../../../utils/terrain/editor/EditGridChunkUtils";
 import type { VoxelSelectionBounds } from "../../../utils/terrain/editor/VoxelTerrainSelectionUtils";
 
@@ -116,10 +117,6 @@ function worldToVoxelFloat(world: number, axis: GizmoAxis, dims: ChunkDims): num
 	return (world + axisHalf(axis, dims)) * dims.resolution;
 }
 
-function clampInt(v: number, lo: number, hi: number): number {
-	return Math.max(lo, Math.min(hi, v));
-}
-
 const _axisDir = new THREE.Vector3();
 
 // Closest approach between the pointer ray and the infinite axis line through
@@ -202,14 +199,14 @@ export function gizmoDragToBounds(
 
 	if (translateWhole) {
 		const size = startMax - startMin;
-		newMin = clampInt(startMin + delta, 0, dimMax - size);
+		newMin = clamp(startMin + delta, 0, dimMax - size);
 		newMax = newMin + size;
 	} else if (drag.sign === 1) {
 		// Far face: never crosses the near face, never leaves the grid.
-		newMax = clampInt(startMax + delta, startMin, dimMax);
+		newMax = clamp(startMax + delta, startMin, dimMax);
 	} else {
 		// Near face: never crosses the far face, never leaves the grid.
-		newMin = clampInt(startMin + delta, 0, startMax);
+		newMin = clamp(startMin + delta, 0, startMax);
 	}
 
 	const result: VoxelSelectionBounds = {

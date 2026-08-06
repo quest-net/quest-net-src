@@ -25,7 +25,7 @@ import { LogUtils } from "./LogUtils";
 import { LogEntry } from "./Log";
 import { isCritRoll, getCritRollValue } from "../../utils/DiceUtils";
 import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
-import { loadImageBlob } from "../Image/ImageLoading";
+import { ImageService } from "../../services/ImageService";
 import { Campaign } from "../Campaign/Campaign";
 import "./CritSplash.css";
 
@@ -262,7 +262,6 @@ export function CritSplash() {
 	const { actionService } = useActionService();
 	const campaign = CampaignUtils.getActiveCampaign(context);
 	const userRole = context.User.Role;
-	const isDM = userRole === "dm";
 	const splashEnabled = AppSettingUtils.getCritSplashEnabled(context);
 
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -314,10 +313,10 @@ export function CritSplash() {
 			let url: string | null = null;
 			if (current.imageId) {
 				try {
-					const blob = await loadImageBlob(current.imageId, {
-						isDM,
-						imageService: (actionService as any)?.imageService,
-					});
+					const blob = await ImageService.loadBlob(
+						current.imageId,
+						actionService?.imageService
+					);
 					if (blob && !cancelled) {
 						objectUrl = URL.createObjectURL(blob);
 						url = objectUrl;

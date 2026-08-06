@@ -162,19 +162,21 @@ export function parseFormula(input: string): { items: FormulaItem[]; canonical: 
 	  }
 	}
   
-	// Build canonical, spaced representation
-	const canonical = items
-	  .map((it, idx) => {
-		const sign = it.sign === 1 ? (idx === 0 ? "" : " + ") : " - ";
-		if (it.kind === "mod") return `${sign}${it.value}`;
-		const keep = it.keep ? `k${it.keep.type}${it.keep.n}` : "";
-		return `${sign}${it.count}d${it.sides}${keep}`;
-	  })
-	  .join("")
-	  .trim();
-  
-	return { items, canonical };
+	return { items, canonical: canonicalize(items) };
   }
+
+/** Renders parsed items back to the canonical, spaced formula string. */
+function canonicalize(items: FormulaItem[]): string {
+  return items
+    .map((it, idx) => {
+      const sign = it.sign === 1 ? (idx === 0 ? "" : " + ") : " - ";
+      if (it.kind === "mod") return `${sign}${it.value}`;
+      const keep = it.keep ? `k${it.keep.type}${it.keep.n}` : "";
+      return `${sign}${it.count}d${it.sides}${keep}`;
+    })
+    .join("")
+    .trim();
+}
 
 /** Normalize any formula to canonical, spaced representation. */
 export function normalizeFormula(input: string): string {
@@ -199,26 +201,14 @@ export function addDieToFormula(current: string, sides: number): string {
     if (it.kind === "dice") {
       if (it.sign === 1 && it.sides === sides && !it.keep) {
         it.count += 1;
-        return normalizeItems(items);
+        return canonicalize(items);
       }
       break; // last dice is different or has keep; append a new one
     }
   }
 
   items = items.concat([{ kind: "dice", sign: 1, count: 1, sides, keep: undefined } as DiceItem]);
-  return normalizeItems(items);
-}
-
-function normalizeItems(items: FormulaItem[]): string {
-  return items
-    .map((it, idx) => {
-      const sign = it.sign === 1 ? (idx === 0 ? "" : " + ") : " - ";
-      if (it.kind === "mod") return `${sign}${it.value}`;
-      const keep = it.keep ? `k${it.keep.type}${it.keep.n}` : "";
-      return `${sign}${it.count}d${it.sides}${keep}`;
-    })
-    .join("")
-    .trim();
+  return canonicalize(items);
 }
 
 /*** Rolling ***/
@@ -402,67 +392,24 @@ export function getRollOutcome(result: DiceRollResult): RollOutcome {
 
 export const isDiceRoll = (entry: LogEntry): boolean => entry.Category === "dice";
 
-/**
- * Natural max on a kept d20/d100. Reads the structured RollOutcome when present
- * (stamped at roll time); falls back to scanning the breakdown text for log
- * entries saved before RollOutcome existed.
- */
-export const isCritRoll = (entry: LogEntry): boolean => {
-	if (!isDiceRoll(entry)) return false;
-	if (entry.RollOutcome) return entry.RollOutcome.crit;
+// The three readers below are the ONLY way the UI asks "was this a crit?", and
+// they all read the RollOutcome every roll site stamps at roll time. Entries
+// written before that field existed simply report "not a crit" -- the crit
+// splash and roll toasts only look at rolls from the last few seconds, so a
+// legacy entry is never in a window where the answer is rendered.
 
-	const action = entry.Action || "";
-	const details = entry.Details || "";
+/** Natural max on a kept d20/d100. */
+export const isCritRoll = (entry: LogEntry): boolean =>
+	isDiceRoll(entry) && entry.RollOutcome?.crit === true;
 
-	const isD20 = /d20(?!\d)/i.test(action) || /d20(?!\d)/i.test(details);
-	const isD100 = /d100/i.test(action) || /d100/i.test(details);
-
-	if (!isD20 && !isD100) return false;
-
-	if (isD20 && /(?:\[20\]|=20)(?!\d)/.test(details)) return true;
-	if (isD100 && /(?:\[100\]|=100)/.test(details)) return true;
-
-	return false;
-};
-
-/**
- * Natural 1 on a kept d20/d100. Reads the structured RollOutcome when present;
- * falls back to the breakdown text otherwise. (The legacy fallback only matched
- * the die token in Action, so it missed item/skill rolls whose formula lives in
- * Details — the structured path fixes that for all new entries.)
- */
-export const isFumbleRoll = (entry: LogEntry): boolean => {
-	if (!isDiceRoll(entry)) return false;
-	if (entry.RollOutcome) return entry.RollOutcome.fumble;
-
-	const action = entry.Action || "";
-	const details = entry.Details || "";
-
-	const isD20OrD100 =
-		/d(?:20|100)(?!\d)/i.test(action) || /d(?:20|100)(?!\d)/i.test(details);
-	if (!isD20OrD100) return false;
-
-	return /(?:\[1\]|=1)(?!\d)/.test(details);
-};
+/** Natural 1 on a kept d20/d100. */
+export const isFumbleRoll = (entry: LogEntry): boolean =>
+	isDiceRoll(entry) && entry.RollOutcome?.fumble === true;
 
 /**
  * The natural value that made an entry a crit: 100 for a kept d100=100, 20 for a
  * kept d20=20, or null if it isn't a crit. (The natural die — not the total — so
- * a 1d20+5 crit still reports 20.) Reads RollOutcome when present; falls back to
- * the breakdown text for legacy entries.
+ * a 1d20+5 crit still reports 20.)
  */
-export const getCritRollValue = (entry: LogEntry): 20 | 100 | null => {
-	if (!isDiceRoll(entry)) return null;
-	if (entry.RollOutcome) return entry.RollOutcome.critValue;
-
-	const action = entry.Action || "";
-	const details = entry.Details || "";
-
-	const isD100 = /d100/i.test(action) || /d100/i.test(details);
-	if (isD100 && /(?:\[100\]|=100)/.test(details)) return 100;
-
-	const isD20 = /d20(?!\d)/i.test(action) || /d20(?!\d)/i.test(details);
-	if (isD20 && /(?:\[20\]|=20)(?!\d)/.test(details)) return 20;
-
-	return null;
-};
+export const getCritRollValue = (entry: LogEntry): 20 | 100 | null =>
+	isDiceRoll(entry) ? entry.RollOutcome?.critValue ?? null : null;

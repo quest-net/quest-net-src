@@ -16,6 +16,7 @@
 // pointer-lock + keyboard/mouse input for both actor-controlled camera modes.
 
 import * as THREE from "three";
+import { easeInOutCubic } from "../../utils/math";
 import {
 	CameraRig,
 	type CameraRigConfig,
@@ -55,10 +56,6 @@ function isMovementKey(code: string): boolean {
 	return ACTOR_CONTROL_KEY_CODES.includes(
 		code as (typeof ACTOR_CONTROL_KEY_CODES)[number]
 	);
-}
-
-function easeInOutCubic(t: number): number {
-	return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
 function capturePose(camera: THREE.PerspectiveCamera): CameraPose {

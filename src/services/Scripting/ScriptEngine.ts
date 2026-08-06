@@ -1,10 +1,10 @@
 /**
- * Script engine (v2 — action-driven ECA rules).
+ * Script engine (v2 â€” action-driven ECA rules).
  *
  * Replaces the v1 QuickJS sandbox + snapshot-diffing dispatcher with a tiny,
  * self-contained reactor over LIVE objects:
  *
- *   ActionService runs a domain action → calls ScriptEngine.onAction(...) →
+ *   ActionService runs a domain action â†’ calls ScriptEngine.onAction(...) â†’
  *   the engine finds every enabled script whose Trigger glob matches the action
  *   key, binds `this` / `game` / `event`, and runs each script body. A script
  *   changes the world by awaiting game.action(key, params), which runs the same
@@ -44,13 +44,9 @@ const AsyncFunction = (async function () {}).constructor as AsyncFunctionConstru
 
 // ---- Campaign reads ---------------------------------------------------------
 
-/** Every active actor (characters + entities) — scripts and triggers see these. */
-function activeActors(campaign: Campaign): Actor[] {
-	return ActorUtils.getActiveActors(campaign);
-}
-
+/** Every active actor (characters + entities) â€” scripts and triggers see these. */
 function isActorActive(campaign: Campaign, actor: Actor): boolean {
-	return activeActors(campaign).some((a) => a.Id === actor.Id);
+	return ActorUtils.getActiveActors(campaign).some((a) => a.Id === actor.Id);
 }
 
 function scriptsDisabled(context: Context): boolean {
@@ -131,7 +127,7 @@ function makeEvent(
 ): any {
 	const actorId = params?.actorId ?? params?.entityId ?? params?.characterId;
 	const raw = actorId
-		? activeActors(campaign).find((a) => a.Id === actorId)
+		? ActorUtils.getActiveActors(campaign).find((a) => a.Id === actorId)
 		: undefined;
 	const actor = raw ? wrapActor(raw, api) : undefined;
 	return Object.freeze({ key, params: params ?? {}, result, actor });
@@ -158,7 +154,7 @@ function makeBeforeEvent(
 ): any {
 	const actorId = params?.actorId ?? params?.entityId ?? params?.characterId;
 	const raw = actorId
-		? activeActors(campaign).find((a) => a.Id === actorId)
+		? ActorUtils.getActiveActors(campaign).find((a) => a.Id === actorId)
 		: undefined;
 	const actor = raw ? wrapActor(raw, api) : undefined;
 	return {
@@ -192,7 +188,7 @@ function createRunState(): ScriptRunState {
  *  - DRAINING: every action promise is collected so `runOneScript` can await the
  *    whole batch before the mutation commits, and surface any failure the script
  *    did not await itself (instead of swallowing it). A failed action does not
- *    break the chain — later actions still run.
+ *    break the chain â€” later actions still run.
  *
  * The sink is created fresh per script body, so a nested cascade script gets its
  * own sink: it never chains onto (and so never deadlocks awaiting) the parent
@@ -363,7 +359,7 @@ function collectMatches(
 		phase
 	);
 	// Actors and their template-backed slots.
-	for (const actor of activeActors(campaign)) {
+	for (const actor of ActorUtils.getActiveActors(campaign)) {
 		pushMatches(
 			out,
 			actor.Scripts,
@@ -520,7 +516,7 @@ function bindingForSelection(
 	if (sel.kind === "campaign") {
 		return { raw: campaign, paramsHolder: campaign, varsOwner: campaign };
 	}
-	const actor = activeActors(campaign).find((a) => a.Id === sel.actorId);
+	const actor = ActorUtils.getActiveActors(campaign).find((a) => a.Id === sel.actorId);
 	if (!actor) return null;
 	if (sel.kind === "actor") {
 		return { raw: actor, actor, paramsHolder: actor, varsOwner: actor };
@@ -579,7 +575,7 @@ export const ScriptEngine = {
 		const eventInfo: ScriptEventInfo = { key, params: working, control };
 		const state = createRunState();
 		for (const match of matches) {
-			// Once a script vetoes, the action will not run — stop, so later
+			// Once a script vetoes, the action will not run â€” stop, so later
 			// before-scripts don't mutate params that get discarded.
 			if (control.cancelled) break;
 			await runOneScript(match, eventInfo, context, campaign, state);
