@@ -38,6 +38,7 @@ export class ActionService {
 	public terrainTransferService: TerrainTransferService;
 
 	private onFirstUpdateCallback?: () => void;
+	private onDmConnectionLostCallback?: () => void;
 
 	// Trystero channel send functions. Target a specific peer via the
 	// `{ target }` option; omit it to broadcast to every peer.
@@ -80,7 +81,7 @@ export class ActionService {
 			() => this.getDmPeerId(),
 			this.execute.bind(this)
 		);
-		this.actorPoseService = new ActorPoseService(context, room);
+		this.actorPoseService = new ActorPoseService(context);
 		this.terrainTransferService = new TerrainTransferService(
 			room,
 			context.User.Role === "dm",
@@ -98,6 +99,16 @@ export class ActionService {
 	 */
 	onFirstUpdate(callback: () => void) {
 		this.onFirstUpdateCallback = callback;
+	}
+
+	/** Notifies players when their required DM connection disappears. */
+	onDmConnectionLost(callback: () => void): () => void {
+		this.onDmConnectionLostCallback = callback;
+		return () => {
+			if (this.onDmConnectionLostCallback === callback) {
+				this.onDmConnectionLostCallback = undefined;
+			}
+		};
 	}
 
 	/**
@@ -121,6 +132,10 @@ export class ActionService {
 	 * Drops all local state for a peer that is no longer transport-active.
 	 */
 	private forgetPeer(peerId: string) {
+		const wasDm =
+			this.context.User.Role === "player" &&
+			(this.peerUsers.get(peerId)?.Role === "dm" ||
+				this.connectedPeerIds.has(peerId));
 		const hadConnection = this.connectedPeerIds.delete(peerId);
 		const hadUser = this.peerUsers.delete(peerId);
 		this.stopPinging(peerId);
@@ -128,6 +143,9 @@ export class ActionService {
 		if (hadConnection || hadUser) {
 			// Presence-only re-render (transient, separate non-persisted store).
 			bumpPresence();
+		}
+		if (wasDm) {
+			this.onDmConnectionLostCallback?.();
 		}
 	}
 
@@ -254,8 +272,8 @@ export class ActionService {
 			const didChangeConnection = this.addConnectedPeer(peerId);
 
 			if (this.context.User.Role === "dm") {
-				void this.broadcastFullAfterPendingMutations().catch((error) => {
-					console.error("[ActionService] Error broadcasting full state:", error);
+				void this.sendFullToPeerAfterPendingMutations(peerId).catch((error) => {
+					console.error("[ActionService] Error sending full state to peer:", error);
 				});
 			}
 
@@ -321,10 +339,17 @@ export class ActionService {
 
 		for (const peerId of Array.from(this.connectedPeerIds)) {
 			if (!activePeerIds.has(peerId)) {
+				const wasDm =
+					this.context.User.Role === "player" &&
+					(this.peerUsers.get(peerId)?.Role === "dm" ||
+						this.connectedPeerIds.has(peerId));
 				this.connectedPeerIds.delete(peerId);
 				this.peerUsers.delete(peerId);
 				this.stopPinging(peerId);
 				this.actorPoseService.clearForPeer(peerId);
+				if (wasDm) {
+					this.onDmConnectionLostCallback?.();
+				}
 				didChange = true;
 			}
 		}
@@ -447,15 +472,15 @@ export class ActionService {
 		return campaign;
 	}
 
-	private async broadcastFullAfterPendingMutations(): Promise<void> {
+	private async sendFullToPeerAfterPendingMutations(peerId: string): Promise<void> {
 		await this.mutationChain;
 		const campaign = CampaignUtils.getActiveCampaign(this.context);
 		const isSecret = this.context.SecretModes?.[campaign.Id];
 		if (isSecret) return;
-		// Pack inactive terrains on the live proxy first, then broadcast a plain
+		// Pack inactive terrains on the live proxy first, then send a plain
 		// snapshot so no proxy leaks into StateSync's diffing/transport.
 		await TerrainStorageService.packInactiveTerrains(campaign);
-		this.stateSync.broadcastFull(this.snapshotActiveCampaign());
+		this.stateSync.sendFullToPeer(this.snapshotActiveCampaign(), peerId);
 	}
 
 	/**
@@ -701,6 +726,7 @@ export class ActionService {
 		this.peerPings.clear();
 		this.peerUsers.clear();
 		this.connectedPeerIds.clear();
+		this.onDmConnectionLostCallback = undefined;
 		if (this.room) {
 			RoomService.leave(this.room);
 		}

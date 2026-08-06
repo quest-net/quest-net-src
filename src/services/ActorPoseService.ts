@@ -22,22 +22,51 @@ type LiveActorPoseListener = () => void;
 export class ActorPoseService {
 	private context: Context;
 	private sendActorPosePacket?: ActionSend;
+	private detachPoseRoom?: () => void;
 	private liveActorPoses: Map<string, LiveActorPose> = new Map();
 	private liveActorPoseListeners: Set<LiveActorPoseListener> = new Set();
 	private pruneInterval?: ReturnType<typeof setInterval>;
 
-	constructor(context: Context, room: Room) {
+	constructor(context: Context) {
 		this.context = context;
+		this.pruneInterval = setInterval(
+			() => this.reconcileLiveActorPoses(),
+			ACTOR_POSE_PRUNE_INTERVAL_MS
+		);
+	}
+
+	/** Connects live poses to the optional direct-mesh room. */
+	public attachRoom(room: Room): void {
+		this.detachRoom();
+
 		const actorPose = room.makeAction<any>("actorPose");
 		this.sendActorPosePacket = actorPose.send;
 		actorPose.onMessage = (data, { peerId }) => {
 			this.handleActorPose(data, peerId);
 		};
 
-		this.pruneInterval = setInterval(
-			() => this.reconcileLiveActorPoses(),
-			ACTOR_POSE_PRUNE_INTERVAL_MS
-		);
+		const previousOnPeerLeave = room.onPeerLeave;
+		const onPeerLeave = (peerId: string) => {
+			previousOnPeerLeave?.(peerId);
+			this.clearForPeer(peerId);
+		};
+		room.onPeerLeave = onPeerLeave;
+
+		this.detachPoseRoom = () => {
+			actorPose.onMessage = null;
+			if (room.onPeerLeave === onPeerLeave) {
+				room.onPeerLeave = previousOnPeerLeave;
+			}
+			this.sendActorPosePacket = undefined;
+			this.clearLiveActorPoses();
+		};
+	}
+
+	/** Disables live poses without affecting the authoritative campaign room. */
+	public detachRoom(): void {
+		const detach = this.detachPoseRoom;
+		this.detachPoseRoom = undefined;
+		detach?.();
 	}
 
 	public sendActorPose(packet: ActorPosePacket): void {
@@ -138,6 +167,7 @@ export class ActorPoseService {
 	}
 
 	public cleanup(): void {
+		this.detachRoom();
 		if (this.pruneInterval) {
 			clearInterval(this.pruneInterval);
 			this.pruneInterval = undefined;

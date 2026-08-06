@@ -35,8 +35,14 @@
 - **Runtime user updates**: After handshake, character selection changes
   flow through the small `userUpdate` action (`ActionService.broadcastSelf`).
   Missing metadata is repaired with the `userReq` action.
-- **Initial campaign state**: DM auto-broadcasts the full campaign on
-  `onPeerJoin` so newly admitted players catch up immediately.
+- **Initial campaign state**: On `onPeerJoin`, the DM sends one targeted full
+  snapshot to the newly admitted player. Existing players keep their current
+  baseline and receive no redundant full state.
+- **Live pose mesh**: `actorPose` uses the optional active room
+  `<roomCode>:pose:v1`, separate from the required campaign star. The DM opens it
+  immediately; players join after applying a fresh campaign snapshot, with a
+  small randomized delay. Pose-room failures never affect campaign readiness or
+  presence, and players leave the pose room when their DM connection is lost.
 
 ### Connection error surface
 
@@ -62,9 +68,10 @@ What we still do:
 - A 20-second player join deadline changes the connection screen to explanatory
   "still listening" feedback. It does not leave, recreate, or otherwise alter
   the Trystero room.
-- `room.leave()` is called only for a real React lifecycle teardown: leaving or
-  switching the campaign view. Peer count, elapsed time, browser wake, relay
-  state, ping latency, and missing metadata never trigger it.
+- The required campaign room calls `room.leave()` only for a real React lifecycle
+  teardown: leaving or switching the campaign view. Peer count, elapsed time,
+  browser wake, relay state, ping latency, and missing metadata never trigger it.
+  The optional pose room is independent and is left when a player loses the DM.
 - Pings are **display-only** (RTT in `PeerStatus`); a missed pong does nothing.
 - `usePeerTracking` retains its `partial` state defensively for missing or
   unexpected metadata, but a normal passive player cannot form a player-only

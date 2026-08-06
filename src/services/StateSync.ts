@@ -18,6 +18,7 @@ export interface StateUpdate {
 	timestamp: number;
 	data?: Campaign; // For 'full' updates
 	patches?: Operation[]; // For 'delta' updates
+	version?: number; // Current version carried by full updates
 	baseVersion?: number; // Version number for patch tracking
 }
 
@@ -116,18 +117,37 @@ export class StateSync {
 		this.sendFull(sanitizeCampaignForPlayers(campaign));
 	}
 
+	/** Sends a full snapshot only to the newly connected peer. */
+	sendFullToPeer(campaign: Campaign, peerId: string): void {
+		this.sendFull(sanitizeCampaignForPlayers(campaign), peerId);
+	}
+
 	/**
 	 * Internal: queues a full-state send for an already-sanitized campaign.
 	 * Keeps broadcast() and broadcastFull() from each sanitizing independently.
 	 */
-	private sendFull(sanitized: Campaign): void {
+	private sendFull(sanitized: Campaign, targetPeerId?: string): void {
 		const update: StateUpdate = {
 			type: "full",
 			timestamp: Date.now(),
 			data: sanitized,
+			version: targetPeerId ? this.version : 0,
 		};
 
-		this.queueStateSend(update);
+		this.queueStateSend(update, targetPeerId);
+
+		if (targetPeerId) {
+			// The first peer establishes the shared baseline. Later targeted snapshots
+			// join that baseline without resetting versions or pending mutations for
+			// players who are already connected.
+			if (!this.hasBaseline) {
+				this.recorder?.discard();
+				this.hasBaseline = true;
+				this.version = 0;
+				this.updateCount = 0;
+			}
+			return;
+		}
 
 		// The full snapshot carries every buffered mutation, so drop the recorder
 		// buffer -- replaying those ops as a delta on top would double-apply.
@@ -171,7 +191,7 @@ export class StateSync {
 		this.version++;
 	}
 
-	private queueStateSend(update: StateUpdate): void {
+	private queueStateSend(update: StateUpdate, targetPeerId?: string): void {
 		this.sendQueue = this.sendQueue
 			.catch((error) => {
 				console.error("[StateSync] State send queue error:", error);
@@ -186,6 +206,7 @@ export class StateSync {
 				});
 				this.sendState(transportUpdate.data, {
 					metadata: transportUpdate.metadata,
+					...(targetPeerId ? { target: targetPeerId } : {}),
 				});
 			});
 	}
@@ -246,7 +267,7 @@ export class StateSync {
 		}
 
 		this.currentState = update.data;
-		this.version = 0;
+		this.version = update.version ?? 0;
 		if (this.onUpdateCallback) {
 			this.onUpdateCallback(update.data);
 		}

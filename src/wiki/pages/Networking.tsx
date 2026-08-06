@@ -94,10 +94,10 @@ export const networkingPage: WikiPage = {
 							exchange before peer metadata is visible through normal room APIs.
 						</WikiFlowStep>
 						<WikiFlowStep number="4" title="Install service channels" tone="success">
-							<WikiCode>ActionService</WikiCode>, <WikiCode>StateSync</WikiCode>,{" "}
-							<WikiCode>ImageService</WikiCode>, and{" "}
-							<WikiCode>ActorPoseService</WikiCode> register their Trystero
-							actions.
+							<WikiCode>ActionService</WikiCode>, <WikiCode>StateSync</WikiCode>, and{" "}
+							<WikiCode>ImageService</WikiCode> register campaign-room actions.
+							After campaign sync, <WikiCode>ActorPoseService</WikiCode> joins the
+							optional active pose mesh.
 						</WikiFlowStep>
 						<WikiFlowStep number="5" title="Wait for first state when needed" tone="warning">
 							A new player gets a retrying screen if the first DM state has not
@@ -155,7 +155,7 @@ export const networkingPage: WikiPage = {
 								name: "actorPose",
 								tone: "accent",
 								detail:
-									"Ephemeral live token pose packets for smooth drag previews before authoritative movement lands.",
+									"Optional direct-mesh traffic. Ephemeral live token pose packets smooth movement before authoritative state lands.",
 							},
 							{
 								name: "userUpdate / userReq",
@@ -299,8 +299,9 @@ export const networkingPage: WikiPage = {
 								body: (
 									<>
 										<WikiCode>actorPose</WikiCode> packets last about 800 ms and
-										are validated against terrain, actor existence, and peer
-										control permissions.
+										are validated against actor existence. Their separate active room
+										allows direct player-to-player poses without affecting campaign
+										readiness when the optional mesh is unavailable.
 									</>
 								),
 							},

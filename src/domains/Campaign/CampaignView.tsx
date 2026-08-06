@@ -32,6 +32,9 @@ interface CampaignViewState {
 // UI feedback only. Reaching this deadline changes the connection screen but
 // never leaves, recreates, or otherwise interferes with the Trystero room.
 const PLAYER_JOIN_TIMEOUT_MS = 20000;
+const POSE_ROOM_SUFFIX = ":pose:v1";
+const PLAYER_POSE_JOIN_MIN_DELAY_MS = 250;
+const PLAYER_POSE_JOIN_JITTER_MS = 500;
 
 export function CampaignView() {
 	const { identifier } = useParams<{ identifier: string }>();
@@ -75,9 +78,69 @@ export function CampaignView() {
 
 		// Setup variables that need cleanup
 		let room: ReturnType<typeof RoomService.join> | null = null;
+		let poseRoom: ReturnType<typeof RoomService.join> | null = null;
 		let service: ActionService | null = null;
 		let isSubscribed = true; // For handling async state updates after unmount
 		let joinTimeout: ReturnType<typeof setTimeout> | null = null;
+		let poseJoinTimeout: ReturnType<typeof setTimeout> | null = null;
+		let campaignRoomCode: string | null = null;
+		let unsubscribeDmConnectionLost: (() => void) | null = null;
+
+		const closePoseRoom = () => {
+			if (poseJoinTimeout) {
+				clearTimeout(poseJoinTimeout);
+				poseJoinTimeout = null;
+			}
+			service?.actorPoseService.detachRoom();
+			if (poseRoom) {
+				RoomService.leave(poseRoom);
+				poseRoom = null;
+			}
+		};
+
+		const openPoseRoom = () => {
+			if (!isSubscribed || !service || !campaignRoomCode || poseRoom) return;
+
+			try {
+				poseRoom = RoomService.join(`${campaignRoomCode}${POSE_ROOM_SUFFIX}`, {
+					passive: false,
+					callbacks: {
+						onJoinError: (details) => {
+							console.warn(
+								"[PoseRoom] Optional pose connection failed:",
+								details.error
+							);
+						},
+					},
+				});
+				service.actorPoseService.attachRoom(poseRoom);
+			} catch (error) {
+				console.warn("[PoseRoom] Could not start optional pose room:", error);
+				closePoseRoom();
+			}
+		};
+
+		const schedulePlayerPoseRoom = () => {
+			if (isDM || poseRoom || poseJoinTimeout) return;
+			const delay =
+				PLAYER_POSE_JOIN_MIN_DELAY_MS +
+				Math.random() * PLAYER_POSE_JOIN_JITTER_MS;
+			poseJoinTimeout = setTimeout(() => {
+				poseJoinTimeout = null;
+				if (!service?.getDmPeerId()) return;
+				openPoseRoom();
+			}, delay);
+		};
+
+		const handlePlayerStateReady = () => {
+			if (!isSubscribed) return;
+			if (joinTimeout) {
+				clearTimeout(joinTimeout);
+				joinTimeout = null;
+			}
+			setState({ status: "ready" });
+			schedulePlayerPoseRoom();
+		};
 
 		async function initialize() {
 			try {
@@ -177,6 +240,7 @@ export function CampaignView() {
 				const roomCode = isDM
 					? activeCampaign?.RoomCode || identifier
 					: identifier;
+				campaignRoomCode = roomCode!;
 
 				// Build joinRoom callbacks BEFORE constructing the room.
 				// The handshake closure references `service` (declared above as
@@ -238,24 +302,32 @@ export function CampaignView() {
 				service = new ActionService(context, room);
 				setActionService(service);
 
+				if (isDM) {
+					openPoseRoom();
+				} else {
+					// Even when a cached campaign can render immediately, wait for a fresh
+					// authoritative snapshot before joining the optional pose mesh.
+					service.onFirstUpdate(handlePlayerStateReady);
+					unsubscribeDmConnectionLost = service.onDmConnectionLost(() => {
+						if (!isSubscribed) return;
+						closePoseRoom();
+						service?.onFirstUpdate(handlePlayerStateReady);
+					});
+				}
+
 				// =====================================================================
 				// STEP 4: Handle initial state for players without campaign
 				// =====================================================================
 				if (!isDM && !context.ActiveCampaign) {
 					setState({ status: "waiting-for-dm" });
 
-					// The first state broadcast from the DM flips us to "ready".
+					// The first state snapshot from the DM flips us to "ready" through
+					// handlePlayerStateReady above.
 					// This is a *latching* recovery: it fires whenever the update
 					// lands, including after the soft timeout below has already
 					// dropped us to a retryable error. Previously the timeout and
 					// success were raced once, so a state update arriving even a
 					// moment after the deadline could never recover the view.
-					service?.onFirstUpdate(() => {
-						if (isSubscribed) {
-							setState({ status: "ready" });
-						}
-					});
-
 					// Soft, retryable deadline. On expiry we surface feedback only;
 					// the original room stays mounted and the onFirstUpdate latch
 					// promotes us to "ready" whenever the DM becomes reachable.
@@ -305,6 +377,10 @@ export function CampaignView() {
 
 			// service.cleanup() calls RoomService.leave() internally —
 			// don't call it here too or Trystero's leave logic runs twice.
+			unsubscribeDmConnectionLost?.();
+			unsubscribeDmConnectionLost = null;
+			closePoseRoom();
+
 			if (service) {
 				service.cleanup();
 			}
