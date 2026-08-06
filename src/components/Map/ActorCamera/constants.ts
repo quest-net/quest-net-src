@@ -54,8 +54,8 @@ export const ACTOR_CAPSULE_PHYSICS = {
 	COLLISION_EPSILON: 0.000001,
 	SETTLED_SPEED: 0.045,
 	// Hard floor for the capsule feet (position.y). This is the voxel-grid base
-	// plane, which maps to rules height h = 0 (h_raw = position.y - TERRAIN_WORLD_Y_OFFSET
-	// - BASE_Y_OFFSET, so feet at TERRAIN_WORLD_Y_OFFSET report h = 0). The capsule
+	// plane, which maps to rules height h = 0 (h_raw = position.y -
+	// TERRAIN_WORLD_Y_OFFSET, so feet at TERRAIN_WORLD_Y_OFFSET report h = 0). The capsule
 	// cannot descend below the h = 0 ground. There is intentionally no top clamp --
 	// the body (flyers especially) may rise above the terrain's max height freely.
 	MIN_WORLD_Y: ACTOR_TOKEN_PLACEMENT.TERRAIN_WORLD_Y_OFFSET,

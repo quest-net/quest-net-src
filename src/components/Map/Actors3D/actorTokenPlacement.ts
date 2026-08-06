@@ -61,9 +61,13 @@ export function getActorGroundPosition(
 	const offsetZ = (terrain.Length - 1) / 2;
 	const baseHeight = getActorBaseHeight(actor, terrain);
 
+	// Exactly on the surface, no clearance lift: the capsule sim resolves contact
+	// at the same plane, so any lift here shows up as a hop when Follow hands the
+	// token's transform back and forth with the body. The base disc's underside is
+	// hidden by the disc itself, and the shadow blob carries its own Y offset.
 	return new THREE.Vector3(
 		actor.position.x - offsetX,
-		terrainHeightToWorldY(baseHeight) + ACTOR_TOKEN_PLACEMENT.BASE_Y_OFFSET,
+		terrainHeightToWorldY(baseHeight),
 		actor.position.y - offsetZ
 	);
 }

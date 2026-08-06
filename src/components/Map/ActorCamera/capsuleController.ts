@@ -859,9 +859,7 @@ export function actorCapsuleToRulesPosition(
 	const tileX = Math.round(clamp(state.position.x + offsetX, 0, terrain.Width - 1));
 	const tileZ = Math.round(clamp(state.position.z + offsetZ, 0, terrain.Length - 1));
 	const h_raw =
-		state.position.y -
-		ACTOR_TOKEN_PLACEMENT.TERRAIN_WORLD_Y_OFFSET -
-		ACTOR_TOKEN_PLACEMENT.BASE_Y_OFFSET;
+		state.position.y - ACTOR_TOKEN_PLACEMENT.TERRAIN_WORLD_Y_OFFSET;
 	const H_FLOOR_EPSILON = 0.1;
 	let h_floored = Math.floor(h_raw + H_FLOOR_EPSILON);
 
@@ -869,15 +867,13 @@ export function actorCapsuleToRulesPosition(
 	// clamp h_floored to the highest exposed surface at this tile whose rules
 	// height does not exceed h_floored.
 	//
-	// Why this is needed: H_FLOOR_EPSILON = 0.1 is intentionally larger than the
-	// systematic BASE_Y_OFFSET undershoot (~0.01) so that integer-valued exact
-	// surface heights (e.g. T = 5.0) round up correctly. But if the capsule
-	// briefly rests on a *covered* voxel at tile-boundary geometry -- where the
-	// voxel is geometrically reachable but not listed as an exposed surface for
-	// this tile -- h_raw can land in the range (T - 0.11, T - 0.01), causing
-	// the epsilon to push it over T and produce a rules height that the validator
-	// has no surface for. Snapping h down to the highest valid surface at this
-	// tile matches exactly what the validator's getStandingSurfaceHeight accepts.
+	// Why this is needed: H_FLOOR_EPSILON absorbs the ground-snap residual so an
+	// integer-valued exact surface height (e.g. T = 5.0) doesn't floor to T - 1.
+	// But if the capsule briefly rests on a *covered* voxel at tile-boundary
+	// geometry -- geometrically reachable, yet not listed as an exposed surface
+	// for this tile -- h_raw can land just under T, and the epsilon pushes it over
+	// into a rules height the validator has no surface for. Snapping h down to the
+	// highest valid surface here matches getStandingSurfaceHeight exactly.
 	if (index && !canFly) {
 		const exactSurfaces = index.allSurfaceHeights.get(tileKey(tileX, tileZ)) ?? [];
 		const hasMatch = exactSurfaces.some(s => Math.floor(s) === h_floored);
