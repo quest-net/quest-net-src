@@ -28,16 +28,6 @@ export interface ResolvedStat {
 	RestoreRule?: RestoreRule;
 }
 
-/**
- * Convenience predicate: true when a resolved (or raw) stat slot is "set" —
- * i.e. the owner currently has this stat.
- */
-export function isStatSet(
-	slot: Pick<StatSlot, "Current"> | Pick<ResolvedStat, "Current">
-): boolean {
-	return slot.Current !== null;
-}
-
 export interface ResolvedAction {
 	Id: string;
 	Name: string;

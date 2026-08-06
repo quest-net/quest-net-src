@@ -88,7 +88,7 @@ function installDefaultShader(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createDefaultMaterial: MaterialFactory = (params: MaterialFactoryParams): MaterialFactoryResult => {
+const createDefaultMaterial: MaterialFactory = (params: MaterialFactoryParams): MaterialFactoryResult => {
 	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;
 
 	const material = new THREE.MeshStandardMaterial({

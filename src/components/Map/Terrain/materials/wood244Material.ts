@@ -121,7 +121,7 @@ function installWood244Shader(
 	};
 }
 
-export const createWood244Material: MaterialFactory = (
+const createWood244Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
 	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;

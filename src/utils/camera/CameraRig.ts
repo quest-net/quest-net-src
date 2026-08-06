@@ -23,6 +23,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 import { adaptiveOrbitRotateSpeed } from "./adaptiveOrbitSpeed";
 import type { RigCameraMode } from "./CameraModes";
+import { clamp } from "../math";
 
 export type CameraMode = RigCameraMode;
 
@@ -159,20 +160,6 @@ function freecamKeyFor(event: KeyboardEvent): FreecamKey | null {
 	}
 }
 
-/** True if the key drives freecam movement. Consumers can use this to avoid
- *  triggering tool shortcuts while flying. */
-export function isFreecamMovementKey(key: string): boolean {
-	switch (key.toLowerCase()) {
-		case "w": case "a": case "s": case "d": case "shift": case " ":
-			return true;
-		default:
-			return false;
-	}
-}
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, value));
-}
 
 // Defaults used when a consumer's config omits the optional tuning fields. The
 // dolly clamp is perspective-specific (CameraRigConfig.perspective); the orbit

@@ -359,11 +359,6 @@ export function isValidDiceFormula(formula: string): boolean {
   }
 }
 
-/** Heads/Tails */
-export function flipCoin(): "Heads" | "Tails" {
-  return Math.random() < 0.5 ? "Heads" : "Tails";
-}
-
 /** Convenience: build your log line with stats */
 export function makeRollLogText(result: DiceRollResult): string {
 	// Only show highest/lowest stats if more than 1 die was kept

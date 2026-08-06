@@ -10,13 +10,13 @@
  * by dispatching `imageId: ""`. A non-empty ref that fails to resolve no-ops (we do
  * not clear on a typo).
  *
- * Backed by tier-1 util `ImageUtils.findImage(campaign, nameOrId)` (Id->Name->first
- * glob). No new actions — `scene:setEnvironmentImage` / `scene:setFocusImage` are
- * already scriptable and both take `{ imageId: string }`.
+ * Backed by the shared `resolveByNameOrId` resolver over `campaign.Images`
+ * (Id->Name->first glob). No new actions — `scene:setEnvironmentImage` /
+ * `scene:setFocusImage` are already scriptable and both take `{ imageId: string }`.
  */
 import type { ScriptApiContext } from "./apiContext";
 import type { RefByNameOrId } from "./actorApi";
-import { ImageUtils } from "../../../domains/Image/ImageUtils";
+import { resolveByNameOrId } from "../../../utils/resolveByNameOrId";
 
 export interface SceneApi {
 	/**
@@ -42,7 +42,7 @@ function resolveSceneImageId(
 	image: RefByNameOrId
 ): string | undefined {
 	if (!image) return "";
-	return ImageUtils.findImage(api.campaign(), image)?.Id;
+	return resolveByNameOrId(api.campaign().Images, image)?.Id;
 }
 
 /** Build the scene singleton for one script run. */

@@ -37,6 +37,36 @@ export function formatActionCost(
 	return `${cost.amount} ${action.Name}`;
 }
 
+/**
+ * The "N/M uses • Costs X • Costs Y" summary line shown under a consumable slot
+ * in a CollectionView. Shared by the item and skill collections, whose slots and
+ * templates carry the same uses/cost shape.
+ */
+export function formatSlotDetails(
+	slot: { UsesLeft?: number },
+	template: {
+		MaxUses?: number;
+		StatCost?: StatCost;
+		ActionCost?: ActionCost;
+	},
+	settings: CampaignSettings
+): string {
+	const usesText =
+		slot.UsesLeft !== undefined
+			? `${slot.UsesLeft}/${template.MaxUses || "∞"}`
+			: "∞";
+
+	return [
+		`${usesText} uses`,
+		template.StatCost ? `Costs ${formatStatCost(template.StatCost, settings, "")}` : "",
+		template.ActionCost
+			? `Costs ${formatActionCost(template.ActionCost, settings, "")}`
+			: "",
+	]
+		.filter(Boolean)
+		.join(" • ");
+}
+
 export function getStatCostAvailability(
 	actor: Pick<Actor, "Stats">,
 	cost: StatCost | undefined,

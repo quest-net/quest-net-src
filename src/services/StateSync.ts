@@ -9,8 +9,6 @@ import type { CampaignMutationRecorder } from "./CampaignMutationRecorder";
 import {
 	compressStateUpdateForTransport,
 	decompressStateUpdateIfNeeded,
-	STATE_UPDATE_DELTA_COMPRESSION_PATCH_THRESHOLD,
-	STATE_UPDATE_DELTA_COMPRESSION_BYTE_THRESHOLD,
 } from "../utils/StateUpdateCompression";
 
 export interface StateUpdate {
@@ -197,13 +195,7 @@ export class StateSync {
 				console.error("[StateSync] State send queue error:", error);
 			})
 			.then(async () => {
-				const transportUpdate = await compressStateUpdateForTransport(update, {
-					compressFullUpdates: true,
-					deltaPatchThreshold:
-						STATE_UPDATE_DELTA_COMPRESSION_PATCH_THRESHOLD,
-					deltaByteThreshold:
-						STATE_UPDATE_DELTA_COMPRESSION_BYTE_THRESHOLD,
-				});
+				const transportUpdate = await compressStateUpdateForTransport(update);
 				this.sendState(transportUpdate.data, {
 					metadata: transportUpdate.metadata,
 					...(targetPeerId ? { target: targetPeerId } : {}),

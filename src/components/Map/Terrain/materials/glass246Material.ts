@@ -46,7 +46,7 @@ const GLASS_OPACITY = 0.22;
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createGlass246Material: MaterialFactory = (
+const createGlass246Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
 	const { heroOcclusion } = params;

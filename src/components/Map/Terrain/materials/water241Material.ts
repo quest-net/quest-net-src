@@ -325,7 +325,7 @@ function installWater241Shader(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createWater241Material: MaterialFactory = (
+const createWater241Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
 	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;

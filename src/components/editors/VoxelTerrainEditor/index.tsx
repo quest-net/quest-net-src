@@ -37,6 +37,7 @@ import {
 	getVoxelTerrainIndex,
 	getVoxelTerrainResolution,
 } from "../../../utils/terrain/data/VoxelTerrainIndex";
+import { clamp } from "../../../utils/math";
 import {
 	buildEditGrid,
 	copyEditGrid,
@@ -215,10 +216,6 @@ const STROKE_DRAG_THRESHOLD_PX = 5;
 const IS_MAC =
 	typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
 const MOD_KEY_LABEL = IS_MAC ? "⌘" : "Ctrl";
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, value));
-}
 
 function boundsEqual(a: VoxelSelectionBounds, b: VoxelSelectionBounds): boolean {
 	return (

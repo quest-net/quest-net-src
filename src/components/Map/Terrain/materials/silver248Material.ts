@@ -231,7 +231,7 @@ function installSilver248Shader(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createSilver248Material: MaterialFactory = (
+const createSilver248Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
 	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;

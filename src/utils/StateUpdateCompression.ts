@@ -15,12 +15,6 @@ export const STATE_UPDATE_DELTA_COMPRESSION_BYTE_THRESHOLD = 16 * 1024;
 
 type CompressionEncoding = "gzip";
 
-export interface StateUpdateCompressionOptions {
-	compressFullUpdates?: boolean;
-	deltaPatchThreshold?: number;
-	deltaByteThreshold?: number;
-}
-
 export interface CompressedStateUpdateEnvelope {
 	[STATE_UPDATE_COMPRESSION_MARKER]: true;
 	encoding: CompressionEncoding;
@@ -37,12 +31,6 @@ interface PatchCountedUpdate {
 	type?: string;
 	patches?: unknown[];
 }
-
-const DEFAULT_OPTIONS: Required<StateUpdateCompressionOptions> = {
-	compressFullUpdates: true,
-	deltaPatchThreshold: STATE_UPDATE_DELTA_COMPRESSION_PATCH_THRESHOLD,
-	deltaByteThreshold: STATE_UPDATE_DELTA_COMPRESSION_BYTE_THRESHOLD,
-};
 
 /**
  * Rough UTF-8 byte estimate of a delta's serialized patches, with an early-out:
@@ -80,23 +68,21 @@ export function isCompressedStateUpdateEnvelope(
 }
 
 export async function compressStateUpdateForTransport<T extends PatchCountedUpdate>(
-	update: T,
-	options: StateUpdateCompressionOptions = {}
+	update: T
 ): Promise<StateUpdateTransport<T>> {
-	const resolvedOptions = { ...DEFAULT_OPTIONS, ...options };
 	const patchCount = Array.isArray(update.patches) ? update.patches.length : 0;
 	const shouldCompress =
-		(update.type === "full" && resolvedOptions.compressFullUpdates) ||
+		update.type === "full" ||
 		(update.type === "delta" &&
 			// Compress when the delta has many patches OR when it is byte-heavy.
 			// The byte check (only evaluated for small-patch deltas, thanks to
 			// short-circuiting) catches the large-value-few-patches case that the
 			// patch count alone misses.
-			(patchCount >= resolvedOptions.deltaPatchThreshold ||
+			(patchCount >= STATE_UPDATE_DELTA_COMPRESSION_PATCH_THRESHOLD ||
 				estimatePatchedUpdateBytes(
 					Array.isArray(update.patches) ? update.patches : [],
-					resolvedOptions.deltaByteThreshold
-				) >= resolvedOptions.deltaByteThreshold));
+					STATE_UPDATE_DELTA_COMPRESSION_BYTE_THRESHOLD
+				) >= STATE_UPDATE_DELTA_COMPRESSION_BYTE_THRESHOLD));
 
 	if (!shouldCompress || !supportsCompressionStreams()) {
 		return { data: update };

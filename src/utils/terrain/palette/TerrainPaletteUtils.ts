@@ -10,7 +10,6 @@
 
 export const TERRAIN_PALETTE_COLUMNS = 20; // hue families
 export const TERRAIN_PALETTE_ROWS    = 12; // lightness levels per family
-export const TERRAIN_PALETTE_SIZE    = TERRAIN_PALETTE_COLUMNS * TERRAIN_PALETTE_ROWS; // 240
 
 const MIN_LIGHTNESS = 0.22;
 const MAX_LIGHTNESS = 0.88;

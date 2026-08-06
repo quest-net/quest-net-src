@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { clamp } from "../../utils/math";
 
 interface Dot {
 	cx: number;
@@ -9,10 +10,6 @@ interface Dot {
 const WIDTH = 1040;
 const HEIGHT = 420;
 const STEP = 12;
-
-function clamp(value: number, min: number, max: number): number {
-	return Math.max(min, Math.min(max, value));
-}
 
 function getDotRadius(x: number, y: number): number {
 	const focalPoints = [

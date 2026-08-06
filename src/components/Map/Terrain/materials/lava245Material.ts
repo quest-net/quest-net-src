@@ -325,7 +325,7 @@ function installLava245Shader(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createLava245Material: MaterialFactory = (
+const createLava245Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
 	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;

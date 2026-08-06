@@ -656,12 +656,3 @@ export function isScriptableAction(actionKey: string): boolean {
 	const action = ACTION_REGISTRY[actionKey];
 	return action?.scriptable === true;
 }
-
-/**
- * Gets all action keys for a specific role
- */
-export function getActionsForRole(role: Role): string[] {
-	return Object.entries(ACTION_REGISTRY)
-		.filter(([_, action]) => action.roles.includes(role))
-		.map(([key, _]) => key);
-}

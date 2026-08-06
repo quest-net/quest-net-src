@@ -273,7 +273,7 @@ function installGrass242Shader(
 	};
 }
 
-export const createGrass242Material: MaterialFactory = (
+const createGrass242Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
 	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;

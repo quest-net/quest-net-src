@@ -160,7 +160,7 @@ function installIronBars249Shader(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createIronBars249Material: MaterialFactory = (
+const createIronBars249Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
 	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;

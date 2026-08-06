@@ -123,7 +123,7 @@ function installStoneBricks240Shader(
 	};
 }
 
-export const createStoneBricks240Material: MaterialFactory = (
+const createStoneBricks240Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
 	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;

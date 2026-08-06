@@ -9,7 +9,7 @@ import { SkillSlotDisplay } from "./SkillSlotDisplay";
 import { SkillEdit } from "./Edit";
 import { FormDrawer } from "../../components/ui/FormDrawer";
 import { useAnimatedDrawer } from "../../hooks/useAnimatedDrawer";
-import { formatActionCost, formatStatCost } from "../Actor/ActorCostUtils";
+import { formatSlotDetails } from "../Actor/ActorCostUtils";
 
 interface SkillCollectionProps {
 	actor: Actor;
@@ -33,25 +33,7 @@ export function SkillCollection({ actor }: SkillCollectionProps) {
         const skill = campaign.SkillTemplates.find((t) => t.Id === slot.Id);
         if (!skill) return null;
 
-			// Format uses text
-			const usesText =
-				slot.UsesLeft !== undefined
-					? `${slot.UsesLeft}/${skill.MaxUses || "∞"}`
-					: "∞";
-
-			const statCostText = skill.StatCost
-				? `Costs ${formatStatCost(skill.StatCost, campaign.Settings, "")}`
-				: "";
-			const actionCostText = skill.ActionCost
-				? `Costs ${formatActionCost(skill.ActionCost, campaign.Settings, "")}`
-				: "";
-
-			// Combine details
-			const details = [
-				`${usesText} uses`,
-				statCostText,
-				actionCostText,
-			].filter(Boolean).join(" • ");
+			const details = formatSlotDetails(slot, skill, campaign.Settings);
 
 			return {
 				id: `${slot.Id}-${index}`,

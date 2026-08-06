@@ -254,7 +254,7 @@ function installGold247Shader(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createGold247Material: MaterialFactory = (
+const createGold247Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
 	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;

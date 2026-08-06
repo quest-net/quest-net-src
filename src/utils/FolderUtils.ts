@@ -105,54 +105,12 @@ export function getItemsAtPath<T extends { tags?: string[] }>(
 }
 
 /**
- * Validates a folder name
- * @param name - Folder name to validate
- * @returns Error message if invalid, null if valid
- */
-export function validateFolderName(name: string): string | null {
-	if (!name || name.trim().length === 0) {
-		return "Folder name cannot be empty";
-	}
-
-	if (name.includes(" ")) {
-		return "Folder name cannot contain spaces (use hyphens or camelCase)";
-	}
-
-	// Check for special characters (allow alphanumeric, hyphens, underscores, and forward slash for nested)
-	const validPattern = /^[a-zA-Z0-9_\-\/]+$/;
-	if (!validPattern.test(name)) {
-		return "Folder name can only contain letters, numbers, hyphens, underscores, and forward slashes";
-	}
-
-	// No leading/trailing slashes
-	if (name.startsWith(PATH_SEPARATOR) || name.endsWith(PATH_SEPARATOR)) {
-		return "Folder name cannot start or end with a forward slash";
-	}
-
-	// No double slashes
-	if (name.includes("//")) {
-		return "Folder name cannot contain consecutive forward slashes";
-	}
-
-	return null;
-}
-
-/**
  * Builds a full path tag string from path segments
  * @param pathSegments - Array of path segments
  * @returns Full tag string (e.g., "path:Knights/Elite")
  */
 export function buildPathTag(pathSegments: string[]): string {
 	return PATH_TAG_PREFIX + pathSegments.join(PATH_SEPARATOR);
-}
-
-/**
- * Normalizes folder name (lowercase for consistency)
- * @param name - Folder name
- * @returns Normalized name
- */
-export function normalizeFolderName(name: string): string {
-	return name.toLowerCase();
 }
 
 /**
@@ -188,16 +146,4 @@ export function removePathTag(tags: string[] | undefined): string[] {
 
 	// Remove all existing path tags
 	return currentTags.filter((tag) => !tag.startsWith(PATH_TAG_PREFIX));
-}
-
-export function applyPathToTags(
-	tags: string[] | undefined,
-	currentPath: string[]
-): string[] {
-	if (currentPath.length === 0) {
-		return tags || [];
-	}
-
-	const pathTag = buildPathTag(currentPath);
-	return [...(tags || []), pathTag];
 }

@@ -361,7 +361,7 @@ function installFlesh250Shader(
 // Factory
 // ---------------------------------------------------------------------------
 
-export const createFlesh250Material: MaterialFactory = (
+const createFlesh250Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
 	const { movementHighlight, voxelAo, heroOcclusion, performanceMode = false } = params;

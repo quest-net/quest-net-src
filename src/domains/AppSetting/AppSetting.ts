@@ -1,38 +1,8 @@
-import type { MapCameraMode } from "../../utils/camera/CameraModes";
-
-export interface AppSettings {
-  theme: "light" | "dark"; // I haven't implemented this yet
-  volume: number; // percentage. This is used when a player may want a different volume than the DM chose
-  sfxVolume?: number; // 0-1. Sound effects volume (stickers, etc.), separate from music
-  preserveFlyingHeightOnTileMove?: boolean;
-  performanceMode?: boolean;
-  /** Unified map camera mode. `freecam` is DM-only; actor modes need a
-   *  controlled actor to anchor to. Device-local (not profile-synced) — camera
-   *  choice can reasonably differ per device. */
-  cameraMode?: MapCameraMode;
-  /** When false, natural crits show as normal log alerts instead of the full-screen splash. Defaults to enabled. */
-  critSplashEnabled?: boolean;
-  /** When false, disables the hero-occlusion cutout that reveals the focused actor behind terrain. Defaults to enabled. */
-  heroOcclusionEnabled?: boolean;
-  /** World-space radius of the focused-actor terrain cutout. Roughly one unit per tactical tile. */
-  heroOcclusionRadius?: number;
-  imagePromptTemplate?: string;
-
-  /** The selected image generation provider ID (e.g. "google-gemini-flash") */
-  imageService?: string;
-
-  /**
-   * Primary API keys per provider, keyed by provider ID.
-   * e.g. { "google-gemini-flash": "AIza...", "openai-gpt-image": "sk-..." }
-   */
-  imageApiKeys?: Record<string, string>;
-
-  /**
-   * Secondary secret keys per provider, keyed by provider ID.
-   * Currently only used by Kling (Access Key + Secret Key JWT auth).
-   */
-  imageApiSecrets?: Record<string, string>;
-}
+// AppSettings live on the Context as an open-ended `Record<string, string>`
+// (see Context.ts). Every value is read and written through AppSettingUtils,
+// which owns the string encoding, defaults and clamping per key. The bag is
+// deliberately untyped: it also carries keys no UI declares, such as the
+// `scripting.disabled` kill switch in Scripting/scriptConstants.ts.
 
 /**
  * The UI exposes four friendly stops, while persistence stores the actual

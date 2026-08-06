@@ -168,16 +168,6 @@ export function createDefaultVoxelTerrainEnvironmentPresets(): VoxelTerrainEnvir
 	);
 }
 
-export function createVoxelTerrainEnvironmentPreset(
-	presetId: VoxelTerrainEnvironmentPresetId
-): Pick<VoxelTerrain, "Lighting" | "Background"> {
-	const preset = VOXEL_TERRAIN_ENVIRONMENT_PRESETS[presetId];
-	return {
-		Lighting: { ...preset.Lighting },
-		Background: { ...preset.Background },
-	};
-}
-
 /**
  * A voxel terrain's encoded payload: the raw bytes of a Sparse Voxel Octree.
  * This is the canonical in-memory and at-rest form. base64 survives only at text

@@ -8,7 +8,6 @@ import {
   type MapCameraMode,
 } from "../../utils/camera/CameraModes";
 import {
-  AppSettings,
   DEFAULT_IMAGE_PROMPT,
   HERO_OCCLUSION_RADIUS_SETTING,
 } from "./AppSetting";
@@ -67,19 +66,6 @@ function setJson<T>(context: Context, key: string, value: T): void {
 // ---------------------------------------------------------------------------
 
 export const AppSettingUtils = {
-  createDefault(): AppSettings {
-    return {
-      theme: "light",
-      volume: 100,
-      sfxVolume: 0.5,
-      preserveFlyingHeightOnTileMove: false,
-      performanceMode: false,
-      critSplashEnabled: true,
-      heroOcclusionEnabled: true,
-      heroOcclusionRadius: HERO_OCCLUSION_RADIUS_SETTING.DEFAULT,
-    };
-  },
-
   /**
    * Sets the player's personal volume (0.0 to 1.0). Not broadcast to peers, but
    * synced across the user's own devices via the cloud account profile.
@@ -343,30 +329,5 @@ export const AppSettingUtils = {
     const parsed = Number(context.AppSettings.sfxVolume);
     if (Number.isFinite(parsed)) return Math.max(0, Math.min(1, parsed));
     return 0.5;
-  },
-
-  // ---------------------------------------------------------------------------
-  // Aggregate
-  // ---------------------------------------------------------------------------
-
-  getSettings(context: Context): AppSettings {
-    return {
-      theme: this.getTheme(context),
-      volume: this.getPlayerVolume(context),
-      sfxVolume: this.getSfxVolume(context),
-      preserveFlyingHeightOnTileMove:
-        this.getPreserveFlyingHeightOnTileMove(context),
-      performanceMode: this.getPerformanceMode(context),
-      critSplashEnabled: this.getCritSplashEnabled(context),
-      heroOcclusionEnabled: this.getHeroOcclusionEnabled(context),
-      heroOcclusionRadius: this.getHeroOcclusionRadius(context),
-      imagePromptTemplate: this.getImagePromptTemplate(context),
-      imageService: this.getImageService(context),
-      imageApiKeys: getJson<Record<string, string>>(context, "imageApiKeys"),
-      imageApiSecrets: getJson<Record<string, string>>(
-        context,
-        "imageApiSecrets"
-      ),
-    };
   },
 };

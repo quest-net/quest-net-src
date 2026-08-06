@@ -18,7 +18,7 @@ const LIGHT_ROUGHNESS = 0.35;
 const LIGHT_METALNESS = 0.0;
 const LIGHT_EMISSIVE_INTENSITY = 3.5;
 
-export const createLight243Material: MaterialFactory = (
+const createLight243Material: MaterialFactory = (
 	params: MaterialFactoryParams
 ): MaterialFactoryResult => {
 	const { heroOcclusion } = params;

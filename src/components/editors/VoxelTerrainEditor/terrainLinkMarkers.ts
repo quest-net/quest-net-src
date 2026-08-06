@@ -10,10 +10,7 @@ import {
 	createTerrainLinkMarkerGeometry,
 	createTerrainLinkMarkerMesh,
 	disposeTerrainLinkMarkerGroup,
-	TERRAIN_LINK_MARKER_HEIGHT,
 } from "../../Map/TerrainLinks3D/terrainLinkMarkerMesh";
-
-export const LINK_MARKER_HEIGHT = TERRAIN_LINK_MARKER_HEIGHT;
 
 export interface TerrainLinkMarkerInfo {
 	/** Stable per-anchor key (a same-terrain link contributes two markers). */

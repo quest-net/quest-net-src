@@ -9,7 +9,7 @@ import { ItemSlotDisplay } from "./ItemSlotDisplay";
 import { ItemEdit } from "./Edit";
 import { FormDrawer } from "../../components/ui/FormDrawer";
 import { useAnimatedDrawer } from "../../hooks/useAnimatedDrawer";
-import { formatActionCost, formatStatCost } from "../Actor/ActorCostUtils";
+import { formatSlotDetails } from "../Actor/ActorCostUtils";
 
 interface ItemCollectionProps {
 	actor: Actor;
@@ -34,22 +34,7 @@ export function ItemCollection({ actor, mode }: ItemCollectionProps) {
         const item = campaign.ItemTemplates.find((t) => t.Id === slot.Id);
         if (!item) return null;
 
-        // Format uses text
-        const usesText =
-            slot.UsesLeft !== undefined
-                ? `${slot.UsesLeft}/${item.MaxUses || "∞"}`
-                : "∞";
-        const statCostText = item.StatCost
-            ? `Costs ${formatStatCost(item.StatCost, campaign.Settings, "")}`
-            : "";
-        const actionCostText = item.ActionCost
-            ? `Costs ${formatActionCost(item.ActionCost, campaign.Settings, "")}`
-            : "";
-        const details = [
-            `${usesText} uses`,
-            statCostText,
-            actionCostText,
-        ].filter(Boolean).join(" • ");
+        const details = formatSlotDetails(slot, item, campaign.Settings);
 
         return {
             id: `${slot.Id}-${index}`,
