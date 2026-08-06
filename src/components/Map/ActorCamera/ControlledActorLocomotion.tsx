@@ -20,6 +20,7 @@ import { ACTOR_TOKEN_DESCRIPTOR_DEFAULTS } from "../Actors3D/actorTokenConstants
 import { useMapState } from "../MapStateProvider";
 import {
 	actorPositionToGroundWorld,
+	actorToGroundWorld,
 	findControlledActor,
 	getEyeHeight,
 } from "./actor";
@@ -27,6 +28,7 @@ import {
 	applyRangeContainment,
 	createActorCapsuleState,
 	actorCapsuleToRulesPosition,
+	isActorCapsulePositionFree,
 	isActorCapsuleSettled,
 	stepActorCapsuleController,
 	type ActorCapsuleState,
@@ -134,6 +136,9 @@ export default function ControlledActorLocomotion({
 	const lastSentAtRef = useRef(0);
 	const lastPoseSentAtRef = useRef(0);
 	const lastPoseSentPositionRef = useRef<THREE.Vector3 | null>(null);
+	// Last frame's driveFollowVisual, so the follow re-anchor in handleFrame
+	// fires on the take-over edge only.
+	const ownedFollowVisualRef = useRef(false);
 
 	useEffect(() => {
 		onLiveRulesPositionChangeRef.current = onLiveRulesPositionChange;
@@ -300,6 +305,7 @@ export default function ControlledActorLocomotion({
 		lastPoseSentAtRef.current = 0;
 		lastPoseSentPositionRef.current = null;
 		spaceWasPressedRef.current = false;
+		ownedFollowVisualRef.current = false;
 	}, [actor?.id, actor?.kind, terrainFramingKey, controller]);
 
 	useEffect(() => {
@@ -540,6 +546,52 @@ export default function ControlledActorLocomotion({
 					state,
 					currentActor.actor.CanFly ?? false
 				);
+
+				// Follow take-over: the token eased to the committed tile centre while
+				// released, so adopting the body's stale sub-tile offset would cut it,
+				// and the follow camera with it. Start from the token instead.
+				// Horizontal only -- copying Y would sink a hovering flyer. Follow only
+				// -- first person has no local token to cut.
+				if (
+					cameraModeRef.current === "follow" &&
+					!ownedFollowVisualRef.current &&
+					input.pointerLocked &&
+					wasSettled &&
+					pendingSyncPositionRef.current === null &&
+					lastSentPositionRef.current === null
+				) {
+					const authoritative = roundVoxelPosition(currentActor.actor.Position);
+					const currentRules = actorCapsuleToRulesPosition(
+						currentTerrain,
+						state,
+						index,
+						currentActor.actor.CanFly ?? false
+					);
+					const sameTile =
+						currentRules.x === authoritative.x &&
+						currentRules.y === authoritative.y &&
+						currentRules.h === authoritative.h;
+					if (sameTile) {
+						// Same helper that places the resting token.
+						const anchor = actorToGroundWorld(currentActor, currentTerrain);
+						anchor.y = state.position.y;
+						// A tile centre can be solid while the corner the player rested in
+						// is free (resolution 2-3). Skip rather than wedge -- the worst
+						// case is the cut we had before.
+						if (
+							isActorCapsulePositionFree(
+								currentTerrain,
+								index,
+								currentActor,
+								anchor
+							)
+						) {
+							state.position.x = anchor.x;
+							state.position.z = anchor.z;
+						}
+					}
+				}
+
 				const shouldSimulate =
 					input.pointerLocked ||
 					hasInput ||
@@ -673,6 +725,7 @@ export default function ControlledActorLocomotion({
 				positionSmoothing: cameraSmoothing,
 				driveFollowVisual: ownsFollowVisual,
 			});
+			ownedFollowVisualRef.current = ownsFollowVisual;
 		},
 		[
 			controller,

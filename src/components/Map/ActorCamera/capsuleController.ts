@@ -737,6 +737,23 @@ export function createActorCapsuleState(
 	};
 }
 
+/** Whether `actor`'s capsule is clear of terrain at `position`. For callers that
+ *  reposition the body outside the sim, where landing inside geometry would leave
+ *  `liftOutOfTerrain` to pop it up and change the committed height. */
+export function isActorCapsulePositionFree(
+	terrain: VoxelTerrain,
+	index: VoxelTerrainIndex,
+	actor: LocomotionActor,
+	position: THREE.Vector3
+): boolean {
+	return !capsuleIntersectsTerrain(
+		terrain,
+		index,
+		getCapsuleDimensions(actor),
+		position
+	);
+}
+
 export function stepActorCapsuleController(
 	terrain: VoxelTerrain,
 	index: VoxelTerrainIndex,
