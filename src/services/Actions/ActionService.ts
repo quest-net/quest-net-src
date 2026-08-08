@@ -140,6 +140,7 @@ export class ActionService {
 				this.connectedPeerIds.has(peerId));
 		const hadConnection = this.connectedPeerIds.delete(peerId);
 		const hadUser = this.peerUsers.delete(peerId);
+		if (hadUser) this.syncClaimedCharacters();
 		this.stopPinging(peerId);
 		this.actorPoseService.clearForPeer(peerId);
 		if (wasDm) {
@@ -299,7 +300,26 @@ export class ActionService {
 	private setPeerUser(peerId: string, user: User): boolean {
 		const previous = this.peerUsers.get(peerId);
 		this.peerUsers.set(peerId, user);
+		this.syncClaimedCharacters();
 		return JSON.stringify(previous) !== JSON.stringify(user);
+	}
+
+	/**
+	 * DM only. Players join the room passively, so they never connect to each
+	 * other and can't see which characters their peers have claimed. The DM is
+	 * connected to everyone, so it republishes the claimed set on its own User;
+	 * CharacterSelect reads it off the DM peer to grey out taken characters.
+	 */
+	private syncClaimedCharacters(): void {
+		if (this.context.User.Role !== "dm") return;
+		const roomCode = this.context.ActiveCampaign?.RoomCode;
+		if (!roomCode) return;
+
+		this.context.User.ClaimedCharacters = Array.from(this.peerUsers.values())
+			.map((user) => user.SelectedCharacters?.[roomCode])
+			.filter((characterId): characterId is string => !!characterId);
+		// Deduped against the last broadcast, so an unchanged set costs nothing.
+		this.broadcastSelf();
 	}
 
 	private isPeerActive(peerId: string): boolean {

@@ -22,13 +22,17 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 	const [isDrawerOpen, setDrawerOpen] = useState(false);
 	const [createCounter, setCreateCounter] = useState(0);
 
-	// Collect all character IDs selected by peers for this campaign
+	// Collect all character IDs selected by peers for this campaign. Players are
+	// passive peers and only ever connect to the DM, so a peer's own selection
+	// covers just the DM; every other player's claim arrives relayed on the DM's
+	// ClaimedCharacters.
 	const selectedByPeers = new Set<string>();
 	peers.forEach((peer) => {
 		const selectedCharId = peer.user?.SelectedCharacters[campaign.RoomCode];
 		if (selectedCharId) {
 			selectedByPeers.add(selectedCharId);
 		}
+		peer.user?.ClaimedCharacters?.forEach((id) => selectedByPeers.add(id));
 	});
 
 	// Filter spawned characters to only show available ones

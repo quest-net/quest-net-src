@@ -13,17 +13,14 @@ export interface PeerInfo {
 	ping: number | null;
 }
 
-/** `partial` = connected to peers but not the DM, so nothing reaches the authority. */
-export type ConnectionStatus = "online" | "partial" | "connected";
-
 export interface PeerTrackingData {
-	/** Remote peers only — does not include the local user. */
+	/**
+	 * Remote peers only — does not include the local user. Players join
+	 * passively, so for them this is the DM and nobody else.
+	 */
 	peers: PeerInfo[];
 	/** The local user as a PeerInfo, for display alongside peers. */
 	selfPeer: PeerInfo;
-	/** peers.length + 1 (self). */
-	totalInRoom: number;
-	connectionStatus: ConnectionStatus;
 	/** Trivially true for the DM themselves. */
 	isDmConnected: boolean;
 	canAccessActor: (actorId: string) => boolean;
@@ -73,16 +70,11 @@ export function usePeerTracking(): PeerTrackingData {
 		ping: null,
 	};
 
-	const totalInRoom = peers.length + 1;
-
-	// Peer count alone can't say whether we're in the session — a player can be
-	// meshed with other players while the DM link is missing.
+	// Not peer count: a peer whose handshake User hasn't landed yet is present
+	// but not yet known to be the DM.
 	const isDmConnected =
 		context.User.Role === "dm" ||
 		peers.some((peer) => peer.user?.Role === "dm");
-
-	const connectionStatus: ConnectionStatus =
-		peers.length === 0 ? "online" : isDmConnected ? "connected" : "partial";
 
 	const canAccessActor = (actorId: string): boolean => {
 		if (context.User.Role === "dm") return true;
@@ -93,8 +85,6 @@ export function usePeerTracking(): PeerTrackingData {
 	return {
 		peers,
 		selfPeer,
-		totalInRoom,
-		connectionStatus,
 		isDmConnected,
 		canAccessActor,
 	};

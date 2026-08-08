@@ -21,9 +21,9 @@ export function PlayerView() {
 	const navigate = useNavigate();
 	const isMobile = useIsMobile();
 
-	// Single source of truth for peer data - call hook once at view level
-	const { peers, selfPeer, totalInRoom, connectionStatus, isDmConnected } =
-		usePeerTracking();
+	// Only needed for CharacterSelect's "already taken" filter — PeerStatus
+	// reads its own presence data.
+	const { peers } = usePeerTracking();
 
 	// CampaignView guarantees ActiveCampaign matches the URL by the time we
 	// render — read directly from there.
@@ -61,7 +61,7 @@ export function PlayerView() {
 				{/* Header - Always Visible */}
 				<header className="navbar border-b-2 px-4 lg:px-6 justify-between">
 					<div className="flex items-center gap-4">
-						<PeerStatus connectionStatus={connectionStatus} peers={peers} selfPeer={selfPeer} totalInRoom={totalInRoom} isDmConnected={isDmConnected} />
+						<PeerStatus />
 						{/* App settings omitted on mobile — most options aren't relevant there. */}
 						{!isMobile && <AppSettingsDisplay />}
 					</div>

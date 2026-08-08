@@ -14,7 +14,6 @@ import { Main } from "../Main/Main";
 import { LogAlerts } from "../Log/LogAlerts";
 import { CritSplash } from "../Log/CritSplash";
 import { PeerStatus } from "../Room/PeerStatus";
-import { usePeerTracking } from "../../hooks/usePeerTracking";
 import { AppSettingsDisplay } from "../AppSetting/AppSettingsDisplay";
 import { ItemIndex } from "../Item/Index";
 import { AudioIndex } from "../Audio/Index";
@@ -58,10 +57,6 @@ export function DMView() {
 	const isMobile = useIsMobile();
 	const [activeTab, setActiveTab] = useState<TabView>("main");
 
-	// Call usePeerTracking once at the view level
-	const { peers, selfPeer, totalInRoom, connectionStatus, isDmConnected } =
-		usePeerTracking();
-
 	// CampaignView guarantees ActiveCampaign matches the URL by the time we
 	// render — so we read directly from there rather than re-resolving by
 	// identifier.
@@ -85,7 +80,7 @@ export function DMView() {
 							{campaign.RoomCode}
 							<span className="icon-[heroicons-solid--clipboard-copy] h-5 w-5"></span>
 						</button>
-						<PeerStatus connectionStatus={connectionStatus} peers={peers} selfPeer={selfPeer} totalInRoom={totalInRoom} isDmConnected={isDmConnected} />
+						<PeerStatus />
 						<AppSettingsDisplay />
 					</div>
 					<h1 className="text-xl font-bold">{campaign.Name}</h1>
