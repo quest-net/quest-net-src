@@ -59,6 +59,17 @@ export class StateSync {
 
 		this.sendState = stateSync.send;
 
+		// The DM is the authority and only ever SENDS state — it has no baseline
+		// to patch and nothing upstream to trust. Receiving is also actively
+		// harmful here: handleDeltaUpdate compares the incoming baseVersion
+		// against the DM's own *send* counter (always ahead by one), and the
+		// mismatch branch calls triggerFullSyncRequest() -> log:create -> the
+		// DM's own executeDM -> another broadcast. One stray state message from
+		// a duplicate or stale room turns into a self-sustaining delta storm
+		// that hammers every player with full campaign updates. `recorder` is
+		// constructed for the DM only (see the field docs above).
+		if (this.recorder) return;
+
 		// Listen for incoming state updates. We only need the data and the
 		// transport metadata (compression flags) from the message context.
 		stateSync.onMessage = (data, { metadata }) => {

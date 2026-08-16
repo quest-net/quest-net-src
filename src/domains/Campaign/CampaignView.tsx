@@ -288,6 +288,15 @@ export function CampaignView() {
 					},
 				};
 
+				// Everything above this point awaits (IndexedDB campaign load, OPFS
+				// terrain hydration), and the cleanup below can run during any of
+				// those awaits — at which point `room` and `service` are still null,
+				// so cleanup has nothing to tear down. Without this check we would
+				// then join anyway and build an ActionService nobody owns: a second
+				// live DM room in the same tab, peered with the real one, both
+				// broadcasting state. Bail instead; the next effect run joins.
+				if (!isSubscribed) return;
+
 				// Trystero's documented passive mode gives the authoritative room
 				// its intended star topology: the DM announces as the sole active
 				// peer, while players listen for the DM and ignore other players.
