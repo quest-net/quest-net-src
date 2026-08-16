@@ -38,16 +38,23 @@ export function PeerStatus() {
 	}, [isOpen]);
 
 	if (context.User.Role !== "dm") {
-		return isDmConnected ? (
-			<span className="badge badge-lg badge-success gap-2">
-				<span className="icon-[mdi--access-point-network] w-4 h-4"></span>
-				Connected
-			</span>
-		) : (
-			<span className="badge badge-lg badge-warning gap-2">
-				{/* motion-safe: this pulse is indefinite, not transient. */}
-				<span className="icon-[eos-icons--compass] w-4 h-4 motion-safe:animate-pulse"></span>
-				Searching for host
+		const label = isDmConnected ? "Connected to host" : "Searching for host";
+		// motion-safe: the searching pulse is indefinite, not transient.
+		const icon = isDmConnected
+			? "icon-[mdi--access-point-network]"
+			: "icon-[eos-icons--compass] motion-safe:animate-pulse";
+
+		// Icon-only, so the label has to live in aria-label/title — neither the
+		// colour nor the glyph reaches a screen reader on its own.
+		return (
+			<span
+				className={`badge badge-lg ${
+					isDmConnected ? "badge-success" : "badge-warning"
+				}`}
+				aria-label={label}
+				title={label}
+			>
+				<span className={`${icon} w-4 h-4`}></span>
 			</span>
 		);
 	}
