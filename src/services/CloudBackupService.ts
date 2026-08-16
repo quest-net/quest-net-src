@@ -50,10 +50,10 @@ export interface SyncResult {
 	repaired: { images: number; terrains: number };
 }
 
-// How far back through a backup file's version history the binary repair will
-// walk. Newest-first, so the cap only bites when many consecutive revisions are
-// all missing the same data.
-const MAX_REPAIR_REVISIONS = 10;
+// How many revisions the binary repair will DOWNLOAD before giving up (purged
+// revisions that fail to download don't count). Newest-first, so the cap only
+// bites when many consecutive readable revisions are all missing the same data.
+const MAX_REPAIR_REVISIONS = 15;
 
 /** Local last-updated time for a campaign (0 if never recorded). Callers fall
  *  back to the campaign's CreatedAt when this is 0. */
@@ -314,13 +314,40 @@ export const CloudBackupService = {
 		const revisions = await GoogleDriveBackupService.listRevisions(
 			backup.fileId
 		);
-		for (const revision of revisions.slice(0, MAX_REPAIR_REVISIONS)) {
+
+		// The cap counts revisions actually DOWNLOADED, not ones looked at. Drive
+		// eventually purges the content of unpinned revisions while still listing
+		// them, and those 403 -- they must not eat the budget, or a run of purged
+		// entries could stop the walk before it reaches the revision that still
+		// has the data.
+		let downloaded = 0;
+		for (const revision of revisions) {
 			if (hasNoMissingBinaries(missing)) break;
+			if (downloaded >= MAX_REPAIR_REVISIONS) break;
+
+			let data: unknown;
 			try {
-				const data = await GoogleDriveBackupService.downloadBackup(
+				data = await GoogleDriveBackupService.downloadBackup(
 					backup.fileId,
 					revision.revisionId
 				);
+				downloaded++;
+			} catch (e) {
+				// Expected for revisions Drive has already purged; keep walking.
+				if (e instanceof Error && e.message.includes("cannotDownloadRevision")) {
+					console.info(
+						`[CloudBackup] Skipping purged revision from ${revision.modifiedTime}.`
+					);
+					continue;
+				}
+				console.error(
+					`[CloudBackup] Repair failed against revision ${revision.revisionId}:`,
+					e
+				);
+				continue;
+			}
+
+			try {
 				const got = await CampaignUtils.repairBinariesFromExportData(
 					campaign,
 					data,
@@ -330,11 +357,14 @@ export const CloudBackupService = {
 					totals.images += got.images;
 					totals.terrains += got.terrains;
 					missing = await CampaignUtils.findMissingBinaries(campaign);
+					console.info(
+						`[CloudBackup] Revision from ${revision.modifiedTime} supplied ` +
+							`${got.images} image(s) and ${got.terrains} terrain(s).`
+					);
 				}
 			} catch (e) {
-				// A single unreadable revision must not abort the walk.
 				console.error(
-					`[CloudBackup] Repair failed against revision ${revision.revisionId}:`,
+					`[CloudBackup] Could not apply revision ${revision.revisionId}:`,
 					e
 				);
 			}
@@ -343,8 +373,8 @@ export const CloudBackupService = {
 		if (!hasNoMissingBinaries(missing)) {
 			console.warn(
 				`[CloudBackup] ${missing.imageIds.length} image(s) and ${missing.terrainIds.length} ` +
-					`terrain(s) were not in any searched backup revision (created after the last ` +
-					`backup that had them).`
+					`terrain(s) were not in any readable backup revision (created after the last ` +
+					`backup that had them, or their revision has been purged by Drive).`
 			);
 		}
 		return totals;

@@ -59,6 +59,13 @@ export interface DriveRevision {
 	modifiedTime: string;
 	/** Payload size in bytes -- the practical "does this one still have the binaries" signal. */
 	size: number;
+	/**
+	 * Whether this revision is pinned. Drive lists unpinned revisions but
+	 * garbage-collects their CONTENT, so downloading one fails with
+	 * `cannotDownloadRevision` (403). Only pinned revisions -- and the head --
+	 * can actually be read back.
+	 */
+	keepForever: boolean;
 }
 
 /** appProperties payload written alongside each backup file. */
@@ -351,16 +358,22 @@ export const GoogleDriveBackupService = {
 	 */
 	async listRevisions(fileId: string): Promise<DriveRevision[]> {
 		const res = await driveFetch(
-			`${DRIVE_API}/files/${fileId}/revisions?fields=revisions(id,modifiedTime,size)&pageSize=1000`
+			`${DRIVE_API}/files/${fileId}/revisions?fields=revisions(id,modifiedTime,size,keepForever)&pageSize=1000`
 		);
 		const data = (await res.json()) as {
-			revisions?: { id: string; modifiedTime?: string; size?: string }[];
+			revisions?: {
+				id: string;
+				modifiedTime?: string;
+				size?: string;
+				keepForever?: boolean;
+			}[];
 		};
 		return (data.revisions ?? [])
 			.map((r) => ({
 				revisionId: r.id,
 				modifiedTime: r.modifiedTime ?? "",
 				size: Number(r.size ?? 0),
+				keepForever: r.keepForever === true,
 			}))
 			.reverse();
 	},
@@ -398,8 +411,12 @@ export const GoogleDriveBackupService = {
 			sessionUrl = start.headers.get("Location") || "";
 		} else {
 			metadata.parents = [folder];
+			// Pin the first revision too. Unpinned revision content is garbage
+			// collected by Drive (leaving an undownloadable record behind), and
+			// the oldest revision is the one most likely to still hold binaries a
+			// later upload lost.
 			const start = await driveFetch(
-				`${DRIVE_UPLOAD}/files?uploadType=resumable&fields=id`,
+				`${DRIVE_UPLOAD}/files?uploadType=resumable&keepRevisionForever=true&fields=id`,
 				{
 					method: "POST",
 					headers: { "Content-Type": "application/json; charset=UTF-8" },
