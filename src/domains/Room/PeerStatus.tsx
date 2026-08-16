@@ -115,18 +115,28 @@ export function PeerStatus() {
 
 	const playerCount = `${peers.length} ${peers.length === 1 ? "player" : "players"}`;
 
+	// Secret mode outranks the connection state: the players ARE connected, they
+	// just aren't receiving anything, and that's the more surprising thing to be
+	// told. Green is reserved for "the table is actually getting your game".
+	const isSecret = context.SecretModes?.[campaign.Id] ?? false;
+	const [badgeClass, badgeIcon, badgeLabel] = isSecret
+		? ["badge-error", "icon-[mdi--eye-off]", `Secret mode — ${playerCount} connected but not receiving updates`]
+		: peers.length > 0
+			? ["badge-success", "icon-[mdi--access-point-network]", `${playerCount} connected`]
+			: ["badge-warning", "icon-[eos-icons--compass]", "No players connected"];
+
 	return (
 		<div className="relative">
 			<button
 				ref={badgeRef}
 				onClick={() => setIsOpen(!isOpen)}
-				className="badge badge-lg badge-success gap-2 cursor-pointer transition-all hover:brightness-95"
-				// aria-label carries the count: the bare number has no meaning to a
-				// screen reader.
-				aria-label={`${playerCount} connected`}
-				title={`${playerCount} connected`}
+				className={`badge badge-lg ${badgeClass} gap-2 cursor-pointer transition-all hover:brightness-95`}
+				// aria-label carries the state: the bare number has no meaning to a
+				// screen reader, and neither does the colour.
+				aria-label={badgeLabel}
+				title={badgeLabel}
 			>
-				<span className="icon-[mdi--access-point-network] w-4 h-4"></span>
+				<span className={`${badgeIcon} w-4 h-4`}></span>
 				{peers.length}
 			</button>
 
@@ -140,6 +150,15 @@ export function PeerStatus() {
 							<h3 className="font-bold text-lg">Players</h3>
 							<span className="text-sm opacity-70">{playerCount}</span>
 						</div>
+
+						{/* Answers the question a click on the red badge is asking.
+						    Same wording as SecretModeToggle's panel variant. */}
+						{isSecret && (
+							<div className="badge badge-error gap-1 mb-3">
+								<span className="icon-[mdi--eye-off] w-3 h-3" />
+								Players can't see your changes
+							</div>
+						)}
 
 						{/* Capped so a full table doesn't push the footer off-screen. */}
 						<div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
