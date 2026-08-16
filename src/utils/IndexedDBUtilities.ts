@@ -125,6 +125,17 @@ export class IndexedDBUtilities {
 	}
 
 	/**
+	 * Every stored binary id. Keys only -- no blobs are read, so this is cheap
+	 * even with hundreds of images (used to detect binaries lost to eviction).
+	 */
+	static async listIds(): Promise<Set<string>> {
+		const keys = await this.op<IDBValidKey[]>(STORE_NAME, "readonly", (store) =>
+			store.getAllKeys()
+		);
+		return new Set(keys.map(String));
+	}
+
+	/**
 	 * Removes data from IndexedDB
 	 */
 	static async remove(id: string): Promise<void> {

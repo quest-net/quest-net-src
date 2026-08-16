@@ -272,6 +272,20 @@ export class TerrainStorageService {
 	}
 
 	/**
+	 * True when this terrain's voxels are available locally -- either already
+	 * materialized in the buffer or present as an OPFS record. Presence only: it
+	 * never reads the payload, and it does NOT check the record against the
+	 * campaign's ContentHash (a stale record still renders, see hydrateTerrain).
+	 */
+	static async hasStoredRecord(
+		campaign: Campaign,
+		terrainId: string
+	): Promise<boolean> {
+		if (hasTerrainPayload(terrainId)) return true;
+		return OpfsUtilities.exists(this.terrainPath(campaign.Id, terrainId));
+	}
+
+	/**
 	 * Returns a terrain payload to serve to a requesting peer (DM side). Prefers
 	 * the materialized buffer, falling back to OPFS.
 	 */

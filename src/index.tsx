@@ -14,4 +14,12 @@ import "./components/Map/Terrain/materials";
 // (e.g. a stale/missing pkg) hard-fails loudly instead of silently degrading.
 await initVoxelCodec();
 
+// Ask the browser to exempt this origin from storage eviction. Without it the
+// origin is "best effort" and IndexedDB/OPFS (images + terrain voxels) can be
+// silently wiped under storage pressure, which is exactly how DMs have lost
+// binary data. Chrome grants this without a prompt on engagement heuristics;
+// Firefox prompts; a denial just leaves us where we already were, so this is
+// fire-and-forget and never blocks startup.
+void navigator.storage?.persist?.().catch(() => {});
+
 ReactDOM.createRoot(document.getElementById("root")!).render(<App />);

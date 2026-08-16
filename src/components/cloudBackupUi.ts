@@ -24,12 +24,27 @@ export const cloudBackupUi = proxy<{
 // reset when the user disconnects so a later reconnect re-syncs.
 let didSync = false;
 
+function plural(n: number, word: string): string {
+	return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
 function applyResult(result: SyncResult | null): void {
 	if (!result) return;
 	if (result.restoredCount > 0) {
 		cloudBackupUi.toast = `Restored ${result.restoredCount} campaign${
 			result.restoredCount > 1 ? "s" : ""
 		} from Google Drive`;
+	}
+	// Binaries recovered from Drive history after a browser storage wipe. Takes
+	// precedence over the restore notice: it explains something the DM can see
+	// (their images/terrain reappearing) and did not ask for.
+	const { images, terrains } = result.repaired;
+	if (images > 0 || terrains > 0) {
+		const parts = [
+			images > 0 ? plural(images, "image") : null,
+			terrains > 0 ? plural(terrains, "terrain") : null,
+		].filter(Boolean);
+		cloudBackupUi.toast = `Recovered ${parts.join(" and ")} from your Google Drive backup`;
 	}
 	if (result.newer.length > 0) {
 		cloudBackupUi.queue.push(...result.newer);

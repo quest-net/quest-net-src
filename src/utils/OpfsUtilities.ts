@@ -24,11 +24,15 @@ interface LoadResponse {
 	data?: Uint8Array;
 	missing?: true;
 }
+interface ExistsResponse {
+	id: number;
+	exists: boolean;
+}
 interface ErrorResponse {
 	id: number;
 	error: string;
 }
-type WorkerResponse = OkResponse | LoadResponse | ErrorResponse;
+type WorkerResponse = OkResponse | LoadResponse | ExistsResponse | ErrorResponse;
 
 interface Pending {
 	resolve: (value: WorkerResponse) => void;
@@ -128,6 +132,15 @@ export class OpfsUtilities {
 		const res = (await this.request({ type: "load", path })) as LoadResponse;
 		if (res.missing || !res.data || res.metadataJson === undefined) return null;
 		return { data: res.data, metadata: JSON.parse(res.metadataJson) as M };
+	}
+
+	/**
+	 * True when a file exists at `path`. Unlike load(), this never reads the
+	 * bytes -- use it to test presence of payloads that may be multi-MB.
+	 */
+	static async exists(path: string): Promise<boolean> {
+		const res = (await this.request({ type: "exists", path })) as ExistsResponse;
+		return res.exists === true;
 	}
 
 	/** Removes the file at `path`. No-op if absent. */

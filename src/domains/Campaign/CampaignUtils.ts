@@ -167,6 +167,21 @@ export interface CampaignCountDiff {
 	significantShrink: boolean;
 }
 
+/**
+ * Binaries a campaign's metadata references but that are absent from local
+ * storage -- the signature of browser eviction wiping IndexedDB/OPFS while
+ * localStorage (and so the campaign object) survived.
+ */
+export interface MissingBinaries {
+	imageIds: string[];
+	terrainIds: string[];
+}
+
+/** True when nothing is missing. */
+export function hasNoMissingBinaries(missing: MissingBinaries): boolean {
+	return missing.imageIds.length === 0 && missing.terrainIds.length === 0;
+}
+
 // A collection must drop by more than this fraction AND more than the absolute
 // floor below for an update-in-place restore to flag a "significant shrink" and
 // ask the user to confirm. Trimming a couple of images never nags.
@@ -638,6 +653,72 @@ export const CampaignUtils = {
 				}`
 			);
 		}
+	},
+
+	/**
+	 * Lists the binaries this campaign references but no longer has on disk.
+	 * Cheap: one keys-only IndexedDB read plus one existence probe per terrain,
+	 * no payload bytes are loaded.
+	 */
+	async findMissingBinaries(campaign: Campaign): Promise<MissingBinaries> {
+		// The image store is keyed by image id across all campaigns, so one
+		// keys-only read covers every image this campaign references.
+		const storedImageIds = await IndexedDBUtilities.listIds();
+		const imageIds = (campaign.Images ?? [])
+			.map((image) => image.Id)
+			.filter((id) => !storedImageIds.has(id));
+
+		const terrainIds: string[] = [];
+		for (const terrain of campaign.VoxelTerrains ?? []) {
+			if (!(await TerrainStorageService.hasStoredRecord(campaign, terrain.Id))) {
+				terrainIds.push(terrain.Id);
+			}
+		}
+
+		return { imageIds, terrainIds };
+	},
+
+	/**
+	 * Writes back ONLY the binaries named in `missing` that this export payload
+	 * happens to carry, leaving the campaign object completely untouched.
+	 *
+	 * Strictly additive by construction -- it can only fill gaps, never overwrite
+	 * or delete -- which is what makes it safe to run automatically with no
+	 * confirm. Returns how much it actually recovered.
+	 */
+	async repairBinariesFromExportData(
+		campaign: Campaign,
+		data: CampaignExportData | unknown,
+		missing: MissingBinaries
+	): Promise<{ images: number; terrains: number }> {
+		const { imageData, terrainData } = parseExportData(data);
+
+		let images = 0;
+		for (const imageId of missing.imageIds) {
+			const entry = imageData[imageId];
+			if (!entry) continue;
+			await IndexedDBUtilities.save(
+				imageId,
+				base64ToBlob(entry.base64, entry.mimeType)
+			);
+			images++;
+		}
+
+		// Terrain payloads land under the LOCAL campaign's id (terrain ids are
+		// stable across a backup of the same campaign).
+		const payloads: Record<string, { voxels: Uint8Array; contentHash: string }> =
+			{};
+		for (const terrainId of missing.terrainIds) {
+			const entry = terrainData[terrainId];
+			if (!entry) continue;
+			payloads[terrainId] = {
+				voxels: base64ToBytes(entry.voxels),
+				contentHash: entry.contentHash,
+			};
+		}
+		await TerrainStorageService.importTerrainPayloads(campaign, payloads);
+
+		return { images, terrains: Object.keys(payloads).length };
 	},
 
 	/**

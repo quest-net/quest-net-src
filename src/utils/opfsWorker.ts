@@ -138,6 +138,11 @@ async function loadBlob(
 	}
 }
 
+/** True when a file exists at `path`. Cheap: opens no sync access handle. */
+async function blobExists(path: string): Promise<boolean> {
+	return (await getFile(path, false)) !== null;
+}
+
 async function removeBlob(path: string): Promise<void> {
 	const parts = splitPath(path);
 	const fileName = parts.pop();
@@ -172,9 +177,10 @@ interface BaseReq {
 }
 type SaveReq = BaseReq & { type: "save"; metadataJson: string; data: Uint8Array };
 type LoadReq = BaseReq & { type: "load" };
+type ExistsReq = BaseReq & { type: "exists" };
 type RemoveReq = BaseReq & { type: "remove" };
 type RemoveDirReq = BaseReq & { type: "removeDir" };
-type WorkerRequest = SaveReq | LoadReq | RemoveReq | RemoveDirReq;
+type WorkerRequest = SaveReq | LoadReq | ExistsReq | RemoveReq | RemoveDirReq;
 
 const ctx = self as unknown as Worker;
 
@@ -198,6 +204,9 @@ ctx.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
 				}
 				return;
 			}
+			case "exists":
+				ctx.postMessage({ id: req.id, exists: await blobExists(req.path) });
+				return;
 			case "remove":
 				await removeBlob(req.path);
 				ctx.postMessage({ id: req.id, ok: true });

@@ -52,6 +52,15 @@ export interface DriveBackupMeta {
 	counts: CampaignCounts | null;
 }
 
+/** One entry in a backup file's Drive version history. */
+export interface DriveRevision {
+	revisionId: string;
+	/** RFC 3339 timestamp from Drive. */
+	modifiedTime: string;
+	/** Payload size in bytes -- the practical "does this one still have the binaries" signal. */
+	size: number;
+}
+
 /** appProperties payload written alongside each backup file. */
 export interface BackupFileMeta {
 	backupKey: string;
@@ -319,11 +328,41 @@ export const GoogleDriveBackupService = {
 		return out;
 	},
 
-	/** Downloads and parses a backup file's full JSON payload. */
-	async downloadBackup(fileId: string): Promise<unknown> {
-		const res = await driveFetch(`${DRIVE_API}/files/${fileId}?alt=media`);
+	/**
+	 * Downloads and parses a backup file's full JSON payload. Pass `revisionId`
+	 * to read an earlier version instead of the current one.
+	 */
+	async downloadBackup(fileId: string, revisionId?: string): Promise<unknown> {
+		const path = revisionId ? `/revisions/${revisionId}` : "";
+		const res = await driveFetch(
+			`${DRIVE_API}/files/${fileId}${path}?alt=media`
+		);
 		const text = await res.text();
 		return JSON.parse(text);
+	},
+
+	/**
+	 * Version history for a backup file, newest first. Every update pins its
+	 * revision (keepRevisionForever), so this is the recovery trail when the
+	 * current backup turns out to be missing data.
+	 *
+	 * Note: appProperties are file-level, so revisions carry no counts -- `size`
+	 * is the only per-revision signal (a binaries-less backup is far smaller).
+	 */
+	async listRevisions(fileId: string): Promise<DriveRevision[]> {
+		const res = await driveFetch(
+			`${DRIVE_API}/files/${fileId}/revisions?fields=revisions(id,modifiedTime,size)&pageSize=1000`
+		);
+		const data = (await res.json()) as {
+			revisions?: { id: string; modifiedTime?: string; size?: string }[];
+		};
+		return (data.revisions ?? [])
+			.map((r) => ({
+				revisionId: r.id,
+				modifiedTime: r.modifiedTime ?? "",
+				size: Number(r.size ?? 0),
+			}))
+			.reverse();
 	},
 
 	/**

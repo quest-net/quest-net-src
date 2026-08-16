@@ -14,8 +14,10 @@ import {
 } from "../domains/Context/contextStore";
 import { Context } from "../domains/Context/Context";
 import { CampaignInfo } from "../domains/Campaign/CampaignInfo";
+import type { Campaign } from "../domains/Campaign/Campaign";
 import {
 	CampaignUtils,
+	hasNoMissingBinaries,
 	type CampaignCountDiff,
 } from "../domains/Campaign/CampaignUtils";
 import { CampaignLoadingService } from "./CampaignLoadingService";
@@ -44,7 +46,14 @@ export interface SyncResult {
 	restoredCount: number;
 	/** Newer-than-local backups that need a user confirm before applying. */
 	newer: PendingRestore[];
+	/** Binaries pulled back from Drive to replace ones lost to storage eviction. */
+	repaired: { images: number; terrains: number };
 }
+
+// How far back through a backup file's version history the binary repair will
+// walk. Newest-first, so the cap only bites when many consecutive revisions are
+// all missing the same data.
+const MAX_REPAIR_REVISIONS = 10;
 
 /** Local last-updated time for a campaign (0 if never recorded). Callers fall
  *  back to the campaign's CreatedAt when this is 0. */
@@ -139,7 +148,8 @@ export const CloudBackupService = {
 	async backupCampaign(
 		info: CampaignInfo,
 		context: Context,
-		cloudMeta?: DriveBackupMeta
+		cloudMeta?: DriveBackupMeta,
+		binariesChecked?: Set<string>
 	): Promise<void> {
 		const campaign =
 			context.ActiveCampaign && context.ActiveCampaign.Id === info.Id
@@ -158,6 +168,29 @@ export const CloudBackupService = {
 			await CampaignLoadingService.saveCampaign(campaign);
 		} else if (ci && ci.BackupKey !== key) {
 			ci.BackupKey = key;
+		}
+
+		// Refuse to upload a campaign whose binaries have gone missing locally.
+		// The export silently omits images/terrain it cannot read, so the upload
+		// would look healthy by its counts (which come from campaign metadata)
+		// while carrying nothing -- overwriting the last backup that still has
+		// them. Checked BEFORE the freshness gate below, because the device in
+		// this state usually has the newest timestamp and would otherwise skip
+		// straight past detection.
+		//
+		// `binariesChecked` carries the campaigns that just went through the
+		// repair pass: anything still missing after that is missing from every
+		// cloud revision too, so uploading cannot lose it.
+		if (!binariesChecked?.has(campaign.Id)) {
+			const missing = await CampaignUtils.findMissingBinaries(campaign);
+			if (!hasNoMissingBinaries(missing)) {
+				console.warn(
+					`[CloudBackup] Skipping backup of "${campaign.Name}": ` +
+						`${missing.imageIds.length} image(s) and ${missing.terrainIds.length} terrain(s) ` +
+						`are missing locally. Not overwriting the cloud copy.`
+				);
+				return;
+			}
 		}
 
 		const lastUpdated =
@@ -181,7 +214,8 @@ export const CloudBackupService = {
 	/** Backs up every DM campaign whose local state is newer than the cloud. */
 	async backupAllDmCampaigns(
 		context: Context,
-		backups?: DriveBackupMeta[]
+		backups?: DriveBackupMeta[],
+		binariesChecked?: Set<string>
 	): Promise<void> {
 		await this.ensureSession();
 		const cloud = backups ?? (await GoogleDriveBackupService.listBackups());
@@ -191,7 +225,7 @@ export const CloudBackupService = {
 			const cloudMeta = info.BackupKey
 				? cloudByKey.get(info.BackupKey)
 				: undefined;
-			await this.backupCampaign(info, context, cloudMeta);
+			await this.backupCampaign(info, context, cloudMeta, binariesChecked);
 		}
 	},
 
@@ -250,6 +284,70 @@ export const CloudBackupService = {
 				forceContextRerender();
 			}
 		}
+	},
+
+	/**
+	 * Fills in binaries (images, terrain voxels) that this device has lost --
+	 * typically to browser storage eviction clearing IndexedDB/OPFS while
+	 * localStorage kept the campaign itself.
+	 *
+	 * Walks the backup file's version history newest-first, taking each missing
+	 * binary from the most recent revision that still carries it. Never touches
+	 * the campaign object, and only ever writes binaries that are absent right
+	 * now, so it cannot overwrite good data and needs no confirm. Hollow
+	 * revisions cost almost nothing to skip -- being hollow is what makes them
+	 * small. Returns what it actually recovered.
+	 */
+	async repairMissingBinaries(
+		campaign: Campaign,
+		backup: DriveBackupMeta
+	): Promise<{ images: number; terrains: number }> {
+		const totals = { images: 0, terrains: 0 };
+		let missing = await CampaignUtils.findMissingBinaries(campaign);
+		if (hasNoMissingBinaries(missing)) return totals;
+
+		console.warn(
+			`[CloudBackup] "${campaign.Name}" is missing ${missing.imageIds.length} image(s) ` +
+				`and ${missing.terrainIds.length} terrain(s) locally; searching Drive history.`
+		);
+
+		const revisions = await GoogleDriveBackupService.listRevisions(
+			backup.fileId
+		);
+		for (const revision of revisions.slice(0, MAX_REPAIR_REVISIONS)) {
+			if (hasNoMissingBinaries(missing)) break;
+			try {
+				const data = await GoogleDriveBackupService.downloadBackup(
+					backup.fileId,
+					revision.revisionId
+				);
+				const got = await CampaignUtils.repairBinariesFromExportData(
+					campaign,
+					data,
+					missing
+				);
+				if (got.images || got.terrains) {
+					totals.images += got.images;
+					totals.terrains += got.terrains;
+					missing = await CampaignUtils.findMissingBinaries(campaign);
+				}
+			} catch (e) {
+				// A single unreadable revision must not abort the walk.
+				console.error(
+					`[CloudBackup] Repair failed against revision ${revision.revisionId}:`,
+					e
+				);
+			}
+		}
+
+		if (!hasNoMissingBinaries(missing)) {
+			console.warn(
+				`[CloudBackup] ${missing.imageIds.length} image(s) and ${missing.terrainIds.length} ` +
+					`terrain(s) were not in any searched backup revision (created after the last ` +
+					`backup that had them).`
+			);
+		}
+		return totals;
 	},
 
 	/** Computes the shrink diff (cloud counts are free; local needs a load). */
@@ -359,10 +457,39 @@ export const CloudBackupService = {
 			newer.push({ backup: b, local, diff });
 		}
 
-		// 3) Back up changed DM campaigns (guarded; won't clobber newer cloud).
-		await this.backupAllDmCampaigns(context, backups);
+		// 3) Self-heal binaries lost to storage eviction. Only the active campaign:
+		// it is the one whose object survives an IndexedDB wipe (it rides in
+		// localStorage during play), and it is the one the DM is looking at. For
+		// any other campaign a wipe takes the campaign payload too, which is a
+		// restore problem rather than a repair one.
+		// ponytail: single campaign; widen if inactive-campaign loss shows up.
+		const repaired = { images: 0, terrains: 0 };
+		const binariesChecked = new Set<string>();
+		const active = context.ActiveCampaign;
+		const activeBackup = active?.BackupKey
+			? backups.find((b) => b.backupKey === active.BackupKey)
+			: undefined;
+		if (active && activeBackup) {
+			try {
+				const got = await this.repairMissingBinaries(active, activeBackup);
+				repaired.images += got.images;
+				repaired.terrains += got.terrains;
+				// Whether or not anything was recovered, we have now confirmed what
+				// Drive still holds -- so step 4 may upload without risk of
+				// clobbering binaries the cloud has and we don't.
+				binariesChecked.add(active.Id);
+				// Terrain voxels live outside the Valtio proxy (OPFS), so repaired
+				// terrain needs an explicit nudge for map consumers to re-mesh.
+				if (got.terrains > 0) forceContextRerender();
+			} catch (e) {
+				console.error("[CloudBackup] Binary repair failed:", e);
+			}
+		}
 
-		return { restoredCount, newer };
+		// 4) Back up changed DM campaigns (guarded; won't clobber newer cloud).
+		await this.backupAllDmCampaigns(context, backups, binariesChecked);
+
+		return { restoredCount, newer, repaired };
 	},
 
 	/** syncOnOpen wrapper that records success/failure status. */
