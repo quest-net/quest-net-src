@@ -16,8 +16,14 @@ import {
 	confirmFirstRestore,
 	dismissToast,
 	runCloudSyncOnce,
+	runPeriodicBackup,
 	skipFirstRestore,
 } from "./cloudBackupUi";
+
+// How often to back up while the app stays open. The sync on mount only ever
+// captured the state the PREVIOUS session left behind, so a DM who keeps the
+// tab open for days was never backed up mid-work.
+const BACKUP_INTERVAL_MS = 60 * 60 * 1000;
 
 function RestoreBody({ pending }: { pending: PendingRestore }) {
 	const { backup, diff } = pending;
@@ -55,6 +61,23 @@ export function CloudBackupManager() {
 	// Run the once-per-session sync for returning, already-connected users.
 	useEffect(() => {
 		void runCloudSyncOnce();
+	}, []);
+
+	// Keep backing up while the tab stays open.
+	useEffect(() => {
+		const timer = setInterval(() => void runPeriodicBackup(), BACKUP_INTERVAL_MS);
+		return () => clearInterval(timer);
+	}, []);
+
+	// ...and once more on the way out, so work done since the last tick isn't
+	// stranded when the DM closes the laptop. Fire-and-forget: unload can't be
+	// blocked, but "hidden" fires well before the tab actually goes away.
+	useEffect(() => {
+		const onHide = () => {
+			if (document.visibilityState === "hidden") void runPeriodicBackup();
+		};
+		document.addEventListener("visibilitychange", onHide);
+		return () => document.removeEventListener("visibilitychange", onHide);
 	}, []);
 
 	// Auto-dismiss the restore notice (rendered by CloudBackupBanner).

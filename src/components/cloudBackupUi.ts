@@ -24,6 +24,11 @@ export const cloudBackupUi = proxy<{
 // reset when the user disconnects so a later reconnect re-syncs.
 let didSync = false;
 
+// In-flight guard for the periodic backup. A full payload can be tens of MB on
+// a slow link, so a tick (or a tab-hide) must not start a second upload on top
+// of one already running.
+let backingUp = false;
+
 function plural(n: number, word: string): string {
 	return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
@@ -62,6 +67,31 @@ export async function runCloudSyncOnce(): Promise<void> {
 	}
 	didSync = true;
 	applyResult(await CloudBackupService.runOnOpen(contextStore));
+}
+
+/**
+ * Periodic backup while the app stays open (interval + tab-hide). Cheap when
+ * nothing changed: CloudBackupService's freshness gate turns an untouched
+ * campaign into a no-op, so this costs one listBackups call and uploads
+ * nothing. Failures are already recorded as status by backupNow, which drives
+ * the banner -- swallow the throw so a bad network tick is not unhandled.
+ */
+export async function runPeriodicBackup(): Promise<void> {
+	if (backingUp) return;
+	if (
+		!CloudBackupService.isConfigured() ||
+		!CloudBackupService.isConnected(contextStore)
+	) {
+		return;
+	}
+	backingUp = true;
+	try {
+		await CloudBackupService.backupNow(contextStore);
+	} catch {
+		// Already surfaced via lastStatus on the banner.
+	} finally {
+		backingUp = false;
+	}
 }
 
 /** Interactive "Log in to Google" / "Retry" path: connect, then sync. */

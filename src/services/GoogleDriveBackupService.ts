@@ -48,6 +48,8 @@ export interface DriveBackupMeta {
 	campaignName: string;
 	/** Local last-updated time (ms) of the backed-up campaign. */
 	lastUpdated: number;
+	/** When this file last pinned a revision (ms); 0 if never. */
+	lastPinned: number;
 	version: string;
 	counts: CampaignCounts | null;
 }
@@ -57,13 +59,9 @@ export interface DriveRevision {
 	revisionId: string;
 	/** RFC 3339 timestamp from Drive. */
 	modifiedTime: string;
-	/** Payload size in bytes -- the practical "does this one still have the binaries" signal. */
-	size: number;
 	/**
-	 * Whether this revision is pinned. Drive lists unpinned revisions but
-	 * garbage-collects their CONTENT, so downloading one fails with
-	 * `cannotDownloadRevision` (403). Only pinned revisions -- and the head --
-	 * can actually be read back.
+	 * Pinned revisions are kept (and billed) forever; unpinned ones are purged
+	 * by Drive after 30 days or 100 versions. Drives the retention prune.
 	 */
 	keepForever: boolean;
 }
@@ -74,6 +72,9 @@ export interface BackupFileMeta {
 	campaignName: string;
 	/** Local last-updated time (ms) of the campaign being backed up. */
 	lastUpdated: number;
+	/** When this file last pinned a revision (ms) -- carried forward unchanged
+	 *  on uploads that don't pin. */
+	lastPinned: number;
 	version: string;
 	counts: CampaignCounts;
 }
@@ -272,6 +273,9 @@ function parseMeta(
 		// Read the new key, falling back to the legacy `lastActivity` key so
 		// backups written before this rename still compare correctly.
 		lastUpdated: Number(props.lastUpdated ?? props.lastActivity) || 0,
+		// Absent on files written before weekly pinning -- 0 makes the next
+		// upload pin, which is the safe direction.
+		lastPinned: Number(props.lastPinned) || 0,
 		version: props.version || "0.0.0",
 		counts: decodeCounts(props.counts),
 	};
@@ -349,33 +353,37 @@ export const GoogleDriveBackupService = {
 	},
 
 	/**
-	 * Version history for a backup file, newest first. Every update pins its
-	 * revision (keepRevisionForever), so this is the recovery trail when the
-	 * current backup turns out to be missing data.
-	 *
-	 * Note: appProperties are file-level, so revisions carry no counts -- `size`
-	 * is the only per-revision signal (a binaries-less backup is far smaller).
+	 * Version history for a backup file, newest first -- the recovery trail when
+	 * the current backup turns out to be missing data. Drive purges the content
+	 * of unpinned revisions while still listing them, so a listed revision is not
+	 * necessarily downloadable (see downloadBackup's 403).
 	 */
 	async listRevisions(fileId: string): Promise<DriveRevision[]> {
 		const res = await driveFetch(
-			`${DRIVE_API}/files/${fileId}/revisions?fields=revisions(id,modifiedTime,size,keepForever)&pageSize=1000`
+			`${DRIVE_API}/files/${fileId}/revisions?fields=revisions(id,modifiedTime,keepForever)&pageSize=1000`
 		);
 		const data = (await res.json()) as {
-			revisions?: {
-				id: string;
-				modifiedTime?: string;
-				size?: string;
-				keepForever?: boolean;
-			}[];
+			revisions?: { id: string; modifiedTime?: string; keepForever?: boolean }[];
 		};
 		return (data.revisions ?? [])
 			.map((r) => ({
 				revisionId: r.id,
 				modifiedTime: r.modifiedTime ?? "",
-				size: Number(r.size ?? 0),
 				keepForever: r.keepForever === true,
 			}))
 			.reverse();
+	},
+
+	/**
+	 * Unpins a revision, handing it back to Drive's normal garbage collection
+	 * (purged after 30 days / 100 versions) so it stops consuming quota forever.
+	 */
+	async unpinRevision(fileId: string, revisionId: string): Promise<void> {
+		await driveFetch(`${DRIVE_API}/files/${fileId}/revisions/${revisionId}`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json; charset=UTF-8" },
+			body: JSON.stringify({ keepForever: false }),
+		});
 	},
 
 	/**
@@ -385,23 +393,29 @@ export const GoogleDriveBackupService = {
 	async uploadBackup(
 		json: string,
 		meta: BackupFileMeta,
-		existingFileId?: string
+		existingFileId: string | undefined,
+		pinRevision: boolean
 	): Promise<string> {
 		const folder = await ensureFolder();
 		const appProperties: Record<string, string> = {
 			backupKey: meta.backupKey,
 			campaignName: meta.campaignName.slice(0, 100),
 			lastUpdated: String(meta.lastUpdated),
+			lastPinned: String(meta.lastPinned),
 			version: meta.version,
 			counts: encodeCounts(meta.counts),
 		};
 
-		// 1) Start a resumable session with the file metadata.
+		// 1) Start a resumable session with the file metadata. Pinning is the
+		// caller's decision (see CloudBackupService's weekly policy): pinned
+		// revisions are kept and billed forever, unpinned ones are purged by
+		// Drive after 30 days / 100 versions, which is the free recent-history
+		// tier we rely on.
 		const metadata: Record<string, unknown> = { name: `${meta.campaignName}.json`, appProperties };
 		let sessionUrl: string;
 		if (existingFileId) {
 			const start = await driveFetch(
-				`${DRIVE_UPLOAD}/files/${existingFileId}?uploadType=resumable&keepRevisionForever=true&fields=id`,
+				`${DRIVE_UPLOAD}/files/${existingFileId}?uploadType=resumable&keepRevisionForever=${pinRevision}&fields=id`,
 				{
 					method: "PATCH",
 					headers: { "Content-Type": "application/json; charset=UTF-8" },
@@ -411,12 +425,8 @@ export const GoogleDriveBackupService = {
 			sessionUrl = start.headers.get("Location") || "";
 		} else {
 			metadata.parents = [folder];
-			// Pin the first revision too. Unpinned revision content is garbage
-			// collected by Drive (leaving an undownloadable record behind), and
-			// the oldest revision is the one most likely to still hold binaries a
-			// later upload lost.
 			const start = await driveFetch(
-				`${DRIVE_UPLOAD}/files?uploadType=resumable&keepRevisionForever=true&fields=id`,
+				`${DRIVE_UPLOAD}/files?uploadType=resumable&keepRevisionForever=${pinRevision}&fields=id`,
 				{
 					method: "POST",
 					headers: { "Content-Type": "application/json; charset=UTF-8" },

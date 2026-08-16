@@ -55,6 +55,15 @@ export interface SyncResult {
 // bites when many consecutive readable revisions are all missing the same data.
 const MAX_REPAIR_REVISIONS = 15;
 
+// Retention. Every backup uploads the FULL payload, so storage cost is
+// campaign size x revision count -- frequent backups only stay affordable
+// because Drive purges unpinned revisions (30 days / 100 versions) for free.
+// We pin one revision a week as the durable trail and keep the newest ten,
+// which is the "last ~10 sessions" a weekly group expects. Count-based rather
+// than age-based so a DM who takes three months off still has restore points.
+const PIN_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_PINNED_REVISIONS = 10;
+
 /** Local last-updated time for a campaign (0 if never recorded). Callers fall
  *  back to the campaign's CreatedAt when this is 0. */
 function lastUpdatedOf(context: Context, campaignId: string): number {
@@ -199,16 +208,57 @@ export const CloudBackupService = {
 		// campaigns and prevents a stale device clobbering a newer backup).
 		if (cloudMeta && cloudMeta.lastUpdated >= lastUpdated) return;
 
+		// Pin at most one revision a week (and always the first upload of a new
+		// file). Everything in between rides Drive's free 30-day/100-version
+		// window, which is the fine-grained recent history.
+		const now = Date.now();
+		const lastPinned = cloudMeta?.lastPinned ?? 0;
+		const pinRevision = now - lastPinned > PIN_INTERVAL_MS;
+
 		const exportData = await CampaignUtils.buildExportDataForCampaign(campaign);
 		const json = JSON.stringify(exportData);
 		const meta: BackupFileMeta = {
 			backupKey: key,
 			campaignName: campaign.Name,
 			lastUpdated,
+			lastPinned: pinRevision ? now : lastPinned,
 			version: exportData.version,
 			counts: CampaignUtils.campaignCounts(campaign),
 		};
-		await GoogleDriveBackupService.uploadBackup(json, meta, cloudMeta?.fileId);
+		const fileId = await GoogleDriveBackupService.uploadBackup(
+			json,
+			meta,
+			cloudMeta?.fileId,
+			pinRevision
+		);
+
+		// Only after a pin, so this runs about weekly rather than every backup.
+		if (pinRevision) await this.prunePinnedRevisions(fileId);
+	},
+
+	/**
+	 * Keeps the newest MAX_PINNED_REVISIONS pinned revisions and unpins the
+	 * rest, handing them back to Drive's garbage collector. Without this the
+	 * pinned trail grows forever -- pinned revisions are never auto-deleted and
+	 * each one costs a full campaign payload.
+	 */
+	async prunePinnedRevisions(fileId: string): Promise<void> {
+		try {
+			const pinned = (
+				await GoogleDriveBackupService.listRevisions(fileId)
+			).filter((revision) => revision.keepForever);
+
+			// listRevisions returns newest-first, so anything past the cap is old.
+			for (const revision of pinned.slice(MAX_PINNED_REVISIONS)) {
+				await GoogleDriveBackupService.unpinRevision(
+					fileId,
+					revision.revisionId
+				);
+			}
+		} catch (e) {
+			// Retention is housekeeping -- never fail a successful backup over it.
+			console.error("[CloudBackup] Pruning pinned revisions failed:", e);
+		}
 	},
 
 	/** Backs up every DM campaign whose local state is newer than the cloud. */
