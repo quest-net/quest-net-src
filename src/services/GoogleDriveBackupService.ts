@@ -46,11 +46,16 @@ export interface DriveBackupMeta {
 	fileId: string;
 	backupKey: string;
 	campaignName: string;
-	/** Local last-updated time (ms) of the backed-up campaign. */
+	/** Local last-updated time (ms) of the backed-up campaign. Display only. */
 	lastUpdated: number;
+	/**
+	 * The uploading device's mutation counter for this campaign. Freshness is
+	 * decided by this, never by `lastUpdated` -- a wrong clock must not be able to
+	 * freeze a device's backups or present a stale copy as newer.
+	 */
+	revision: number;
 	/** When this file last pinned a revision (ms); 0 if never. */
 	lastPinned: number;
-	version: string;
 	counts: CampaignCounts | null;
 }
 
@@ -70,8 +75,10 @@ export interface DriveRevision {
 export interface BackupFileMeta {
 	backupKey: string;
 	campaignName: string;
-	/** Local last-updated time (ms) of the campaign being backed up. */
+	/** Local last-updated time (ms) of the campaign being backed up. Display only. */
 	lastUpdated: number;
+	/** The uploading device's mutation counter -- the actual freshness signal. */
+	revision: number;
 	/** When this file last pinned a revision (ms) -- carried forward unchanged
 	 *  on uploads that don't pin. */
 	lastPinned: number;
@@ -121,7 +128,6 @@ export interface DriveProfileMeta {
 	fileId: string;
 	/** Local last-updated time (ms) of the profile that was uploaded. */
 	lastUpdated: number;
-	version: string;
 }
 
 let tokenClient: google.accounts.oauth2.TokenClient | null = null;
@@ -208,6 +214,45 @@ async function driveFetch(url: string, init?: RequestInit): Promise<Response> {
 	return res;
 }
 
+/**
+ * Runs Drive's two-step resumable upload: an init request carrying the file
+ * metadata, which answers with a session URL, then the media body in one PUT
+ * (payloads are well under the size where chunking earns its complexity).
+ *
+ * Resumable rather than simple upload because a campaign payload can exceed the
+ * 5 MB simple-upload cap.
+ */
+async function resumableUpload(
+	url: string,
+	method: "POST" | "PATCH",
+	metadata: Record<string, unknown>,
+	json: string
+): Promise<string> {
+	const start = await driveFetch(url, {
+		method,
+		headers: { "Content-Type": "application/json; charset=UTF-8" },
+		body: JSON.stringify(metadata),
+	});
+
+	const sessionUrl = start.headers.get("Location");
+	if (!sessionUrl) {
+		throw new Error("Drive resumable upload: no session URL returned.");
+	}
+
+	const put = await fetch(sessionUrl, {
+		method: "PUT",
+		headers: { "Content-Type": "application/json" },
+		body: json,
+	});
+	if (!put.ok) {
+		const detail = await put.text().catch(() => "");
+		throw new Error(`Drive upload ${put.status}: ${detail.slice(0, 300)}`);
+	}
+
+	const result = (await put.json()) as { id: string };
+	return result.id;
+}
+
 async function ensureFolder(): Promise<string> {
 	if (folderId) return folderId;
 	const q = encodeURIComponent(
@@ -273,10 +318,13 @@ function parseMeta(
 		// Read the new key, falling back to the legacy `lastActivity` key so
 		// backups written before this rename still compare correctly.
 		lastUpdated: Number(props.lastUpdated ?? props.lastActivity) || 0,
+		// Absent on files written before revision tracking -- 0 reads as "the cloud
+		// has never been stamped", which makes the next local mutation upload and
+		// re-stamp it. No restore is offered off a 0 (see CloudBackupService).
+		revision: Number(props.revision) || 0,
 		// Absent on files written before weekly pinning -- 0 makes the next
 		// upload pin, which is the safe direction.
 		lastPinned: Number(props.lastPinned) || 0,
-		version: props.version || "0.0.0",
 		counts: decodeCounts(props.counts),
 	};
 }
@@ -401,57 +449,33 @@ export const GoogleDriveBackupService = {
 			backupKey: meta.backupKey,
 			campaignName: meta.campaignName.slice(0, 100),
 			lastUpdated: String(meta.lastUpdated),
+			revision: String(meta.revision),
 			lastPinned: String(meta.lastPinned),
 			version: meta.version,
 			counts: encodeCounts(meta.counts),
 		};
 
-		// 1) Start a resumable session with the file metadata. Pinning is the
-		// caller's decision (see CloudBackupService's weekly policy): pinned
-		// revisions are kept and billed forever, unpinned ones are purged by
-		// Drive after 30 days / 100 versions, which is the free recent-history
-		// tier we rely on.
-		const metadata: Record<string, unknown> = { name: `${meta.campaignName}.json`, appProperties };
-		let sessionUrl: string;
+		// Pinning is the caller's decision (see CloudBackupService's weekly
+		// policy): pinned revisions are kept and billed forever, unpinned ones are
+		// purged by Drive after 30 days / 100 versions, which is the free
+		// recent-history tier we rely on.
+		const metadata: Record<string, unknown> = {
+			name: `${meta.campaignName}.json`,
+			appProperties,
+		};
+		const query = `uploadType=resumable&keepRevisionForever=${pinRevision}&fields=id`;
+
 		if (existingFileId) {
-			const start = await driveFetch(
-				`${DRIVE_UPLOAD}/files/${existingFileId}?uploadType=resumable&keepRevisionForever=${pinRevision}&fields=id`,
-				{
-					method: "PATCH",
-					headers: { "Content-Type": "application/json; charset=UTF-8" },
-					body: JSON.stringify(metadata),
-				}
+			return resumableUpload(
+				`${DRIVE_UPLOAD}/files/${existingFileId}?${query}`,
+				"PATCH",
+				metadata,
+				json
 			);
-			sessionUrl = start.headers.get("Location") || "";
-		} else {
-			metadata.parents = [folder];
-			const start = await driveFetch(
-				`${DRIVE_UPLOAD}/files?uploadType=resumable&keepRevisionForever=${pinRevision}&fields=id`,
-				{
-					method: "POST",
-					headers: { "Content-Type": "application/json; charset=UTF-8" },
-					body: JSON.stringify(metadata),
-				}
-			);
-			sessionUrl = start.headers.get("Location") || "";
-		}
-		if (!sessionUrl) {
-			throw new Error("Drive resumable upload: no session URL returned.");
 		}
 
-		// 2) Upload the media body to the session URL in one PUT (payloads are
-		// well under the size where chunking matters).
-		const put = await fetch(sessionUrl, {
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: json,
-		});
-		if (!put.ok) {
-			const detail = await put.text().catch(() => "");
-			throw new Error(`Drive upload ${put.status}: ${detail.slice(0, 300)}`);
-		}
-		const result = (await put.json()) as { id: string };
-		return result.id;
+		metadata.parents = [folder];
+		return resumableUpload(`${DRIVE_UPLOAD}/files?${query}`, "POST", metadata, json);
 	},
 
 	// -------------------------------------------------------------------------
@@ -477,7 +501,6 @@ export const GoogleDriveBackupService = {
 		return {
 			fileId: f.id,
 			lastUpdated: Number(f.appProperties?.lastUpdated) || 0,
-			version: f.appProperties?.version || "0.0.0",
 		};
 	},
 
@@ -499,29 +522,11 @@ export const GoogleDriveBackupService = {
 			lastUpdated: String(meta.lastUpdated),
 			version: meta.version,
 		};
-		const metadata = { name: PROFILE_FILE_NAME, appProperties };
-		const start = await driveFetch(
+		return resumableUpload(
 			`${DRIVE_UPLOAD}/files/${fileId}?uploadType=resumable&fields=id`,
-			{
-				method: "PATCH",
-				headers: { "Content-Type": "application/json; charset=UTF-8" },
-				body: JSON.stringify(metadata),
-			}
+			"PATCH",
+			{ name: PROFILE_FILE_NAME, appProperties },
+			json
 		);
-		const sessionUrl = start.headers.get("Location") || "";
-		if (!sessionUrl) {
-			throw new Error("Drive resumable upload: no session URL returned.");
-		}
-		const put = await fetch(sessionUrl, {
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: json,
-		});
-		if (!put.ok) {
-			const detail = await put.text().catch(() => "");
-			throw new Error(`Drive upload ${put.status}: ${detail.slice(0, 300)}`);
-		}
-		const result = (await put.json()) as { id: string };
-		return result.id;
 	},
 };

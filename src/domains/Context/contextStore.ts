@@ -14,9 +14,8 @@
 // through proxies and need no conversion.
 
 import { proxy } from "valtio";
-import type { Context } from "./Context";
+import { createDefaultContext, withContextDefaults, type Context } from "./Context";
 import type { User } from "../User/User";
-import { APP_VERSION } from "../../version";
 
 // Inert placeholder so the proxy has a valid shape from module load. It is never
 // observed by components: ContextProvider gates the tree on a `ready` flag and
@@ -28,17 +27,9 @@ const PLACEHOLDER_USER: User = {
 	SelectedCharacters: {},
 };
 
-export const contextStore = proxy<Context>({
-	User: PLACEHOLDER_USER,
-	Campaigns: [],
-	ActiveCampaign: null,
-	AppSettings: {},
-	version: APP_VERSION,
-	SecretModes: {},
-	ViewedTerrains: {},
-	LastUpdated: {},
-	ProfileUpdated: 0,
-});
+export const contextStore = proxy<Context>(
+	createDefaultContext(PLACEHOLDER_USER)
+);
 
 /**
  * Copies a freshly loaded Context into the live proxy field-by-field, so the
@@ -47,15 +38,11 @@ export const contextStore = proxy<Context>({
  * wholesale, only mutate its fields.
  */
 export function hydrateContextStore(loaded: Context): void {
-	contextStore.User = loaded.User;
-	contextStore.Campaigns = loaded.Campaigns;
-	contextStore.ActiveCampaign = loaded.ActiveCampaign;
-	contextStore.AppSettings = loaded.AppSettings;
-	contextStore.version = loaded.version;
-	contextStore.SecretModes = loaded.SecretModes ?? {};
-	contextStore.ViewedTerrains = loaded.ViewedTerrains ?? {};
-	contextStore.LastUpdated = loaded.LastUpdated ?? {};
-	contextStore.ProfileUpdated = loaded.ProfileUpdated ?? 0;
+	const full = withContextDefaults(loaded);
+	const target = contextStore as unknown as Record<string, unknown>;
+	for (const key of Object.keys(full) as (keyof Context)[]) {
+		target[key] = full[key];
+	}
 	// Runtime-only flag; never restored from a loaded context.
 	delete contextStore.IsOptimistic;
 }
@@ -73,6 +60,78 @@ export function markCampaignUpdated(
 ): void {
 	if (!contextStore.LastUpdated) contextStore.LastUpdated = {};
 	contextStore.LastUpdated[campaignId] = when;
+	// The timestamp above is for display/ordering only. This counter is what
+	// cloud backup actually compares, precisely because it cannot be wrong the
+	// way a clock can.
+	if (!contextStore.Revisions) contextStore.Revisions = {};
+	contextStore.Revisions[campaignId] = (contextStore.Revisions[campaignId] ?? 0) + 1;
+}
+
+/** This campaign's local mutation counter (0 when never recorded). */
+export function campaignRevision(context: Context, campaignId: string): number {
+	return context.Revisions?.[campaignId] ?? 0;
+}
+
+/**
+ * The revision this device last successfully uploaded for a campaign, or
+ * undefined when it has never uploaded it. Undefined is meaningful: revision
+ * counters from two devices that have never exchanged a backup are not
+ * comparable, so callers must not offer a restore until this is set.
+ */
+export function backedUpRevision(
+	context: Context,
+	campaignId: string
+): number | undefined {
+	return context.BackedUpRevisions?.[campaignId];
+}
+
+/** Records that `revision` of this campaign is now safely in the cloud. */
+export function markCampaignBackedUp(campaignId: string, revision: number): void {
+	if (!contextStore.BackedUpRevisions) contextStore.BackedUpRevisions = {};
+	contextStore.BackedUpRevisions[campaignId] = revision;
+}
+
+/**
+ * Adopts a cloud backup's identity after restoring it: the campaign is now
+ * byte-for-byte what the cloud holds, so both counters match the backup's own
+ * revision and nothing is re-uploaded or re-offered.
+ */
+export function adoptCloudRevision(
+	campaignId: string,
+	when: number,
+	revision: number
+): void {
+	if (!contextStore.LastUpdated) contextStore.LastUpdated = {};
+	contextStore.LastUpdated[campaignId] = when;
+	if (!contextStore.Revisions) contextStore.Revisions = {};
+	contextStore.Revisions[campaignId] = revision;
+	markCampaignBackedUp(campaignId, revision);
+}
+
+/** Forgets every backup-tracking record for a campaign (used on delete). */
+export function clearCampaignBackupState(campaignId: string): void {
+	delete contextStore.LastUpdated?.[campaignId];
+	delete contextStore.Revisions?.[campaignId];
+	delete contextStore.BackedUpRevisions?.[campaignId];
+}
+
+/**
+ * Tombstones a deleted campaign's BackupKey so the on-open sync stops treating
+ * its (never-deleted) Drive file as a campaign this device is missing. Restoring
+ * the campaign on purpose clears the tombstone again.
+ */
+export function tombstoneBackupKey(backupKey: string): void {
+	if (!contextStore.DeletedBackupKeys) contextStore.DeletedBackupKeys = [];
+	if (!contextStore.DeletedBackupKeys.includes(backupKey)) {
+		contextStore.DeletedBackupKeys.push(backupKey);
+	}
+}
+
+export function clearBackupKeyTombstone(backupKey: string): void {
+	const keys = contextStore.DeletedBackupKeys;
+	if (!keys) return;
+	const index = keys.indexOf(backupKey);
+	if (index !== -1) keys.splice(index, 1);
 }
 
 /**

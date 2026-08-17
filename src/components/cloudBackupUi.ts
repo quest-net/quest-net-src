@@ -18,7 +18,9 @@ export const cloudBackupUi = proxy<{
 	/** Newer-than-local backups awaiting a confirm, shown one at a time. */
 	queue: PendingRestore[];
 	busy: boolean;
-}>({ toast: null, queue: [], busy: false });
+	/** Why the last restore attempt did not apply; cleared on the next attempt. */
+	error: string | null;
+}>({ toast: null, queue: [], busy: false, error: null });
 
 // Once-per-app-open guard. Survives StrictMode remounts (module scope) but is
 // reset when the user disconnects so a later reconnect re-syncs.
@@ -108,27 +110,49 @@ export function disconnect(): void {
 	didSync = false;
 	cloudBackupUi.queue = [];
 	cloudBackupUi.toast = null;
+	cloudBackupUi.error = null;
 }
 
 export function dismissToast(): void {
 	cloudBackupUi.toast = null;
 }
 
-/** Applies the first queued restore (update-in-place) and dequeues it. */
+/**
+ * Applies the first queued restore (update-in-place) and dequeues it.
+ *
+ * Three outcomes, and the queue entry only disappears on the first: applied;
+ * held back because the downloaded payload shrinks more than the preview
+ * claimed (re-queued with the measured diff so the modal can say so); or failed,
+ * in which case the entry stays put with the reason shown. A restore that
+ * silently did nothing while the modal closed as if it had worked is exactly the
+ * kind of thing this feature must never do.
+ */
 export async function confirmFirstRestore(): Promise<void> {
 	const pending = cloudBackupUi.queue[0];
 	if (!pending) return;
 	cloudBackupUi.busy = true;
+	cloudBackupUi.error = null;
 	try {
-		await CloudBackupService.restoreNewer(pending, contextStore);
+		const result = await CloudBackupService.restoreNewer(pending, contextStore);
+		if (result.applied) {
+			cloudBackupUi.queue.shift();
+		} else {
+			cloudBackupUi.queue[0] = { ...pending, diff: result.diff };
+			cloudBackupUi.error =
+				"This backup holds noticeably less than its summary claimed. " +
+				"The measured difference is shown above — nothing has been changed yet.";
+		}
 	} catch (e) {
 		console.error("[CloudBackup] Restore failed:", e);
+		cloudBackupUi.error = `Restore failed, nothing was changed: ${
+			e instanceof Error ? e.message : String(e)
+		}`;
 	} finally {
 		cloudBackupUi.busy = false;
-		cloudBackupUi.queue.shift();
 	}
 }
 
 export function skipFirstRestore(): void {
+	cloudBackupUi.error = null;
 	cloudBackupUi.queue.shift();
 }

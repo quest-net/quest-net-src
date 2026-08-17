@@ -1,10 +1,19 @@
 import { Context } from "../Context/Context";
-import { contextStore } from "../Context/contextStore";
+import {
+	clearBackupKeyTombstone,
+	clearCampaignBackupState,
+	contextStore,
+	tombstoneBackupKey,
+} from "../Context/contextStore";
 import { Campaign } from "./Campaign";
 import { CampaignInfo } from "./CampaignInfo";
 import { getUrlIdentifier, isReservedRouteKeyword } from "../../utils/UrlParser";
 import { CampaignSettingUtils } from "../CampaignSetting/CampaignSettingUtils";
-import { IndexedDBUtilities } from "../../utils/IndexedDBUtilities";
+import {
+	CAMPAIGNS_STORE_NAME,
+	CONTEXT_BACKUPS_STORE_NAME,
+	IndexedDBUtilities,
+} from "../../utils/IndexedDBUtilities";
 import { APP_VERSION, type VersionString } from "../../version";
 import { CampaignLoadingService } from "../../services/CampaignLoadingService";
 import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
@@ -140,9 +149,15 @@ export interface ExportProgress {
  * How a restore should treat an existing local campaign.
  * - `copy`: brand-new Id, never clobbers anything (fresh machine / import file).
  * - `replace`: write under an existing local Id (update-in-place across devices).
+ *
+ * `keepBackupKey` is for the cloud restore of a campaign this device does not
+ * have yet -- the restored copy IS that Drive file, so it keeps its identity.
+ * Every other copy (importing a file, restoring a second copy of something you
+ * already have) must take a fresh key: two local campaigns sharing one BackupKey
+ * both upload to the same Drive file and overwrite each other's backups.
  */
 export type RestoreMode =
-	| { mode: "copy" }
+	| { mode: "copy"; keepBackupKey?: boolean }
 	| { mode: "replace"; targetCampaignId: string };
 
 /** Per-collection content counts used for the restore shrink guard. */
@@ -226,6 +241,61 @@ function parseExportData(data: unknown): {
 			: null) ?? "0.0.0";
 
 	return { campaign, imageData, terrainData, contextState, fileVersion };
+}
+
+/**
+ * Every image id referenced by a campaign OTHER than `excludeCampaignId`.
+ *
+ * Image binaries live in one global IndexedDB store keyed by image id, and image
+ * ids are PRESERVED across a copy-restore or a file import -- so a campaign and
+ * any copy of it reference the very same blobs. Deleting a campaign must
+ * therefore free only the blobs nothing else still points at. (Terrain needs no
+ * equivalent: its OPFS paths are namespaced per campaign, so each copy owns its
+ * own files.)
+ *
+ * Returns null when the set could not be established. Callers must then delete
+ * NO image binaries: a leaked blob costs some space and a future GC pass can
+ * reclaim it, whereas one wrongly deleted is gone for good.
+ */
+async function imageIdsInUseElsewhere(
+	excludeCampaignId: string,
+	context: Context
+): Promise<Set<string> | null> {
+	const inUse = new Set<string>();
+
+	try {
+		// Player entries count too -- a joined copy references the same image ids.
+		const records = await IndexedDBUtilities.op<
+			{ Id: string; Campaign?: Campaign }[]
+		>(CAMPAIGNS_STORE_NAME, "readonly", (store) => store.getAll());
+
+		for (const record of records ?? []) {
+			if (!record || record.Id === excludeCampaignId) continue;
+			for (const image of record.Campaign?.Images ?? []) {
+				inUse.add(image.Id);
+			}
+		}
+	} catch (e) {
+		console.error(
+			"[CampaignActions] Could not determine which images are still in use; " +
+				"keeping all image binaries rather than risk deleting a shared one:",
+			e
+		);
+		return null;
+	}
+
+	// The active campaign's stored record can lag behind the live object (images
+	// added this session may not be packed yet), so read it directly as well.
+	const active = context.ActiveCampaign;
+	if (
+		active &&
+		active.Id !== excludeCampaignId &&
+		active.RoomCode !== excludeCampaignId
+	) {
+		for (const image of active.Images ?? []) inUse.add(image.Id);
+	}
+
+	return inUse;
 }
 
 export const CampaignUtils = {
@@ -401,7 +471,10 @@ export const CampaignUtils = {
 			imageIds = (context.ActiveCampaign.Images ?? []).map((img) => img.Id);
 		} else {
 			try {
-				const stored = await CampaignLoadingService.loadCampaign(
+				// Raw: a plain read for cleanup must not re-key the global terrain
+				// payload buffer onto the campaign being deleted, which would blank
+				// the voxels of whatever campaign is actually being played.
+				const stored = await CampaignLoadingService.loadCampaignRaw(
 					params.campaignId
 				);
 				if (stored) {
@@ -419,34 +492,70 @@ export const CampaignUtils = {
 			}
 		}
 
+		// Work out which of those blobs anything else still needs, while the context
+		// is intact (this reads ActiveCampaign, cleared further down).
+		const inUseElsewhere =
+			imageIds.length > 0
+				? await imageIdsInUseElsewhere(params.campaignId, context)
+				: new Set<string>();
+
+		// Tombstone the backup identity BEFORE dropping the entry -- it is the only
+		// place the key is still readable. Cloud backups are never deleted from
+		// Drive (deliberately), so without this the next on-open sync sees a backup
+		// with no local counterpart and silently restores what was just deleted.
+		const backupKey =
+			context.Campaigns[index].BackupKey ??
+			(isActive ? context.ActiveCampaign?.BackupKey : undefined);
+		if (backupKey) tombstoneBackupKey(backupKey);
+
 		// Drop the metadata + active-campaign reference up front so the UI
 		// reflects the deletion immediately even if the IDB cleanup below
 		// is slow.
 		context.Campaigns.splice(index, 1);
 
-		if (context.LastUpdated) {
-			delete context.LastUpdated[params.campaignId];
-		}
+		clearCampaignBackupState(params.campaignId);
 
 		if (isActive) {
 			context.ActiveCampaign = null;
 		}
 
-		// Free image binaries first. We log per-failure but don't abort the
-		// rest -- partial cleanup is better than no cleanup.
+		// Free image binaries first -- but only the ones no surviving campaign
+		// references. Blobs are keyed by image id in a single global store and those
+		// ids survive a copy-restore/import, so a campaign and a copy of it share
+		// them; deleting every id this campaign mentions used to take the copy's
+		// images with it. A null set means "could not tell", and there we keep
+		// everything: leaking a blob is recoverable, deleting a live one is not.
+		// ponytail: no refcount table, just a scan at delete time -- deletes are
+		// rare and user-initiated. Revisit if campaign counts ever get large.
 		if (imageIds.length > 0) {
-			await Promise.all(
-				imageIds.map(async (id) => {
-					try {
-						await IndexedDBUtilities.remove(id);
-					} catch (e) {
-						console.error(
-							`[CampaignActions] Failed to remove image binary ${id}:`,
-							e
-						);
-					}
-				})
-			);
+			if (!inUseElsewhere) {
+				console.warn(
+					`[CampaignActions] Keeping all ${imageIds.length} image binaries of ` +
+						`the deleted campaign: could not confirm they are unreferenced.`
+				);
+			} else {
+				const orphaned = imageIds.filter((id) => !inUseElsewhere.has(id));
+				const shared = imageIds.length - orphaned.length;
+				if (shared > 0) {
+					console.info(
+						`[CampaignActions] Keeping ${shared} image binar${
+							shared === 1 ? "y" : "ies"
+						} still referenced by another campaign.`
+					);
+				}
+				await Promise.all(
+					orphaned.map(async (id) => {
+						try {
+							await IndexedDBUtilities.remove(id);
+						} catch (e) {
+							console.error(
+								`[CampaignActions] Failed to remove image binary ${id}:`,
+								e
+							);
+						}
+					})
+				);
+			}
 		}
 
 		try {
@@ -577,41 +686,6 @@ export const CampaignUtils = {
 	},
 
 	/**
-	 * Resolves a campaign by id (preferring the live ActiveCampaign) and builds
-	 * its export payload. Returns null if the campaign can't be found/loaded.
-	 */
-	async buildExportData(
-		campaignId: string,
-		context: Context,
-		onProgress?: (progress: ExportProgress) => void
-	): Promise<CampaignExportData | null> {
-		const info = context.Campaigns.find((c) => c.Id === campaignId);
-		if (!info) {
-			console.warn(`Campaign not found: ${campaignId}`);
-			return null;
-		}
-
-		// Prefer the live ActiveCampaign if it matches; otherwise pull from IDB.
-		let campaign: Campaign | null = null;
-		if (
-			context.ActiveCampaign &&
-			(context.ActiveCampaign.Id === campaignId ||
-				context.ActiveCampaign.RoomCode === campaignId)
-		) {
-			campaign = context.ActiveCampaign;
-		} else {
-			campaign = await CampaignLoadingService.loadCampaign(campaignId);
-		}
-
-		if (!campaign) {
-			console.warn(`Campaign payload missing in IndexedDB: ${campaignId}`);
-			return null;
-		}
-
-		return this.buildExportDataForCampaign(campaign, onProgress);
-	},
-
-	/**
 	 * Downloads a campaign as a JSON file with all image + terrain data included.
 	 */
 	async download(
@@ -620,12 +694,24 @@ export const CampaignUtils = {
 		onProgress?: (progress: ExportProgress) => void
 	): Promise<void> {
 		try {
-			const exportData = await this.buildExportData(
-				params.campaignId,
-				context,
+			const { campaignId } = params;
+			// Prefer the live ActiveCampaign if it matches; otherwise pull from IDB.
+			const campaign =
+				context.ActiveCampaign &&
+				(context.ActiveCampaign.Id === campaignId ||
+					context.ActiveCampaign.RoomCode === campaignId)
+					? context.ActiveCampaign
+					: await CampaignLoadingService.loadCampaign(campaignId);
+
+			if (!campaign) {
+				console.warn(`Campaign payload missing: ${campaignId}`);
+				return;
+			}
+
+			const exportData = await this.buildExportDataForCampaign(
+				campaign,
 				onProgress
 			);
-			if (!exportData) return;
 
 			const json = JSON.stringify(exportData, null, 2);
 			const blob = new Blob([json], { type: "application/json" });
@@ -722,6 +808,52 @@ export const CampaignUtils = {
 	},
 
 	/**
+	 * The counts of a campaign as it ACTUALLY arrived, read from the parsed export
+	 * payload rather than from whatever the uploading device advertised. The Drive
+	 * appProperties counts are cheap (no download) and fine for the preview, but
+	 * they are a claim -- this is the measurement, and it is what the irreversible
+	 * step gets checked against.
+	 */
+	countsFromExportData(data: CampaignExportData | unknown): CampaignCounts | null {
+		const { campaign } = parseExportData(data);
+		if (!campaign || typeof campaign !== "object") return null;
+		return this.campaignCounts(campaign);
+	},
+
+	/**
+	 * Snapshots a campaign, whole and self-contained, into IndexedDB right before
+	 * something overwrites it. This is what makes update-in-place restore
+	 * reversible: the shrink guard can only warn, and it only sees seven
+	 * collections, so the real protection is that the previous state still exists
+	 * afterwards.
+	 *
+	 * Unlike `backupContextOnce` this deliberately OVERWRITES the previous
+	 * snapshot -- the useful one is always the most recent pre-restore state.
+	 *
+	 * Throws on failure. Callers must not proceed with the overwrite: a restore
+	 * with no way back is exactly the situation this exists to prevent.
+	 */
+	async snapshotBeforeRestore(campaign: Campaign): Promise<void> {
+		const exportData = await this.buildExportDataForCampaign(campaign);
+		await IndexedDBUtilities.op(CONTEXT_BACKUPS_STORE_NAME, "readwrite", (store) =>
+			store.put({
+				Key: `pre-restore-${campaign.Id}`,
+				SourceVersion: exportData.version,
+				SavedAt: Date.now(),
+				CampaignName: campaign.Name,
+				Counts: this.campaignCounts(campaign),
+				// Stored as a string: the export is already JSON-shaped, and a string
+				// cannot trip structuredClone on any proxy that leaked into it.
+				ExportJson: JSON.stringify(exportData),
+			})
+		);
+		console.info(
+			`[CampaignUtils] Snapshotted "${campaign.Name}" under IndexedDB key ` +
+				`"pre-restore-${campaign.Id}" before overwriting it.`
+		);
+	},
+
+	/**
 	 * Restores a campaign from a parsed export payload. `copy` mode (default)
 	 * mints a new Id so nothing local is ever clobbered; `replace` mode writes
 	 * under an existing local Id (update-in-place). The archive's `BackupKey` is
@@ -736,9 +868,12 @@ export const CampaignUtils = {
 		const { campaign, imageData, terrainData, contextState, fileVersion } =
 			parseExportData(data);
 
-		// Preserve the backup's stable identity; mint one if the archive predates
-		// BackupKey.
-		if (!campaign.BackupKey) {
+		// Identity. A replace IS the campaign it overwrites, so it keeps the
+		// archive's key; a copy only keeps it when the caller can guarantee no
+		// local campaign already claims it (see RestoreMode).
+		const keepBackupKey =
+			opts.mode === "replace" || opts.keepBackupKey === true;
+		if (!campaign.BackupKey || !keepBackupKey) {
 			campaign.BackupKey = crypto.randomUUID();
 		}
 
@@ -817,6 +952,10 @@ export const CampaignUtils = {
 			if (!contextStore.ViewedTerrains) contextStore.ViewedTerrains = {};
 			contextStore.ViewedTerrains[migrated.Id] = [...contextState.viewedTerrains];
 		}
+
+		// Restoring a campaign is a deliberate un-delete: drop any tombstone so the
+		// on-open sync stops suppressing it.
+		if (migrated.BackupKey) clearBackupKeyTombstone(migrated.BackupKey);
 
 		// Persist the full Campaign payload to IndexedDB, then replace the
 		// matching CampaignInfo in place or append a new one.

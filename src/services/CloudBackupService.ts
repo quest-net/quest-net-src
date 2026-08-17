@@ -8,9 +8,12 @@
 // when a Drive backup is genuinely newer than a local copy.
 
 import {
+	adoptCloudRevision,
+	backedUpRevision,
+	campaignRevision,
 	contextStore,
 	forceContextRerender,
-	markCampaignUpdated,
+	markCampaignBackedUp,
 } from "../domains/Context/contextStore";
 import { Context } from "../domains/Context/Context";
 import { CampaignInfo } from "../domains/Campaign/CampaignInfo";
@@ -32,6 +35,11 @@ import {
 } from "../domains/AppSetting/AppSettingUtils";
 import { isCloudBackupConfigured } from "../config/googleDrive";
 import { isGUID } from "../utils/UrlParser";
+import {
+	cloudIsAhead,
+	hasUnbackedUpChanges,
+	type BackupRevisionState,
+} from "./cloudBackupFreshness";
 import { APP_VERSION } from "../version";
 
 /** A Drive backup that is newer than its local counterpart, awaiting confirm. */
@@ -64,10 +72,23 @@ const MAX_REPAIR_REVISIONS = 15;
 const PIN_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_PINNED_REVISIONS = 10;
 
-/** Local last-updated time for a campaign (0 if never recorded). Callers fall
- *  back to the campaign's CreatedAt when this is 0. */
+/** Local last-updated time for a campaign (0 if never recorded). Display only —
+ *  freshness decisions use revisions, never this. */
 function lastUpdatedOf(context: Context, campaignId: string): number {
 	return context.LastUpdated?.[campaignId] ?? 0;
+}
+
+/** Gathers the three counters the freshness rules compare. */
+function revisionState(
+	context: Context,
+	campaignId: string,
+	cloudRevision: number
+): BackupRevisionState {
+	return {
+		local: campaignRevision(context, campaignId),
+		backedUp: backedUpRevision(context, campaignId),
+		cloud: cloudRevision,
+	};
 }
 
 /** The synced "account" profile — the content of the Drive profile.json file. */
@@ -152,25 +173,42 @@ export const CloudBackupService = {
 
 	/**
 	 * Loads a DM campaign, ensures it has a stable BackupKey (persisting it), and
-	 * uploads it — unless the cloud already holds an equal-or-newer state.
+	 * uploads it — unless the cloud already holds everything this device has.
 	 */
 	async backupCampaign(
 		info: CampaignInfo,
 		context: Context,
 		cloudMeta?: DriveBackupMeta,
-		binariesChecked?: Set<string>
+		binariesChecked?: Set<string>,
+		forceNewBackupKey = false
 	): Promise<void> {
-		const campaign =
-			context.ActiveCampaign && context.ActiveCampaign.Id === info.Id
-				? context.ActiveCampaign
-				: await CampaignLoadingService.loadCampaign(info.Id);
+		// Decide BEFORE loading anything. This gate used to sit after the load, so
+		// a routine hourly backup pulled every DM campaign off disk just to
+		// discover it had nothing to upload — and each of those loads re-keyed the
+		// single global terrain payload buffer to the campaign being examined,
+		// blanking the voxels of the campaign the DM was actually playing.
+		// A campaign that has never been uploaded (no cloudMeta) always proceeds, as
+		// does one being re-keyed onto a file of its own.
+		if (
+			cloudMeta &&
+			!forceNewBackupKey &&
+			!hasUnbackedUpChanges(revisionState(context, info.Id, cloudMeta.revision))
+		) {
+			return;
+		}
+
+		const isActive =
+			!!context.ActiveCampaign && context.ActiveCampaign.Id === info.Id;
+		const campaign = isActive
+			? context.ActiveCampaign!
+			: await CampaignLoadingService.loadCampaignRaw(info.Id);
 		if (!campaign) return;
 
 		// Ensure a stable BackupKey and mirror it onto the in-memory CampaignInfo
 		// so future on-open matching is cheap (no payload load required).
 		let key = campaign.BackupKey;
 		const ci = context.Campaigns.find((c) => c.Id === info.Id);
-		if (!key) {
+		if (!key || forceNewBackupKey) {
 			key = crypto.randomUUID();
 			campaign.BackupKey = key;
 			if (ci) ci.BackupKey = key;
@@ -183,9 +221,7 @@ export const CloudBackupService = {
 		// The export silently omits images/terrain it cannot read, so the upload
 		// would look healthy by its counts (which come from campaign metadata)
 		// while carrying nothing -- overwriting the last backup that still has
-		// them. Checked BEFORE the freshness gate below, because the device in
-		// this state usually has the newest timestamp and would otherwise skip
-		// straight past detection.
+		// them.
 		//
 		// `binariesChecked` carries the campaigns that just went through the
 		// repair pass: anything still missing after that is missing from every
@@ -202,11 +238,12 @@ export const CloudBackupService = {
 			}
 		}
 
+		// Re-read after the load: loadCampaignRaw may have run a schema migration
+		// and saved, which bumps the counter. Stamping the pre-load value would
+		// leave the cloud looking behind and re-upload the same payload next tick.
+		const revision = campaignRevision(context, campaign.Id);
 		const lastUpdated =
 			lastUpdatedOf(context, campaign.Id) || campaign.CreatedAt;
-		// Never upload over an equal-or-newer cloud state (skips unchanged
-		// campaigns and prevents a stale device clobbering a newer backup).
-		if (cloudMeta && cloudMeta.lastUpdated >= lastUpdated) return;
 
 		// Pin at most one revision a week (and always the first upload of a new
 		// file). Everything in between rides Drive's free 30-day/100-version
@@ -221,6 +258,7 @@ export const CloudBackupService = {
 			backupKey: key,
 			campaignName: campaign.Name,
 			lastUpdated,
+			revision,
 			lastPinned: pinRevision ? now : lastPinned,
 			version: exportData.version,
 			counts: CampaignUtils.campaignCounts(campaign),
@@ -231,6 +269,10 @@ export const CloudBackupService = {
 			cloudMeta?.fileId,
 			pinRevision
 		);
+
+		// Only once the upload has actually landed: this is what makes the next
+		// run's "is there unbacked-up work?" test true after a failed upload.
+		markCampaignBackedUp(campaign.Id, revision);
 
 		// Only after a pin, so this runs about weekly rather than every backup.
 		if (pinRevision) await this.prunePinnedRevisions(fileId);
@@ -271,11 +313,43 @@ export const CloudBackupService = {
 		const cloud = backups ?? (await GoogleDriveBackupService.listBackups());
 		const cloudByKey = new Map(cloud.map((b) => [b.backupKey, b]));
 
+		// A BackupKey addresses exactly one Drive file. If two local campaigns claim
+		// the same one, backing up both uploads two different campaigns over each
+		// other -- and because `cloudByKey` is a snapshot taken before this loop,
+		// the second would not even see the first's write to compare against.
+		// (Reachable without doing anything odd: restoring a copy, or importing the
+		// same export file twice, used to carry the archive's key across.)
+		//
+		// The first claimant keeps the file; every later one is re-keyed onto a file
+		// of its own. Re-keying rather than skipping is deliberate: a skipped
+		// campaign silently stops being backed up, and "silently stops" is the
+		// failure this whole subsystem exists to prevent. Two campaigns genuinely
+		// are two campaigns, so two files is the correct end state -- the only cost
+		// is one extra file's worth of Drive storage.
+		const seenKeys = new Set<string>();
 		for (const info of this.dmCampaigns(context)) {
-			const cloudMeta = info.BackupKey
-				? cloudByKey.get(info.BackupKey)
-				: undefined;
-			await this.backupCampaign(info, context, cloudMeta, binariesChecked);
+			const duplicate = !!info.BackupKey && seenKeys.has(info.BackupKey);
+			if (duplicate) {
+				console.warn(
+					`[CloudBackup] "${info.Name}" shares a BackupKey with another local ` +
+						`campaign; giving it a backup file of its own.`
+				);
+			}
+			if (info.BackupKey && !duplicate) seenKeys.add(info.BackupKey);
+
+			// A re-keyed campaign is starting a new file, so it has no cloud state
+			// to compare against -- passing the old key's metadata would make it
+			// look already-backed-up and skip the very upload it needs.
+			const cloudMeta =
+				info.BackupKey && !duplicate ? cloudByKey.get(info.BackupKey) : undefined;
+			await this.backupCampaign(
+				info,
+				context,
+				cloudMeta,
+				binariesChecked,
+				duplicate
+			);
+			if (duplicate && info.BackupKey) seenKeys.add(info.BackupKey);
 		}
 	},
 
@@ -297,7 +371,12 @@ export const CloudBackupService = {
 	// Restore
 	// -------------------------------------------------------------------------
 
-	/** Restores a cloud backup with no local counterpart as a brand-new copy. */
+	/**
+	 * Restores a cloud backup with no local counterpart as a brand-new copy. This
+	 * is the one copy-restore that keeps the archive's BackupKey: the campaign is
+	 * absent locally, so no other local campaign can already be claiming it, and
+	 * keeping it is what lets the copy keep tracking the same Drive file.
+	 */
 	async restoreCopy(
 		backup: DriveBackupMeta,
 		context: Context
@@ -305,26 +384,67 @@ export const CloudBackupService = {
 		const data = await GoogleDriveBackupService.downloadBackup(backup.fileId);
 		const info = await CampaignUtils.restoreFromExportData(data, context, {
 			mode: "copy",
+			keepBackupKey: true,
 		});
-		// Adopt the backup's own timestamp (saveCampaign just stamped it as "now"),
-		// so this freshly-downloaded copy isn't seen as newer and re-uploaded.
-		markCampaignUpdated(info.Id, backup.lastUpdated);
+		// Adopt the backup's identity wholesale (saveCampaign just stamped this as
+		// a fresh local change), so a freshly-downloaded copy is neither re-uploaded
+		// nor mistaken for something the cloud is ahead of.
+		adoptCloudRevision(info.Id, backup.lastUpdated, backup.revision);
 		return info;
 	},
 
-	/** Applies a newer cloud backup over an existing local campaign in place. */
-	async restoreNewer(pending: PendingRestore, context: Context): Promise<void> {
+	/**
+	 * Applies a newer cloud backup over an existing local campaign in place — the
+	 * only destructive operation in the whole feature.
+	 *
+	 * Two things guard it. The local campaign is snapshotted first, so the
+	 * overwrite is undoable; and the DOWNLOADED payload's real counts are measured
+	 * and re-checked against the local ones, because the diff shown in the modal
+	 * came from Drive metadata the uploading device wrote about itself. When the
+	 * real payload turns out to shrink sharply and the user was not warned of it,
+	 * this applies nothing and hands back the corrected diff to be re-confirmed.
+	 */
+	async restoreNewer(
+		pending: PendingRestore,
+		context: Context
+	): Promise<{ applied: true } | { applied: false; diff: CampaignCountDiff }> {
 		const data = await GoogleDriveBackupService.downloadBackup(
 			pending.backup.fileId
 		);
 		const targetId = pending.local.Id;
+
+		// Prefer the live copy: it holds anything the debounced persist has not
+		// written yet, and that is precisely what is about to be overwritten. Falls
+		// back to a raw read, which does not disturb the terrain payload buffer.
+		const localCampaign =
+			context.ActiveCampaign && context.ActiveCampaign.Id === targetId
+				? context.ActiveCampaign
+				: await CampaignLoadingService.loadCampaignRaw(targetId);
+		if (localCampaign) {
+			const incoming = CampaignUtils.countsFromExportData(data);
+			if (incoming) {
+				const verified = CampaignUtils.diffCounts(
+					CampaignUtils.campaignCounts(localCampaign),
+					incoming
+				);
+				if (verified.significantShrink && !pending.diff.significantShrink) {
+					console.warn(
+						`[CloudBackup] "${pending.backup.campaignName}" shrinks more than its ` +
+							`Drive metadata advertised; re-confirming with measured counts.`
+					);
+					return { applied: false, diff: verified };
+				}
+			}
+			// Hard requirement, not best-effort: without a way back, a restore that
+			// turns out to be wrong is unrecoverable. Let this throw.
+			await CampaignUtils.snapshotBeforeRestore(localCampaign);
+		}
+
 		await CampaignUtils.restoreFromExportData(data, context, {
 			mode: "replace",
 			targetCampaignId: targetId,
 		});
-		// Adopt the backup's own timestamp (saveCampaign just stamped it as "now"),
-		// so the restored copy isn't immediately re-uploaded as if it were newer.
-		markCampaignUpdated(targetId, pending.backup.lastUpdated);
+		adoptCloudRevision(targetId, pending.backup.lastUpdated, pending.backup.revision);
 
 		// If we just overwrote the live campaign, re-hydrate it from disk.
 		if (context.ActiveCampaign && context.ActiveCampaign.Id === targetId) {
@@ -334,6 +454,7 @@ export const CloudBackupService = {
 				forceContextRerender();
 			}
 		}
+		return { applied: true };
 	},
 
 	/**
@@ -430,13 +551,21 @@ export const CloudBackupService = {
 		return totals;
 	},
 
-	/** Computes the shrink diff (cloud counts are free; local needs a load). */
+	/**
+	 * The PREVIEW diff shown in the confirm modal. Cheap by design: the incoming
+	 * counts come from Drive metadata, so no payload is downloaded to build it.
+	 *
+	 * That also makes it a claim rather than a measurement, and legacy backups
+	 * carry no counts at all (empty diff). It is therefore never the last word --
+	 * restoreNewer re-measures the real payload before applying anything.
+	 */
 	async computeShrinkDiff(
 		backup: DriveBackupMeta,
 		local: CampaignInfo
 	): Promise<CampaignCountDiff> {
 		const incoming = backup.counts;
-		const localCampaign = await CampaignLoadingService.loadCampaign(local.Id);
+		// Raw: this is a read-only preview and must not re-key the terrain buffer.
+		const localCampaign = await CampaignLoadingService.loadCampaignRaw(local.Id);
 		const localCounts = localCampaign
 			? CampaignUtils.campaignCounts(localCampaign)
 			: null;
@@ -510,10 +639,14 @@ export const CloudBackupService = {
 			if (c.BackupKey) localByKey.set(c.BackupKey, c);
 		}
 
-		// 1) Silently restore backups that have no local counterpart.
+		// 1) Silently restore backups that have no local counterpart -- except ones
+		// the user deleted here. Drive files are never deleted, so without the
+		// tombstone check a delete would silently undo itself on the next open.
+		const tombstoned = new Set(context.DeletedBackupKeys ?? []);
 		let restoredCount = 0;
 		for (const b of backups) {
 			if (localByKey.has(b.backupKey)) continue;
+			if (tombstoned.has(b.backupKey)) continue;
 			try {
 				const info = await this.restoreCopy(b, context);
 				localByKey.set(b.backupKey, info);
@@ -526,13 +659,19 @@ export const CloudBackupService = {
 			}
 		}
 
-		// 2) Collect backups newer than their local counterpart for the modal.
+		// 2) Collect backups the cloud is genuinely ahead on, for the confirm modal.
+		// Deliberately NOT gated on being out of a campaign: most DMs open the app
+		// straight on their campaign URL and never see the homepage, so gating on
+		// that would silently retire cross-device restore for nearly everyone. The
+		// prompt is a confirm the DM can decline, it names the campaign it would
+		// overwrite (including when that is the live one), and the restore itself
+		// snapshots the local copy first -- so informed consent is the guard here,
+		// not absence.
 		const newer: PendingRestore[] = [];
 		for (const b of backups) {
 			const local = localByKey.get(b.backupKey);
 			if (!local) continue;
-			const localUpdated = lastUpdatedOf(context, local.Id) || local.CreatedAt;
-			if (b.lastUpdated <= localUpdated) continue;
+			if (!cloudIsAhead(revisionState(context, local.Id, b.revision))) continue;
 			const diff = await this.computeShrinkDiff(b, local);
 			newer.push({ backup: b, local, diff });
 		}

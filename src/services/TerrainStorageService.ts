@@ -11,6 +11,7 @@ import {
 	getMaterializedContentHash,
 	getTerrainVoxels,
 	hasTerrainPayload,
+	isActivePayloadCampaign,
 	isTerrainHydrated,
 	resetPayloadStoreForCampaign,
 	setTerrainVoxels,
@@ -194,16 +195,6 @@ export class TerrainStorageService {
 		await this.writeRecord(campaign, terrain, voxels, contentHash);
 	}
 
-	/** Reads a terrain's voxels from the materialized buffer or OPFS. */
-	static async loadVoxels(
-		campaign: Campaign,
-		terrain: VoxelTerrain
-	): Promise<Uint8Array | null> {
-		if (isTerrainHydrated(terrain)) return getTerrainVoxels(terrain.Id);
-		const stored = await this.readStoredPayload(campaign, terrain.Id);
-		return stored?.voxels ?? null;
-	}
-
 	/**
 	 * Materializes a terrain on this client: from OPFS when the cached
 	 * payload matches the canonical ContentHash, otherwise (players) over the
@@ -281,7 +272,9 @@ export class TerrainStorageService {
 		campaign: Campaign,
 		terrainId: string
 	): Promise<boolean> {
-		if (hasTerrainPayload(terrainId)) return true;
+		if (isActivePayloadCampaign(campaign.Id) && hasTerrainPayload(terrainId)) {
+			return true;
+		}
 		return OpfsUtilities.exists(this.terrainPath(campaign.Id, terrainId));
 	}
 
@@ -293,7 +286,7 @@ export class TerrainStorageService {
 		campaign: Campaign,
 		terrainId: string
 	): Promise<TerrainPayload | null> {
-		if (hasTerrainPayload(terrainId)) {
+		if (isActivePayloadCampaign(campaign.Id) && hasTerrainPayload(terrainId)) {
 			const voxels = getTerrainVoxels(terrainId);
 			return {
 				voxels,
@@ -348,20 +341,24 @@ export class TerrainStorageService {
 		}
 	}
 
-	/** Loads a terrain's voxels inline for the editor (transient working copy). */
+	/**
+	 * Loads a terrain's voxels inline for the editor (transient working copy).
+	 * Buffer first, then OPFS, then -- players only -- a network hydrate.
+	 */
 	static async loadTerrainForEditing(
 		campaign: Campaign,
 		terrain: VoxelTerrain
 	): Promise<EditableVoxelTerrain | null> {
-		const voxels =
-			(await this.loadVoxels(campaign, terrain)) ??
-			(this.networkProvider
-				? (await this.hydrateTerrain(campaign, terrain.Id))
-					? getTerrainVoxels(terrain.Id)
-					: null
-				: null);
-		if (voxels === null) return null;
-		return { ...terrain, Voxels: voxels };
+		const editable = (voxels: Uint8Array) => ({ ...terrain, Voxels: voxels });
+
+		if (isTerrainHydrated(terrain)) return editable(getTerrainVoxels(terrain.Id));
+
+		const stored = await this.readStoredPayload(campaign, terrain.Id);
+		if (stored) return editable(stored.voxels);
+
+		if (!this.networkProvider) return null;
+		if (!(await this.hydrateTerrain(campaign, terrain.Id))) return null;
+		return editable(getTerrainVoxels(terrain.Id));
 	}
 
 	// Terrains the local client is actively rendering.
@@ -409,6 +406,12 @@ export class TerrainStorageService {
 	}
 
 	static async prepareCampaignForStorage(campaign: Campaign): Promise<void> {
+		// The buffer belongs to exactly one campaign. Writing it out on behalf of a
+		// different one would publish that campaign's voxels under this campaign's
+		// terrain ids (they collide across copy-restores) -- and, during a restore,
+		// would overwrite the payloads just imported from the backup with the stale
+		// local ones. Both are silent, so refuse rather than guess.
+		if (!isActivePayloadCampaign(campaign.Id)) return;
 		for (const terrain of campaign.VoxelTerrains ?? []) {
 			if (hasTerrainPayload(terrain.Id)) {
 				await this.saveTerrain(campaign, terrain);
@@ -417,6 +420,7 @@ export class TerrainStorageService {
 	}
 
 	static async packInactiveTerrains(campaign: Campaign): Promise<void> {
+		if (!isActivePayloadCampaign(campaign.Id)) return;
 		const keep = this.terrainsToKeepHydrated(campaign);
 		for (const terrain of campaign.VoxelTerrains ?? []) {
 			if (keep.has(terrain.Id)) continue;
@@ -444,6 +448,14 @@ export class TerrainStorageService {
 	/**
 	 * Restores exported terrain payloads into OPFS under this (freshly
 	 * id'd) campaign, so the imported terrains hydrate normally on next load.
+	 *
+	 * Evicts each imported terrain from the in-memory buffer first. A restore
+	 * that targets an EXISTING campaign id (update-in-place) collides with the
+	 * buffer entries of the copy being replaced, and any later save would write
+	 * those stale bytes straight back over what we import here -- leaving the
+	 * campaign carrying the backup's ContentHash over the old voxels, a mismatch
+	 * nothing can repair. Dropping them makes the next read re-hydrate from the
+	 * record written below.
 	 */
 	static async importTerrainPayloads(
 		campaign: Campaign,
@@ -452,6 +464,7 @@ export class TerrainStorageService {
 		for (const terrain of campaign.VoxelTerrains ?? []) {
 			const payload = payloads[terrain.Id];
 			if (payload) {
+				dropTerrainVoxels(terrain.Id);
 				await this.writeRecord(
 					campaign,
 					terrain,

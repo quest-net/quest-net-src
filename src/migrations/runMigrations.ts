@@ -6,7 +6,7 @@ import { migrationStorage } from "./MigrationStorage";
  * Compares two semver-like version strings (e.g. "1.2.3").
  * Returns negative if a < b, 0 if equal, positive if a > b.
  */
-function compareVersions(a: string, b: string): number {
+export function compareVersions(a: string, b: string): number {
 	const pa = a.split(".").map(Number);
 	const pb = b.split(".").map(Number);
 	const len = Math.max(pa.length, pb.length);

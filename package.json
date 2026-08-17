@@ -20,6 +20,7 @@
 	},
 	"scripts": {
 		"generate:stamps": "node scripts/generate-default-voxel-stamps.mjs",
+		"check:backup": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-cloud-backup-freshness.mjs",
 		"deploy": "npx gh-pages -d build -b 2.0 -r https://github.com/quest-net/quest-net.github.io.git",
 		"dev": "vite",
 		"build:wasm": "node scripts/build-wasm.mjs",

@@ -53,6 +53,17 @@ export function hasTerrainPayload(terrainId: string): boolean {
 }
 
 /**
+ * Whether the buffer currently belongs to `campaignId`. The buffer is keyed by
+ * bare terrainId, and terrain ids are PRESERVED across a copy-restore/import --
+ * so two local campaigns descended from the same export share them. Any caller
+ * that reads or writes the buffer on behalf of a specific campaign must check
+ * this first, or it will serve one campaign's voxels as another's.
+ */
+export function isActivePayloadCampaign(campaignId: string): boolean {
+	return activeCampaignKey === campaignId;
+}
+
+/**
  * Materializes `voxels` for `terrainId`. Computes the ContentHash when one is
  * not supplied (e.g. fresh author-time edits); callers that already know the
  * hash (hydration from IDB / network) pass it to avoid a redundant hash.

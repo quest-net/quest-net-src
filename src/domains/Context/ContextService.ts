@@ -1,6 +1,6 @@
 // domains/Context/ContextService.ts
 
-import { Context } from "./Context";
+import { Context, createDefaultContext, withContextDefaults } from "./Context";
 import { LocalStorageUtilities } from "../../utils/LocalStorageUtilities";
 import { UserUtils } from "../User/UserUtils";
 import { APP_VERSION } from "../../version";
@@ -12,7 +12,7 @@ import {
 	getMaterializedContentHash,
 	hasTerrainPayload,
 } from "../../utils/terrain/data/terrainPayloadStore";
-import { runMigrations } from "../../migrations/runMigrations";
+import { compareVersions, runMigrations } from "../../migrations/runMigrations";
 import { contextMigrations } from "../../migrations/contextMigrations";
 import { campaignMigrations } from "../../migrations/campaignMigrations";
 import { backupContextOnce } from "../../migrations/contextBackup";
@@ -73,17 +73,6 @@ async function writeHydratedTerrainsThroughIfChanged(
 const PRE_SVO_BACKUP_KEY = "pre-2.3.0";
 const PRE_SVO_BACKUP_THRESHOLD = "2.3.0";
 
-function isOlderVersion(a: string, b: string): boolean {
-	const pa = a.split(".").map(Number);
-	const pb = b.split(".").map(Number);
-	const len = Math.max(pa.length, pb.length);
-	for (let i = 0; i < len; i++) {
-		const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
-		if (diff !== 0) return diff < 0;
-	}
-	return false;
-}
-
 /**
  * Detects the legacy on-disk shape where Context.Campaigns held full Campaign
  * objects (with their GameState etc.) instead of CampaignInfo metadata. We
@@ -98,17 +87,7 @@ export const ContextService = {
 	 * Creates a new context with default values
 	 */
 	create(): Context {
-		const context: Context = {
-			User: UserUtils.createNewUser(),
-			Campaigns: [],
-			ActiveCampaign: null,
-			AppSettings: {},
-			version: APP_VERSION,
-			SecretModes: {},
-			ViewedTerrains: {},
-			LastUpdated: {},
-		};
-
+		const context = createDefaultContext(UserUtils.createNewUser());
 		this.save(context);
 		return context;
 	},
@@ -135,12 +114,12 @@ export const ContextService = {
 			// stored Context (with its inline legacy voxel payload) into
 			// IndexedDB before any transformation runs. Best-effort -- failure
 			// to back up is logged but does not block the migration.
-			if (isOlderVersion(storedVersion, PRE_SVO_BACKUP_THRESHOLD)) {
+			if (compareVersions(storedVersion, PRE_SVO_BACKUP_THRESHOLD) < 0) {
 				await backupContextOnce(PRE_SVO_BACKUP_KEY, storedVersion, original);
 			}
 
 			// Run context-level migrations (operates on the raw stored object).
-			const context = (await runMigrations(
+			let context = (await runMigrations(
 				stored,
 				storedVersion,
 				contextMigrations
@@ -159,25 +138,12 @@ export const ContextService = {
 				)) as Campaign;
 			}
 
-			if (!context.SecretModes) {
-				context.SecretModes = {};
-			}
-			if (!context.ViewedTerrains) {
-				context.ViewedTerrains = {};
-			}
-			// Seeded from prior LastActivity by the 3.0.0 context migration; this is
-			// the belt-and-suspenders default for contexts that bypassed migrations.
-			if (!context.LastUpdated) {
-				context.LastUpdated = {};
-			}
-			if (!Array.isArray(context.Campaigns)) {
-				context.Campaigns = [];
-			}
-			// Ensure the field always exists (default null) so consumers can
-			// rely on it being present even on contexts stored before it existed.
-			if (!("ActiveCampaign" in context) || context.ActiveCampaign === undefined) {
-				(context as Context).ActiveCampaign = null;
-			}
+			// Backfill anything this stored context predates or lost. Covers the
+			// cloud-backup bookkeeping too: an absent Revisions entry reads as 0, and
+			// an absent BackedUpRevisions entry means "never uploaded from here",
+			// which deliberately suppresses restore prompts until this device has
+			// uploaded once and the two counters share a reference point.
+			context = withContextDefaults(context);
 
 			// Legacy reshape: if any entry in Campaigns is still a full Campaign
 			// (the pre-split layout), pack it into IndexedDB and replace it with

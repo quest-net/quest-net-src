@@ -70,6 +70,34 @@ export class CampaignLoadingService {
 	 * Returns null if no campaign is stored under that id.
 	 */
 	static async loadCampaign(id: string): Promise<Campaign | null> {
+		const campaign = await this.loadCampaignRaw(id);
+		if (!campaign) return null;
+
+		// Prepare BEFORE adding default stamps: prepareCampaignAfterLoad resets the
+		// per-client payload buffer for this campaign, which would otherwise
+		// discard freshly materialized stamp payloads before they are persisted.
+		await TerrainStorageService.prepareCampaignAfterLoad(campaign);
+
+		const addedDefaultVoxelStamps = addMissingDefaultVoxelStamps(campaign);
+		if (addedDefaultVoxelStamps > 0) {
+			await this.saveCampaign(campaign);
+		}
+
+		return campaign;
+	}
+
+	/**
+	 * Loads and schema-migrates a Campaign payload WITHOUT touching any
+	 * per-client state: no terrain buffer reset, no default-stamp materialization.
+	 *
+	 * `loadCampaign` is for the campaign the user is about to play, and its
+	 * prepare step legitimately re-keys the (single, global) terrain payload
+	 * buffer to that campaign. Read-only consumers -- cloud backup walks every DM
+	 * campaign on a timer -- must use this instead: going through `loadCampaign`
+	 * would blank the buffer of the campaign actually being played, leaving the
+	 * live map, movement and standing checks reading zero voxels mid-session.
+	 */
+	static async loadCampaignRaw(id: string): Promise<Campaign | null> {
 		let record: { Id: string; Version: string; Campaign: Campaign } | undefined;
 		try {
 			record = await IndexedDBUtilities.op(CAMPAIGNS_STORE_NAME, "readonly", (store) =>
@@ -93,16 +121,6 @@ export class CampaignLoadingService {
 				storedVersion,
 				campaignMigrations
 			)) as Campaign;
-			await this.saveCampaign(campaign);
-		}
-
-		// Prepare BEFORE adding default stamps: prepareCampaignAfterLoad resets the
-		// per-client payload buffer for this campaign, which would otherwise
-		// discard freshly materialized stamp payloads before they are persisted.
-		await TerrainStorageService.prepareCampaignAfterLoad(campaign);
-
-		const addedDefaultVoxelStamps = addMissingDefaultVoxelStamps(campaign);
-		if (addedDefaultVoxelStamps > 0) {
 			await this.saveCampaign(campaign);
 		}
 
