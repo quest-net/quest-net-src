@@ -883,6 +883,8 @@ export default function ControlledActorLocomotion({
 			{actor && (
 				<ActorCameraHud
 					cameraMode={cameraMode}
+					// Mirrors Main's DmMapToolbar condition (DM + not first person).
+					hasTopToolbar={userRole === "dm" && cameraMode === "follow"}
 					isPointerLocked={isPointerLocked}
 					movementOverlay={movementOverlay}
 					canFly={actor.actor.CanFly ?? false}

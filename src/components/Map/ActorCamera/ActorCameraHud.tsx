@@ -6,6 +6,10 @@ import { CAMERA_CONTROL_LAYOUT } from "../CameraModeDropdown";
 
 interface ActorCameraHudProps {
 	cameraMode: ActorCameraMode;
+	/** Whether the DM's full-width map toolbar occupies the top row behind this
+	 *  HUD. That, not the camera mode, is what the hint row has to clear: a
+	 *  player in Follow has only the lone camera dropdown to sit beside. */
+	hasTopToolbar: boolean;
 	isPointerLocked: boolean;
 	movementOverlay: MovementOverlayState;
 	canFly?: boolean;
@@ -56,15 +60,16 @@ function MovementOverlayText({
 
 export function ActorCameraHud({
 	cameraMode,
+	hasTopToolbar,
 	isPointerLocked,
 	movementOverlay,
 	canFly,
 	linkFocus,
 }: ActorCameraHudProps) {
 	const isFollow = cameraMode === "follow";
-	// First Person hides the world toolbars, so the control hint sits beside the
-	// camera dropdown. Follow keeps them, so it drops to the next line.
-	const hintPlacement = isFollow
+	// The hint sits beside the camera dropdown unless the DM's full-width toolbar
+	// owns that row, in which case it drops to the next line.
+	const hintPlacement = hasTopToolbar
 		? CAMERA_CONTROL_LAYOUT.below
 		: CAMERA_CONTROL_LAYOUT.beside;
 	return (
@@ -114,7 +119,7 @@ export function ActorCameraHud({
 			{movementOverlay && (
 				<div
 					className={`absolute left-1/2 -translate-x-1/2 z-20 ${
-						isFollow ? CAMERA_CONTROL_LAYOUT.belowTop : "top-3"
+						hasTopToolbar ? CAMERA_CONTROL_LAYOUT.belowTop : "top-3"
 					}`}
 				>
 					<div className="rounded bg-base-100/90 border border-base-300 px-3 py-1 shadow text-sm font-semibold">
