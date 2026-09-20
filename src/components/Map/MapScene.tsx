@@ -208,16 +208,16 @@ export default function MapScene({
 	const [actorPointerLocked, setActorPointerLocked] = useState(false);
 
 	// Which camera renders, and which scheme owns the pointer, are two different
-	// questions -- Follow renders the world but takes the pointer while right
-	// click is held. `isWorld` answers the first (are the world layers visible),
+	// questions. `isWorld` answers the first (are the world layers visible),
 	// `interactionMode` the second (do map layers accept cursor input).
+	// Both actor cameras only own the pointer while the right button is held
+	// (MapModeController takes pointer lock on button 2 and drops it on release),
+	// so while unlocked the cursor is free in first person too and the map layers
+	// must accept it -- otherwise actors can't be clicked there.
 	const isWorld = cameraMode !== 'first-person';
 	const usesActorLocomotion = isActorCameraMode(cameraMode);
 	const interactionMode: MapInteractionMode =
-		cameraMode === 'first-person' ||
-		(cameraMode === 'follow' && actorPointerLocked)
-			? 'actor-look'
-			: 'world-pointer';
+		usesActorLocomotion && actorPointerLocked ? 'actor-look' : 'world-pointer';
 	const worldPointer = interactionMode === 'world-pointer';
 	const handleTrackedActorVisualChange = useCallback(
 		(visual: TrackedActorVisual | null) => {
