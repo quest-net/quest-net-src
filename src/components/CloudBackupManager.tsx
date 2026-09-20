@@ -16,6 +16,7 @@ import { useEffect, useState } from "react";
 import { useSnapshot } from "valtio";
 import { Modal } from "./ui/Modal";
 import { useQuestContext } from "../domains/Context/ContextProvider";
+import { contextStore } from "../domains/Context/contextStore";
 import { AppSettingUtils } from "../domains/AppSetting/AppSettingUtils";
 import {
 	CloudBackupService,
@@ -102,6 +103,9 @@ function BackupFailedPill() {
 	const state = AppSettingUtils.getCloudBackup(context);
 	if (state?.connected !== true) return null;
 	if (!state.lastStatus || state.lastStatus.ok) return null;
+	// Dismissed for THIS failure. A retry that fails again stamps a new
+	// lastStatus.time, so the pill comes back rather than being muted for good.
+	if (state.lastStatus.time === state.dismissedStatusTime) return null;
 
 	const retry = async () => {
 		setBusy(true);
@@ -130,6 +134,15 @@ function BackupFailedPill() {
 					) : (
 						"Retry"
 					)}
+				</button>
+				<button
+					type="button"
+					className="btn btn-ghost btn-xs btn-circle shrink-0"
+					aria-label="Dismiss"
+					title="Dismiss"
+					onClick={() => AppSettingUtils.dismissCloudBackupStatus(contextStore)}
+				>
+					<span className="icon-[mdi--close] w-3.5 h-3.5" />
 				</button>
 			</div>
 		</div>

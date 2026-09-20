@@ -42,6 +42,9 @@ export interface CloudBackupState {
   connected: boolean;
   email?: string;
   lastStatus?: { time: number; ok: boolean; error?: string };
+  /** `lastStatus.time` the user dismissed the global failure pill for. Keyed on
+   *  the time rather than a bare boolean so a LATER failure still surfaces. */
+  dismissedStatusTime?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +310,17 @@ export const AppSettingUtils = {
         ok: params.ok,
         error: params.ok ? undefined : params.error,
       },
+    });
+  },
+
+  /** Hide the global "last backup didn't succeed" pill for the current failure.
+   *  The status itself is untouched -- the settings page still reports it. */
+  dismissCloudBackupStatus(context: Context): void {
+    const prev = getJson<CloudBackupState>(context, "cloudBackup");
+    if (!prev?.lastStatus) return;
+    setJson<CloudBackupState>(context, "cloudBackup", {
+      ...prev,
+      dismissedStatusTime: prev.lastStatus.time,
     });
   },
 
