@@ -187,9 +187,12 @@ export const THREE_D_MAP_FOLLOW_CAMERA = {
 	// SHARED across perspective/freecam/follow, so CameraRig applies this on
 	// follow entry and restores PERSPECTIVE_FOV on leaving.
 	FOV: 58,
-	// Orbit distance on entry, and the absolute dolly clamp.
-	INITIAL_DISTANCE: 9,
-	MIN_DISTANCE: 3,
+	// Orbit distance on entry, and the absolute dolly clamp. MIN is an
+	// over-the-shoulder framing rather than a true eye position -- the perspective
+	// near plane is 0.1 (THREE_D_MAP_RENDERER.CAMERA_NEAR), so the limit is taste,
+	// not clipping; going much tighter just reinvents first person.
+	INITIAL_DISTANCE: 5,
+	MIN_DISTANCE: 1.2,
 	MAX_DISTANCE: 30,
 	// Height above the actor's ground position for the Follow orbit anchor. This
 	// IS the hero-occlusion torso offset, not merely equal to it: sharing the one
