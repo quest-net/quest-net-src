@@ -33,6 +33,8 @@ export interface IndexViewItem {
 		icon?: string;
 		onClick: () => void;
 		disabled?: boolean;
+		/** Optional variants shown in a caret dropdown beside the button (split button). */
+		menu?: { label: string; icon?: string; onClick: () => void }[];
 	};
 }
 
@@ -942,19 +944,56 @@ function ItemCard({
 			{/* Action Button - Hide in selection mode */}
 			{!isSelectionMode && item.action && (
 				<div className="card-actions justify-end p-4 pt-0">
-					<button
-						onClick={(e) => {
-							e.stopPropagation();
-							item.action!.onClick();
-						}}
-						disabled={item.action.disabled}
-						className="btn btn-sm btn-primary w-full"
-					>
-						{item.action.icon && (
-							<span className={`${item.action.icon} w-4 h-4 mr-1`} />
+					<div className={`w-full ${item.action.menu?.length ? "join" : ""}`}>
+						<button
+							onClick={(e) => {
+								e.stopPropagation();
+								item.action!.onClick();
+							}}
+							disabled={item.action.disabled}
+							className="btn btn-sm btn-primary join-item flex-1 w-full"
+						>
+							{item.action.icon && (
+								<span className={`${item.action.icon} w-4 h-4 mr-1`} />
+							)}
+							{item.action.label}
+						</button>
+						{!!item.action.menu?.length && (
+							<div
+								className="dropdown dropdown-end join-item"
+								onClick={(e) => e.stopPropagation()}
+							>
+								<button
+									type="button"
+									tabIndex={0}
+									disabled={item.action.disabled}
+									className="btn btn-sm btn-primary join-item px-2 border-l border-l-primary-content/20"
+									aria-label={`More ${item.action.label} options`}
+								>
+									<span className="icon-[mdi--chevron-down] w-4 h-4" />
+								</button>
+								<ul
+									tabIndex={0}
+									className="dropdown-content menu menu-sm bg-base-100 rounded-box z-50 mt-1 w-44 p-1 shadow border border-base-300"
+								>
+									{item.action.menu.map((entry) => (
+										<li key={entry.label}>
+											<button
+												type="button"
+												onClick={() => {
+													entry.onClick();
+													(document.activeElement as HTMLElement | null)?.blur();
+												}}
+											>
+												{entry.icon && <span className={`${entry.icon} w-4 h-4`} />}
+												{entry.label}
+											</button>
+										</li>
+									))}
+								</ul>
+							</div>
 						)}
-						{item.action.label}
-					</button>
+					</div>
 				</div>
 			)}
 		</div>
