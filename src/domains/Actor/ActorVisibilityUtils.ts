@@ -36,6 +36,24 @@ export function redactActorName(name: string): string {
 }
 
 /**
+ * `text` with every occurrence of the given actors' names redacted.
+ * shortcut: plain substring match, so a visible name that contains a redacted
+ * one ("Goblin Archer" vs "Goblin") is partly blocked too; stamp name spans on
+ * the text if that ever matters.
+ */
+export function redactActorNames(
+	text: string,
+	actors: readonly Pick<Actor, "Name">[]
+): string {
+	// Longest first, so "Goblin" can't leave the " [B]" of "Goblin [B]" behind.
+	const names = actors.map((a) => a.Name).sort((a, b) => b.length - a.length);
+	return names.reduce(
+		(out, name) => (name ? out.split(name).join(redactActorName(name)) : out),
+		text
+	);
+}
+
+/**
  * Sets an actor's Hidden state at spawn / scenario restore, clearing the field
  * rather than storing a stale value the roster or template carried over.
  * Runtime toggling goes through actor:edit.

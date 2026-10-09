@@ -15,6 +15,8 @@ import { LogEntry, LogCategory } from "./Log";
 import { LogUtils } from "./LogUtils";
 import { getMentionTargets, parseMentions } from "./MentionUtils";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { redactActorNames } from "../Actor/ActorVisibilityUtils";
+import { useUnseenLogActors } from "./useUnseenLogActors";
 
 // ============================================================================
 // CATEGORY PALETTE
@@ -128,6 +130,12 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 		[campaign.GameState.Characters]
 	);
 
+	// Names of actors this player can't see are blocked out, in the line and in
+	// what search matches against (so a search can't confirm a hidden name).
+	const getUnseenActors = useUnseenLogActors();
+	const redact = (entry: LogEntry, text: string) =>
+		redactActorNames(text, getUnseenActors(entry));
+
 	// --- Filters (persisted) -------------------------------------------------
 	const [hiddenCategories, setHiddenCategories] = useState<Set<LogCategory>>(
 		() => {
@@ -170,10 +178,12 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 		const query = searchQuery.toLowerCase();
 		return categoryFilteredLog.filter(
 			(entry) =>
-				entry.Action.toLowerCase().includes(query) ||
+				redactActorNames(entry.Action, getUnseenActors(entry))
+					.toLowerCase()
+					.includes(query) ||
 				entry.Details?.toLowerCase().includes(query)
 		);
-	}, [categoryFilteredLog, searchQuery]);
+	}, [categoryFilteredLog, searchQuery, getUnseenActors]);
 
 	const displayedLog = useMemo(() => {
 		const total = searchFilteredLog.length;
@@ -304,7 +314,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 			const character = campaign.GameState.Characters.find(
 				(c) => c.Id === entry.ActorId
 			);
-			return character?.Name || "Player";
+			return redact(entry, character?.Name || "Player");
 		}
 		if (entry.Category === "dice" || entry.Category === "chat") return "DM";
 		return "System";
@@ -320,7 +330,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	// Render a chat message with its @mentions highlighted; the chip for a
 	// mention that targets the current viewer is filled rather than tinted.
 	const renderMessageBody = (entry: LogEntry): React.ReactNode => {
-		if (entry.Category !== "chat") return entry.Action;
+		if (entry.Category !== "chat") return redact(entry, entry.Action);
 		const { matches } = parseMentions(entry.Action, mentionTargets);
 		if (matches.length === 0) return entry.Action;
 

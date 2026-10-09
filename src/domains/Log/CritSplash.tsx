@@ -27,6 +27,9 @@ import { isCritRoll, getCritRollValue } from "../../utils/DiceUtils";
 import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
 import { ImageService } from "../../services/ImageService";
 import { Campaign } from "../Campaign/Campaign";
+import type { Actor } from "../Actor/Actor";
+import { redactActorNames } from "../Actor/ActorVisibilityUtils";
+import { useUnseenLogActors } from "./useUnseenLogActors";
 import "./CritSplash.css";
 
 // Only surface crits from the last few seconds (mirrors LogAlerts) so opening a
@@ -91,14 +94,21 @@ function resolveActor(campaign: Campaign, actorId: string) {
 	return null;
 }
 
-function toCritEvent(entry: LogEntry, campaign: Campaign): CritEvent {
+function toCritEvent(
+	entry: LogEntry,
+	campaign: Campaign,
+	unseen: readonly Actor[]
+): CritEvent {
 	const actor = entry.ActorId ? resolveActor(campaign, entry.ActorId) : null;
 	const message = ((actor as any)?.CritMessage as string | undefined) || "CRITICAL!";
+	// A crit by an actor this player can't see still splashes, but with the name
+	// blocked out and no portrait (the picture would name it just as well).
+	const isUnseen = unseen.some((a) => a.Id === entry.ActorId);
 	return {
 		id: entry.Id,
 		message,
-		name: actor?.Name || "",
-		imageId: actor?.Image,
+		name: redactActorNames(actor?.Name || "", unseen),
+		imageId: isUnseen ? undefined : actor?.Image,
 		color: actor?.Color || "#38468a",
 		rollValue: getCritRollValue(entry) ?? 20,
 	};
@@ -263,6 +273,7 @@ export function CritSplash() {
 	const campaign = CampaignUtils.getActiveCampaign(context);
 	const userRole = context.User.Role;
 	const splashEnabled = AppSettingUtils.getCritSplashEnabled(context);
+	const getUnseenActors = useUnseenLogActors();
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const processedRef = useRef<Set<string>>(new Set());
@@ -286,7 +297,10 @@ export function CritSplash() {
 		// these crits; when disabled, LogAlerts surfaces them as toasts instead.
 		fresh.forEach((e) => processedRef.current.add(e.Id));
 		if (!splashEnabled) return;
-		setQueue((q) => [...q, ...fresh.map((e) => toCritEvent(e, campaign))]);
+		setQueue((q) => [
+			...q,
+			...fresh.map((e) => toCritEvent(e, campaign, getUnseenActors(e))),
+		]);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [campaign.Log, campaign.LogHead, campaign.Log.length, userRole, splashEnabled]);
 

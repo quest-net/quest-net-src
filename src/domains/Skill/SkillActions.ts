@@ -340,6 +340,8 @@ export const SkillActions = {
 						level: "important",
 						visibility,
 						actorId: params.actorId,
+						// Lets the log redact the target's name for players who can't see it.
+						targetId: params.targetActorId,
 						rollOutcome: getRollOutcome(rollResult),
 					},
 					context

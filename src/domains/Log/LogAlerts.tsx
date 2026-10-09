@@ -8,6 +8,8 @@ import { LogUtils } from "./LogUtils";
 import { DM_MENTION_ID } from "./MentionUtils";
 import { isDiceRoll, isCritRoll, isFumbleRoll } from "../../utils/DiceUtils";
 import { AppSettingUtils } from "../AppSetting/AppSettingUtils";
+import { redactActorNames } from "../Actor/ActorVisibilityUtils";
+import { useUnseenLogActors } from "./useUnseenLogActors";
 
 interface Alert {
 	id: string;
@@ -28,6 +30,7 @@ export function LogAlerts() {
 	// When the full-screen crit splash is disabled, crits fall back to ordinary
 	// log alert toasts instead of being suppressed here.
 	const critSplashEnabled = AppSettingUtils.getCritSplashEnabled(context);
+	const getUnseenActors = useUnseenLogActors();
 
 	// True when this entry @mentions the current viewer (their selected
 	// character, or the DM via the "DM" sentinel).
@@ -181,7 +184,7 @@ export function LogAlerts() {
 								{isCrit && `${critMessage} `}
 								{isFumble && ""}
 								{isMention && `💬 ${getSenderName(alert.entry)}: `}
-								{alert.entry.Action}
+								{redactActorNames(alert.entry.Action, getUnseenActors(alert.entry))}
 							</h3>
 							{alert.entry.Details && (
 								<div className={`text-xs opacity-70 leading-tight mt-0.5 ${isCrit ? "text-success-content" : ""
