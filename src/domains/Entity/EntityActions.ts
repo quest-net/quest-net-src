@@ -5,6 +5,7 @@ import { Entity } from "./Entity";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
+import { setActorHidden } from "../Actor/ActorVisibilityUtils";
 import { getVoxelSpawnPosition, getVoxelTerrainById } from "../VoxelTerrain/VoxelTerrainQueries";
 import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
 import { EntityUtils } from "./EntityUtils";
@@ -66,6 +67,8 @@ export const EntityActions = {
 			// Used by scenario load to preserve identity so re-loading the same
 			// scenario does not duplicate the entity.
 			instanceId?: string;
+			// Spawn invisible to players (see Actor.Hidden).
+			hidden?: boolean;
 		},
 		context: Context
 	): void {
@@ -131,6 +134,7 @@ export const EntityActions = {
 			Id: params.instanceId ?? crypto.randomUUID(), // New ID for the instance
 			Color: template.Color ?? ACTOR_DEFAULT_COLORS.ENTITY,
 		};
+		setActorHidden(instance, params.hidden);
 		const voxelSpawnPosition = getVoxelSpawnPosition(
 			campaign,
 			targetTerrainId,

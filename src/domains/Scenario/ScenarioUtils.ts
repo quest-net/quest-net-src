@@ -36,6 +36,7 @@ export function buildCapturePlacements(campaign: Campaign): ActorPlacement[] {
             Type: "character",
             ActorId: character.Id,
             Position: { ...character.Position },
+            ...(character.Hidden ? { Hidden: true } : {}),
         });
     }
 
@@ -55,6 +56,7 @@ export function buildCapturePlacements(campaign: Campaign): ActorPlacement[] {
                     TemplateId: snapshot.Id,
                     UsesLeft: snapshot.UsesLeft,
                     Position: { ...entity.Position },
+                    ...(entity.Hidden ? { Hidden: true } : {}),
                 });
             }
             continue;
@@ -74,6 +76,7 @@ export function buildCapturePlacements(campaign: Campaign): ActorPlacement[] {
                 ActorId: entity.Id,
                 TemplateId: template.Id,
                 Position: { ...entity.Position },
+                ...(entity.Hidden ? { Hidden: true } : {}),
             });
         }
     }

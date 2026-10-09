@@ -10,19 +10,20 @@ import type { Actor } from "./Actor";
 
 /**
  * Whether `user` may see (render, list, select, inspect, target) `actor`.
- * An actor in `outOfSight` (the line-of-sight result from
- * useOutOfSightActorIds) is invisible to players. A player always sees the
- * character they play.
+ * A hidden actor is invisible to players, and so is one in `outOfSight` (the
+ * line-of-sight result from useOutOfSightActorIds -- required, so no view can
+ * apply one rule and forget the other). A player always sees the character
+ * they play.
  */
 export function isActorVisibleToUser(
-	actor: Pick<Actor, "Id">,
+	actor: Pick<Actor, "Id" | "Hidden">,
 	user: Pick<User, "Role" | "SelectedCharacters">,
 	roomCode: string,
 	outOfSight: ReadonlySet<string>
 ): boolean {
 	if (user.Role === "dm") return true;
 	if (user.SelectedCharacters?.[roomCode] === actor.Id) return true;
-	return !outOfSight.has(actor.Id);
+	return !actor.Hidden && !outOfSight.has(actor.Id);
 }
 
 /**
@@ -32,4 +33,14 @@ export function isActorVisibleToUser(
  */
 export function redactActorName(name: string): string {
 	return "█".repeat(name.length);
+}
+
+/**
+ * Sets an actor's Hidden state at spawn / scenario restore, clearing the field
+ * rather than storing a stale value the roster or template carried over.
+ * Runtime toggling goes through actor:edit.
+ */
+export function setActorHidden(actor: Pick<Actor, "Hidden">, hidden: boolean | undefined): void {
+	if (hidden) actor.Hidden = true;
+	else delete actor.Hidden;
 }

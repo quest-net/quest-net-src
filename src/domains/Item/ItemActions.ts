@@ -5,6 +5,7 @@ import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 import { Item } from "./Item";
 import { Actor, Position } from "../Actor/Actor";
+import { setActorHidden } from "../Actor/ActorVisibilityUtils";
 import { rollDiceFormula, getRollOutcome } from "../../utils/DiceUtils";
 import { syncItemSlotsAfterEdit } from "./ItemUtils";
 import { getAllActors, applyActionCost, applyStatCost, describeUseTarget } from "../Actor/ActorUtils";
@@ -837,7 +838,7 @@ export const ItemActions = {
 	 * Position must be provided explicitly.
 	 */
 	spawn(
-		params: { itemId: string; terrainId: string; position?: Position },
+		params: { itemId: string; terrainId: string; position?: Position; hidden?: boolean },
 		context: Context
 	): void {
 		const campaign = CampaignUtils.getActiveCampaign(context);
@@ -860,6 +861,7 @@ export const ItemActions = {
 			campaign.Settings.StatDefinitions,
 			campaign.Settings.ActionDefinitions
 		);
+		setActorHidden(entity, params.hidden);
 		campaign.GameState.Entities.push(entity);
 		if (getVoxelTerrainById(campaign, params.terrainId)) {
 			VoxelTerrainUtils.repairActors(context);

@@ -5,6 +5,7 @@ import { Character } from "./Character";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
+import { setActorHidden } from "../Actor/ActorVisibilityUtils";
 import { getVoxelSpawnPosition, getVoxelTerrainById } from "../VoxelTerrain/VoxelTerrainQueries";
 import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
 
@@ -101,7 +102,12 @@ export const CharacterActions = {
 	 * DM only - handled by ACTION_REGISTRY
 	 */
 	spawn(
-		params: { characterId: string; terrainId?: string; position?: Position },
+		params: {
+			characterId: string;
+			terrainId?: string;
+			position?: Position;
+			hidden?: boolean;
+		},
 		context: Context
 	): void {
 		const campaign = CampaignUtils.getActiveCampaign(context);
@@ -142,6 +148,7 @@ export const CharacterActions = {
 		} else {
 			character.Position = voxelSpawnPosition ?? { terrainId, x: 0, y: 0, h: 0 };
 		}
+		setActorHidden(character, params.hidden);
 
 		// Add to GameState
 		campaign.GameState.Characters.push(character);
@@ -199,6 +206,8 @@ export const CharacterActions = {
 
 		// MOVE: Remove from GameState
 		const [character] = campaign.GameState.Characters.splice(gameStateIndex, 1);
+		// Hidden is a field-only state; a rostered character is never hidden.
+		delete character.Hidden;
 
 		// Add back to roster
 		campaign.CharacterRoster.push(character);

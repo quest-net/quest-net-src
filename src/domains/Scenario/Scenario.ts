@@ -43,6 +43,9 @@ export interface ActorPlacement {
     // unlimited (matches InventorySlot.UsesLeft semantics).
     UsesLeft?: number;
 
+    // Whether the actor was hidden from players at capture time (Actor.Hidden).
+    Hidden?: boolean;
+
     Position: Position;
 }
 

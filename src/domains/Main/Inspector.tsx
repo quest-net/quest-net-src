@@ -511,6 +511,24 @@ function ActorInfoTab({
 				)}
 				{isDM && (
 					<div className="flex gap-2 shrink-0">
+						<ToggleButton
+							active={!!actor.Hidden}
+							kind="independent"
+							quiet
+							onClick={() =>
+								actionService.execute("actor:edit", {
+									actorId: actor.Id,
+									updates: { Hidden: !actor.Hidden },
+								})
+							}
+							className="btn-sm btn-square"
+							disabled={!actionService}
+							title={actor.Hidden ? "Hidden from players -- click to reveal" : "Hide from players"}
+						>
+							<span
+								className={`${actor.Hidden ? "icon-[mdi--eye-off]" : "icon-[mdi--eye]"} w-4 h-4`}
+							/>
+						</ToggleButton>
 						<button
 							onClick={() => setShowObjectPicker(true)}
 							className="btn btn-sm btn-primary gap-1"

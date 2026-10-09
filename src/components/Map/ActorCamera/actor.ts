@@ -78,5 +78,6 @@ function createActorDescriptor(
 		size: actor.actor.Size ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.SIZE,
 		cutout: false,
 		canFly: actor.actor.CanFly ?? false,
+		hidden: !!actor.actor.Hidden,
 	};
 }

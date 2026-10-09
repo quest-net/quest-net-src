@@ -32,6 +32,7 @@ import {
 	ACTOR_TOKEN_RENDER_ORDER,
 	ACTOR_TOKEN_SHADOW,
 	ACTOR_TOKEN_STANDEE_ALPHA_TEST,
+	ACTOR_TOKEN_HIDDEN_OPACITY,
 } from "./actorTokenConstants";
 import { buildActorTokenDescriptors } from "./actorTokenDescriptors";
 import {
@@ -242,6 +243,7 @@ function createActorVisualSignature(
 		actor.imageId ?? "",
 		actor.cutout ? "cutout" : "opaque",
 		actor.size,
+		actor.hidden ? "hidden" : "shown",
 		isDM ? "dm" : "player",
 		performanceMode ? "perf" : "hi-res",
 	].join("|");
@@ -510,9 +512,11 @@ function createStandeeMesh(
 ): THREE.Mesh {
 	const { width, height } = getActorTokenWorldSize(actor.size, actor.cutout);
 	const geometry = new THREE.PlaneGeometry(width, height);
+	const opacity = actor.hidden ? ACTOR_TOKEN_HIDDEN_OPACITY : 1;
 	const material = new THREE.MeshBasicMaterial({
 		map: texture,
 		transparent: true,
+		opacity,
 		depthTest: true,
 		// Write depth (gated by the alpha test) so screen-space depth effects --
 		// chiefly the volumetric fog pass -- occlude against the figure's
@@ -520,7 +524,8 @@ function createStandeeMesh(
 		// test discards the transparent margins so the depth write doesn't punch a
 		// full square hole. See ACTOR_TOKEN_STANDEE_ALPHA_TEST.
 		depthWrite: true,
-		alphaTest: ACTOR_TOKEN_STANDEE_ALPHA_TEST,
+		// Opacity multiplies alpha before the test, so scale the cutoff with it.
+		alphaTest: ACTOR_TOKEN_STANDEE_ALPHA_TEST * opacity,
 		side: THREE.DoubleSide,
 	});
 	attachFogDepthOverride(material);
@@ -763,6 +768,7 @@ function createSupportGroup(
 } {
 	const colors: ColorHandle[] = [];
 	const haloOpacities: OpacityHandle[] = [];
+	const fade = actor.hidden ? ACTOR_TOKEN_HIDDEN_OPACITY : 1;
 
 	if (airborne) {
 		const halo = createHaloMesh(actor);
@@ -773,19 +779,27 @@ function createSupportGroup(
 		haloOpacities.push(
 			{
 				material: halo.outerMaterial,
-				defaultOpacity: ACTOR_TOKEN_HALO.OUTER_DEFAULT_OPACITY,
-				selectedOpacity: ACTOR_TOKEN_HALO.OUTER_SELECTED_OPACITY,
+				defaultOpacity: ACTOR_TOKEN_HALO.OUTER_DEFAULT_OPACITY * fade,
+				selectedOpacity: ACTOR_TOKEN_HALO.OUTER_SELECTED_OPACITY * fade,
 			},
 			{
 				material: halo.innerMaterial,
-				defaultOpacity: ACTOR_TOKEN_HALO.INNER_DEFAULT_OPACITY,
-				selectedOpacity: ACTOR_TOKEN_HALO.INNER_SELECTED_OPACITY,
+				defaultOpacity: ACTOR_TOKEN_HALO.INNER_DEFAULT_OPACITY * fade,
+				selectedOpacity: ACTOR_TOKEN_HALO.INNER_SELECTED_OPACITY * fade,
 			}
 		);
+		halo.outerMaterial.opacity *= fade;
+		halo.innerMaterial.opacity *= fade;
 		return { group: halo.group, colors, haloOpacities };
 	}
 
 	const base = createBaseMesh(actor);
+	if (actor.hidden) {
+		for (const material of [base.baseMaterial, base.accentMaterial]) {
+			material.transparent = true;
+			material.opacity = fade;
+		}
+	}
 	colors.push(
 		{ material: base.baseMaterial, defaultHex: ACTOR_TOKEN_COLORS.BASE },
 		{ material: base.accentMaterial, defaultHex: base.accentDefaultHex }

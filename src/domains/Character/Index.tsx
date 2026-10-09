@@ -23,12 +23,13 @@ export function CharacterIndex() {
 	const [showObjectPicker, setShowObjectPicker] = useState(false);
 	const [selectedActorIds, setSelectedActorIds] = useState<string[]>([]);
 
-	const handleSpawn = (characterId: string) => {
+	const handleSpawn = (characterId: string, hidden = false) => {
 		if (!actionService) return;
 
 		actionService.execute("character:spawn", {
 			characterId: characterId,
 			terrainId: viewedTerrainId ?? "",
+			hidden,
 		});
 	};
 
@@ -113,6 +114,13 @@ export function CharacterIndex() {
 			label: "Spawn",
 			icon: "icon-[mdi--play]",
 			onClick: () => handleSpawn(character.Id),
+			menu: [
+				{
+					label: "Spawn hidden",
+					icon: "icon-[mdi--eye-off]",
+					onClick: () => handleSpawn(character.Id, true),
+				},
+			],
 		},
 	}));
 

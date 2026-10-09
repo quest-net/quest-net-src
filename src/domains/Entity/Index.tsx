@@ -23,12 +23,13 @@ export function EntityIndex() {
 	const [showObjectPicker, setShowObjectPicker] = useState(false);
 	const [selectedActorIds, setSelectedActorIds] = useState<string[]>([]);
 
-	const handleSpawn = (entityId: string) => {
+	const handleSpawn = (entityId: string, hidden = false) => {
 		if (!actionService) return;
 
 		actionService.execute("entity:spawn", {
 			entityId: entityId,
 			terrainId: viewedTerrainId ?? "",
+			hidden,
 		});
 	};
 
@@ -118,6 +119,13 @@ export function EntityIndex() {
 			label: "Spawn",
 			icon: "icon-[mdi--play]",
 			onClick: () => handleSpawn(entity.Id),
+			menu: [
+				{
+					label: "Spawn hidden",
+					icon: "icon-[mdi--eye-off]",
+					onClick: () => handleSpawn(entity.Id, true),
+				},
+			],
 		},
 	}));
 

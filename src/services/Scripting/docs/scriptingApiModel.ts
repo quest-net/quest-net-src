@@ -63,6 +63,7 @@ export const ACTION_DOCS: Record<string, ActionDoc> = {
 	},
 	"actor:spawn": {
 		whenFires: "An actor is placed onto the field (character from roster, or entity cloned from a template).",
+		paramsNote: "params.hidden (boolean) spawns the actor invisible to players.",
 	},
 	"actor:despawn": {
 		whenFires: "An active actor leaves the field (character back to roster, entity deleted).",
@@ -70,7 +71,7 @@ export const ACTION_DOCS: Record<string, ActionDoc> = {
 	"actor:edit": {
 		whenFires:
 			"Any actor field is written — INCLUDING stat changes, since changeStat/setStat route through actor:edit. The catch-all for actor mutation.",
-		paramsNote: "params.actorId + params.updates (a partial actor). There is no stat-specific trigger.",
+		paramsNote: "params.actorId + params.updates (a partial actor). There is no stat-specific trigger. updates.Hidden (boolean) hides an active actor from players or reveals it.",
 	},
 	"actor:delete": {
 		whenFires: "An actor is deleted from the roster/templates (not the field). Not scriptable.",

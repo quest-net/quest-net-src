@@ -84,6 +84,11 @@ export const ACTOR_TOKEN_RENDER_ORDER = {
 // writing depth for the faint anti-aliased fringe.
 export const ACTOR_TOKEN_STANDEE_ALPHA_TEST = 0.5;
 
+// Opacity multiplier for a hidden actor's token (Actor.Hidden), as seen by the
+// DM (and a hidden character's owner). The standee's alpha test is scaled by the
+// same factor so the silhouette cutoff still sits at texel alpha 0.5.
+export const ACTOR_TOKEN_HIDDEN_OPACITY = 0.4;
+
 export const ACTOR_TOKEN_PLACEMENT = {
 	STANDEE_BASE_GAP: 0.05,
 	CUTOUT_STANDEE_BASE_GAP: 0.01,

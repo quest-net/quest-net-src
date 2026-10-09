@@ -26,6 +26,7 @@ export function buildActorTokenDescriptors(
 			size: character.Size ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.SIZE,
 			cutout: isCutout(character.Image),
 			canFly: character.CanFly ?? false,
+			hidden: !!character.Hidden,
 		});
 	}
 
@@ -41,6 +42,7 @@ export function buildActorTokenDescriptors(
 			size: entity.Size ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.SIZE,
 			cutout: isCutout(entity.Image),
 			canFly: entity.CanFly ?? false,
+			hidden: !!entity.Hidden,
 		});
 	}
 

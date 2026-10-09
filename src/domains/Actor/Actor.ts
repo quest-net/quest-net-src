@@ -48,6 +48,16 @@ export interface Actor {
 
 	// Optional
 	Tags?: string[];
+	/**
+	 * DM-controlled invisibility for a spawned actor. Players never see a hidden
+	 * actor (except its owner, for a character); the DM sees it dimmed. It still
+	 * acts: its turns, rolls and log lines show for players with the name blocked
+	 * out (redactActorName), never hidden. Display-only: the flag syncs like any
+	 * other field so every client's campaign stays identical. Never inherited
+	 * from a template -- set at spawn (`hidden` param) or toggled afterwards
+	 * through actor:edit like any other field.
+	 */
+	Hidden?: boolean;
 
 	// Scripting. Characters carry their hooks on the object itself; a spawned
 	// entity is a structuredClone of its template, so template hooks ride along on

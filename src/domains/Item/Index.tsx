@@ -37,12 +37,13 @@ export function ItemIndex() {
 		actionService.execute("item:bulkDelete", { itemIds });
 	};
 
-	const handleSpawnItem = (itemId: string) => {
+	const handleSpawnItem = (itemId: string, hidden = false) => {
 		if (!actionService) return;
 
 		actionService.execute("item:spawn", {
 			itemId,
 			terrainId: viewedTerrainId ?? "",
+			hidden,
 		});
 	};
 
@@ -61,6 +62,13 @@ export function ItemIndex() {
 							label: "Spawn",
 							icon: "icon-[mdi--map-marker-plus]",
 							onClick: () => handleSpawnItem(it.Id),
+							menu: [
+								{
+									label: "Spawn hidden",
+									icon: "icon-[mdi--eye-off]",
+									onClick: () => handleSpawnItem(it.Id, true),
+								},
+							],
 						},
 					}
 				: {}),

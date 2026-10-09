@@ -111,7 +111,7 @@ export const ActorActions = {
 	 * placement params.
 	 */
 	spawn(
-		params: { actorId: string; terrainId?: string; position?: Position },
+		params: { actorId: string; terrainId?: string; position?: Position; hidden?: boolean },
 		context: Context
 	): void {
 		const kind = ActorUtils.getActorKind(context, params.actorId);
@@ -121,6 +121,7 @@ export const ActorActions = {
 					characterId: params.actorId,
 					terrainId: params.terrainId,
 					position: params.position,
+					hidden: params.hidden,
 				},
 				context
 			);
@@ -130,6 +131,7 @@ export const ActorActions = {
 					entityId: params.actorId,
 					terrainId: params.terrainId,
 					position: params.position,
+					hidden: params.hidden,
 				},
 				context
 			);

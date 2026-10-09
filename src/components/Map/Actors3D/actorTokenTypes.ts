@@ -24,6 +24,8 @@ export interface ActorTokenDescriptor {
 	// Drives the height-drag interaction: only fliers can change altitude
 	// by dragging the selected token.
 	canFly: boolean;
+	// Actor.Hidden: rendered translucent (only the DM / owner ever receive it).
+	hidden: boolean;
 }
 
 /** Imperative bridge for camera/control systems that must follow the exact

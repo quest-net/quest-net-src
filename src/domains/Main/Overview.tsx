@@ -244,6 +244,17 @@ export function Overview({ onInspectActor }: OverviewProps) {
 		setSelectedActorIds([]);
 	};
 
+	const handleSetHidden = (actorIds: string[], hidden: boolean) => {
+		if (!actionService) return;
+
+		actorIds.forEach((actorId) => {
+			actionService.execute("actor:edit", {
+				actorId,
+				updates: { Hidden: hidden },
+			});
+		});
+	};
+
 	const handleMoveSelected = (toTerrainId: string) => {
 		if (!actionService || selectedActorIds.length === 0) return;
 
@@ -428,6 +439,26 @@ export function Overview({ onInspectActor }: OverviewProps) {
 								<span className="icon-[mdi--account-arrow-right] w-4 h-4" />
 								Move
 							</button>
+							<div className="join">
+								<button
+									type="button"
+									onClick={() => handleSetHidden(selectedActorIds, true)}
+									disabled={selectedActorIds.length === 0}
+									className="btn btn-sm join-item"
+									title="Hide selected actors from players"
+								>
+									<span className="icon-[mdi--eye-off] w-4 h-4" />
+								</button>
+								<button
+									type="button"
+									onClick={() => handleSetHidden(selectedActorIds, false)}
+									disabled={selectedActorIds.length === 0}
+									className="btn btn-sm join-item"
+									title="Reveal selected actors to players"
+								>
+									<span className="icon-[mdi--eye] w-4 h-4" />
+								</button>
+							</div>
 						</div>
 					</div>
 				</div>
@@ -518,6 +549,19 @@ export function Overview({ onInspectActor }: OverviewProps) {
 									) : (
 										<div />
 									)}
+									<ToggleButton
+										active={!!entry.actor.Hidden}
+										kind="independent"
+										quiet
+										data-card-action
+										onClick={() => handleSetHidden([entry.actor.Id], !entry.actor.Hidden)}
+										className="btn-xs btn-square shrink-0"
+										title={entry.actor.Hidden ? "Hidden from players -- click to reveal" : "Hide from players"}
+									>
+										<span
+											className={`${entry.actor.Hidden ? "icon-[mdi--eye-off]" : "icon-[mdi--eye]"} w-3.5 h-3.5`}
+										/>
+									</ToggleButton>
 									<span
 										className={`badge badge-sm shrink-0 ${entry.kind === "character" ? "badge-primary" : "badge-error"}`}
 									>

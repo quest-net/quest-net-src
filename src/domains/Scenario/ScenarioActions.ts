@@ -10,6 +10,7 @@ import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { createItemEntity } from "../Item/ItemDropUtils";
 import { buildCapturePlacements } from "./ScenarioUtils";
+import { setActorHidden } from "../Actor/ActorVisibilityUtils";
 
 /**
  * Scenario action handlers
@@ -130,6 +131,7 @@ export const ScenarioActions = {
                 );
                 if (onField) {
                     onField.Position = { ...placement.Position };
+                    setActorHidden(onField, placement.Hidden);
                 } else if (
                     campaign.CharacterRoster.some((c) => c.Id === placement.ActorId)
                 ) {
@@ -137,6 +139,7 @@ export const ScenarioActions = {
                         {
                             characterId: placement.ActorId,
                             position: placement.Position,
+                            hidden: placement.Hidden,
                         },
                         context
                     );
@@ -150,8 +153,10 @@ export const ScenarioActions = {
                     (e) => e.Id === placement.ActorId
                 );
                 if (onField) {
-                    // Already present — keep its state as-is, just reposition.
+                    // Already present — keep its state as-is; restore only the
+                    // saved position and hidden flag.
                     onField.Position = { ...placement.Position };
+                    setActorHidden(onField, placement.Hidden);
                 } else if (
                     campaign.EntityTemplates.some((t) => t.Id === placement.TemplateId)
                 ) {
@@ -163,6 +168,7 @@ export const ScenarioActions = {
                             position: placement.Position,
                             instanceId: placement.ActorId,
                             repairActors: false,
+                            hidden: placement.Hidden,
                         },
                         context
                     );
@@ -177,6 +183,7 @@ export const ScenarioActions = {
             );
             if (onField) {
                 onField.Position = { ...placement.Position };
+                setActorHidden(onField, placement.Hidden);
                 continue;
             }
             const template = campaign.ItemTemplates.find(
@@ -193,6 +200,7 @@ export const ScenarioActions = {
             );
             // Preserve the saved instance Id for idempotent re-loads.
             entity.Id = placement.ActorId;
+            setActorHidden(entity, placement.Hidden);
             campaign.GameState.Entities.push(entity);
         }
 
