@@ -87,6 +87,7 @@ const glass246Material: TerrainMaterial = {
 	geometry: {
 		vertexColors: false,
 	},
+	seeThrough: true,
 	factory: createGlass246Material,
 	special: {
 		paletteIndex: 246,

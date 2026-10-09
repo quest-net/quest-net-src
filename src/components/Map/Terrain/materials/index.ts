@@ -221,6 +221,14 @@ export function isPassableMaterial(colorIndex: number): boolean {
 	return PASSABLE_PALETTE_INDICES.has(colorIndex);
 }
 
+// Palette indices whose material is flagged `seeThrough`. Still solid for
+// collision / movement, but ignored by actor line-of-sight rays.
+const SEE_THROUGH_PALETTE_INDICES: ReadonlySet<number> = new Set(
+	SPECIAL_TERRAIN_MATERIALS
+		.filter((m) => m.seeThrough === true)
+		.map((m) => m.special.paletteIndex)
+);
+
 // Palette indices whose material is flagged `volumetric`. Excluded from the
 // greedy-meshed render buckets and the AO occupancy snapshot; routed instead
 // into the fog-density volume the volumetric pass raymarches.
@@ -371,11 +379,12 @@ const EDITOR_COLOR_BY_PALETTE_INDEX: ReadonlyMap<number, number> = new Map(
 		.map((m) => [m.special.paletteIndex, parseInt(m.special.swatchColor.slice(1), 16)] as const)
 );
 
-// Push passable + editor-color rule sets down to the data layer so
-// VoxelTerrainIndex and VoxelTerrainEditorUtils can read them without importing
-// upward into this rendering module.
+// Push passable + see-through + editor-color rule sets down to the data layer
+// so VoxelTerrainIndex and VoxelTerrainEditorUtils can read them without
+// importing upward into this rendering module.
 registerTerrainMaterialRules({
 	passableIndices: PASSABLE_PALETTE_INDICES,
+	seeThroughIndices: SEE_THROUGH_PALETTE_INDICES,
 	editorColors: EDITOR_COLOR_BY_PALETTE_INDEX,
 });
 

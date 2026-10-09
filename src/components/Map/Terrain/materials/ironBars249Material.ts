@@ -200,6 +200,7 @@ const ironBars249Material: TerrainMaterial = {
 	geometry: {
 		vertexColors: false,
 	},
+	seeThrough: true,
 	factory: createIronBars249Material,
 	special: {
 		paletteIndex: 249,

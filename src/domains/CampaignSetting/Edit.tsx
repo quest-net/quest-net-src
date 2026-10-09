@@ -646,6 +646,46 @@ function renderCategory(category: SettingsCategory, args: CategoryRenderArgs) {
 								className="toggle toggle-primary"
 							/>
 						</FormField>
+
+						<FormField label="Players can see entities and items out of their line of sight">
+							<input
+								type="checkbox"
+								checked={
+									settings.VisibilitySettings.playersSeeOutOfSightEntities !==
+									false
+								}
+								onChange={(e) =>
+									handleSettingChange(
+										"VisibilitySettings",
+										"playersSeeOutOfSightEntities",
+										e.target.checked
+									)
+								}
+								className="toggle toggle-primary"
+							/>
+						</FormField>
+
+						<FormField label="Players can see party members out of their line of sight">
+							<input
+								type="checkbox"
+								disabled={
+									settings.VisibilitySettings.playersSeeOutOfSightEntities !==
+									false
+								}
+								checked={
+									settings.VisibilitySettings.playersSeeOutOfSightPartyMembers !==
+									false
+								}
+								onChange={(e) =>
+									handleSettingChange(
+										"VisibilitySettings",
+										"playersSeeOutOfSightPartyMembers",
+										e.target.checked
+									)
+								}
+								className="toggle toggle-primary"
+							/>
+						</FormField>
 					</FormGrid>
 				</FormSection>
 			);

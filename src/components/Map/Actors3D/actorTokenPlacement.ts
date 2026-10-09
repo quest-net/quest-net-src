@@ -7,7 +7,7 @@ import {
 } from "./actorTokenConstants";
 import type { ActorTokenDescriptor } from "./actorTokenTypes";
 
-export function getActorSupportHeight(actor: ActorTokenDescriptor, terrain: VoxelTerrain): number {
+export function getActorSupportHeight(actor: Pick<ActorTokenDescriptor, "position">, terrain: VoxelTerrain): number {
 	const h = actor.position.h ?? 0;
 	const index = getVoxelTerrainIndex(terrain);
 	const key = `${actor.position.x},${actor.position.y}`;
@@ -34,7 +34,7 @@ export function getActorSupportHeight(actor: ActorTokenDescriptor, terrain: Voxe
 	return supportHeight ?? h;
 }
 
-export function getActorBaseHeight(actor: ActorTokenDescriptor, terrain: VoxelTerrain): number {
+export function getActorBaseHeight(actor: Pick<ActorTokenDescriptor, "position">, terrain: VoxelTerrain): number {
 	const h = Number(actor.position.h);
 	const supportHeight = getActorSupportHeight(actor, terrain);
 	return Number.isFinite(h) ? Math.max(h, supportHeight) : supportHeight;
@@ -54,7 +54,7 @@ export function terrainHeightToWorldY(height: number): number {
 }
 
 export function getActorGroundPosition(
-	actor: ActorTokenDescriptor,
+	actor: Pick<ActorTokenDescriptor, "position">,
 	terrain: VoxelTerrain
 ): THREE.Vector3 {
 	const offsetX = (terrain.Width - 1) / 2;

@@ -21,7 +21,7 @@ import {
 	type Voxel,
 	type VoxelTerrain,
 } from "../../../domains/VoxelTerrain/VoxelTerrain";
-import { isPassableMaterial } from "../materials/terrainMaterialRules";
+import { isPassableMaterial, isSeeThroughMaterial } from "../materials/terrainMaterialRules";
 import { decodeVoxels, hashVoxels } from "./VoxelDataUtils";
 import {
 	getMaterializedContentHash,
@@ -78,6 +78,8 @@ export interface VoxelTerrainIndex {
 	/** Whether (vx, vy, vz) is inside the voxel grid. The single bounds authority. */
 	inVoxelBounds(vx: number, vy: number, vz: number): boolean;
 	hasVoxel(vx: number, vy: number, vz: number): boolean;
+	/** hasVoxel minus see-through materials (glass, bars): what blocks line of sight. */
+	blocksSight(vx: number, vy: number, vz: number): boolean;
 	isVoxelOccupiedAtTile(tileX: number, tileY: number, voxelY: number): boolean;
 }
 
@@ -320,6 +322,15 @@ export function buildVoxelTerrainIndex(
 			const color = colorAt(vx, vy, vz);
 			// Passable materials are invisible to collision / raycast / FP capsule.
 			return color !== 0 && !isPassableMaterial(color - 1);
+		},
+		blocksSight(vx, vy, vz) {
+			if (!inVoxelBounds(vx, vy, vz)) return false;
+			const color = colorAt(vx, vy, vz);
+			return (
+				color !== 0 &&
+				!isPassableMaterial(color - 1) &&
+				!isSeeThroughMaterial(color - 1)
+			);
 		},
 		isVoxelOccupiedAtTile(tileX, tileY, voxelY) {
 			if (voxelY < 0 || voxelY >= voxelHeight) return false;

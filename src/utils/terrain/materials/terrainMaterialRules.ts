@@ -6,17 +6,19 @@
 // (VoxelTerrainIndex, VoxelTerrainEditorUtils) reads from here instead of
 // importing upward into the rendering layer.
 //
-// Safe defaults before registration: non-passable, no special colors. A
+// Safe defaults before registration: non-passable, opaque, no special colors. A
 // startup side-effect import of the materials index in index.tsx guarantees
 // registration happens before any terrain query runs.
 
 interface TerrainMaterialRules {
 	readonly passableIndices: ReadonlySet<number>;
+	readonly seeThroughIndices: ReadonlySet<number>;
 	readonly editorColors: ReadonlyMap<number, number>;
 }
 
 let rules: TerrainMaterialRules = {
 	passableIndices: new Set(),
+	seeThroughIndices: new Set(),
 	editorColors: new Map(),
 };
 
@@ -26,6 +28,11 @@ export function registerTerrainMaterialRules(r: TerrainMaterialRules): void {
 
 export function isPassableMaterial(colorIndex: number): boolean {
 	return rules.passableIndices.has(colorIndex);
+}
+
+/** Solid for collision, but does not block line of sight (glass, bars). */
+export function isSeeThroughMaterial(colorIndex: number): boolean {
+	return rules.seeThroughIndices.has(colorIndex);
 }
 
 /**

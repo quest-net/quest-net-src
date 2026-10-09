@@ -27,6 +27,8 @@ import {
 import { EntityActionBar } from "./EntityActionBar";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { isActorVisibleToUser } from "../Actor/ActorVisibilityUtils";
+import { useOutOfSightActorIds } from "../../components/Map/useOutOfSightActorIds";
 
 type InspectorTab = "info" | "inventory" | "equipment" | "skills" | "statuses";
 
@@ -38,6 +40,7 @@ export function Inspector() {
 	const myCharacterId = context.User.SelectedCharacters[campaign.RoomCode];
 
 	const isDM = context.User.Role === "dm";
+	const outOfSight = useOutOfSightActorIds();
 
 	if (!selectedActor) {
 		return <EmptyState>Select an actor on the map to inspect</EmptyState>;
@@ -49,7 +52,7 @@ export function Inspector() {
 			? campaign.GameState.Characters.find((c) => c.Id === selectedActor.id)
 			: campaign.GameState.Entities.find((e) => e.Id === selectedActor.id);
 
-	if (!actor) {
+	if (!actor || !isActorVisibleToUser(actor, context.User, campaign.RoomCode, outOfSight)) {
 		return <div>Actor not found</div>;
 	}
 

@@ -128,6 +128,18 @@ export interface VisibilitySettings {
 	playersSeeEntityAttributes?: boolean;
 	/** Whether a player sees an entity's per-turn action counts (action bubbles). */
 	playersSeeEntityActions?: boolean;
+	/**
+	 * Line-of-sight gate: when false, a player only sees the entities and dropped
+	 * items their own character has an unobstructed line to (see
+	 * components/Map/actorLineOfSight). Computed per client, UI-only like the
+	 * gates above. Treated as visible when undefined.
+	 */
+	playersSeeOutOfSightEntities?: boolean;
+	/**
+	 * When false, the line-of-sight gate also covers the other party characters.
+	 * Only applies while playersSeeOutOfSightEntities is false.
+	 */
+	playersSeeOutOfSightPartyMembers?: boolean;
 }
 
 export interface CalendarSettings {

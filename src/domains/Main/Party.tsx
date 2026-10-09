@@ -23,6 +23,8 @@ import {
 import { Character } from "../Character/Character";
 import { isItemEntity } from "../Item/ItemDropUtils";
 import { EmptyState } from "../../components/ui/EmptyState";
+import { isActorVisibleToUser } from "../Actor/ActorVisibilityUtils";
+import { useOutOfSightActorIds } from "../../components/Map/useOutOfSightActorIds";
 
 interface PartyProps {
 	onInspectActor: (actorId: string) => void;
@@ -34,7 +36,15 @@ export function Party({ onInspectActor }: PartyProps) {
 	const { selectActor } = useMapState();
 	const campaign = CampaignUtils.getActiveCampaign(context);
 	const myCharacterId = context.User.SelectedCharacters[campaign.RoomCode];
-	const characters = campaign.GameState.Characters;
+	// Party members this player can't see (hidden, or out of sight when that
+	// setting gates party members) are left out of the party panel; the DM sees
+	// everyone. Initiative still orders the FULL pool below so turn order is
+	// identical on every client; only the display is filtered.
+	const outOfSight = useOutOfSightActorIds();
+	const allCharacters = campaign.GameState.Characters;
+	const characters = allCharacters.filter((character) =>
+		isActorVisibleToUser(character, context.User, campaign.RoomCode, outOfSight)
+	);
 
 	const handleActionsChange = (
 		characterId: string,
@@ -64,12 +74,12 @@ export function Party({ onInspectActor }: PartyProps) {
 		combatState.isActive && charactersHaveInitiative
 			? initiativeMode === "individual"
 				? [
-					...characters,
+					...allCharacters,
 					...campaign.GameState.Entities.filter(
 						(entity) => !isItemEntity(entity)
 					),
 				]
-				: characters
+				: allCharacters
 			: [];
 	const initiativePool = initiativeCandidates.filter((actor) =>
 		hasInitiativeSourceValue(actor, initiativeSettings, campaign.Settings)

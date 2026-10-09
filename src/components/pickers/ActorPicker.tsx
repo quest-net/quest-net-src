@@ -4,6 +4,8 @@ import { Actor } from "../../domains/Actor/Actor";
 import { useQuestContext } from "../../domains/Context/ContextProvider";
 import { CampaignUtils } from "../../domains/Campaign/CampaignUtils";
 import { beginTargeting } from "../Map/Targeting/targetingStore";
+import { isActorVisibleToUser } from "../../domains/Actor/ActorVisibilityUtils";
+import { useOutOfSightActorIds } from "../Map/useOutOfSightActorIds";
 
 interface ActorPickerProps {
     isOpen: boolean;
@@ -43,11 +45,14 @@ export function ActorPicker({
         return selected?.Position.terrainId ?? null;
     }, [context.User, campaign.RoomCode, campaign.GameState.Characters]);
 
+    const outOfSight = useOutOfSightActorIds();
+
     // Prepare data
     const actorTypes = useMemo(() => {
         const onPlayerTerrain = (actor: Actor) =>
-            playerTerrainId === null ||
-            actor.Position.terrainId === playerTerrainId;
+            (playerTerrainId === null ||
+                actor.Position.terrainId === playerTerrainId) &&
+            isActorVisibleToUser(actor, context.User, campaign.RoomCode, outOfSight);
 
         const characters = campaign.GameState.Characters.filter(
             (c) => c.Id !== excludeActorId && onPlayerTerrain(c)
@@ -81,7 +86,7 @@ export function ActorPicker({
         }
 
         return types;
-    }, [campaign.GameState, campaign.Settings.SharedInventories, excludeActorId, includeSharedInventories, playerTerrainId]);
+    }, [campaign.GameState, campaign.Settings.SharedInventories, campaign.RoomCode, context.User, excludeActorId, includeSharedInventories, playerTerrainId, outOfSight]);
 
     const handleConfirm = (selectedIds: string[], _objectType: string, count: number) => {
         if (selectedIds.length > 0) {

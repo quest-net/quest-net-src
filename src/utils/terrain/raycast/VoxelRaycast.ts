@@ -60,6 +60,12 @@ interface VoxelRaycastSpace {
 	 * traversal is unchanged. Kept fully generic here -- callers own the meaning.
 	 */
 	skipVoxel?(vx: number, vy: number, vz: number): boolean;
+	/**
+	 * Optional world-space distance cap along the ray (ray.direction must be
+	 * unit length). Voxels first entered beyond it are not tested, turning the
+	 * ray into a segment. Omitted = unbounded.
+	 */
+	maxDistance?: number;
 }
 
 function raycastVoxelSpace(
@@ -67,6 +73,7 @@ function raycastVoxelSpace(
 	space: VoxelRaycastSpace
 ): VoxelRayHit | null {
 	const { vW, vH, vL, resolution, tW, tL, hasVoxel, skipVoxel } = space;
+	const maxT = space.maxDistance ?? Infinity;
 	// A voxel counts as solid only if occupied AND not skipped (see skipVoxel).
 	const isSolid = skipVoxel
 		? (vx: number, vy: number, vz: number) =>
@@ -147,6 +154,7 @@ function raycastVoxelSpace(
 	}
 
 	if (tExit <= tEntry) return null; // Ray misses grid entirely
+	if (tEntry > maxT) return null; // Segment ends before reaching the grid
 
 	// -------------------------------------------------------------------------
 	// Step 2: advance to the entry point and compute the starting voxel.
@@ -195,6 +203,9 @@ function raycastVoxelSpace(
 	const maxSteps = vW + vH + vL + 8;
 
 	for (let step = 0; step < maxSteps; step++) {
+		// The next voxel is entered at min(tMax); past the cap, the segment is over.
+		if (Math.min(tMaxX, tMaxY, tMaxZ) > maxT) break;
+
 		// Advance to the nearest boundary crossing (tiebreak: X, then Y, then Z).
 		if (tMaxX <= tMaxY && tMaxX <= tMaxZ) {
 			vx += stepX;
@@ -282,4 +293,36 @@ export function raycastVoxelIndex(
 		hasVoxel: (vx, vy, vz) => index.hasVoxel(vx, vy, vz),
 		skipVoxel,
 	});
+}
+
+const sightRay = new THREE.Ray();
+
+/**
+ * Whether the straight world-space segment from `from` to `to` is free of
+ * sight-blocking voxels (index.blocksSight -- see-through materials such as
+ * glass and bars don't count).
+ */
+export function isSightSegmentClear(
+	from: THREE.Vector3,
+	to: THREE.Vector3,
+	index: VoxelTerrainIndex,
+): boolean {
+	sightRay.origin.copy(from);
+	sightRay.direction.subVectors(to, from);
+	const distance = sightRay.direction.length();
+	if (distance === 0) return true;
+	sightRay.direction.divideScalar(distance);
+
+	return (
+		raycastVoxelSpace(sightRay, {
+			vW: index.voxelWidth,
+			vH: index.voxelHeight,
+			vL: index.voxelLength,
+			resolution: index.resolution,
+			tW: index.width,
+			tL: index.length,
+			hasVoxel: (vx, vy, vz) => index.blocksSight(vx, vy, vz),
+			maxDistance: distance,
+		}) === null
+	);
 }

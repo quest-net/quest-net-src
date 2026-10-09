@@ -233,6 +233,8 @@ export const CampaignSettingUtils = {
 					playersSeeEntityDescriptions: true,
 					playersSeeEntityAttributes: true,
 					playersSeeEntityActions: true,
+					playersSeeOutOfSightEntities: true,
+					playersSeeOutOfSightPartyMembers: true,
 				},
 				CalendarSettings: {
 					enabled: true,
@@ -318,6 +320,8 @@ export const CampaignSettingUtils = {
 				playersSeeEntityDescriptions: true,
 				playersSeeEntityAttributes: true,
 				playersSeeEntityActions: true,
+				playersSeeOutOfSightEntities: true,
+				playersSeeOutOfSightPartyMembers: true,
 			},
 			CalendarSettings: {
 				enabled: true,

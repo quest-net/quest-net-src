@@ -13,6 +13,8 @@ import { InitiativeSettingsEditor } from "../../components/editors/InitiativeSet
 import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
 import { Modal } from "../../components/ui/Modal";
 import { isItemEntity } from "../Item/ItemDropUtils";
+import { isActorVisibleToUser, redactActorName } from "../Actor/ActorVisibilityUtils";
+import { useOutOfSightActorIds } from "../../components/Map/useOutOfSightActorIds";
 
 export function CombatDisplay() {
 	const context = useQuestContext();
@@ -21,6 +23,7 @@ export function CombatDisplay() {
 	const isDM = context.User.Role === "dm";
 	const isInteractive = isDM && !!actionService;
 	const [showInitiativeModal, setShowInitiativeModal] = useState(false);
+	const outOfSight = useOutOfSightActorIds();
 
 	const combatState = campaign.GameState.CombatState;
 	const initiativeSettings = campaign.Settings.InitiativeSettings;
@@ -60,7 +63,15 @@ export function CombatDisplay() {
 		activeOrder !== null
 			? initiativeEntries
 				.filter((e) => e.Order === activeOrder)
-				.map((e) => allActors.find((a) => a.Id === e.ActorId)?.Name ?? "Unknown")
+				.map((e) => {
+					const actor = allActors.find((a) => a.Id === e.ActorId);
+					if (!actor) return "Unknown";
+					// Actors a player can't see (hidden or out of sight) still take
+					// turns; players see a redacted name of the same length.
+					return isActorVisibleToUser(actor, context.User, campaign.RoomCode, outOfSight)
+						? actor.Name
+						: redactActorName(actor.Name);
+				})
 			: [];
 	// When many actors share the same initiative order, the "A or B or C or D
 	// or E..." banner gets unwieldy. Cap the list at three names and append

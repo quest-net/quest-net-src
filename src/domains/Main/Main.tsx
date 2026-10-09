@@ -30,6 +30,8 @@ import { StickerPicker } from "../../components/pickers/StickerPicker";
 import { SharedInventoryDisplay } from "../SharedInventory/SharedInventoryDisplay";
 import { TerrainStorageService } from "../../services/TerrainStorageService";
 import { findControlledActor } from "../../components/Map/ActorCamera/actor";
+import { isActorVisibleToUser } from "../Actor/ActorVisibilityUtils";
+import { useOutOfSightActorIds } from "../../components/Map/useOutOfSightActorIds";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import {
 	CameraModeDropdown,
@@ -152,20 +154,28 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 			? renderedTerrain
 			: undefined;
 
-	// Only render the actors that live on the rendered terrain.
+	const outOfSight = useOutOfSightActorIds();
+
+	// Only render the actors that live on the rendered terrain and that this user
+	// may see. Filtering here also keeps hidden actors out of the movement
+	// layer's occupancy check, so players can't find one by bumping into it.
 	const visibleCharacters = useMemo(
 		() =>
 			campaign.GameState.Characters.filter(
-				(c) => c.Position.terrainId === renderedTerrainId
+				(c) =>
+					c.Position.terrainId === renderedTerrainId &&
+					isActorVisibleToUser(c, context.User, campaign.RoomCode, outOfSight)
 			),
-		[campaign.GameState.Characters, renderedTerrainId]
+		[campaign.GameState.Characters, renderedTerrainId, context.User, campaign.RoomCode, outOfSight]
 	);
 	const visibleEntities = useMemo(
 		() =>
 			campaign.GameState.Entities.filter(
-				(e) => e.Position.terrainId === renderedTerrainId
+				(e) =>
+					e.Position.terrainId === renderedTerrainId &&
+					isActorVisibleToUser(e, context.User, campaign.RoomCode, outOfSight)
 			),
-		[campaign.GameState.Entities, renderedTerrainId]
+		[campaign.GameState.Entities, renderedTerrainId, context.User, campaign.RoomCode, outOfSight]
 	);
 	const controlledActor = findControlledActor(
 		isDM ? "dm" : "player",
@@ -757,8 +767,24 @@ function InspectorTabSync({
 }: {
 	onSelectionChange: (actorId: string | null) => void;
 }) {
-	const { selectedActor } = useMapState();
+	const context = useQuestContext();
+	const campaign = CampaignUtils.getActiveCampaign(context);
+	const { selectedActor, selectActor } = useMapState();
 	const selectedActorId = selectedActor?.id ?? null;
+
+	// Drop a selection the user can no longer see (e.g. the DM hid it), which
+	// also closes the Inspector tab.
+	const selected = selectedActorId
+		? campaign.GameState.Characters.find((c) => c.Id === selectedActorId) ??
+			campaign.GameState.Entities.find((e) => e.Id === selectedActorId)
+		: undefined;
+	const outOfSight = useOutOfSightActorIds();
+	const selectionVisible =
+		!selected ||
+		isActorVisibleToUser(selected, context.User, campaign.RoomCode, outOfSight);
+	useEffect(() => {
+		if (!selectionVisible) selectActor(null);
+	}, [selectionVisible, selectActor]);
 
 	useEffect(() => {
 		onSelectionChange(selectedActorId);

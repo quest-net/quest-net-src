@@ -164,6 +164,12 @@ export interface TerrainMaterial {
 	 */
 	passable?: boolean;
 	/**
+	 * When true, voxels of this material still collide but do not block line of
+	 * sight between actors (glass, bars). Passable materials never block sight
+	 * regardless of this flag. Defaults to false.
+	 */
+	seeThrough?: boolean;
+	/**
 	 * When true, this material is NOT rendered as a surface mesh. Its voxels are
 	 * excluded from the greedy-meshed render buckets and from the AO occupancy
 	 * snapshot, and instead feed a fog-density 3D volume consumed by the

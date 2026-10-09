@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { Position } from "../../../domains/Actor/Actor";
+import type { Actor, Position } from "../../../domains/Actor/Actor";
 import { ACTOR_DEFAULT_COLORS } from "../../../domains/Actor/Actor";
 import type { Character } from "../../../domains/Character/Character";
 import type { Entity } from "../../../domains/Entity/Entity";
@@ -54,7 +54,7 @@ export function actorToGroundWorld(
 	return actorPositionToGroundWorld(actor, terrain, actor.actor.Position);
 }
 
-export function getEyeHeight(actor: Character | Entity): number {
+export function getEyeHeight(actor: Pick<Actor, "Size">): number {
 	const size = actor.Size ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.SIZE;
 	return FIRST_PERSON_CAMERA.HEIGHT_BY_SIZE[size];
 }
