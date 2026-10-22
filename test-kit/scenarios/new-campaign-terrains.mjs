@@ -11,11 +11,10 @@ import { FIXTURE_PATH } from "../kit.mjs";
 async function openAndFindMissing(dm, campaignId) {
 	await dm.goto(campaignId);
 	// Wait for THIS campaign: the previous one stays active during the switch.
-	await dm.page.waitForFunction(
-		(id) => window.__qnCtx?.ActiveCampaign?.Id === id && !!window.__qnActionService,
-		campaignId,
-		{ timeout: 20000 }
-	);
+	await dm.waitFor((c, id) => c.Id === id && !!window.__qnActionService, {
+		arg: campaignId,
+		message: "campaign opened",
+	});
 	return dm.eval(async (qn, id) => {
 		const { CampaignUtils } = await qn.import("domains/Campaign/CampaignUtils.ts");
 		const { TerrainStorageService } = await qn.import("services/TerrainStorageService.ts");

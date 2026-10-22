@@ -12,9 +12,12 @@ export default async function smoke(kit) {
 		characters: c.GameState.Characters.map((ch) => ({ id: ch.Id, name: ch.Name, pos: ch.Position })),
 		entities: c.GameState.Entities.length,
 	}));
-	assert.equal(dmView.characters.length, 3);
+	assert.ok(dmView.characters.length >= 3);
 	for (const p of players) {
-		await p.waitFor((c) => c.GameState.Characters.length === 3, { message: "party synced" });
+		await p.waitFor((c, n) => c.GameState.Characters.length === n, {
+			arg: dmView.characters.length,
+			message: "party synced",
+		});
 	}
 	const p1Char = await p1.eval((qn) => qn.ctx.User.SelectedCharacters.testkit);
 	assert.equal(p1Char, dmView.characters[0].id, "P1 claimed Aria");

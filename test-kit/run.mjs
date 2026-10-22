@@ -70,8 +70,9 @@ if (flag("seed")) {
 		console.error("usage: node test-kit/run.mjs <scenario.mjs> | --serve | --seed");
 		process.exit(2);
 	}
-	const { default: run } = await import(pathToFileURL(path.resolve(scenario)).href);
-	const kit = await startKit({ players, headed, verbose });
+	// A scenario may export `options` (e.g. { characters: [...] }) for startKit.
+	const { default: run, options = {} } = await import(pathToFileURL(path.resolve(scenario)).href);
+	const kit = await startKit({ players, headed, verbose, ...options });
 	let failed = false;
 	try {
 		await run(kit);

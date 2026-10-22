@@ -83,14 +83,14 @@ class Peer {
 		);
 	}
 
-	/** Poll `fn(campaign)` in this page until it returns truthy. */
-	async waitFor(fn, { timeout = 20000, message } = {}) {
+	/** Poll `fn(campaign, arg)` in this page until it returns truthy. */
+	async waitFor(fn, { arg, timeout = 20000, message } = {}) {
 		await this.page.waitForFunction(
-			(src) => {
+			({ src, arg }) => {
 				const c = window.__qnCtx?.ActiveCampaign;
-				return !!c && !!new Function(`return (${src})`)()(c);
+				return !!c && !!new Function(`return (${src})`)()(c, arg);
 			},
-			fn.toString(),
+			{ src: fn.toString(), arg },
 			{ timeout, polling: 250 }
 		).catch((err) => {
 			throw new Error(`[${this.name}] waitFor timed out: ${message ?? fn}\n${err.message}`);
@@ -127,12 +127,15 @@ async function openPeer(kit, name) {
 /**
  * Starts everything. Options:
  *   players   number of player peers (default 2; each claims GameState.Characters[i])
+ *   characters  names to claim per player instead, e.g. ["Beast Tamer", null];
+ *             null = no character (the player sits on the character select screen)
  *   fixture   path to a CampaignExportData JSON, or null to start with no campaign
  *   headed    show the browser windows
  *   port      Vite port (default 3100, so it never collides with `npm run dev`)
  */
 export async function startKit({
 	players = 2,
+	characters: characterNames,
 	fixture = FIXTURE_PATH,
 	headed = false,
 	port = 3100,
@@ -177,16 +180,25 @@ export async function startKit({
 		await kit.dm.goto(DM_CAMPAIGN_ID);
 		await kit.dm.page.waitForFunction(() => !!window.__qnActionService, null, { timeout: 30000 });
 
-		const characters = await kit.dm.state((c) => c.GameState.Characters.map((ch) => ch.Id));
-		for (let i = 0; i < players; i++) {
+		const characters = await kit.dm.state((c) =>
+			c.GameState.Characters.map((ch) => ({ id: ch.Id, name: ch.Name }))
+		);
+		const playerCount = characterNames ? characterNames.length : players;
+		for (let i = 0; i < playerCount; i++) {
 			const p = await openPeer(kit, `P${i + 1}`);
-			if (characters[i]) {
+			const characterId = characterNames
+				? characters.find((ch) => ch.name === characterNames[i])?.id
+				: characters[i]?.id;
+			if (characterNames && characterNames[i] && !characterId) {
+				throw new Error(`fixture has no spawned character named "${characterNames[i]}"`);
+			}
+			if (characterId) {
 				await p.eval(
 					async (qn, { room, characterId }) => {
 						const { UserUtils } = await qn.import("domains/User/UserUtils.ts");
 						UserUtils.selectCharacter({ campaignId: room, characterId }, qn.ctx);
 					},
-					{ room: ROOM_CODE, characterId: characters[i] }
+					{ room: ROOM_CODE, characterId }
 				);
 			}
 			await p.goto(ROOM_CODE);
