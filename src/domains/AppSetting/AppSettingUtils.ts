@@ -42,9 +42,11 @@ export interface CloudBackupState {
   connected: boolean;
   email?: string;
   lastStatus?: { time: number; ok: boolean; error?: string };
-  /** `lastStatus.time` the user dismissed the global failure pill for. Keyed on
-   *  the time rather than a bare boolean so a LATER failure still surfaces. */
-  dismissedStatusTime?: number;
+  /** `lastStatus.error` the user dismissed the global failure pill for. Keyed on
+   *  the reason, not the time: backups retry hourly and on every tab-hide, so a
+   *  time key brought the pill back for the same failure over and over. A
+   *  different failure still surfaces; a success clears it. */
+  dismissedStatusError?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +312,7 @@ export const AppSettingUtils = {
         ok: params.ok,
         error: params.ok ? undefined : params.error,
       },
+      dismissedStatusError: params.ok ? undefined : prev.dismissedStatusError,
     });
   },
 
@@ -320,7 +323,7 @@ export const AppSettingUtils = {
     if (!prev?.lastStatus) return;
     setJson<CloudBackupState>(context, "cloudBackup", {
       ...prev,
-      dismissedStatusTime: prev.lastStatus.time,
+      dismissedStatusError: prev.lastStatus.error ?? "",
     });
   },
 

@@ -317,8 +317,13 @@ export function AppSettingsDisplay() {
 													Last backup succeeded
 												</p>
 											) : (
-												<p className="text-xs text-warning">
+												<p className="text-xs text-warning break-words">
 													Last backup didn't succeed
+													{cloud.lastStatus.error && (
+														<span className="block opacity-70">
+															{cloud.lastStatus.error}
+														</span>
+													)}
 												</p>
 											))}
 										<div className="flex gap-2">

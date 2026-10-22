@@ -56,6 +56,17 @@ export interface SyncResult {
 	newer: PendingRestore[];
 	/** Binaries pulled back from Drive to replace ones lost to storage eviction. */
 	repaired: { images: number; terrains: number };
+	/** Names of campaigns whose backup failed this run (the rest still went up). */
+	failedBackups: string[];
+}
+
+/** Status for a run that reached every campaign. The message only names the
+ *  failed campaigns, so the same recurring failure yields the same text -- that
+ *  is what the pill's dismissal is keyed on. */
+function backupStatus(failed: string[]): { ok: boolean; error?: string } {
+	return failed.length === 0
+		? { ok: true }
+		: { ok: false, error: `Couldn't back up: ${failed.join(", ")}` };
 }
 
 // How many revisions the binary repair will DOWNLOAD before giving up (purged
@@ -303,12 +314,17 @@ export const CloudBackupService = {
 		}
 	},
 
-	/** Backs up every DM campaign whose local state is newer than the cloud. */
+	/**
+	 * Backs up every DM campaign whose local state is newer than the cloud.
+	 * Returns the names of campaigns that failed. One unreadable campaign must not
+	 * stop the rest from backing up, so per-campaign errors are collected rather
+	 * than thrown; only run-wide failures (session, listing) throw.
+	 */
 	async backupAllDmCampaigns(
 		context: Context,
 		backups?: DriveBackupMeta[],
 		binariesChecked?: Set<string>
-	): Promise<void> {
+	): Promise<string[]> {
 		await this.ensureSession();
 		const cloud = backups ?? (await GoogleDriveBackupService.listBackups());
 		const cloudByKey = new Map(cloud.map((b) => [b.backupKey, b]));
@@ -327,6 +343,7 @@ export const CloudBackupService = {
 		// are two campaigns, so two files is the correct end state -- the only cost
 		// is one extra file's worth of Drive storage.
 		const seenKeys = new Set<string>();
+		const failed: string[] = [];
 		for (const info of this.dmCampaigns(context)) {
 			const duplicate = !!info.BackupKey && seenKeys.has(info.BackupKey);
 			if (duplicate) {
@@ -342,22 +359,28 @@ export const CloudBackupService = {
 			// look already-backed-up and skip the very upload it needs.
 			const cloudMeta =
 				info.BackupKey && !duplicate ? cloudByKey.get(info.BackupKey) : undefined;
-			await this.backupCampaign(
-				info,
-				context,
-				cloudMeta,
-				binariesChecked,
-				duplicate
-			);
+			try {
+				await this.backupCampaign(
+					info,
+					context,
+					cloudMeta,
+					binariesChecked,
+					duplicate
+				);
+			} catch (e) {
+				console.error(`[CloudBackup] Backup of "${info.Name}" failed:`, e);
+				failed.push(info.Name);
+			}
 			if (duplicate && info.BackupKey) seenKeys.add(info.BackupKey);
 		}
+		return failed;
 	},
 
 	/** Manual "Back up now" entry point; records the resulting status. */
 	async backupNow(context: Context): Promise<void> {
 		try {
-			await this.backupAllDmCampaigns(context);
-			AppSettingUtils.setCloudBackupStatus({ ok: true }, contextStore);
+			const failed = await this.backupAllDmCampaigns(context);
+			AppSettingUtils.setCloudBackupStatus(backupStatus(failed), contextStore);
 		} catch (e) {
 			AppSettingUtils.setCloudBackupStatus(
 				{ ok: false, error: e instanceof Error ? e.message : String(e) },
@@ -706,9 +729,13 @@ export const CloudBackupService = {
 		}
 
 		// 4) Back up changed DM campaigns (guarded; won't clobber newer cloud).
-		await this.backupAllDmCampaigns(context, backups, binariesChecked);
+		const failedBackups = await this.backupAllDmCampaigns(
+			context,
+			backups,
+			binariesChecked
+		);
 
-		return { restoredCount, newer, repaired };
+		return { restoredCount, newer, repaired, failedBackups };
 	},
 
 	/** syncOnOpen wrapper that records success/failure status. */
@@ -716,7 +743,10 @@ export const CloudBackupService = {
 		if (!this.isConfigured() || !this.isConnected(context)) return null;
 		try {
 			const result = await this.syncOnOpen(context);
-			AppSettingUtils.setCloudBackupStatus({ ok: true }, contextStore);
+			AppSettingUtils.setCloudBackupStatus(
+				backupStatus(result.failedBackups),
+				contextStore
+			);
 			return result;
 		} catch (e) {
 			console.error("[CloudBackup] Sync on open failed:", e);

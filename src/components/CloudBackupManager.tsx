@@ -103,9 +103,9 @@ function BackupFailedPill() {
 	const state = AppSettingUtils.getCloudBackup(context);
 	if (state?.connected !== true) return null;
 	if (!state.lastStatus || state.lastStatus.ok) return null;
-	// Dismissed for THIS failure. A retry that fails again stamps a new
-	// lastStatus.time, so the pill comes back rather than being muted for good.
-	if (state.lastStatus.time === state.dismissedStatusTime) return null;
+	// Dismissed for this failure reason. A different failure brings it back; the
+	// settings popover still shows the status either way.
+	if ((state.lastStatus.error ?? "") === state.dismissedStatusError) return null;
 
 	const retry = async () => {
 		setBusy(true);
