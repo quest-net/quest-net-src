@@ -39,10 +39,11 @@
   snapshot to the newly admitted player. Existing players keep their current
   baseline and receive no redundant full state.
 - **Live pose mesh**: `actorPose` uses the optional active room
-  `<roomCode>:pose:v1`, separate from the required campaign star. The DM opens it
-  immediately; players join after applying a fresh campaign snapshot, with a
-  small randomized delay. Pose-room failures never affect campaign readiness or
-  presence, and players leave the pose room when their DM connection is lost.
+  `<roomCode>:pose:v1`, separate from the required campaign star. Everyone opens
+  it alongside the campaign room and stays in it for the life of the campaign
+  view, including after a player loses the DM. It is also what makes late joins
+  fast (see below). Pose-room failures never affect campaign readiness or
+  presence.
 
 ### Connection error surface
 
@@ -63,12 +64,18 @@ loops made sessions strictly worse the worse the network got.
 **Peer liveness is Trystero's job** (`onPeerJoin` / `onPeerLeave` /
 `getPeers()`), re-synced by `reconcilePeerConnections` every 2s.
 
-**Late joins are slow but reliable (Trystero 0.26.0+).** Before 0.26.0, a DM
+**Late joins go through the pose room (Trystero 0.26.0+).** Before 0.26.0, a DM
 alone in the room for over 57s re-used a stale offer and late players often never
 connected until the DM refreshed (dmotz/trystero#204). Since 0.25.4, Nostr
 re-announces only every 60s after a ~7s startup burst, and a passive player stays
-silent until it hears one, so a late join can take up to a minute.
-`test-kit/scenarios/late-join.mjs` measures it (~56s at 0.26.0). 0.26.0 also
+silent until it hears one, so a late player in the campaign room alone waits up
+to a minute (~56s measured). Players therefore open the active pose room at
+mount: the DM meets them in its startup burst, and Trystero's shared peer then
+advertises the DM's campaign room, which attaches and wakes the player's passive
+campaign room (`shared-peer.mjs` `attachRoom` -> `onPeer`). Measured 0.5s.
+`test-kit/scenarios/late-join.mjs` guards it. The same shared peer also links
+players to each other in the campaign room (pre-existing, see
+`pose-room.mjs`), so player broadcasts on it reach other players too. 0.26.0 also
 changed the wire format, so peers on different builds cannot connect: deploy
 between sessions, or players must refresh.
 
@@ -80,7 +87,7 @@ What we still do:
 - The required campaign room calls `room.leave()` only for a real React lifecycle
   teardown: leaving or switching the campaign view. Peer count, elapsed time,
   browser wake, relay state, ping latency, and missing metadata never trigger it.
-  The optional pose room is independent and is left when a player loses the DM.
+  The optional pose room follows the same lifecycle.
 - Pings are **display-only** (RTT in `PeerStatus`); a missed pong does nothing.
 - `usePeerTracking` retains its `partial` state defensively for missing or
   unexpected metadata, but a normal passive player cannot form a player-only

@@ -15,8 +15,9 @@ Scenarios live in `test-kit/scenarios/`; `new-campaign-terrains.mjs` (run with
 `--players 0`) guards new and restored campaigns keeping their terrain voxels,
 `owned-actors.mjs` covers owned actors, `inspect-tab.mjs` clicks the real
 Party/Overview panels to guard the first inspect landing on the Inspector tab,
-and `late-join.mjs` (~3 min) guards players reaching a DM who has sat alone in
-the room for over a minute.
+`late-join.mjs` (~2 min) guards players reaching a DM who has sat alone in
+the room for over a minute, and `pose-room.mjs` checks live poses reach every
+peer.
 A scenario can `export const options`
 for `startKit`, e.g. `{ characters: ["Beast Tamer", null] }` to choose which
 character each player claims (`null` leaves that player on character select).

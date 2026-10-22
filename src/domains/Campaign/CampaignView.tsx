@@ -33,8 +33,6 @@ interface CampaignViewState {
 // never leaves, recreates, or otherwise interferes with the Trystero room.
 const PLAYER_JOIN_TIMEOUT_MS = 20000;
 const POSE_ROOM_SUFFIX = ":pose:v1";
-const PLAYER_POSE_JOIN_MIN_DELAY_MS = 250;
-const PLAYER_POSE_JOIN_JITTER_MS = 500;
 
 export function CampaignView() {
 	const { identifier } = useParams<{ identifier: string }>();
@@ -82,15 +80,9 @@ export function CampaignView() {
 		let service: ActionService | null = null;
 		let isSubscribed = true; // For handling async state updates after unmount
 		let joinTimeout: ReturnType<typeof setTimeout> | null = null;
-		let poseJoinTimeout: ReturnType<typeof setTimeout> | null = null;
 		let campaignRoomCode: string | null = null;
-		let unsubscribeDmConnectionLost: (() => void) | null = null;
 
 		const closePoseRoom = () => {
-			if (poseJoinTimeout) {
-				clearTimeout(poseJoinTimeout);
-				poseJoinTimeout = null;
-			}
 			service?.actorPoseService.detachRoom();
 			if (poseRoom) {
 				RoomService.leave(poseRoom);
@@ -120,18 +112,6 @@ export function CampaignView() {
 			}
 		};
 
-		const schedulePlayerPoseRoom = () => {
-			if (isDM || poseRoom || poseJoinTimeout) return;
-			const delay =
-				PLAYER_POSE_JOIN_MIN_DELAY_MS +
-				Math.random() * PLAYER_POSE_JOIN_JITTER_MS;
-			poseJoinTimeout = setTimeout(() => {
-				poseJoinTimeout = null;
-				if (!service?.getDmPeerId()) return;
-				openPoseRoom();
-			}, delay);
-		};
-
 		const handlePlayerStateReady = () => {
 			if (!isSubscribed) return;
 			if (joinTimeout) {
@@ -139,7 +119,6 @@ export function CampaignView() {
 				joinTimeout = null;
 			}
 			setState({ status: "ready" });
-			schedulePlayerPoseRoom();
 		};
 
 		async function initialize() {
@@ -311,18 +290,14 @@ export function CampaignView() {
 				service = new ActionService(context, room);
 				setActionService(service);
 
-				if (isDM) {
-					openPoseRoom();
-				} else {
-					// Even when a cached campaign can render immediately, wait for a fresh
-					// authoritative snapshot before joining the optional pose mesh.
-					service.onFirstUpdate(handlePlayerStateReady);
-					unsubscribeDmConnectionLost = service.onDmConnectionLost(() => {
-						if (!isSubscribed) return;
-						closePoseRoom();
-						service?.onFirstUpdate(handlePlayerStateReady);
-					});
-				}
+				// Players join the active pose room right away too: the DM finds
+				// them in its quick startup announces, and the shared peer wakes
+				// the passive campaign room. Otherwise a late player waits for the
+				// DM's next Nostr announce (every 60s). Players also stay in it
+				// when the DM drops, since an active room re-announces right after
+				// a disconnect and a passive one does not.
+				openPoseRoom();
+				if (!isDM) service.onFirstUpdate(handlePlayerStateReady);
 
 				// =====================================================================
 				// STEP 4: Handle initial state for players without campaign
@@ -386,8 +361,6 @@ export function CampaignView() {
 
 			// service.cleanup() calls RoomService.leave() internally —
 			// don't call it here too or Trystero's leave logic runs twice.
-			unsubscribeDmConnectionLost?.();
-			unsubscribeDmConnectionLost = null;
 			closePoseRoom();
 
 			if (service) {

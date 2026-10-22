@@ -38,7 +38,6 @@ export class ActionService {
 	public terrainTransferService: TerrainTransferService;
 
 	private onFirstUpdateCallback?: () => void;
-	private onDmConnectionLostCallback?: () => void;
 
 	// Trystero channel send functions. Target a specific peer via the
 	// `{ target }` option; omit it to broadcast to every peer.
@@ -101,16 +100,6 @@ export class ActionService {
 		this.onFirstUpdateCallback = callback;
 	}
 
-	/** Notifies players when their required DM connection disappears. */
-	onDmConnectionLost(callback: () => void): () => void {
-		this.onDmConnectionLostCallback = callback;
-		return () => {
-			if (this.onDmConnectionLostCallback === callback) {
-				this.onDmConnectionLostCallback = undefined;
-			}
-		};
-	}
-
 	/**
 	 * Records a peer's User payload (called from the room handshake).
 	 * Handshake runs before Trystero marks the peer active, so transport
@@ -134,18 +123,11 @@ export class ActionService {
 	 * several removals can bump presence once.
 	 */
 	private forgetPeer(peerId: string): boolean {
-		const wasDm =
-			this.context.User.Role === "player" &&
-			(this.peerUsers.get(peerId)?.Role === "dm" ||
-				this.connectedPeerIds.has(peerId));
 		const hadConnection = this.connectedPeerIds.delete(peerId);
 		const hadUser = this.peerUsers.delete(peerId);
 		if (hadUser) this.syncClaimedCharacters();
 		this.stopPinging(peerId);
 		this.actorPoseService.clearForPeer(peerId);
-		if (wasDm) {
-			this.onDmConnectionLostCallback?.();
-		}
 		return hadConnection || hadUser;
 	}
 
@@ -725,7 +707,6 @@ export class ActionService {
 		this.peerPings.clear();
 		this.peerUsers.clear();
 		this.connectedPeerIds.clear();
-		this.onDmConnectionLostCallback = undefined;
 		if (this.room) {
 			RoomService.leave(this.room);
 		}
