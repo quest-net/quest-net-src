@@ -63,6 +63,15 @@ loops made sessions strictly worse the worse the network got.
 **Peer liveness is Trystero's job** (`onPeerJoin` / `onPeerLeave` /
 `getPeers()`), re-synced by `reconcilePeerConnections` every 2s.
 
+**Late joins are slow but reliable (Trystero 0.26.0+).** Before 0.26.0, a DM
+alone in the room for over 57s re-used a stale offer and late players often never
+connected until the DM refreshed (dmotz/trystero#204). Since 0.25.4, Nostr
+re-announces only every 60s after a ~7s startup burst, and a passive player stays
+silent until it hears one, so a late join can take up to a minute.
+`test-kit/scenarios/late-join.mjs` measures it (~56s at 0.26.0). 0.26.0 also
+changed the wire format, so peers on different builds cannot connect: deploy
+between sessions, or players must refresh.
+
 What we still do:
 
 - A 20-second player join deadline changes the connection screen to explanatory

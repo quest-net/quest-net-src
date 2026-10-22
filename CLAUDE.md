@@ -17,7 +17,7 @@ The sandboxed Linux shell sees a stale/truncated view of files in this repo (bas
 - **postprocessing** for post-processing effects on the 3D map
 - **gsap** and **motion** for animations
 - **react-rnd** for resizable/draggable UI panels
-- **Trystero** (`^0.25.3`) for peer-to-peer networking (Nostr strategy by default, app ID `'quest-net'`)
+- **Trystero** (`^0.26.0`) for peer-to-peer networking (Nostr strategy by default, app ID `'quest-net'`)
 - **fast-json-patch** for delta state synchronization
 - **mathjs** for dice/formula evaluation
 - **IndexedDB** for image binary storage and full campaign payloads; **OPFS** (Origin Private File System, via a dedicated worker) for large terrain voxel data; **localStorage** for app state (Context)

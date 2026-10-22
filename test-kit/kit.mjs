@@ -109,7 +109,7 @@ class Peer {
 	}
 }
 
-async function openPeer(kit, name) {
+export async function openPeer(kit, name) {
 	const context = await kit.browser.newContext({ viewport: { width: 1400, height: 900 } });
 	const page = await context.newPage();
 	const peer = new Peer(kit, name, context, page);

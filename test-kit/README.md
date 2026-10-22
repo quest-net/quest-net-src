@@ -13,8 +13,10 @@ node test-kit/run.mjs --seed                         # rebuild kitchen-sink.json
 
 Scenarios live in `test-kit/scenarios/`; `new-campaign-terrains.mjs` (run with
 `--players 0`) guards new and restored campaigns keeping their terrain voxels,
-`owned-actors.mjs` covers owned actors, and `inspect-tab.mjs` clicks the real
-Party/Overview panels to guard the first inspect landing on the Inspector tab.
+`owned-actors.mjs` covers owned actors, `inspect-tab.mjs` clicks the real
+Party/Overview panels to guard the first inspect landing on the Inspector tab,
+and `late-join.mjs` (~3 min) guards players reaching a DM who has sat alone in
+the room for over a minute.
 A scenario can `export const options`
 for `startKit`, e.g. `{ characters: ["Beast Tamer", null] }` to choose which
 character each player claims (`null` leaves that player on character select).
