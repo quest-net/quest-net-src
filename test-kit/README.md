@@ -11,6 +11,8 @@ node test-kit/send.mjs "return kit.dm.state(c => c.Name)"   # drive the live ses
 node test-kit/run.mjs --seed                         # rebuild kitchen-sink.json
 ```
 
+Scenarios live in `test-kit/scenarios/`; `new-campaign-terrains.mjs` (run with
+`--players 0`) guards new and restored campaigns keeping their terrain voxels.
 Add `--headed` to watch the browsers and `--verbose` to print every console line.
 Screenshots land in `test-kit/out/` (gitignored).
 

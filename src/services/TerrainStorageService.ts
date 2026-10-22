@@ -419,6 +419,26 @@ export class TerrainStorageService {
 		}
 	}
 
+	/**
+	 * Writes just-committed terrains straight to OPFS for a campaign that may not
+	 * own the payload buffer (a brand-new or just-restored campaign).
+	 * prepareCampaignForStorage skips such a campaign, and opening it resets the
+	 * buffer, so without this their voxels are lost. Only pass ids that were
+	 * freshly minted by commitEditableVoxelTerrain: restored terrains reuse ids,
+	 * and the buffer may hold another campaign's voxels under them.
+	 */
+	static async persistNewTerrains(
+		campaign: Campaign,
+		terrainIds: string[]
+	): Promise<void> {
+		for (const terrainId of terrainIds) {
+			const terrain = campaign.VoxelTerrains.find((t) => t.Id === terrainId);
+			if (!terrain) continue;
+			await this.saveTerrain(campaign, terrain);
+			if (!isActivePayloadCampaign(campaign.Id)) dropTerrainVoxels(terrainId);
+		}
+	}
+
 	static async packInactiveTerrains(campaign: Campaign): Promise<void> {
 		if (!isActivePayloadCampaign(campaign.Id)) return;
 		const keep = this.terrainsToKeepHydrated(campaign);

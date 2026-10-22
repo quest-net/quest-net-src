@@ -337,9 +337,10 @@ export function commitEditableVoxelTerrain(
 	return meta;
 }
 
+/** Returns the ids of the stamps it added. */
 export function addMissingDefaultVoxelStamps(campaign: {
 	VoxelTerrains?: VoxelTerrain[];
-}): number {
+}): string[] {
 	campaign.VoxelTerrains ??= [];
 	const existingTemplateIds = new Set<string>();
 	for (const terrain of campaign.VoxelTerrains) {
@@ -351,5 +352,5 @@ export function addMissingDefaultVoxelStamps(campaign: {
 	for (const editable of missing) {
 		campaign.VoxelTerrains.push(commitEditableVoxelTerrain(editable));
 	}
-	return missing.length;
+	return missing.map((stamp) => stamp.Id);
 }

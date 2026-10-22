@@ -192,7 +192,7 @@ export const ContextService = {
 				);
 			}
 			const addedDefaultVoxelStamps = context.ActiveCampaign
-				? addMissingDefaultVoxelStamps(context.ActiveCampaign)
+				? addMissingDefaultVoxelStamps(context.ActiveCampaign).length
 				: 0;
 
 			if (

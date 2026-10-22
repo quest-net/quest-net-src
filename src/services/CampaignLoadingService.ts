@@ -79,7 +79,7 @@ export class CampaignLoadingService {
 		await TerrainStorageService.prepareCampaignAfterLoad(campaign);
 
 		const addedDefaultVoxelStamps = addMissingDefaultVoxelStamps(campaign);
-		if (addedDefaultVoxelStamps > 0) {
+		if (addedDefaultVoxelStamps.length > 0) {
 			await this.saveCampaign(campaign);
 		}
 

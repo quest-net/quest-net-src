@@ -429,6 +429,11 @@ export const CampaignUtils = {
 	): Promise<CampaignInfo> {
 		assertUsableRoomCode(params.roomCode);
 		const campaign = createBlankCampaign(params.name, params.roomCode);
+		// Every terrain here is freshly minted (default terrain + stamps).
+		await TerrainStorageService.persistNewTerrains(
+			campaign,
+			campaign.VoxelTerrains.map((t) => t.Id)
+		);
 
 		await CampaignLoadingService.saveCampaign(campaign);
 
@@ -906,7 +911,10 @@ export const CampaignUtils = {
 			fileVersion,
 			campaignMigrations
 		)) as Campaign;
-		addMissingDefaultVoxelStamps(migrated);
+		await TerrainStorageService.persistNewTerrains(
+			migrated,
+			addMissingDefaultVoxelStamps(migrated)
+		);
 
 		// Ensure the room code is unique against OTHER local campaigns (exclude
 		// the replace target itself so a same-campaign update keeps its code).
