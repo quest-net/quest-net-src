@@ -442,26 +442,26 @@ export function Overview({ onInspectActor }: OverviewProps) {
 							>
 								<span className="icon-[mdi--account-arrow-right] w-4 h-4" />
 							</button>
-							<div className="join">
-								<button
-									type="button"
-									onClick={() => handleSetHidden(selectedActorIds, true)}
-									disabled={selectedActorIds.length === 0}
-									className="btn btn-sm join-item"
-									title="Hide selected actors from players"
-								>
-									<span className="icon-[mdi--eye-off] w-4 h-4" />
-								</button>
-								<button
-									type="button"
-									onClick={() => handleSetHidden(selectedActorIds, false)}
-									disabled={selectedActorIds.length === 0}
-									className="btn btn-sm join-item"
-									title="Reveal selected actors to players"
-								>
-									<span className="icon-[mdi--eye] w-4 h-4" />
-								</button>
-							</div>
+							<button
+								type="button"
+								onClick={() => handleSetHidden(selectedActorIds, true)}
+								disabled={selectedActorIds.length === 0}
+								className="btn btn-neutral btn-sm btn-square"
+								title="Hide selected actors from players"
+								aria-label="Hide selected actors from players"
+							>
+								<span className="icon-[mdi--eye-off] w-4 h-4" />
+							</button>
+							<button
+								type="button"
+								onClick={() => handleSetHidden(selectedActorIds, false)}
+								disabled={selectedActorIds.length === 0}
+								className="btn btn-neutral btn-sm btn-square"
+								title="Reveal selected actors to players"
+								aria-label="Reveal selected actors to players"
+							>
+								<span className="icon-[mdi--eye] w-4 h-4" />
+							</button>
 						</div>
 					</div>
 				</div>
