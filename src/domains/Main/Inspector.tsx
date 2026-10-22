@@ -575,19 +575,6 @@ function ActorInfoTab({
 			{/* Entity-specific actions (e.g. Pick Up for item entities) */}
 			<EntityActionBar actor={actor} />
 
-			{/* Owner (DM assigns; the owner's player then controls this actor) */}
-			{isDM && (
-				<div className="flex items-center gap-3 text-sm">
-					<span className="font-medium">Owner</span>
-					<OwnerEditor
-						actorId={actor.Id}
-						value={actor.OwnerId}
-						onChange={(ownerId) => handleFieldChange("OwnerId", ownerId)}
-						disabled={!actionService}
-					/>
-				</div>
-			)}
-
 			{/* Image*/}
 			{canManage ? (
 				<div className="flex items-center justify-center">
@@ -803,6 +790,19 @@ function ActorInfoTab({
 						onChange={handleAttributeChange}
 						readOnly={!canManage}
 						onRoll={requestRoll}
+					/>
+				</div>
+			)}
+
+			{/* Owner (DM assigns; the owner's player then controls this actor) */}
+			{isDM && (
+				<div className="flex items-center justify-center gap-3 text-sm">
+					<span className="font-medium">Owner</span>
+					<OwnerEditor
+						actorId={actor.Id}
+						value={actor.OwnerId}
+						onChange={(ownerId) => handleFieldChange("OwnerId", ownerId)}
+						disabled={!actionService}
 					/>
 				</div>
 			)}
