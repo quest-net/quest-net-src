@@ -296,7 +296,7 @@ export const FACADE_DOCS: FacadeGroupDoc[] = [
 			{ signature: "game.actors() / game.party() / game.enemies()", description: "All active actors / active characters / active entities, as facades.", backedBy: "read" },
 			{ signature: 'game.actorsWithStatus("Poisoned")', description: "Active actors currently carrying a status.", backedBy: "read" },
 			{ signature: 'game.sharedInventory("Party Funds")', description: "A shared pool facade by name or id (or undefined). game.sharedInventories() lists all.", backedBy: "read" },
-			{ signature: 'game.template(collection, "Potion")', description: 'Look up a template id/name in "items"/"skills"/"statuses"/"entities".', backedBy: "read" },
+			{ signature: 'game.template("ItemTemplates", "Potion")', description: 'Look up a template by name or id → { Id, Name } (or undefined). Collection is one of "ItemTemplates", "SkillTemplates", "StatusTemplates", "EntityTemplates", "CharacterRoster".', backedBy: "read" },
 			{ signature: 'game.roll("2d6+1")', description: "Silent DM dice math → number. Emits nothing (no cascade). Use for damage/re-rolls.", backedBy: "read" },
 			{ signature: "game.rng()", description: "Random number 0..1 (DM-side only).", backedBy: "read" },
 			{ signature: 'await game.log("text", opts?)', description: "Quick log entry. opts: { category?, level?, details? }.", backedBy: "log:log" },
