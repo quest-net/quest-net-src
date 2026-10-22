@@ -242,7 +242,7 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 					</FormField>
 
 					{isDmAccess() && (
-						<FormField label="Owner" hint="its player controls this character">
+						<FormField label="Owner">
 							<OwnerEditor
 								actorId={data.Id}
 								value={data.OwnerId}

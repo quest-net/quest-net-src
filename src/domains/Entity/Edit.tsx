@@ -225,7 +225,7 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 						/>
 					</FormField>
 
-					<FormField label="Owner" hint="copied to each spawn">
+					<FormField label="Owner">
 						<OwnerEditor
 							actorId={data.Id}
 							value={data.OwnerId}

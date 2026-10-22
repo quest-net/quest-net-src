@@ -416,30 +416,31 @@ export function Overview({ onInspectActor }: OverviewProps) {
 								type="button"
 								onClick={() => setShowObjectPicker(true)}
 								disabled={selectedActorIds.length === 0}
-								className="btn btn-primary btn-sm gap-2"
+								className="btn btn-primary btn-sm btn-square"
+								title="Give objects to selected actors"
+								aria-label="Give objects to selected actors"
 							>
 								<span className="icon-[mdi--gift] w-4 h-4" />
-								Give Objects
 							</button>
 							<button
 								type="button"
 								onClick={handleDespawnSelected}
 								disabled={selectedActorIds.length === 0}
-								className="btn btn-error btn-sm gap-2"
+								className="btn btn-error btn-sm btn-square"
 								title="Despawn selected actors"
+								aria-label="Despawn selected actors"
 							>
 								<span className="icon-[mdi--close-circle] w-4 h-4" />
-								Despawn
 							</button>
 							<button
 								type="button"
 								onClick={() => setShowTerrainPicker(true)}
 								disabled={selectedActorIds.length === 0}
-								className="btn btn-secondary btn-sm gap-2"
+								className="btn btn-secondary btn-sm btn-square"
 								title="Move selected actors to another terrain"
+								aria-label="Move selected actors to another terrain"
 							>
 								<span className="icon-[mdi--account-arrow-right] w-4 h-4" />
-								Move
 							</button>
 							<div className="join">
 								<button
