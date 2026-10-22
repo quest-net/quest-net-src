@@ -47,9 +47,15 @@ export function useOutOfSightActorIds(): ReadonlySet<string> {
 	return useMemo(() => {
 		if (!gated) return NONE;
 
+		// Owned entities count as party members; the viewer's own actors are never
+		// sight-gated (isActorVisibleToUser shows them regardless).
 		const candidates: Actor[] = [
-			...Entities,
-			...(gatePartyMembers ? Characters.filter((c) => c.Id !== viewerId) : []),
+			...Entities.filter((e) => !e.OwnerId),
+			...(gatePartyMembers
+				? [...Characters, ...Entities.filter((e) => e.OwnerId)].filter(
+						(a) => a.Id !== viewerId && a.OwnerId !== viewerId
+					)
+				: []),
 		];
 		// No viewer, or its terrain's voxels aren't loaded yet: nothing can be seen.
 		if (!viewer || !terrain || terrainRevision === null) {

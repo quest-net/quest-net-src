@@ -169,6 +169,7 @@ export const ScenarioActions = {
                             instanceId: placement.ActorId,
                             repairActors: false,
                             hidden: placement.Hidden,
+                            ownerId: placement.OwnerId,
                         },
                         context
                     );

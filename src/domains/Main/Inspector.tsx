@@ -25,6 +25,7 @@ import {
 	resolveActions,
 } from "../Actor/ActorResolvers";
 import { EntityActionBar } from "./EntityActionBar";
+import { OwnerEditor } from "../../components/editors/OwnerEditor";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { isActorVisibleToUser } from "../Actor/ActorVisibilityUtils";
@@ -62,6 +63,7 @@ export function Inspector() {
 			kind={selectedActor.kind}
 			isDM={isDM}
 			isMyCharacter={actor.Id === myCharacterId}
+			canManage={isDM || (!!myCharacterId && actor.OwnerId === myCharacterId)}
 			actionService={actionService}
 			playersSeeEntityHealth={
 				campaign.Settings.VisibilitySettings.playersSeeEntityHealth
@@ -77,8 +79,14 @@ export function Inspector() {
 interface UnifiedInspectorProps {
 	actor: Actor;
 	kind: "character" | "entity";
+	/** DM-only admin: hide, give objects, despawn, move terrain, set owner. */
 	isDM: boolean;
 	isMyCharacter: boolean;
+	/**
+	 * Full DM-style sheet: editable fields and stats plus the item/skill/status
+	 * tabs. The DM, or a player inspecting an actor their character owns.
+	 */
+	canManage: boolean;
 	actionService: any;
 	playersSeeEntityHealth: boolean;
 }
@@ -88,6 +96,7 @@ function UnifiedInspector({
 	kind,
 	isDM,
 	isMyCharacter,
+	canManage,
 	actionService,
 	playersSeeEntityHealth,
 }: UnifiedInspectorProps) {
@@ -136,7 +145,7 @@ function UnifiedInspector({
 	}, [actor.Id]);
 
 	const handleFieldChange = (field: keyof Actor, value: any) => {
-		if (!actionService || !isDM) return;
+		if (!actionService || !canManage) return;
 
 		actionService.execute("actor:edit", {
 			actorId: actor.Id,
@@ -198,7 +207,7 @@ function UnifiedInspector({
 		field: "Current" | "Max",
 		value: number
 	) => {
-		if (!actionService || !isDM) return;
+		if (!actionService || !canManage) return;
 
 		const updatedStats = actor.Stats.map((stat) =>
 			stat.Id === statId ? { ...stat, [field]: value } : stat
@@ -282,8 +291,8 @@ function UnifiedInspector({
 		},
 	];
 
-	// Only show tabs for DM
-	const showTabs = isDM;
+	// Tabs for whoever manages this actor (the DM, or the owner's player)
+	const showTabs = canManage;
 
 	return (
 		<>
@@ -363,6 +372,7 @@ function UnifiedInspector({
 							setShowTerrainPicker={setShowTerrainPicker}
 							actionService={actionService}
 							isMyCharacter={isMyCharacter}
+							canManage={canManage}
 						/>
 					)}
 
@@ -451,6 +461,7 @@ interface ActorInfoTabProps {
 	setShowTerrainPicker: (show: boolean) => void;
 	actionService: any;
 	isMyCharacter: boolean;
+	canManage: boolean;
 }
 
 function ActorInfoTab({
@@ -459,6 +470,7 @@ function ActorInfoTab({
 	isDM,
 	campaign,
 	isMyCharacter,
+	canManage,
 	localName,
 	localDescription,
 	localMoveSpeed,
@@ -483,10 +495,10 @@ function ActorInfoTab({
 	const { requestRoll } = useDiceRoller();
 
 	// Player-facing visibility gates apply only when a player inspects an entity
-	// (NPC/enemy). DMs, and characters, are never gated. Undefined settings are
-	// treated as visible so existing campaigns are unaffected.
+	// (NPC/enemy). DMs, characters, and actors the player owns are never gated.
+	// Undefined settings are treated as visible so existing campaigns are unaffected.
 	const vis = campaign.Settings.VisibilitySettings;
-	const gateEntity = !isDM && kind === "entity";
+	const gateEntity = !canManage && kind === "entity";
 	const showEntityDescription =
 		!gateEntity || vis.playersSeeEntityDescriptions !== false;
 	const showEntityAttributes =
@@ -498,7 +510,7 @@ function ActorInfoTab({
 		<div className="space-y-3">
 			{/* Name with optional Despawn/Give buttons for DM */}
 			<div className="flex justify-between items-start gap-2">
-				{isDM ? (
+				{canManage ? (
 					<input
 						type="text"
 						value={localName}
@@ -563,8 +575,21 @@ function ActorInfoTab({
 			{/* Entity-specific actions (e.g. Pick Up for item entities) */}
 			<EntityActionBar actor={actor} />
 
+			{/* Owner (DM assigns; the owner's player then controls this actor) */}
+			{isDM && (
+				<div className="flex items-center gap-3 text-sm">
+					<span className="font-medium">Owner</span>
+					<OwnerEditor
+						actorId={actor.Id}
+						value={actor.OwnerId}
+						onChange={(ownerId) => handleFieldChange("OwnerId", ownerId)}
+						disabled={!actionService}
+					/>
+				</div>
+			)}
+
 			{/* Image*/}
-			{isDM ? (
+			{canManage ? (
 				<div className="flex items-center justify-center">
 					<ImagePicker
 						value={actor.Image}
@@ -584,8 +609,8 @@ function ActorInfoTab({
 			)}
 
 			{/* Stats */}
-			{isDM ? (
-				// DM: Interactive StatBars for all actors (characters and entities)
+			{canManage ? (
+				// DM (or owner's player): Interactive StatBars
 				<div className="space-y-2">
 					<div className="flex items-center justify-end">
 						<ToggleButton
@@ -683,12 +708,12 @@ function ActorInfoTab({
 							campaign.Settings.ActionDefinitions
 						)}
 						onChange={handleActionsChange}
-						readonly={!isDM && !isMyCharacter}
+						readonly={!canManage && !isMyCharacter}
 					/>
 				</div>
 			)}
 			{/* Description */}
-			{isDM ? (
+			{canManage ? (
 				<textarea
 					value={localDescription}
 					onChange={(e) => handleDescriptionChange(e.target.value)}
@@ -703,7 +728,7 @@ function ActorInfoTab({
 			)}
 
 			{/* Compact info line */}
-			{isDM ? (
+			{canManage ? (
 				// DM: Editable inline fields
 				<div className="space-y-2">
 					<div className="grid grid-cols-4 gap-x-8 text-sm justify-items-center">
@@ -776,7 +801,7 @@ function ActorInfoTab({
 						definitions={campaign.Settings.AttributeDefinitions ?? []}
 						localValues={localAttributes}
 						onChange={handleAttributeChange}
-						readOnly={!isDM}
+						readOnly={!canManage}
 						onRoll={requestRoll}
 					/>
 				</div>

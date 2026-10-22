@@ -15,6 +15,7 @@ import { TagEditor } from "../../components/editors/TagEditor";
 import { ImagePicker } from "../../components/pickers/ImagePicker";
 import { AttributeEditor } from "../../components/editors/AttributeEditor";
 import { ScriptingFields } from "../../components/editors/ScriptingFields";
+import { OwnerEditor } from "../../components/editors/OwnerEditor";
 import { ACTOR_DEFAULT_COLORS } from "../Actor/Actor";
 import {
 	resolveStats,
@@ -221,6 +222,14 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 							value={data.Color ?? ACTOR_DEFAULT_COLORS.ENTITY}
 							onChange={(e) => handleFieldChange("Color", e.target.value)}
 							className="input input-bordered h-12 w-20 p-1"
+						/>
+					</FormField>
+
+					<FormField label="Owner" hint="copied to each spawn">
+						<OwnerEditor
+							actorId={data.Id}
+							value={data.OwnerId}
+							onChange={(ownerId) => handleFieldChange("OwnerId", ownerId)}
 						/>
 					</FormField>
 				</FormGrid>

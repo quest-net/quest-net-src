@@ -17,6 +17,11 @@ interface ActorPickerProps {
     showAmount?: boolean; // Show amount input (for stat transfers)
     amountMax?: number; // Max transfer amount
     amountLabel?: string; // Label for amount input (default: "Amount")
+    /**
+     * Pick only from these actors (e.g. owner candidates, which can include
+     * benched roster characters) instead of the spawned actors on the field.
+     */
+    candidates?: Actor[];
 }
 
 export function ActorPicker({
@@ -29,6 +34,7 @@ export function ActorPicker({
     showAmount = false,
     amountMax = 99,
     amountLabel = "Amount",
+    candidates,
 }: ActorPickerProps) {
     const context = useQuestContext();
     const campaign = CampaignUtils.getActiveCampaign(context);
@@ -49,6 +55,16 @@ export function ActorPicker({
 
     // Prepare data
     const actorTypes = useMemo(() => {
+        if (candidates) {
+            return [
+                {
+                    label: "Characters",
+                    items: candidates.filter((a) => a.Id !== excludeActorId),
+                    icon: "icon-[mdi--account-group]",
+                    typeKey: "character",
+                },
+            ] as ObjectTypeConfig<Actor | { Id: string; Name: string }>[];
+        }
         const onPlayerTerrain = (actor: Actor) =>
             (playerTerrainId === null ||
                 actor.Position.terrainId === playerTerrainId) &&
@@ -86,7 +102,7 @@ export function ActorPicker({
         }
 
         return types;
-    }, [campaign.GameState, campaign.Settings.SharedInventories, campaign.RoomCode, context.User, excludeActorId, includeSharedInventories, playerTerrainId, outOfSight]);
+    }, [campaign.GameState, campaign.Settings.SharedInventories, campaign.RoomCode, context.User, excludeActorId, includeSharedInventories, playerTerrainId, outOfSight, candidates]);
 
     const handleConfirm = (selectedIds: string[], _objectType: string, count: number) => {
         if (selectedIds.length > 0) {
@@ -105,7 +121,10 @@ export function ActorPicker({
             label: title,
             excludeActorId,
             onResolve: (result) => {
-                if (result.kind === "actor") {
+                if (
+                    result.kind === "actor" &&
+                    (!candidates || candidates.some((a) => a.Id === result.actorId))
+                ) {
                     onConfirm(result.actorId, showAmount ? count : undefined);
                 }
             },

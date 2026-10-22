@@ -26,6 +26,7 @@ import {
 	isInteractiveCardTarget,
 } from "./ActorPanelHelpers";
 import { isItemEntity } from "../Item/ItemDropUtils";
+import { isPartyActor } from "../Actor/ActorOwnershipUtils";
 import { ToggleButton } from "../../components/ui/ToggleButton";
 import { EmptyState } from "../../components/ui/EmptyState";
 
@@ -72,8 +73,9 @@ export function Overview({ onInspectActor }: OverviewProps) {
 		if (!combatState.isActive) return false;
 		if (entry.kind === "entity" && isItemEntity(entry.actor)) return false;
 		if (isIndividualMode) return true;
-		return entry.kind === (
-			combatState.initiativeSide === "enemies" ? "entity" : "character"
+		return (
+			isPartyActor(entry.actor, entry.kind) ===
+			(combatState.initiativeSide === "party")
 		);
 	};
 	const initiativePool = allEntries
@@ -563,9 +565,9 @@ export function Overview({ onInspectActor }: OverviewProps) {
 										/>
 									</ToggleButton>
 									<span
-										className={`badge badge-sm shrink-0 ${entry.kind === "character" ? "badge-primary" : "badge-error"}`}
+										className={`badge badge-sm shrink-0 ${isPartyActor(entry.actor, entry.kind) ? "badge-primary" : "badge-error"}`}
 									>
-										{entry.kind === "character" ? "Party" : "NPC"}
+										{entry.actor.OwnerId ? "Owned" : entry.kind === "character" ? "Party" : "NPC"}
 									</span>
 								</div>
 							</div>
@@ -604,10 +606,13 @@ function getVisibleEntries(
 
 	switch (filter) {
 		case "party":
-			return entries.filter((entry) => entry.kind === "character");
+			return entries.filter(
+				(entry) => isPartyActor(entry.actor, entry.kind) && !isItemDrop(entry)
+			);
 		case "npcs":
 			return entries.filter(
-				(entry) => entry.kind === "entity" && !isItemDrop(entry)
+				(entry) =>
+					!isPartyActor(entry.actor, entry.kind) && !isItemDrop(entry)
 			);
 		case "items":
 			return entries.filter((entry) => isItemDrop(entry));

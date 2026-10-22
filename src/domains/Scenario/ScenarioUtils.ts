@@ -77,6 +77,7 @@ export function buildCapturePlacements(campaign: Campaign): ActorPlacement[] {
                 TemplateId: template.Id,
                 Position: { ...entity.Position },
                 ...(entity.Hidden ? { Hidden: true } : {}),
+                ...(entity.OwnerId ? { OwnerId: entity.OwnerId } : {}),
             });
         }
     }

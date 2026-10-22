@@ -20,7 +20,9 @@ import {
 	AggregateStatsSummary,
 	isInteractiveCardTarget,
 } from "./ActorPanelHelpers";
-import { Character } from "../Character/Character";
+import type { Actor } from "../Actor/Actor";
+import { userControlsActor } from "../Actor/ActorOwnershipUtils";
+import { getSideActors } from "../Combat/CombatUtils";
 import { isItemEntity } from "../Item/ItemDropUtils";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { isActorVisibleToUser } from "../Actor/ActorVisibilityUtils";
@@ -35,16 +37,22 @@ export function Party({ onInspectActor }: PartyProps) {
 	const { actionService } = useActionService();
 	const { selectActor } = useMapState();
 	const campaign = CampaignUtils.getActiveCampaign(context);
-	const myCharacterId = context.User.SelectedCharacters[campaign.RoomCode];
+	// The party is the characters plus the entities they own (owned actors fight
+	// on the party side). The player controls their own character and what it owns.
+	const controls = (actor: Actor) =>
+		userControlsActor(context.User, campaign.RoomCode, actor);
 	// Party members this player can't see (hidden, or out of sight when that
 	// setting gates party members) are left out of the party panel; the DM sees
 	// everyone. Initiative still orders the FULL pool below so turn order is
 	// identical on every client; only the display is filtered.
 	const outOfSight = useOutOfSightActorIds();
-	const allCharacters = campaign.GameState.Characters;
-	const characters = allCharacters.filter((character) =>
-		isActorVisibleToUser(character, context.User, campaign.RoomCode, outOfSight)
+	const allPartyActors = getSideActors(campaign, "party").filter(
+		(actor) => !isItemEntity(actor)
 	);
+	const characters = allPartyActors.filter((actor) =>
+		isActorVisibleToUser(actor, context.User, campaign.RoomCode, outOfSight)
+	);
+	const characterIds = new Set(campaign.GameState.Characters.map((c) => c.Id));
 
 	const handleActionsChange = (
 		characterId: string,
@@ -74,12 +82,12 @@ export function Party({ onInspectActor }: PartyProps) {
 		combatState.isActive && charactersHaveInitiative
 			? initiativeMode === "individual"
 				? [
-					...allCharacters,
+					...campaign.GameState.Characters,
 					...campaign.GameState.Entities.filter(
 						(entity) => !isItemEntity(entity)
 					),
 				]
-				: allCharacters
+				: allPartyActors
 			: [];
 	const initiativePool = initiativeCandidates.filter((actor) =>
 		hasInitiativeSourceValue(actor, initiativeSettings, campaign.Settings)
@@ -113,10 +121,10 @@ export function Party({ onInspectActor }: PartyProps) {
 		})
 		: characters;
 
-	const inspectCharacter = (character: Character) => {
+	const inspectCharacter = (character: Actor) => {
 		selectActor({
 			id: character.Id,
-			kind: "character",
+			kind: characterIds.has(character.Id) ? "character" : "entity",
 			moveSpeed: character.MoveSpeed,
 		});
 		onInspectActor(character.Id);
@@ -124,7 +132,7 @@ export function Party({ onInspectActor }: PartyProps) {
 
 	const handleCardDoubleClick = (
 		event: MouseEvent<HTMLDivElement>,
-		character: Character
+		character: Actor
 	) => {
 		if (isInteractiveCardTarget(event.target, event.currentTarget)) return;
 		inspectCharacter(character);
@@ -132,7 +140,7 @@ export function Party({ onInspectActor }: PartyProps) {
 
 	const handleCardKeyDown = (
 		event: KeyboardEvent<HTMLDivElement>,
-		character: Character
+		character: Actor
 	) => {
 		if (isInteractiveCardTarget(event.target, event.currentTarget)) return;
 		if (event.key !== "Enter" && event.key !== " ") return;
@@ -140,23 +148,24 @@ export function Party({ onInspectActor }: PartyProps) {
 		inspectCharacter(character);
 	};
 
-	const handleBadgeClick = (characterId: string) => {
-		if (!actionService || characterId !== myCharacterId) return;
+	const handleBadgeClick = (character: Actor) => {
+		if (!actionService || !controls(character)) return;
 		actionService.execute("combat:markActorTurnDone", {
-			actorId: characterId,
+			actorId: character.Id,
 		});
 	};
 
-	const renderInitiativeBadge = (characterId: string) => {
+	const renderInitiativeBadge = (character: Actor) => {
+		const characterId = character.Id;
 		const order = orderByActorId.get(characterId);
 		if (order === undefined) return null;
 		const isDone = roundDoneSet.has(characterId);
-		const canToggle = characterId === myCharacterId;
+		const canToggle = controls(character);
 
 		return (
 			<button
 				type="button"
-				onClick={() => handleBadgeClick(characterId)}
+				onClick={() => handleBadgeClick(character)}
 				disabled={!canToggle}
 				title={
 					isDone
@@ -203,7 +212,7 @@ export function Party({ onInspectActor }: PartyProps) {
 						title="Double-click to inspect"
 						className="card bg-base-100 border-2 border-base-300 relative transition-all cursor-pointer hover:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
 					>
-						{renderInitiativeBadge(character.Id)}
+						{renderInitiativeBadge(character)}
 						<div className="card-body p-4">
 							<div className="flex gap-2 items-center">
 								<div className="flex flex-col items-center w-32 shrink-0">
@@ -260,7 +269,7 @@ export function Party({ onInspectActor }: PartyProps) {
 										onChange={(updatedActions) =>
 											handleActionsChange(character.Id, updatedActions)
 										}
-										readonly={character.Id !== myCharacterId}
+										readonly={!controls(character)}
 									/>
 								</div>
 							)}

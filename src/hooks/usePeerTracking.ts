@@ -6,6 +6,7 @@ import { useActionService } from "../services/Actions/ActionServiceProvider";
 import { useQuestContext } from "../domains/Context/ContextProvider";
 import { presenceStore } from "../domains/Context/contextStore";
 import { User } from "../domains/User/User";
+import { userControlsActorId } from "../domains/Actor/ActorOwnershipUtils";
 
 export interface PeerInfo {
 	peerId: string;
@@ -38,7 +39,6 @@ export function usePeerTracking(): PeerTrackingData {
 	const { actionService } = useActionService();
 	const context = useQuestContext();
 	const campaign = context.ActiveCampaign;
-	const roomCode = campaign?.RoomCode;
 
 	// Peer presence/pings are transient state on ActionService; it bumps
 	// presenceStore.version on change, so subscribing here keeps this current.
@@ -76,10 +76,12 @@ export function usePeerTracking(): PeerTrackingData {
 		context.User.Role === "dm" ||
 		peers.some((peer) => peer.user?.Role === "dm");
 
+	// The actors this user may move/drive: everything for the DM; a player's own
+	// character plus the actors it owns.
 	const canAccessActor = (actorId: string): boolean => {
 		if (context.User.Role === "dm") return true;
-		if (!roomCode) return false;
-		return context.User.SelectedCharacters[roomCode] === actorId;
+		if (!campaign) return false;
+		return userControlsActorId(context.User, campaign, actorId);
 	};
 
 	return {

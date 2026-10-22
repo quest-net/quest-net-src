@@ -435,8 +435,9 @@ export const ItemActions = {
 		const visibilitySettings = campaign.Settings.VisibilitySettings;
 		let visibility: ("dm" | "player" | "owner" | "all")[];
 
-		// Check if this actor is a character (player-controlled) or entity (DM-controlled)
+		// Player-controlled (a character, or an actor a character owns) or DM-controlled
 		const isCharacter =
+			!!actor.OwnerId ||
 			campaign.GameState.Characters.some((c) => c.Id === params.actorId) ||
 			campaign.CharacterRoster.some((c) => c.Id === params.actorId);
 

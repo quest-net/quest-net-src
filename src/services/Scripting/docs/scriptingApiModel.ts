@@ -63,7 +63,7 @@ export const ACTION_DOCS: Record<string, ActionDoc> = {
 	},
 	"actor:spawn": {
 		whenFires: "An actor is placed onto the field (character from roster, or entity cloned from a template).",
-		paramsNote: "params.hidden (boolean) spawns the actor invisible to players.",
+		paramsNote: "params.hidden (boolean) spawns the actor invisible to players. params.ownerId (character id) makes a spawned entity owned by that character.",
 	},
 	"actor:despawn": {
 		whenFires: "An active actor leaves the field (character back to roster, entity deleted).",
@@ -71,7 +71,7 @@ export const ACTION_DOCS: Record<string, ActionDoc> = {
 	"actor:edit": {
 		whenFires:
 			"Any actor field is written — INCLUDING stat changes, since changeStat/setStat route through actor:edit. The catch-all for actor mutation.",
-		paramsNote: "params.actorId + params.updates (a partial actor). There is no stat-specific trigger. updates.Hidden (boolean) hides an active actor from players or reveals it.",
+		paramsNote: "params.actorId + params.updates (a partial actor). There is no stat-specific trigger. updates.Hidden (boolean) hides an active actor from players or reveals it. updates.OwnerId (character id, or undefined to clear) sets which character owns the actor; invalid owners are ignored.",
 	},
 	"actor:delete": {
 		whenFires: "An actor is deleted from the roster/templates (not the field). Not scriptable.",
@@ -302,7 +302,7 @@ export const FACADE_DOCS: FacadeGroupDoc[] = [
 			{ signature: 'await game.log("text", opts?)', description: "Quick log entry. opts: { category?, level?, details? }.", backedBy: "log:log" },
 			{ signature: 'await game.toast("Hero", "text", opts?)', description: "Private toast/whisper to ONE player's character (name|id) — only they (and the DM) see it, in the log and as an alert. opts: { category?, level?, details? }.", backedBy: "log:create" },
 			{ signature: "await game.action(key, params)", description: "Escape hatch: dispatch ANY scriptable action directly (pass plain ids/values).", backedBy: "(any scriptable)" },
-			{ signature: 'await game.spawnActor("Goblin", position?)', description: "Spawn a roster character or entity template by name onto the field.", backedBy: "actor:spawn" },
+			{ signature: 'await game.spawnActor("Goblin", position?, { owner? })', description: "Spawn a roster character or entity template by name onto the field. { owner: this.actor } makes a spawned entity owned by that character (a summon its player controls).", backedBy: "actor:spawn" },
 			{ signature: 'await game.spawnItem("Torch", position)', description: "Drop an item onto the terrain from a template.", backedBy: "item:spawn" },
 			{ signature: "await game.ping(position)", description: "Flash a transient marker on the map (no actor; skips anti-spam cooldown).", backedBy: "ping:create" },
 		],

@@ -6,6 +6,7 @@ import type { InitiativeMode } from "../CampaignSetting/CampaignSetting";
 import { resolveStat } from "../Actor/ActorResolvers";
 import { ActorUtils } from "../Actor/ActorUtils";
 import { isItemEntity } from "../Item/ItemDropUtils";
+import { isPartyActor } from "../Actor/ActorOwnershipUtils";
 import { computeInitiativeOrder, hasInitiativeSourceValue } from "./InitiativeUtils";
 
 export function getInitiativeMode(campaign: Campaign): InitiativeMode {
@@ -19,7 +20,7 @@ export function getInitiativeMode(campaign: Campaign): InitiativeMode {
  * The acting pool follows mode + side, mirroring the banner/Party/Overview tabs:
  *   - individual mode -> everyone (Characters + non-item Entities);
  *   - party mode      -> only the side that currently holds initiative
- *                        (party -> Characters, enemies -> Entities).
+ *                        (see getSideActors).
  * Item-entities (dropped loot) are excluded, and actors with no usable
  * initiative source value are dropped (they never enter the acting order).
  *
@@ -44,9 +45,7 @@ export function actorsThisRound(campaign: Campaign): Actor[] {
 	const candidates: Actor[] =
 		mode === "individual"
 			? [...campaign.GameState.Characters, ...campaign.GameState.Entities]
-			: combatState.initiativeSide === "enemies"
-				? campaign.GameState.Entities
-				: campaign.GameState.Characters;
+			: getSideActors(campaign, combatState.initiativeSide);
 
 	// Drop loot item-entities and actors with no initiative value (they never act).
 	const pool = candidates.filter(
@@ -211,19 +210,27 @@ export function snapshotTurnStartForActors(actors: Actor[]): void {
 }
 
 /**
- * Snapshots turn-start positions for one side only. Party = Characters,
- * Enemies = Entities. Called when initiative flips to that side so the
- * acting players see their fresh budget zone.
+ * The spawned actors on one combat side. Party = Characters plus owned
+ * entities (owned actors fight beside their owner); Enemies = unowned Entities.
+ * Item-entities are included; callers that need acting actors filter them.
+ */
+export function getSideActors(campaign: Campaign, side: "party" | "enemies"): Actor[] {
+	const { Characters, Entities } = campaign.GameState;
+	return side === "party"
+		? [...Characters, ...Entities.filter((e) => isPartyActor(e, "entity"))]
+		: Entities.filter((e) => !isPartyActor(e, "entity"));
+}
+
+/**
+ * Snapshots turn-start positions for one side only (see getSideActors). Called
+ * when initiative flips to that side so the acting players see their fresh
+ * budget zone.
  */
 export function snapshotTurnStartForSide(
-	campaign: any,
+	campaign: Campaign,
 	side: "party" | "enemies"
 ): void {
-	const actors: Actor[] =
-		side === "party"
-			? campaign.GameState.Characters
-			: campaign.GameState.Entities;
-	snapshotTurnStartForActors(actors);
+	snapshotTurnStartForActors(getSideActors(campaign, side));
 }
 
 /**

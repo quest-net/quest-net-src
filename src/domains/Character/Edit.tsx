@@ -15,6 +15,7 @@ import { TagEditor } from "../../components/editors/TagEditor";
 import { ImagePicker } from "../../components/pickers/ImagePicker";
 import { AttributeEditor } from "../../components/editors/AttributeEditor";
 import { ScriptingFields } from "../../components/editors/ScriptingFields";
+import { OwnerEditor } from "../../components/editors/OwnerEditor";
 import { ACTOR_DEFAULT_COLORS } from "../Actor/Actor";
 import { isDmAccess } from "../../utils/UrlParser";
 import {
@@ -239,6 +240,16 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 							className="input input-bordered h-12 w-20 p-1"
 						/>
 					</FormField>
+
+					{isDmAccess() && (
+						<FormField label="Owner" hint="its player controls this character">
+							<OwnerEditor
+								actorId={data.Id}
+								value={data.OwnerId}
+								onChange={(ownerId) => handleFieldChange("OwnerId", ownerId)}
+							/>
+						</FormField>
+					)}
 				</FormGrid>
 			</FormSection>
 

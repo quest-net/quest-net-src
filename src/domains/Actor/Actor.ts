@@ -58,6 +58,13 @@ export interface Actor {
 	 * through actor:edit like any other field.
 	 */
 	Hidden?: boolean;
+	/**
+	 * Id of the Character that owns this actor (see ActorOwnershipUtils). The
+	 * owner's player controls it like their own character, sees it even when
+	 * hidden, and it fights on the party side. On an entity template it is
+	 * copied onto each spawned instance; entity:spawn's `ownerId` overrides it.
+	 */
+	OwnerId?: string;
 
 	// Scripting. Characters carry their hooks on the object itself; a spawned
 	// entity is a structuredClone of its template, so template hooks ride along on

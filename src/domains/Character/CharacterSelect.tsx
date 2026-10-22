@@ -35,9 +35,10 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 		peer.user?.ClaimedCharacters?.forEach((id) => selectedByPeers.add(id));
 	});
 
-	// Filter spawned characters to only show available ones
+	// Filter spawned characters to only show available ones. Owned characters
+	// are played through their owner, never picked directly.
 	const availableCharacters = campaign.GameState.Characters.filter(
-		(char) => !selectedByPeers.has(char.Id)
+		(char) => !selectedByPeers.has(char.Id) && !char.OwnerId
 	);
 
 	const handleSelectCharacter = (character: Character) => {

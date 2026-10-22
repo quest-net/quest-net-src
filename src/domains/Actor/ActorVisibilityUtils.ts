@@ -7,22 +7,22 @@
 
 import type { User } from "../User/User";
 import type { Actor } from "./Actor";
+import { userControlsActor } from "./ActorOwnershipUtils";
 
 /**
  * Whether `user` may see (render, list, select, inspect, target) `actor`.
  * A hidden actor is invisible to players, and so is one in `outOfSight` (the
  * line-of-sight result from useOutOfSightActorIds -- required, so no view can
- * apply one rule and forget the other). A player always sees the character
- * they play.
+ * apply one rule and forget the other). A player always sees the actors they
+ * control: the character they play and everything it owns.
  */
 export function isActorVisibleToUser(
-	actor: Pick<Actor, "Id" | "Hidden">,
+	actor: Pick<Actor, "Id" | "Hidden" | "OwnerId">,
 	user: Pick<User, "Role" | "SelectedCharacters">,
 	roomCode: string,
 	outOfSight: ReadonlySet<string>
 ): boolean {
-	if (user.Role === "dm") return true;
-	if (user.SelectedCharacters?.[roomCode] === actor.Id) return true;
+	if (userControlsActor(user, roomCode, actor)) return true;
 	return !actor.Hidden && !outOfSight.has(actor.Id);
 }
 

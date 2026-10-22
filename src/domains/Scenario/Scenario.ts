@@ -46,6 +46,10 @@ export interface ActorPlacement {
     // Whether the actor was hidden from players at capture time (Actor.Hidden).
     Hidden?: boolean;
 
+    // Entities only: owner at capture time (Actor.OwnerId), so a summon
+    // re-created from an unowned template comes back owned.
+    OwnerId?: string;
+
     Position: Position;
 }
 

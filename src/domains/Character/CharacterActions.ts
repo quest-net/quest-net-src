@@ -6,6 +6,7 @@ import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
 import { setActorHidden } from "../Actor/ActorVisibilityUtils";
+import { sanitizeOwner } from "../Actor/ActorOwnershipUtils";
 import { getVoxelSpawnPosition, getVoxelTerrainById } from "../VoxelTerrain/VoxelTerrainQueries";
 import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
 
@@ -31,6 +32,7 @@ export const CharacterActions = {
 				Current: stat.Max,
 			})),
 		};
+		sanitizeOwner(campaign, character);
 
 		campaign.CharacterRoster.push(character);
 
@@ -75,6 +77,7 @@ export const CharacterActions = {
 				Current: stat.Max,
 			})),
 		};
+		sanitizeOwner(campaign, character);
 
 		// Add directly to GameState (skip roster entirely)
 		campaign.GameState.Characters.push(character);

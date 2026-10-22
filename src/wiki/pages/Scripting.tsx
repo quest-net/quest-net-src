@@ -248,6 +248,7 @@ game.roll("2d6+1")             // silent DM dice -> number   ·   game.rng() -> 
 await game.log("text")         // quick log entry
 await game.toast("Aria", "text")        // private toast/whisper to ONE player
 await game.spawnActor("Goblin", pos)    //  await game.spawnItem("Torch", pos)
+await game.spawnActor("Skeleton", pos, { owner: this.actor })  // a summon this.actor's player controls
 await game.ping(pos)           // flash a marker on the map
 await game.action(key, params) // escape hatch: dispatch ANY scriptable action`}</CodeBlock>
 					<p className="text-sm opacity-80">The triggering <WikiCode>event</WikiCode>:</p>

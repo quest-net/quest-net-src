@@ -13,6 +13,7 @@ import { InitiativeSettingsEditor } from "../../components/editors/InitiativeSet
 import { CampaignSettings } from "../CampaignSetting/CampaignSetting";
 import { Modal } from "../../components/ui/Modal";
 import { isItemEntity } from "../Item/ItemDropUtils";
+import { getSideActors } from "./CombatUtils";
 import { isActorVisibleToUser, redactActorName } from "../Actor/ActorVisibilityUtils";
 import { useOutOfSightActorIds } from "../../components/Map/useOutOfSightActorIds";
 
@@ -36,9 +37,7 @@ export function CombatDisplay() {
 	// the same utility the Party/Overview tabs use so they stay in sync.
 	const bannerCandidates = isIndividualMode
 		? [...campaign.GameState.Characters, ...campaign.GameState.Entities]
-		: combatState.initiativeSide === "enemies"
-			? campaign.GameState.Entities
-			: campaign.GameState.Characters;
+		: getSideActors(campaign, combatState.initiativeSide);
 	const bannerPool = bannerCandidates.filter(
 		(actor) =>
 			!isItemEntity(actor) &&

@@ -19,15 +19,21 @@ import type {
 	StatCost,
 } from "../CampaignSetting/CampaignSetting";
 import type { User } from "../User/User";
+import {
+	getOwnerError,
+	releaseOwnedActors,
+	userControlsActorId,
+} from "./ActorOwnershipUtils";
 
 export const ActorUtils = {
 	/**
 	 * Whether `user` is allowed to target the actor named in `params` with
 	 * `actionKey`. The DM (and any non-player) is unrestricted. A player is gated
-	 * only on the shared `actor:*` surface — the one player-allowed path that can
-	 * carry an arbitrary actor id: they may act only on their own selected
-	 * Character. Since that selection always points at a Character they own, this
-	 * also blocks entities without resolving the actor's kind.
+	 * on the shared `actor:*` surface — the one player-allowed path that can
+	 * carry an arbitrary actor id: they may act only on actors they control (their
+	 * selected Character and the actors it owns, see ActorOwnershipUtils). Only
+	 * the DM assigns ownership, so a player can never change an OwnerId nor
+	 * create a character that already has one.
 	 *
 	 * This is the single home for the ownership rule. It runs in two places: the
 	 * player's optimistic pass (called with `context.User`, the player) and the
@@ -37,13 +43,22 @@ export const ActorUtils = {
 	playerMayTarget(
 		user: User,
 		actionKey: string | undefined,
-		params: { actorId?: string },
+		params: { actorId?: string; updates?: Partial<Actor>; character?: Partial<Actor> },
 		context: Context
 	): boolean {
 		if (user.Role !== "player") return true;
+		const campaign = CampaignUtils.getActiveCampaign(context);
 		if (actionKey === "actor:move" || actionKey === "actor:edit") {
-			const campaign = CampaignUtils.getActiveCampaign(context);
-			return user.SelectedCharacters?.[campaign.RoomCode] === params.actorId;
+			if (!userControlsActorId(user, campaign, params.actorId)) return false;
+			if (actionKey === "actor:edit" && params.updates && "OwnerId" in params.updates) {
+				// Full-sheet saves resend the current OwnerId; only a change is refused.
+				const current = getAllActors(campaign).find((a) => a.Id === params.actorId)?.OwnerId;
+				return (params.updates.OwnerId || undefined) === (current || undefined);
+			}
+			return true;
+		}
+		if (actionKey === "character:create" || actionKey === "character:createAndSpawn") {
+			return !params.character?.OwnerId;
 		}
 		return true;
 	},
@@ -343,7 +358,20 @@ export const ActorUtils = {
 
 		const previousCanFly = actor.CanFly;
 
-		Object.assign(actor, params.updates);
+		const updates = { ...params.updates };
+		if ("OwnerId" in updates) {
+			const ownerError = updates.OwnerId
+				? getOwnerError(campaign, actor.Id, updates.OwnerId)
+				: null;
+			if (ownerError) {
+				// Keep the current owner; apply the rest of the edit.
+				console.warn(`[Ownership] Ignoring owner for ${actor.Name}: ${ownerError}`);
+				delete updates.OwnerId;
+			}
+		}
+
+		Object.assign(actor, updates);
+		if ("OwnerId" in updates && !actor.OwnerId) delete actor.OwnerId;
 
 		if (
 			isSpawnedActor &&
@@ -394,6 +422,7 @@ export const ActorUtils = {
 
 		const actor = roster[index];
 		roster.splice(index, 1);
+		if (type === "character") releaseOwnedActors(campaign, [actor.Id]);
 
 		LogActions.create(
 			{
@@ -436,6 +465,7 @@ export const ActorUtils = {
 		});
 
 		if (count === 0) return;
+		if (type === "character") releaseOwnedActors(campaign, params.actorIds);
 
 		LogActions.create(
 			{

@@ -24,15 +24,15 @@ import { EntityActions } from "../Entity/EntityActions";
  */
 export const ActorActions = {
 	/**
-	 * Moves an actor to a new position. Players may only move their own selected
-	 * Character; they can never control Entities (DM-only).
+	 * Moves an actor to a new position. Players may only move actors they control:
+	 * their selected Character and the actors it owns (ActorOwnershipUtils).
 	 */
 	move(
 		params: { actorId: string; position: Position },
 		context: Context
 	): void {
-		// A player may only move their own selected Character (playerMayTarget also
-		// blocks entities). This gates the player's optimistic pass; the DM re-checks
+		// A player may only move actors they control (their selected Character and
+		// what it owns). This gates the player's optimistic pass; the DM re-checks
 		// the same rule authoritatively before applying a player request.
 		// Movement-range restriction stays entirely client-side (world view blocks
 		// out-of-range clicks; first-person applies a soft pull-back) — the DM trusts
@@ -51,15 +51,15 @@ export const ActorActions = {
 	},
 
 	/**
-	 * Edits an actor's properties. Players may edit Characters but never Entities.
+	 * Edits an actor's properties. Players may edit only actors they control, and
+	 * never change an OwnerId (ownership is DM-assigned).
 	 */
 	edit(
 		params: { actorId: string; updates: Partial<Actor> },
 		context: Context
 	): void {
-		// A player may only edit their own selected Character (playerMayTarget also
-		// blocks entities). The only UI path to the sheet is the player's own
-		// selected character; indirect cross-actor effects ride on other actions
+		// A player may only edit actors they control: their selected Character and
+		// the actors it owns. Indirect cross-actor effects ride on other actions
 		// (item:transfer, actor:transferStat), not actor:edit.
 		if (!ActorUtils.playerMayTarget(context.User, "actor:edit", params, context)) {
 			console.warn(
@@ -111,7 +111,15 @@ export const ActorActions = {
 	 * placement params.
 	 */
 	spawn(
-		params: { actorId: string; terrainId?: string; position?: Position; hidden?: boolean },
+		params: {
+			actorId: string;
+			terrainId?: string;
+			position?: Position;
+			hidden?: boolean;
+			// Entities only: owner for the new instance (a character's owner is
+			// part of the character itself and persists across spawns).
+			ownerId?: string;
+		},
 		context: Context
 	): void {
 		const kind = ActorUtils.getActorKind(context, params.actorId);
@@ -132,6 +140,7 @@ export const ActorActions = {
 					terrainId: params.terrainId,
 					position: params.position,
 					hidden: params.hidden,
+					ownerId: params.ownerId,
 				},
 				context
 			);

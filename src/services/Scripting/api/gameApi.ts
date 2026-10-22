@@ -94,8 +94,11 @@ export interface GameApi {
 	/** Dispatch any scriptable action by key (the raw escape hatch). */
 	action(key: string, params?: any): Promise<void>;
 
-	/** Spawn an actor from roster/templates (name|id). -> actorApi.spawnActor -> actor:spawn */
-	spawnActor(ref: ActorRef, position?: Position): Promise<void>;
+	/**
+	 * Spawn an actor from roster/templates (name|id). `options.owner` makes a
+	 * spawned entity owned by that character. -> actorApi.spawnActor -> actor:spawn
+	 */
+	spawnActor(ref: ActorRef, position?: Position, options?: { owner?: ActorRef }): Promise<void>;
 	/** Drop an item template (name|id) onto the map. -> itemApi.spawnItem -> item:spawn */
 	spawnItem(item: RefByNameOrId, position: Position): Promise<void>;
 	/** Drop an ephemeral ping marker at a position. -> pingApi.ping -> ping:create */
@@ -205,7 +208,7 @@ export function makeGameApi(api: ScriptApiContext): GameApi {
 		action: (key, params) => api.action(key, params),
 
 		// ---- Spawn / ping verbs (FLAT) -> delegate to sibling module fns ------
-		spawnActor: (ref, position) => spawnActorApi(api, ref, position),
+		spawnActor: (ref, position, options) => spawnActorApi(api, ref, position, options),
 		spawnItem: (item, position) => spawnItemApi(api, item, position),
 		ping: (position) => pingApi(api, position),
 	};

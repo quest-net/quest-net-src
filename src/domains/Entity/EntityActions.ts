@@ -6,6 +6,7 @@ import { CampaignUtils } from "../Campaign/CampaignUtils";
 import { LogActions } from "../Log/LogActions";
 import { ACTOR_DEFAULT_COLORS, Position } from "../Actor/Actor";
 import { setActorHidden } from "../Actor/ActorVisibilityUtils";
+import { sanitizeOwner } from "../Actor/ActorOwnershipUtils";
 import { getVoxelSpawnPosition, getVoxelTerrainById } from "../VoxelTerrain/VoxelTerrainQueries";
 import { VoxelTerrainUtils } from "../VoxelTerrain/VoxelTerrainUtils";
 import { EntityUtils } from "./EntityUtils";
@@ -34,6 +35,7 @@ export const EntityActions = {
 				Current: stat.Max,
 			})),
 		};
+		sanitizeOwner(campaign, entity);
 
 		campaign.EntityTemplates.push(entity);
 
@@ -69,6 +71,9 @@ export const EntityActions = {
 			instanceId?: string;
 			// Spawn invisible to players (see Actor.Hidden).
 			hidden?: boolean;
+			// Owner for this instance, overriding the template's OwnerId (e.g. a
+			// generic "Skeleton" raised by whichever necromancer cast the spell).
+			ownerId?: string;
 		},
 		context: Context
 	): void {
@@ -135,6 +140,8 @@ export const EntityActions = {
 			Color: template.Color ?? ACTOR_DEFAULT_COLORS.ENTITY,
 		};
 		setActorHidden(instance, params.hidden);
+		if (params.ownerId !== undefined) instance.OwnerId = params.ownerId;
+		sanitizeOwner(campaign, instance);
 		const voxelSpawnPosition = getVoxelSpawnPosition(
 			campaign,
 			targetTerrainId,

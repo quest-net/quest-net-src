@@ -75,6 +75,11 @@ export async function seed(kit) {
 			cyra: await token("Cyra token", "#9333ea", "C"),
 			goblin: await token("Goblin token", "#65a30d", "G"),
 			wolf: await token("Wolf token", "#57534e", "W"),
+			tamer: await token("Beast Tamer token", "#ca8a04", "T"),
+			master: await token("Puppet Master token", "#be185d", "M"),
+			puppet: await token("Puppet token", "#f472b6", "P"),
+			necro: await token("Necromancer token", "#1e293b", "N"),
+			skeleton: await token("Skeleton token", "#e7e5e4", "S"),
 			potion: await token("Potion icon", "#dc2626", "+"),
 			sword: await token("Sword icon", "#64748b", "/"),
 			forest: await makeImage("Forest clearing", {
@@ -177,6 +182,11 @@ export async function seed(kit) {
 			{ Name: "Aria", Image: img.aria, Color: "#2563eb", cls: "Wizard", pos: at(4, 4), CritMessage: "The arcane bends to my will!" },
 			{ Name: "Borin", Image: img.borin, Color: "#16a34a", cls: "Fighter", pos: at(5, 4) },
 			{ Name: "Cyra", Image: img.cyra, Color: "#9333ea", cls: "Rogue", pos: at(6, 4), Size: "small" },
+			// Owners (owned actors below). Keep these after the first three: the
+			// kit's default players claim GameState.Characters[0..n-1].
+			{ Name: "Beast Tamer", Image: img.tamer, Color: "#ca8a04", cls: "Ranger", pos: at(7, 4) },
+			{ Name: "Puppet Master", Image: img.master, Color: "#be185d", cls: "Artificer", pos: at(8, 4) },
+			{ Name: "Necromancer", Image: img.necro, Color: "#1e293b", cls: "Necromancer", pos: at(9, 4) },
 		];
 		const heroIds = [];
 		for (const h of heroes) {
@@ -204,7 +214,7 @@ export async function seed(kit) {
 			character: { ...CharacterUtils.createDefault(qn.ctx), Name: "Dorn (benched)", Tags: ["party/reserve"] },
 		});
 
-		const [aria, borin, cyra] = heroIds;
+		const [aria, borin, cyra, tamer, master, necro] = heroIds;
 		await run("item:give", { itemIds: [items.potion.Id], actorIds: heroIds, count: 2 });
 		await run("item:give", { itemIds: [items.sword.Id, items.torch.Id], actorIds: [borin], count: 1 });
 		await run("item:equip", { actorId: borin, itemId: items.sword.Id });
@@ -226,6 +236,41 @@ export async function seed(kit) {
 		// Hidden ambusher (DM-only) in the cellar.
 		await run("entity:spawn", { entityId: goblin.Id, terrainId: cellar.Id, position: { terrainId: cellar.Id, x: 4, y: 8, h: 1 }, hidden: true });
 		await run("item:spawn", { itemId: items.potion.Id, terrainId: forest.Id, position: at(10, 6) });
+
+		// --------------------------------------------------------- owned actors
+		// Persistent companion: a character owned by another character.
+		const puppet = {
+			...CharacterUtils.createDefault(qn.ctx), Name: "Puppet", Image: img.puppet, Color: "#f472b6",
+			Size: "small", OwnerId: master, Tags: ["party/owned"],
+		};
+		await run("character:create", { character: puppet });
+		await run("character:spawn", { characterId: puppet.Id, terrainId: forest.Id, position: at(8, 5) });
+		// Template-owned entity: every Wolf spawned belongs to the Beast Tamer.
+		const tamerWolf = {
+			...EntityUtils.createDefault(qn.ctx), Name: "Wolf", Image: img.wolf, Tags: ["companions"],
+			Size: "medium", MoveSpeed: 8, OwnerId: tamer,
+		};
+		await run("entity:create", { entity: tamerWolf });
+		await run("entity:spawn", { entityId: tamerWolf.Id, terrainId: forest.Id, position: at(7, 5) });
+		const wolfInstance = c().GameState.Entities.find((e) => e.Name === "Wolf");
+		await run("item:give", { itemIds: [items.potion.Id], actorIds: [wolfInstance.Id], count: 1 });
+		// Generic summon: an unowned Skeleton template, owned by whoever raises it.
+		const skeleton = {
+			...EntityUtils.createDefault(qn.ctx), Name: "Skeleton", Image: img.skeleton, Tags: ["monsters/undead"],
+		};
+		await run("entity:create", { entity: skeleton });
+		const raiseDeadId = id();
+		await run("skill:create", {
+			skill: {
+				Id: raiseDeadId, Name: "Raise Dead", Description: "Raises a Skeleton that obeys you.", Tags: ["spells"],
+				Scripts: [{
+					Name: "Raise a skeleton", Trigger: "skill:use", When: "after", Enabled: true,
+					// Skill scripts fire on every skill:use, so react only to this skill used by this bearer.
+					Code: `if (event.params.skillId !== "${raiseDeadId}" || event.params.actorId !== this.actor.Id) return;\nawait game.spawnActor("Skeleton", this.actor.Position, { owner: this.actor });`,
+				}],
+			},
+		});
+		await run("skill:give", { skillIds: [raiseDeadId], actorIds: [necro], count: 1 });
 
 		// ------------------------------------------------- audio / scene / misc
 		await run("audio:create", { audio: { Name: "Tavern ambience", YoutubeId: "dQw4w9WgXcQ", Tags: ["ambience"] } });

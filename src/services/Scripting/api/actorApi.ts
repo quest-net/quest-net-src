@@ -362,13 +362,20 @@ export function wrapActor(actor: Actor, api: ScriptApiContext): ActorFacade {
  * not-yet-active sources), NOT active actors, since the actor does not exist on the
  * field yet. The unified actor:spawn handler resolves kind from the id and routes
  * to the right spawn semantics. -> actor:spawn
+ *
+ * `options.owner` (an active actor ref, usually `this.actor`) makes a spawned
+ * ENTITY owned by that character -- the generic-summon case. A character's owner
+ * is part of the character and is not changed here.
  */
 export function spawnActor(
 	api: ScriptApiContext,
 	ref: ActorRef,
-	position?: Position
+	position?: Position,
+	options?: { owner?: ActorRef }
 ): Promise<void> {
 	const campaign = api.campaign();
+	const ownerId =
+		options?.owner != null ? ActorUtils.resolveActorId(campaign, options.owner) : undefined;
 	let actorId: string | undefined;
 	if (ref != null && typeof ref === "object") {
 		actorId = ref.Id;
@@ -378,5 +385,5 @@ export function spawnActor(
 		actorId = resolveByNameOrId(spawnable, ref)?.Id;
 	}
 	if (!actorId) return Promise.resolve();
-	return api.action("actor:spawn", { actorId, position });
+	return api.action("actor:spawn", { actorId, position, ownerId });
 }
