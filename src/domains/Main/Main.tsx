@@ -444,8 +444,12 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 
 	// Map selection -> bottom tab. A player selecting their own character lands
 	// on the Character sheet; everyone else (and the DM) lands on the Inspector.
+	// Also records the selection: Party/Overview call this in the same click that
+	// selects the actor, before InspectorTabSync mirrors it, and without it the
+	// fallback effect sees no Inspector tab and bounces back to the first tab.
 	const routeToActorTab = useCallback(
 		(actorId: string) => {
+			setSelectedActorId(actorId);
 			setActiveBottomTab(
 				!isDM && actorId === selectedCharacterId ? "character" : "inspector"
 			);

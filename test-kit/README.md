@@ -13,7 +13,9 @@ node test-kit/run.mjs --seed                         # rebuild kitchen-sink.json
 
 Scenarios live in `test-kit/scenarios/`; `new-campaign-terrains.mjs` (run with
 `--players 0`) guards new and restored campaigns keeping their terrain voxels,
-and `owned-actors.mjs` covers owned actors. A scenario can `export const options`
+`owned-actors.mjs` covers owned actors, and `inspect-tab.mjs` clicks the real
+Party/Overview panels to guard the first inspect landing on the Inspector tab.
+A scenario can `export const options`
 for `startKit`, e.g. `{ characters: ["Beast Tamer", null] }` to choose which
 character each player claims (`null` leaves that player on character select).
 Add `--headed` to watch the browsers and `--verbose` to print every console line.
