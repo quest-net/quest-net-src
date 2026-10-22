@@ -43,6 +43,13 @@ const TURN_CONFIG = buildTurnConfig();
 // visibility into relay behaviour. (Trystero 0.25.3+.)
 const WARN_ON_RELAY_FAILURE = import.meta.env.DEV;
 
+// Comma-separated Nostr relay override (the test kit points this at its local
+// relay). Unset = Trystero's public relay list.
+const RELAY_URLS = (import.meta.env.VITE_RELAY_URLS as string | undefined)
+	?.split(",")
+	.map((url) => url.trim())
+	.filter(Boolean);
+
 /**
  * Optional callbacks passed to `joinRoom` (Trystero 0.23+).
  *
@@ -99,7 +106,10 @@ export const RoomService = {
 			{
 				appId: APP_ID,
 				passive,
-				relayConfig: { warnOnRelayFailure: WARN_ON_RELAY_FAILURE },
+				relayConfig: {
+					warnOnRelayFailure: WARN_ON_RELAY_FAILURE,
+					...(RELAY_URLS?.length ? { urls: RELAY_URLS } : {}),
+				},
 				...(TURN_CONFIG ? { turnConfig: TURN_CONFIG } : {}),
 			},
 			roomCode,

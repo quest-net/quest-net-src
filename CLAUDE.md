@@ -6,6 +6,8 @@ Quest-Net is a real-time collaborative TTRPG (tabletop role-playing game) manage
 
 The sandboxed Linux shell sees a stale/truncated view of files in this repo (bash `cat`, `wc -c`, `tsc`, etc. may show files cut off mid-line, even though the actual files on disk are intact and the Read/Write/Edit tools see them correctly). This is purely a workspace-mount issue on Claude's side. Do not try to "fix" truncated files by rewriting them through bash — the source of truth is what the file tools report. Skip running `tsc`/`vite build` from the shell to verify changes; rely on the file-tool view and let the user run the build themselves.
 
+**Testing in the real app:** use the test kit (`test-kit/README.md`). `node test-kit/run.mjs test-kit/scenarios/smoke.mjs` runs a DM + 2 players on a ready-made "kitchen sink" campaign in ~10s. `--serve` plus `test-kit/send.mjs` keeps a live multiplayer session you can drive across many commands. Write a new scenario file for anything multiplayer you change. Run it from PowerShell.
+
 ## Tech Stack
 
 - **React 19** with **TypeScript** (strict mode) and **React Router v7** (HashRouter)

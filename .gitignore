@@ -32,3 +32,6 @@ localhost+*-key.pem
 IMPLEMENTATION_PLAN.md
 AGENTS.md
 *.md
+
+# Test kit screenshots
+/test-kit/out

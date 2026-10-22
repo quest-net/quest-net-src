@@ -28,6 +28,8 @@ export function ActionServiceProvider({ children }: { children: ReactNode }) {
 		useState<ActionService | null>(null);
 
 	const setActionService = useCallback((service: ActionService | null) => {
+		// Dev-only handle for the test kit (test-kit/README.md); stripped from builds.
+		if (import.meta.env.DEV) (window as any).__qnActionService = service;
 		setLiveActionService(service);
 	}, []);
 
