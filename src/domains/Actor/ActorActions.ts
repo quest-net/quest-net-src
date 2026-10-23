@@ -119,6 +119,8 @@ export const ActorActions = {
 			// Entities only: owner for the new instance (a character's owner is
 			// part of the character itself and persists across spawns).
 			ownerId?: string;
+			// Entities only: the new instance's Id (lets a script find what it spawned).
+			instanceId?: string;
 		},
 		context: Context
 	): void {
@@ -141,6 +143,7 @@ export const ActorActions = {
 					position: params.position,
 					hidden: params.hidden,
 					ownerId: params.ownerId,
+					instanceId: params.instanceId,
 				},
 				context
 			);

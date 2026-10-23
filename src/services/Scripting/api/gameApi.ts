@@ -96,9 +96,14 @@ export interface GameApi {
 
 	/**
 	 * Spawn an actor from roster/templates (name|id). `options.owner` makes a
-	 * spawned entity owned by that character. -> actorApi.spawnActor -> actor:spawn
+	 * spawned entity owned by that character. Resolves to the spawned actor, or
+	 * undefined if nothing spawned. -> actorApi.spawnActor -> actor:spawn
 	 */
-	spawnActor(ref: ActorRef, position?: Position, options?: { owner?: ActorRef }): Promise<void>;
+	spawnActor(
+		ref: ActorRef,
+		position?: Position,
+		options?: { owner?: ActorRef }
+	): Promise<ActorFacade | undefined>;
 	/** Drop an item template (name|id) onto the map. -> itemApi.spawnItem -> item:spawn */
 	spawnItem(item: RefByNameOrId, position: Position): Promise<void>;
 	/** Drop an ephemeral ping marker at a position. -> pingApi.ping -> ping:create */

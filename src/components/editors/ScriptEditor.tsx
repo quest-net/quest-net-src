@@ -154,6 +154,18 @@ export function ScriptEditor({ scripts, onChange, readOnly }: ScriptEditorProps)
 								<option value="after">After</option>
 								<option value="before">Before</option>
 							</select>
+							<select
+								value={script.Scope ?? "self"}
+								disabled={readOnly}
+								onChange={(e) =>
+									update(i, { Scope: e.target.value as "self" | "any" })
+								}
+								className="select select-bordered select-sm w-24 shrink-0"
+								title="Self: only events about this script's own actor/item/status/skill. Any: every matching event."
+							>
+								<option value="self">Self</option>
+								<option value="any">Any</option>
+							</select>
 							<label className="flex items-center gap-1 text-xs opacity-80">
 								<input
 									type="checkbox"

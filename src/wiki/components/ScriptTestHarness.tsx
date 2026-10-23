@@ -76,6 +76,7 @@ export function ScriptTestHarness() {
 	const [hostIndex, setHostIndex] = useState(0);
 	const [triggerKey, setTriggerKey] = useState("combat:incrementRound");
 	const [phase, setPhase] = useState<"before" | "after">("after");
+	const [scope, setScope] = useState<"self" | "any">("self");
 	const [paramsText, setParamsText] = useState("{}");
 	const [code, setCode] = useState(DEFAULT_CODE);
 	const [output, setOutput] = useState<{
@@ -85,6 +86,7 @@ export function ScriptTestHarness() {
 		ran: boolean;
 		cancelled?: boolean;
 		params?: any;
+		skipped?: boolean;
 	}>({ ok: true, patch: "", ran: false });
 
 	const handleRun = async () => {
@@ -119,6 +121,7 @@ export function ScriptTestHarness() {
 			triggerKey,
 			params,
 			phase,
+			scope,
 		});
 		const patch = compare(before, working);
 		setOutput({
@@ -128,6 +131,7 @@ export function ScriptTestHarness() {
 			ran: true,
 			cancelled: result.cancelled,
 			params: result.params,
+			skipped: result.skipped,
 		});
 	};
 
@@ -180,6 +184,19 @@ export function ScriptTestHarness() {
 						<option value="before">Before — intercept (mutable params, event.cancel())</option>
 					</select>
 				</label>
+				<label className="form-control">
+					<span className="label-text mb-1 text-xs opacity-70">
+						Scope (script.Scope)
+					</span>
+					<select
+						className="select select-bordered select-sm w-full"
+						value={scope}
+						onChange={(e) => setScope(e.target.value as "self" | "any")}
+					>
+						<option value="self">Self — only events about this host</option>
+						<option value="any">Any — every matching event</option>
+					</select>
+				</label>
 			</div>
 
 			<label className="form-control">
@@ -215,6 +232,11 @@ export function ScriptTestHarness() {
 					{output.error ? (
 						<div className="rounded-lg border border-error/40 bg-error/10 p-3 text-sm">
 							<span className="font-semibold text-error">Error:</span> {output.error}
+						</div>
+					) : output.skipped ? (
+						<div className="rounded-lg border border-warning/40 bg-warning/10 p-2 text-sm">
+							Skipped: these params name a different actor or template, so a "self"
+							script would not run. Use Scope "any" to react anyway.
 						</div>
 					) : (
 						<div className="rounded-lg border border-success/40 bg-success/10 p-2 text-sm text-success">

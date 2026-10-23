@@ -43,6 +43,16 @@ export interface Script {
 	 * unchanged.
 	 */
 	When?: "before" | "after";
+	/**
+	 * Which events reach a script hosted on an actor or an item/status/skill
+	 * template. Absent === "self": the engine skips an event that names a different
+	 * actor than the bearer (actorId/entityId/characterId/actorIds) or, on a
+	 * template host, a different template of its kind (itemId/statusId(s)/skillId).
+	 * Events that name no actor (e.g. combat:incrementRound) still reach every
+	 * bearer. "any" turns the filter off (auras, "when anyone moves", reacting to
+	 * being targeted). Campaign scripts are never filtered.
+	 */
+	Scope?: "self" | "any";
 }
 
 /** JSON-ish primitive that a script param/var may hold. */

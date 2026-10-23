@@ -190,6 +190,9 @@ function parseImportedScript(value: unknown, index: number): Script {
 	) {
 		throw new Error(`Script ${index + 1} has an invalid When value.`);
 	}
+	if (value.Scope !== undefined && value.Scope !== "self" && value.Scope !== "any") {
+		throw new Error(`Script ${index + 1} has an invalid Scope value.`);
+	}
 	if (value.Enabled !== undefined && typeof value.Enabled !== "boolean") {
 		throw new Error(`Script ${index + 1} has an invalid Enabled value.`);
 	}
@@ -203,6 +206,7 @@ function parseImportedScript(value: unknown, index: number): Script {
 		Name: typeof value.Name === "string" ? value.Name : undefined,
 		Trigger: trigger,
 		When: value.When === "before" || value.When === "after" ? value.When : undefined,
+		Scope: value.Scope === "self" || value.Scope === "any" ? value.Scope : undefined,
 		Enabled: typeof value.Enabled === "boolean" ? value.Enabled : true,
 		Code: code,
 	};

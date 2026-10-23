@@ -14,6 +14,7 @@ import { defaultInitiativeV290Migration } from "./v2_9_0_defaultInitiative";
 import { removeStatOverflowV290Migration } from "./v2_9_0_removeStatOverflow";
 import { voxelBytesV2100Migration } from "./v2_10_0_voxelBytes";
 import { terrainOpfsV2110Migration } from "./v2_11_0_terrainOpfs";
+import { scriptScopeAnyV320Migration } from "./v3_2_0_scriptScopeAny";
 
 /**
  * Ordered list of campaign-level migrations, sorted ascending by version.
@@ -35,4 +36,5 @@ export const campaignMigrations: Migration[] = [
 	removeStatOverflowV290Migration,
 	voxelBytesV2100Migration,
 	terrainOpfsV2110Migration,
+	scriptScopeAnyV320Migration,
 ];

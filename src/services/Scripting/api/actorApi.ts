@@ -27,7 +27,8 @@
 import type { Actor, Position, StatSlot, StatusSlotExpiration } from "../../../domains/Actor/Actor";
 import type { ScriptApiContext } from "./apiContext";
 import { ActorUtils } from "../../../domains/Actor/ActorUtils";
-import { resolveByNameOrId } from "../../../utils/resolveByNameOrId";
+import { resolveByNameOrId, globMatches } from "../../../utils/resolveByNameOrId";
+import { EntityUtils } from "../../../domains/Entity/EntityUtils";
 import { rollDiceFormula, getRollOutcome } from "../../../utils/DiceUtils";
 import * as itemApi from "./itemApi";
 import * as statusApi from "./statusApi";
@@ -75,6 +76,12 @@ export interface ActorApiMethods {
 	 * "level:7" (caller does Number()); `undefined` if absent. -> NEW util
 	 */
 	getTagValue(prefix: string): string | undefined;
+	/**
+	 * Active actors this actor owns (Actor.OwnerId), wrapped. `name` is an optional
+	 * glob matched against the name with or without its "[B]" suffix, so
+	 * owned("Wolf") finds "Wolf [B]".
+	 */
+	owned(name?: string): ActorFacade[];
 
 	// ---- Mutations (tier 2: registered actions) ----------------------------
 
@@ -179,6 +186,7 @@ const ACTOR_API_KEYS = new Set<keyof ActorApiMethods>([
 	"distanceTo",
 	"isAdjacentTo",
 	"getTagValue",
+	"owned",
 	"changeStat",
 	"setStat",
 	"transferStatTo",
@@ -234,6 +242,16 @@ function makeActorMethods(
 			return target ? ActorUtils.isAdjacentTo(actor, target, api.campaign()) : false;
 		},
 		getTagValue: (prefix) => ActorUtils.getTagValue(actor, prefix),
+		owned: (name) =>
+			ActorUtils.getActiveActors(api.campaign())
+				.filter(
+					(a) =>
+						a.OwnerId === actor.Id &&
+						(name == null ||
+							globMatches(name, a.Name) ||
+							globMatches(name, EntityUtils.getBaseName(a.Name)))
+				)
+				.map((a) => wrapActor(a, api)),
 
 		// ---- Mutations -------------------------------------------------------
 		changeStat: async (stat, delta) => {
@@ -366,13 +384,15 @@ export function wrapActor(actor: Actor, api: ScriptApiContext): ActorFacade {
  * `options.owner` (an active actor ref, usually `this.actor`) makes a spawned
  * ENTITY owned by that character -- the generic-summon case. A character's owner
  * is part of the character and is not changed here.
+ *
+ * Resolves to the spawned actor's facade, or undefined if nothing spawned.
  */
-export function spawnActor(
+export async function spawnActor(
 	api: ScriptApiContext,
 	ref: ActorRef,
 	position?: Position,
 	options?: { owner?: ActorRef }
-): Promise<void> {
+): Promise<ActorFacade | undefined> {
 	const campaign = api.campaign();
 	const ownerId =
 		options?.owner != null ? ActorUtils.resolveActorId(campaign, options.owner) : undefined;
@@ -384,6 +404,16 @@ export function spawnActor(
 		const spawnable = [...campaign.CharacterRoster, ...campaign.EntityTemplates];
 		actorId = resolveByNameOrId(spawnable, ref)?.Id;
 	}
-	if (!actorId) return Promise.resolve();
-	return api.action("actor:spawn", { actorId, position, ownerId });
+	if (!actorId) return undefined;
+	// An entity spawns as a fresh clone; pick its Id up front so we can find it after.
+	const isEntity = campaign.EntityTemplates.some((e) => e.Id === actorId);
+	const spawnedId = isEntity ? crypto.randomUUID() : actorId;
+	await api.action("actor:spawn", {
+		actorId,
+		position,
+		ownerId,
+		instanceId: isEntity ? spawnedId : undefined,
+	});
+	const spawned = ActorUtils.getActiveActors(api.campaign()).find((a) => a.Id === spawnedId);
+	return spawned ? wrapActor(spawned, api) : undefined;
 }

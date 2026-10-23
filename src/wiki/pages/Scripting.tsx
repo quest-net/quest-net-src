@@ -198,17 +198,18 @@ const scriptingPage: WikiPageDefinition = {
 							other entity through <WikiCode>game</WikiCode>.
 						</p>
 					</WikiCallout>
-					<WikiCallout tone="warning" title="A script runs once per instance — self-filter">
+					<WikiCallout tone="info" title="Scope: a script only hears about its own bearer">
 						<p>
-							A script on a status/item/skill template runs once for{" "}
-							<strong>every instance</strong> of that template when its trigger fires —
-							not just the one involved in the action. Narrow with{" "}
-							<WikiCode>event.params</WikiCode>, e.g.{" "}
-							<WikiCode>if (event.params.actorId !== this.actor.Id) return;</WikiCode>,
-							so a poison on one creature doesn't react to another creature's move.
-							(Round ticks like <WikiCode>combat:incrementRound</WikiCode> carry no
-							actor, so each bearer's <WikiCode>this.actor</WikiCode> already points at
-							the right creature — no filter needed.)
+							A script on an actor or a status/item/skill template has{" "}
+							<WikiCode>Scope: "self"</WikiCode> by default: an event that names a
+							different actor — or, on a template, a different item/status/skill — is
+							skipped. A poison doesn't react to another creature's move, and a whistle
+							doesn't react to someone else's item, with no filter code. Events that
+							name no actor (<WikiCode>combat:incrementRound</WikiCode>) reach every
+							bearer. Set <WikiCode>Scope: "any"</WikiCode> to react to{" "}
+							<em>other</em> actors (auras, being targeted via{" "}
+							<WikiCode>event.params.targetActorId</WikiCode>). Campaign scripts always
+							see everything.
 						</p>
 					</WikiCallout>
 				</div>
@@ -377,7 +378,6 @@ event.cancel();             // veto: the action (and its after-reactions) never 
 							skill's base formula and add to it:
 						</p>
 						<CodeBlock>{`// Status, When: "before"  ·  Trigger: "skill:use"
-if (event.params.actorId !== this.actor.Id) return;   // only OUR bearer
 const skill = game.campaign.SkillTemplates.find(s => s.Id === event.params.skillId);
 if (skill?.DiceRoll) event.params.diceFormula = skill.DiceRoll + " + 1d4";`}</CodeBlock>
 					</WikiCallout>
@@ -500,7 +500,6 @@ this.actor.changeStat("HP", -this.params.potency);`}</CodeBlock>
 						Stalker status — spawns a "Stalker" on first move, then follows the bearer:
 					</p>
 					<CodeBlock>{`// Status hook  ·  Trigger: "*:move"
-if (event.params.actorId !== this.actor.Id) return;   // only when OUR bearer moves
 const stalker = game.find("Stalker");
 if (stalker) stalker.move(this.actor.Position);
 else game.spawnActor("Stalker", this.actor.Position);`}</CodeBlock>
@@ -508,9 +507,14 @@ else game.spawnActor("Stalker", this.actor.Position);`}</CodeBlock>
 						Blessing trinket — gives a status to whoever uses it:
 					</p>
 					<CodeBlock>{`// Item hook  ·  Trigger: "item:use"
-if (event.params.itemId !== this.Id) return;          // this item...
-if (event.params.actorId !== this.actor.Id) return;   // ...used by our holder
 this.actor.giveStatus("Blessed");`}</CodeBlock>
+					<p className="text-sm opacity-80">
+						Summoning whistle — calls the holder's wolf, or dismisses it:
+					</p>
+					<CodeBlock>{`// Item hook  ·  Trigger: "item:use"
+const wolf = this.actor.owned("Wolf")[0];
+if (wolf) await wolf.despawn();
+else await game.spawnActor("Wolf", this.actor.Position, { owner: this.actor });`}</CodeBlock>
 					<p className="text-sm opacity-80">
 						World rule — restore the whole party to full HP on a long rest:
 					</p>

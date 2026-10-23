@@ -1,4 +1,4 @@
 // src/version.ts
 export type VersionString = `${number}.${number}.${number}`;
 
-export const APP_VERSION: VersionString = "3.1.2";
+export const APP_VERSION: VersionString = "3.2.0";

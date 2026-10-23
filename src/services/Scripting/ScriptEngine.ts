@@ -92,6 +92,51 @@ interface HostBinding {
 	paramsHolder: { Parameters?: ScriptParam[] };
 	/** Where `this.vars` reads/writes (actor, slot, or campaign). */
 	varsOwner: { ScriptVars?: ScriptVars };
+	/** Template hosts only: the params key naming a template of this host's kind. */
+	templateKey?: "itemId" | "statusId" | "skillId";
+}
+
+type SlotCollection = "Statuses" | "Inventory" | "Equipment" | "Skills";
+
+const SLOT_TEMPLATE_KEY: Record<SlotCollection, NonNullable<HostBinding["templateKey"]>> = {
+	Statuses: "statusId",
+	Inventory: "itemId",
+	Equipment: "itemId",
+	Skills: "skillId",
+};
+
+/** Ids an event names under `key` and its plural `${key}s` (e.g. statusId + statusIds). */
+function namedIds(params: any, ...keys: string[]): string[] {
+	const out: string[] = [];
+	for (const k of keys) {
+		const one = params?.[k];
+		const many = params?.[`${k}s`];
+		if (typeof one === "string") out.push(one);
+		if (Array.isArray(many)) out.push(...many.filter((v) => typeof v === "string"));
+	}
+	return out;
+}
+
+const ACTOR_PARAM_KEYS = ["actorId", "entityId", "characterId"];
+
+/**
+ * Default "self" scope: an event that names actors must name the bearer, and on
+ * a template host an event that names templates of its kind must name this one.
+ * An event naming nothing (a round tick) reaches every bearer.
+ */
+function isInScope(binding: HostBinding, scope: Script["Scope"], params: any): boolean {
+	if (scope === "any" || !binding.actor) return true;
+	const actors = namedIds(params, ...ACTOR_PARAM_KEYS);
+	if (actors.length && !actors.includes(binding.actor.Id)) return false;
+	if (!binding.templateKey) return true;
+	const templates = namedIds(params, binding.templateKey);
+	return !templates.length || templates.includes((binding.raw as { Id: string }).Id);
+}
+
+/** The event's actor: the bearer when the event names it (so a multi-actor status:give binds each bearer), else the first named. */
+function eventActorId(params: any, bearerId: string | undefined): string | undefined {
+	const ids = namedIds(params, ...ACTOR_PARAM_KEYS);
+	return bearerId && ids.includes(bearerId) ? bearerId : ids[0];
 }
 
 /**
@@ -123,14 +168,24 @@ function makeEvent(
 	params: any,
 	result: unknown,
 	campaign: Campaign,
-	api: ScriptApiContext
+	api: ScriptApiContext,
+	bearerId?: string
 ): any {
-	const actorId = params?.actorId ?? params?.entityId ?? params?.characterId;
+	const actor = wrapEventActor(params, campaign, api, bearerId);
+	return Object.freeze({ key, params: params ?? {}, result, actor });
+}
+
+function wrapEventActor(
+	params: any,
+	campaign: Campaign,
+	api: ScriptApiContext,
+	bearerId: string | undefined
+) {
+	const actorId = eventActorId(params, bearerId);
 	const raw = actorId
 		? ActorUtils.getActiveActors(campaign).find((a) => a.Id === actorId)
 		: undefined;
-	const actor = raw ? wrapActor(raw, api) : undefined;
-	return Object.freeze({ key, params: params ?? {}, result, actor });
+	return raw ? wrapActor(raw, api) : undefined;
 }
 
 /** Mutation flag a before-script flips by calling `event.cancel()`. */
@@ -150,13 +205,10 @@ function makeBeforeEvent(
 	params: any,
 	campaign: Campaign,
 	control: BeforeControl,
-	api: ScriptApiContext
+	api: ScriptApiContext,
+	bearerId?: string
 ): any {
-	const actorId = params?.actorId ?? params?.entityId ?? params?.characterId;
-	const raw = actorId
-		? ActorUtils.getActiveActors(campaign).find((a) => a.Id === actorId)
-		: undefined;
-	const actor = raw ? wrapActor(raw, api) : undefined;
+	const actor = wrapEventActor(params, campaign, api, bearerId);
 	return {
 		key,
 		params,
@@ -313,7 +365,7 @@ function collectSlotMatches(
 	out: ScriptMatch[],
 	key: string,
 	actor: Actor,
-	collection: string,
+	collection: SlotCollection,
 	slots: Array<{ Id: string; ScriptVars?: ScriptVars }> | undefined,
 	templates: Array<{ Id: string; Scripts?: Script[]; Parameters?: ScriptParam[] }>,
 	phase: ScriptPhase
@@ -331,7 +383,13 @@ function collectSlotMatches(
 			out,
 			template.Scripts,
 			key,
-			{ raw: template, actor, paramsHolder: template, varsOwner: slot },
+			{
+				raw: template,
+				actor,
+				paramsHolder: template,
+				varsOwner: slot,
+				templateKey: SLOT_TEMPLATE_KEY[collection],
+			},
 			`slot:${actor.Id}:${collection}:${slot.Id}:${n}`,
 			phase
 		);
@@ -422,6 +480,7 @@ async function runOneScript(
 	const { script } = match;
 	// A host removed by an earlier script in this same pass: skip it.
 	if (match.actor && !isActorActive(campaign, match.actor)) return;
+	if (!isInScope(match, script.Scope, eventInfo.params)) return;
 	const validation = validateScriptSource(script.Code);
 	if (!validation.ok) {
 		logScriptError(context, script, validation.error);
@@ -434,9 +493,10 @@ async function runOneScript(
 	// this.actor / game.find(...). For the before-phase the mutable params + veto
 	// control are shared across scripts (carried in eventInfo); only the actor
 	// wrapping is per-run.
+	const bearerId = match.actor?.Id;
 	const event = eventInfo.control
-		? makeBeforeEvent(eventInfo.key, eventInfo.params, campaign, eventInfo.control, api)
-		: makeEvent(eventInfo.key, eventInfo.params, eventInfo.result, campaign, api);
+		? makeBeforeEvent(eventInfo.key, eventInfo.params, campaign, eventInfo.control, api, bearerId)
+		: makeEvent(eventInfo.key, eventInfo.params, eventInfo.result, campaign, api, bearerId);
 	try {
 		const thisHost = makeThis(match, api);
 		// eslint-disable-next-line no-new-func
@@ -496,13 +556,13 @@ export type ScriptHostSelection =
 	| {
 			kind: "slot";
 			actorId: string;
-			collection: "Statuses" | "Inventory" | "Equipment" | "Skills";
+			collection: SlotCollection;
 			index: number;
 	  };
 
 function templatesForCollection(
 	campaign: Campaign,
-	collection: "Statuses" | "Inventory" | "Equipment" | "Skills"
+	collection: SlotCollection
 ): Array<{ Id: string; Scripts?: Script[]; Parameters?: ScriptParam[] }> {
 	if (collection === "Statuses") return campaign.StatusTemplates;
 	if (collection === "Skills") return campaign.SkillTemplates;
@@ -530,7 +590,13 @@ function bindingForSelection(
 		(t) => t.Id === slot.Id
 	);
 	if (!template) return null;
-	return { raw: template, actor, paramsHolder: template, varsOwner: slot };
+	return {
+		raw: template,
+		actor,
+		paramsHolder: template,
+		varsOwner: slot,
+		templateKey: SLOT_TEMPLATE_KEY[sel.collection],
+	};
 }
 
 // ---- Public API -------------------------------------------------------------
@@ -610,6 +676,7 @@ export const ScriptEngine = {
 	 * reaction event; "before" runs with the mutable interceptor event, so the code
 	 * may rewrite `event.params` or call `event.cancel()`. For "before", the returned
 	 * `cancelled`/`params` report the outcome (param edits don't show in a state diff).
+	 * `scope` mirrors a script's `Scope`; an out-of-scope event returns `skipped`.
 	 */
 	async runForTest(opts: {
 		context: Context;
@@ -618,13 +685,21 @@ export const ScriptEngine = {
 		triggerKey: string;
 		params?: any;
 		phase?: "before" | "after";
-	}): Promise<{ ok: boolean; error?: string; cancelled?: boolean; params?: any }> {
-		const { context, host, code, triggerKey, params, phase = "after" } = opts;
+		scope?: Script["Scope"];
+	}): Promise<{
+		ok: boolean;
+		error?: string;
+		cancelled?: boolean;
+		params?: any;
+		skipped?: boolean;
+	}> {
+		const { context, host, code, triggerKey, params, phase = "after", scope } = opts;
 		const campaign = CampaignUtils.getActiveCampaign(context);
 		const binding = bindingForSelection(campaign, host);
 		if (!binding) return { ok: false, error: "Selected host not found in campaign." };
 		const validation = validateScriptSource(code);
 		if (!validation.ok) return { ok: false, error: validation.error };
+		if (!isInScope(binding, scope, params)) return { ok: true, skipped: true };
 		const state = createRunState();
 		const sink = createActionSink();
 		const api = makeApiContext(context, state, sink);
@@ -633,8 +708,8 @@ export const ScriptEngine = {
 		const working = phase === "before" ? normalizeActionParams(params ?? {}) : params ?? {};
 		const event =
 			phase === "before"
-				? makeBeforeEvent(triggerKey, working, campaign, control, api)
-				: makeEvent(triggerKey, working, undefined, campaign, api);
+				? makeBeforeEvent(triggerKey, working, campaign, control, api, binding.actor?.Id)
+				: makeEvent(triggerKey, working, undefined, campaign, api, binding.actor?.Id);
 		try {
 			const thisHost = makeThis(binding, api);
 			// eslint-disable-next-line no-new-func
