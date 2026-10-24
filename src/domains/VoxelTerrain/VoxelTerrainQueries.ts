@@ -101,15 +101,25 @@ function getCenterTile(terrain: VoxelTerrain): { x: number; y: number } {
 }
 
 /**
- * Spiral out from the terrain's center tile, returning the first tile for which
- * `findAtTile` yields a non-null value. Shared by spawn-surface search and
- * actor-displacement search so both walk tiles in the same center-out order.
+ * Spiral out from `start` (default: the terrain's center tile), returning the
+ * first tile for which `findAtTile` yields a non-null value. Spawn-surface search
+ * uses the center; actor displacement starts at the actor's own tile so a bumped
+ * actor lands next to where it stood.
  */
 export function findTileFromCenter<T>(
 	terrain: VoxelTerrain,
-	findAtTile: (x: number, y: number) => T | null
+	findAtTile: (x: number, y: number) => T | null,
+	start?: { x: number; y: number }
 ): T | null {
-	const center = getCenterTile(terrain);
+	// Clamp into bounds so an out-of-bounds start still reaches every tile within
+	// maxRadius; a non-finite start (corrupt position) falls back to the center.
+	const center =
+		start && Number.isFinite(start.x) && Number.isFinite(start.y)
+			? {
+					x: Math.max(0, Math.min(terrain.Width - 1, Math.round(start.x))),
+					y: Math.max(0, Math.min(terrain.Length - 1, Math.round(start.y))),
+				}
+			: getCenterTile(terrain);
 	const maxRadius = Math.max(terrain.Width, terrain.Length);
 
 	for (let radius = 0; radius <= maxRadius; radius++) {

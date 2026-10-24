@@ -555,13 +555,18 @@ export const VoxelTerrainUtils = {
 		);
 		if (currentPosition) return currentPosition;
 
-		// Step 2: prefer horizontal displacement to a nearby tile. We deliberately
-		// skip the actor's own column here so a collision doesn't "teleport" them
-		// up to the next surface in the same column.
-		const displaced = findTileFromCenter(terrain, (x, y) => {
-			if (x === normalizedCurrent.x && y === normalizedCurrent.y) return null;
-			return findAvailablePosition(x, y);
-		});
+		// Step 2: prefer horizontal displacement to the nearest free tile, spiralling
+		// out from the actor's own tile. We deliberately skip the actor's own column
+		// here so a collision doesn't "teleport" them up to the next surface in the
+		// same column.
+		const displaced = findTileFromCenter(
+			terrain,
+			(x, y) => {
+				if (x === normalizedCurrent.x && y === normalizedCurrent.y) return null;
+				return findAvailablePosition(x, y);
+			},
+			normalizedCurrent
+		);
 		if (displaced) return displaced;
 
 		// Step 3: last resort -- fall back to another valid height in the original
