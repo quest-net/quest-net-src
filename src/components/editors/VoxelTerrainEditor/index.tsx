@@ -96,6 +96,7 @@ import {
 	parseVoxFile,
 	type VoxParseResult,
 } from "../../../utils/terrain/import/VoxImportUtils";
+import { isQvxFile, parseQvxFile } from "../../../utils/terrain/import/QvxImportUtils";
 
 import {
 	clearObjectGroup,
@@ -1922,6 +1923,17 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 		const handleVoxFile = useCallback(async (file: File) => {
 			try {
 				const buffer  = await file.arrayBuffer();
+				if (isQvxFile(buffer)) {
+					// .qvx carries its own resolution, so it applies as-is.
+					const result = await parseQvxFile(buffer);
+					undoStackRef.current.length = 0;
+					redoStackRef.current.length = 0;
+					setUndoDepth(0);
+					setRedoDepth(0);
+					clearSelection();
+					onChangeRef.current({ ...terrainRef.current, ...result });
+					return;
+				}
 				const parsed  = parseVoxFile(buffer);
 				const options = getVoxResolutionOptions(parsed);
 				const valid   = options.filter((o) => o.fits);
@@ -1937,10 +1949,10 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			} catch (err) {
 				setVoxImportModal({
 					kind: "error",
-					message: err instanceof Error ? err.message : "Failed to parse .vox file.",
+					message: err instanceof Error ? err.message : "Failed to read the file.",
 				});
 			}
-		}, [applyVoxImport]);
+		}, [applyVoxImport, clearSelection]);
 
 		const showPreview = useCallback(() => {
 			refreshPreviewTerrain();

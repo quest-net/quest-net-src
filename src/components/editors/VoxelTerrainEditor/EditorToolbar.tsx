@@ -385,15 +385,15 @@ export function EditorToolbar(props: EditorToolbarProps) {
 							type="button"
 							className="btn btn-sm"
 							onClick={() => fileRef.current?.click()}
-							title="Import a MagicaVoxel .vox file"
+							title="Import a MagicaVoxel .vox or Quest-Net .qvx file"
 						>
 							<span className="icon-[mdi--cube-send] w-4 h-4" />
-							Import .vox
+							Import
 						</button>
 						<input
 							ref={fileRef}
 							type="file"
-							accept=".vox"
+							accept=".vox,.qvx"
 							className="hidden"
 							onChange={(e) => {
 								const file = e.target.files?.[0];
