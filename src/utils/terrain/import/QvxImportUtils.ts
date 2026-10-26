@@ -1,13 +1,17 @@
-// Reads .qvx files (Quest-Net voxel terrain, made by the separate qvx tools).
-// Layout: "QVX\x1A" magic, u16 version, u16 reserved, then chunks of
-// [4-char id][u32 length][data][u32 crc32]. META is JSON with the terrain
-// fields; VOXL is [encoding byte][QSVO bytes, deflate-raw when encoding = 1].
+// Reads and writes .qvx files (Quest-Net voxel terrain, shared with the
+// separate qvx tools). Layout: "QVX\x1A" magic, u16 version, u16 reserved, then
+// chunks of [4-char id][u32 length][data][u32 crc32]. META is JSON with the
+// terrain fields plus a palette/material table for other programs; VOXL is
+// [encoding byte][QSVO bytes, deflate-raw when encoding = 1].
 
 import type {
+	EditableVoxelTerrain,
 	EncodedVoxelSVO,
 	VoxelTerrain,
 } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import { APP_VERSION } from "../../../version";
 import { decodeVoxelBuffers } from "../data/VoxelDataUtils";
+import { TERRAIN_PALETTE } from "../palette/TerrainPaletteUtils";
 import {
 	maxTacticalDimensionForResolution,
 	MAX_VOXEL_TERRAIN_RESOLUTION,
@@ -39,6 +43,84 @@ function crc32(bytes: Uint8Array): number {
 	let c = 0xffffffff;
 	for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
 	return (c ^ 0xffffffff) >>> 0;
+}
+
+/** A special material (palette 240-255) as described in a .qvx file's META. */
+export interface QvxMaterialEntry {
+	index: number;
+	label: string;
+	color: string;
+	passable: boolean;
+	seeThrough: boolean;
+	volumetric: boolean;
+}
+
+async function pipe(bytes: Uint8Array, stream: CompressionStream | DecompressionStream): Promise<Uint8Array> {
+	const piped = new Blob([bytes as BlobPart]).stream().pipeThrough(stream);
+	return new Uint8Array(await new Response(piped).arrayBuffer());
+}
+
+function chunk(id: string, data: Uint8Array): Uint8Array {
+	const out = new Uint8Array(12 + data.length);
+	const view = new DataView(out.buffer);
+	for (let i = 0; i < 4; i++) out[i] = id.charCodeAt(i);
+	view.setUint32(4, data.length, true);
+	out.set(data, 8);
+	view.setUint32(8 + data.length, crc32(data), true);
+	return out;
+}
+
+/**
+ * Encodes a terrain as a .qvx file. `materials` describes the special palette
+ * entries (it comes from the render layer, which this data module can't import).
+ */
+export async function buildQvxFile(
+	terrain: EditableVoxelTerrain,
+	materials: readonly QvxMaterialEntry[]
+): Promise<Uint8Array> {
+	const palette = Array.from(
+		{ length: 256 },
+		(_, i) => TERRAIN_PALETTE[i] ?? materials.find((m) => m.index === i)?.color ?? null
+	);
+	const meta = {
+		format: "qvx",
+		version: SUPPORTED_VERSION,
+		generator: `quest-net ${APP_VERSION}`,
+		terrain: {
+			Name: terrain.Name,
+			Width: terrain.Width,
+			Length: terrain.Length,
+			Height: terrain.Height,
+			Resolution: terrain.Resolution ?? 1,
+			Lighting: terrain.Lighting,
+			Background: terrain.Background,
+			...(terrain.Surroundings ? { Surroundings: terrain.Surroundings } : {}),
+			...(terrain.PreviewColor ? { PreviewColor: terrain.PreviewColor } : {}),
+			...(terrain.Tags?.length ? { Tags: terrain.Tags } : {}),
+		},
+		palette,
+		materials,
+	};
+
+	const svo = terrain.Voxels;
+	const deflated = svo.length ? await pipe(svo, new CompressionStream("deflate-raw")) : svo;
+	const useDeflate = deflated.length < svo.length;
+	const voxl = new Uint8Array(1 + (useDeflate ? deflated.length : svo.length));
+	voxl[0] = useDeflate ? 1 : 0;
+	voxl.set(useDeflate ? deflated : svo, 1);
+
+	const parts = [
+		new Uint8Array([...MAGIC, SUPPORTED_VERSION, 0, 0, 0]),
+		chunk("META", new TextEncoder().encode(JSON.stringify(meta))),
+		chunk("VOXL", voxl),
+	];
+	const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+	let offset = 0;
+	for (const p of parts) {
+		out.set(p, offset);
+		offset += p.length;
+	}
+	return out;
 }
 
 function isPositiveInt(v: unknown): v is number {
@@ -94,8 +176,7 @@ export async function parseQvxFile(buffer: ArrayBuffer): Promise<QvxImportResult
 	if (voxl[0] === 0) {
 		voxels = voxl.slice(1);
 	} else if (voxl[0] === 1) {
-		const stream = new Blob([voxl.slice(1)]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-		voxels = new Uint8Array(await new Response(stream).arrayBuffer());
+		voxels = await pipe(voxl.subarray(1), new DecompressionStream("deflate-raw"));
 	} else {
 		throw new Error(`.qvx voxel encoding ${voxl[0]} is not supported.`);
 	}

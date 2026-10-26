@@ -96,7 +96,13 @@ import {
 	parseVoxFile,
 	type VoxParseResult,
 } from "../../../utils/terrain/import/VoxImportUtils";
-import { isQvxFile, parseQvxFile } from "../../../utils/terrain/import/QvxImportUtils";
+import { buildQvxFile, isQvxFile, parseQvxFile } from "../../../utils/terrain/import/QvxImportUtils";
+import { isSeeThroughMaterial } from "../../../utils/terrain/materials/terrainMaterialRules";
+import {
+	isPassableMaterial,
+	isVolumetricMaterial,
+	SPECIAL_MATERIAL_SWATCHES,
+} from "../../Map/Terrain/materials";
 
 import {
 	clearObjectGroup,
@@ -1954,6 +1960,37 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 			}
 		}, [applyVoxImport, clearSelection]);
 
+		// Downloads the terrain as it stands in the editor, unsaved edits included.
+		const exportQvx = useCallback(async () => {
+			try {
+				const terrain = createDraftTerrainSnapshot();
+				const bytes = await buildQvxFile(
+					terrain,
+					SPECIAL_MATERIAL_SWATCHES.map((s) => ({
+						index: s.index,
+						label: s.label,
+						color: s.color,
+						passable: isPassableMaterial(s.index),
+						seeThrough: isSeeThroughMaterial(s.index),
+						volumetric: isVolumetricMaterial(s.index),
+					}))
+				);
+				const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/octet-stream" }));
+				const link = document.createElement("a");
+				link.href = url;
+				link.download = `${(terrain.Name || "terrain").replace(/[^a-z0-9]/gi, "_")}.qvx`;
+				document.body.appendChild(link);
+				link.click();
+				document.body.removeChild(link);
+				URL.revokeObjectURL(url);
+			} catch (err) {
+				setVoxImportModal({
+					kind: "error",
+					message: err instanceof Error ? err.message : "Failed to export the terrain.",
+				});
+			}
+		}, [createDraftTerrainSnapshot]);
+
 		const showPreview = useCallback(() => {
 			refreshPreviewTerrain();
 			setActiveView("preview");
@@ -2049,6 +2086,7 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 							onShowEdit={() => setActiveView("edit")}
 							onShowPreview={showPreview}
 							onVoxFileSelected={(file) => void handleVoxFile(file)}
+							onExportQvx={() => void exportQvx()}
 							voxFileInputRef={voxFileInputRef}
 							cameraMode={cameraMode}
 							onSelectCameraMode={setCameraModeTo}

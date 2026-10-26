@@ -18,8 +18,8 @@ covers script `Scope` and the 3.2.0 migration, `inspect-tab.mjs` clicks the real
 Party/Overview panels to guard the first inspect landing on the Inspector tab,
 `spawn-displacement.mjs` (`--players 0`) guards an actor bumped by a spawn
 landing beside it rather than at the map center,
-`qvx-import.mjs` (`--players 0`) checks the `.qvx` reader and imports one
-through the terrain editor's Import button,
+`qvx-import.mjs` (`--players 0`) checks the `.qvx` reader and round-trips one
+through the terrain editor's Import and Export buttons,
 `late-join.mjs` (~2 min) guards players reaching a DM who has sat alone in
 the room for over a minute, and `pose-room.mjs` checks live poses reach every
 peer.

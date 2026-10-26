@@ -1,5 +1,6 @@
-// .qvx import: the reader accepts plain and deflated files, rejects corrupt
-// ones, and the terrain editor's Import button loads a .qvx exactly.
+// .qvx import/export: the reader accepts plain and deflated files, rejects
+// corrupt ones, the terrain editor's Import button loads a .qvx exactly, and
+// its Export button writes the same voxels back out.
 //   node test-kit/run.mjs test-kit/scenarios/qvx-import.mjs --players 0
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -73,6 +74,27 @@ export default async function qvxImport(kit) {
 	await page.locator('input[type="file"][accept=".vox,.qvx"]').setInputFiles({ name: "from.qvx", mimeType: "application/octet-stream", buffer: deflated });
 	await page.waitForTimeout(1000);
 	await dm.shot("qvx-import");
+
+	// Export (before saving: unsaved edits are included) and read the file back.
+	const [download] = await Promise.all([
+		page.waitForEvent("download"),
+		page.getByRole("button", { name: "Export terrain as .qvx" }).click(),
+	]);
+	assert.match(download.suggestedFilename(), /\.qvx$/);
+	const exported = await readFile(await download.path());
+	const metaLength = exported.readUInt32LE(12);
+	assert.equal(exported.subarray(8, 12).toString(), "META");
+	const meta = JSON.parse(exported.subarray(16, 16 + metaLength).toString("utf8"));
+	assert.equal(meta.palette.length, 256);
+	assert.ok(meta.materials.some((m) => m.index === 241 && m.label === "Water" && m.passable), "material table describes water");
+	assert.deepEqual(meta.terrain.Lighting, terrain.Lighting);
+	const reread = await dm.eval(async (qn, b64) => {
+		const { parseQvxFile } = await qn.import("utils/terrain/import/QvxImportUtils.ts");
+		const r = await parseQvxFile(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)).buffer);
+		return btoa(String.fromCharCode(...r.Voxels));
+	}, exported.toString("base64"));
+	assert.equal(reread, svo.toString("base64"), "exported voxels match what was imported");
+
 	await page.getByRole("button", { name: "Create", exact: true }).first().click();
 	await dm.waitFor((c, n) => c.VoxelTerrains.length === n, { arg: before + 1, message: "terrain created" });
 

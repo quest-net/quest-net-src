@@ -4,7 +4,7 @@
 // (color/box select), selection tools (smooth/fill -- act on the current
 // selection), then -- separated by dividers -- brush controls (tile/voxel
 // granularity + size), the stamp picker, and undo/redo + shortcuts help. The
-// edit/preview tab, .vox import and camera dropdown sit on the right.
+// edit/preview tab, file import/export and camera dropdown sit on the right.
 
 import type { RefObject } from "react";
 import type {
@@ -79,6 +79,7 @@ interface EditorToolbarProps {
 	onShowEdit: () => void;
 	onShowPreview: () => void;
 	onVoxFileSelected: (file: File) => void;
+	onExportQvx: () => void;
 	voxFileInputRef: RefObject<HTMLInputElement | null>;
 	cameraMode: CameraMode;
 	onSelectCameraMode: (mode: CameraMode) => void;
@@ -116,6 +117,7 @@ export function EditorToolbar(props: EditorToolbarProps) {
 		onShowEdit,
 		onShowPreview,
 		onVoxFileSelected,
+		onExportQvx,
 		voxFileInputRef,
 		cameraMode,
 		onSelectCameraMode,
@@ -379,30 +381,41 @@ export function EditorToolbar(props: EditorToolbarProps) {
 			</div>
 
 			<div className="flex items-center gap-2">
-				{!readOnly && (
-					<>
-						<button
-							type="button"
-							className="btn btn-sm"
-							onClick={() => fileRef.current?.click()}
-							title="Import a MagicaVoxel .vox or Quest-Net .qvx file"
-						>
-							<span className="icon-[mdi--cube-send] w-4 h-4" />
-							Import
-						</button>
-						<input
-							ref={fileRef}
-							type="file"
-							accept=".vox,.qvx"
-							className="hidden"
-							onChange={(e) => {
-								const file = e.target.files?.[0];
-								e.target.value = "";
-								if (file) onVoxFileSelected(file);
-							}}
-						/>
-					</>
-				)}
+				<div className="join">
+					{!readOnly && (
+						<>
+							<button
+								type="button"
+								className="btn btn-square btn-sm join-item"
+								onClick={() => fileRef.current?.click()}
+								title="Import a MagicaVoxel .vox or Quest-Net .qvx file"
+								aria-label="Import terrain file"
+							>
+								<span className="icon-[mdi--file-import-outline] w-5 h-5" />
+							</button>
+							<input
+								ref={fileRef}
+								type="file"
+								accept=".vox,.qvx"
+								className="hidden"
+								onChange={(e) => {
+									const file = e.target.files?.[0];
+									e.target.value = "";
+									if (file) onVoxFileSelected(file);
+								}}
+							/>
+						</>
+					)}
+					<button
+						type="button"
+						className="btn btn-square btn-sm join-item"
+						onClick={onExportQvx}
+						title="Export this terrain as a .qvx file"
+						aria-label="Export terrain as .qvx"
+					>
+						<span className="icon-[mdi--file-export-outline] w-5 h-5" />
+					</button>
+				</div>
 				{activeView === "edit" && (
 					<CameraModeDropdown
 						value={cameraMode}
