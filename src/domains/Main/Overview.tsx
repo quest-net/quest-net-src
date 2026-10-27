@@ -474,7 +474,11 @@ export function Overview({ onInspectActor }: OverviewProps) {
 			/>
 
 			{visibleEntries.length === 0 ? (
-				<EmptyState>No actors match this filter.</EmptyState>
+				<EmptyState icon="icon-[mdi--account-group-outline]">
+					{campaign.GameState.Characters.length + campaign.GameState.Entities.length === 0
+						? "No actors in the game yet. Spawn characters or entities from their pages."
+						: "No actors match this filter."}
+				</EmptyState>
 			) : (
 				<div className="space-y-2">
 					{visibleEntries.map((entry) => (

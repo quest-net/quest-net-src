@@ -49,6 +49,7 @@ export function SkillIndex() {
 		<IndexView
 			items={skills}
 			title="Skills"
+			itemNounPlural="Skills"
 			sortKey="skills-sort"
 			description="Manage your skill templates"
 			createLabel="Create Skill"

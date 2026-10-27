@@ -50,6 +50,7 @@ export function StatusIndex() {
 		<IndexView
 			items={statuses}
 			title="Statuses"
+			itemNounPlural="Statuses"
 			sortKey="statuses-sort"
 			description="Manage your status effect templates"
 			createLabel="Create Status"

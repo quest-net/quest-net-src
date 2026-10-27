@@ -186,9 +186,8 @@ export function Party({ onInspectActor }: PartyProps) {
 
 	if (characters.length === 0) {
 		return (
-			<EmptyState>
-				<div className="text-base font-medium">No characters spawned</div>
-				<div className="mt-1">How are you even here?</div>
+			<EmptyState icon="icon-[mdi--account-group-outline]" title="No characters spawned">
+				How are you even here?
 			</EmptyState>
 		);
 	}

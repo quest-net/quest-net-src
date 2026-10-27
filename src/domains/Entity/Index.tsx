@@ -134,6 +134,7 @@ export function EntityIndex() {
 			<IndexView
 				items={items}
 				title="Entity Templates"
+				itemNounPlural="Entities"
 				sortKey="entities-sort"
 				description="Manage your entity templates"
 				createLabel="Create Entity"

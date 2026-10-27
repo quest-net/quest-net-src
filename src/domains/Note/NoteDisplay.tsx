@@ -252,13 +252,11 @@ export function NoteDisplay() {
 			{/* Notes List */}
 			<div className="flex-1 overflow-y-auto space-y-2">
 				{filteredNotes.length === 0 ? (
-					<EmptyState icon="icon-[mdi--note-edit-outline]">
-						<div className="text-base font-medium">
-							{searchQuery ? "No notes found" : "No notes yet"}
-						</div>
-						{!searchQuery && (
-							<div className="mt-1">Click "New Entry" to begin</div>
-						)}
+					<EmptyState
+						icon="icon-[mdi--note-edit-outline]"
+						title={searchQuery ? "No notes found" : "No notes yet"}
+					>
+						{!searchQuery && 'Click "New Entry" to begin'}
 					</EmptyState>
 				) : (
 					filteredNotes

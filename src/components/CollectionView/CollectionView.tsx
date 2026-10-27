@@ -42,6 +42,8 @@ interface CollectionViewProps {
 	viewModeKey: string; // for localStorage (e.g., "inventory-view")
 	searchEnabled?: boolean;
 	searchPlaceholder?: string;
+	/** Noun used in the count text, e.g. { singular: "skill", plural: "skills" }. Defaults to item/items. */
+	itemNoun?: { singular: string; plural: string };
 }
 
 type ViewMode = "grid" | "list";
@@ -59,6 +61,7 @@ export function CollectionView({
 	viewModeKey,
 	searchEnabled = false,
 	searchPlaceholder = "Search...",
+	itemNoun = { singular: "item", plural: "items" },
 }: CollectionViewProps) {
 	const isMobile = useIsMobile();
 	const [searchQuery, setSearchQuery] = useState("");
@@ -106,8 +109,8 @@ export function CollectionView({
 
 	// Format count text
 	const countText = searchQuery.trim() && filteredItems.length !== items.length
-		? `${filteredItems.length} of ${items.length} items`
-		: `${items.length} ${items.length === 1 ? 'item' : 'items'}`;
+		? `${filteredItems.length} of ${items.length} ${itemNoun.plural}`
+		: `${items.length} ${items.length === 1 ? itemNoun.singular : itemNoun.plural}`;
 
 	return (
 		<div className="space-y-4">
@@ -183,9 +186,12 @@ export function CollectionView({
 
 			{/* Content */}
 			{filteredItems.length === 0 ? (
-				<EmptyState bordered icon="icon-[mdi--help-circle-outline]">
-					<p>{searchQuery ? "No items match your search" : emptyMessage}</p>
-					{searchQuery && <p>Try a different search term</p>}
+				<EmptyState
+					bordered
+					icon={searchQuery ? "icon-[mdi--magnify-close]" : "icon-[mdi--inbox-outline]"}
+					title={searchQuery ? `No ${itemNoun.plural} match your search` : emptyMessage}
+				>
+					{searchQuery && "Try a different search term"}
 				</EmptyState>
 			) : effectiveViewMode === "grid" ? (
 				<div className="flex flex-wrap gap-4 justify-between">

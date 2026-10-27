@@ -129,13 +129,20 @@ export function CharacterIndex() {
 			<IndexView
 				items={items}
 				title="Character Roster"
+				itemNounPlural="Characters"
 				sortKey="characters-sort"
 				description="Manage your character roster"
 				createLabel="Create Character"
 				onCreateClick={() => setCreateCounter((prev) => prev + 1)}
 				searchEnabled={true}
 				searchPlaceholder="Search characters by name..."
-				emptyMessage="No characters yet. Create one to get started!"
+				emptyMessage={
+					// Spawning moves a character off the roster, so an empty roster
+					// doesn't always mean "no characters".
+					campaign.GameState.Characters.length > 0
+						? "All characters are in the game world. Despawn one to return it here."
+						: "No characters yet. Create one to get started!"
+				}
 				onBulkUpdateItemTags={handleBulkUpdateItemTags}
 				selectionActions={selectionActions}
 				renderEditForm={(item, { currentPath, closeDrawer }) => {

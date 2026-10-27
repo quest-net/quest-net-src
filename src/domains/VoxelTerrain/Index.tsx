@@ -70,6 +70,7 @@ export function TerrainIndex({
 		<IndexView
 			items={items}
 			title="Terrains"
+			itemNounPlural="Terrains"
 			sortKey="terrain-sort"
 			description="Manage campaign terrains and maps"
 			createLabel="Create Terrain"

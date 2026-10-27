@@ -89,12 +89,9 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 					</div>
 
 					{availableCharacters.length === 0 ? (
-						<EmptyState icon="icon-[mdi--drama-masks]">
-							<div className="text-base font-medium">No characters available</div>
-							<div className="mt-1">
-								All spawned characters are currently taken by other players.
-								Create a new character to get started!
-							</div>
+						<EmptyState icon="icon-[mdi--drama-masks]" title="No characters available">
+							All spawned characters are currently taken by other players.
+							Create a new character to get started!
 						</EmptyState>
 					) : (
 						<div className="flex flex-wrap gap-4 justify-center">

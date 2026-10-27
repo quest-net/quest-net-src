@@ -63,6 +63,7 @@ export function StatusCollection({ actor }: StatusCollectionProps) {
 				title="Statuses"
 				emptyMessage="No status effects"
 				viewModeKey="statuses-view"
+				itemNoun={{ singular: "status", plural: "statuses" }}
 				searchEnabled={true}
 				searchPlaceholder="Search statuses..."
 			/>

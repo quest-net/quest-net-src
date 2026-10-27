@@ -55,6 +55,7 @@ export function SkillCollection({ actor }: SkillCollectionProps) {
 				title="Skills"
 				emptyMessage="No skills learned"
 				viewModeKey="skills-view"
+				itemNoun={{ singular: "skill", plural: "skills" }}
 				searchEnabled={true}
 				searchPlaceholder="Search skills..."
 			/>

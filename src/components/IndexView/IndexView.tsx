@@ -101,6 +101,8 @@ interface IndexViewProps {
 
 	// Optional
 	emptyMessage?: string;
+	/** Plural noun for the listed things, used in "Select <noun>" (default "Items"). */
+	itemNounPlural?: string;
 }
 
 // ============================================================================
@@ -124,6 +126,7 @@ export function IndexView({
 	selectionActions = [],
 	onBulkDelete,
 	emptyMessage = "No items yet. Create one to get started!",
+	itemNounPlural = "Items",
 }: IndexViewProps) {
 	const [searchQuery, setSearchQuery] = useState("");
 	const [selectedItem, setSelectedItem] = useState<IndexViewItem | null>(null);
@@ -448,7 +451,7 @@ export function IndexView({
 										className="btn btn-outline"
 									>
 										<span className="icon-[mdi--checkbox-multiple-marked] w-5 h-5 mr-1" />
-										Select Items
+										Select {itemNounPlural}
 									</button>
 								)}
 								{/* Only show create button if onCreateClick is provided */}
@@ -738,9 +741,16 @@ export function IndexView({
 
 					{/* Items or Empty State */}
 					{combinedEntries.length === 0 ? (
-						<EmptyState bordered icon="icon-[mdi--help-circle-outline]">
-							<p>{searchQuery ? "No items match your search" : emptyMessage}</p>
-							{searchQuery && <p>Try a different search term</p>}
+						<EmptyState
+							bordered
+							icon={searchQuery ? "icon-[mdi--magnify-close]" : "icon-[mdi--inbox-outline]"}
+							title={
+								searchQuery
+									? `No ${itemNounPlural.toLowerCase()} match your search`
+									: emptyMessage
+							}
+						>
+							{searchQuery && "Try a different search term"}
 						</EmptyState>
 					) : (
 						<>
