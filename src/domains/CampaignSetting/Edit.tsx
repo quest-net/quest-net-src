@@ -13,7 +13,6 @@ import {
 	FormWrapper,
 	FormSection,
 	FormField,
-	FormGrid,
 	useFormReadOnly,
 } from "../../components/Form/Form";
 import { StatDefinitionsEditor } from "../../components/editors/StatDefinitionEditor";
@@ -217,7 +216,9 @@ function CampaignSettingsLayout({
 	};
 
 	const content = (
-		<div className="flex-1 min-w-0 space-y-6">
+		// @container: tab grids below split on this column's width, not the
+		// viewport's, since the nav and info columns eat ~550px of the screen.
+		<div className="@container flex-1 min-w-0 space-y-6">
 			{renderCategory(activeCategory, {
 				data,
 				onChange,
@@ -233,7 +234,7 @@ function CampaignSettingsLayout({
 	// Right column: persistent across every category. Holds secret mode, export,
 	// and at-a-glance campaign stats.
 	const infoColumn = (
-		<aside className="w-full lg:w-72 space-y-4">
+		<aside className="w-full lg:w-64 xl:w-72 space-y-4">
 			{/* General already shows stats large in its content; avoid duplicating. */}
 			{activeCategory !== "general" && <CampaignStats campaign={data} />}
 			<SecretModeToggle variant="panel" />
@@ -271,7 +272,7 @@ function CampaignSettingsLayout({
 		<div className="flex items-start gap-6">
 			{/* In-content category nav: a rounded, labeled panel inset within the
 			    content padding, distinct from DMView's flush icon-only app rail. */}
-			<nav className="w-56 shrink-0">
+			<nav className="w-48 xl:w-56 shrink-0">
 				<div className="card bg-base-100 border-2 border-base-300 sticky top-4">
 					<div className="card-body p-2">
 						<h3 className="px-3 pt-2 pb-1 text-sm font-semibold opacity-70">
@@ -366,7 +367,7 @@ function renderCategory(category: SettingsCategory, args: CategoryRenderArgs) {
 						/>
 					</FormSection>
 
-					<div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+					<div className="grid grid-cols-1 @4xl:grid-cols-2 gap-6">
 						<FormSection
 							title="Action Definitions"
 							description="Define types of actions and their default counts per turn"
@@ -411,7 +412,7 @@ function renderCategory(category: SettingsCategory, args: CategoryRenderArgs) {
 
 		case "combat":
 			return (
-				<div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+				<div className="grid grid-cols-1 @4xl:grid-cols-2 gap-6">
 					<FormSection
 						title="Initiative Order"
 						description="Configure how combat turn order is determined within a side. Pick a primary stat/attribute/move speed, then optionally add tiebreakers."
@@ -445,64 +446,51 @@ function renderCategory(category: SettingsCategory, args: CategoryRenderArgs) {
 							}
 						/>
 
-						<FormField label="Flying units reduce vertical costs">
-							<input
-								type="checkbox"
-								checked={settings.MovementSettings.flyingIgnoresHeight}
-								onChange={(e) =>
-									updateSettings({
-										MovementSettings: {
-											...settings.MovementSettings,
-											flyingIgnoresHeight: e.target.checked,
-										},
-									})
-								}
-								className="toggle toggle-primary"
-							/>
-						</FormField>
+						<ToggleRow
+							label="Flying units reduce vertical costs"
+							checked={settings.MovementSettings.flyingIgnoresHeight}
+							onChange={(checked) =>
+								updateSettings({
+									MovementSettings: {
+										...settings.MovementSettings,
+										flyingIgnoresHeight: checked,
+									},
+								})
+							}
+						/>
 
-						<FormField label="Restrict player movement to range (in combat)">
-							<input
-								type="checkbox"
-								checked={
-									settings.MovementSettings.restrictPlayerMovementToRange ?? false
-								}
-								onChange={(e) =>
-									updateSettings({
-										MovementSettings: {
-											...settings.MovementSettings,
-											restrictPlayerMovementToRange: e.target.checked,
-										},
-									})
-								}
-								className="toggle toggle-primary"
-							/>
-						</FormField>
+						<ToggleRow
+							label="Restrict player movement to range (in combat)"
+							checked={
+								settings.MovementSettings.restrictPlayerMovementToRange ?? false
+							}
+							onChange={(checked) =>
+								updateSettings({
+									MovementSettings: {
+										...settings.MovementSettings,
+										restrictPlayerMovementToRange: checked,
+									},
+								})
+							}
+						/>
 					</FormSection>
 				</div>
 			);
 
 		case "time":
 			return (
-				<div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+				<div className="grid grid-cols-1 @4xl:grid-cols-2 gap-6">
 					<FormSection
 						title="Calendar Settings"
 						description="Customize your world's calendar (days, weeks, months, labels, names)."
 					>
-						<FormField label="Show calendar date to everyone">
-							<input
-								type="checkbox"
-								checked={settings.CalendarSettings.enabled !== false}
-								onChange={(e) =>
-									handleSettingChange(
-										"CalendarSettings",
-										"enabled",
-										e.target.checked
-									)
-								}
-								className="toggle toggle-primary"
-							/>
-						</FormField>
+						<ToggleRow
+							label="Show calendar date to everyone"
+							checked={settings.CalendarSettings.enabled !== false}
+							onChange={(checked) =>
+								handleSettingChange("CalendarSettings", "enabled", checked)
+							}
+						/>
 						<CalendarConfigEditor
 							value={settings.CalendarSettings}
 							onChange={(CalendarSettings) => updateSettings({ CalendarSettings })}
@@ -524,20 +512,17 @@ function renderCategory(category: SettingsCategory, args: CategoryRenderArgs) {
 								className="input"
 							/>
 						</FormField>
-						<FormField label="Long rest increments calendar">
-							<input
-								type="checkbox"
-								checked={settings.RestSettings.autoAdvanceDayOnLongRest}
-								onChange={(e) =>
-									handleSettingChange(
-										"RestSettings",
-										"autoAdvanceDayOnLongRest",
-										e.target.checked
-									)
-								}
-								className="toggle toggle-primary"
-							/>
-						</FormField>
+						<ToggleRow
+							label="Long rest increments calendar"
+							checked={settings.RestSettings.autoAdvanceDayOnLongRest}
+							onChange={(checked) =>
+								handleSettingChange(
+									"RestSettings",
+									"autoAdvanceDayOnLongRest",
+									checked
+								)
+							}
+						/>
 					</FormSection>
 				</div>
 			);
@@ -548,145 +533,38 @@ function renderCategory(category: SettingsCategory, args: CategoryRenderArgs) {
 					title="Visibility Settings"
 					description="Control what information players can see"
 				>
-					<FormGrid cols={3}>
-						<FormField label="Players can see DM rolls">
-							<input
-								type="checkbox"
-								checked={settings.VisibilitySettings.playersSeeDMRolls}
-								onChange={(e) =>
-									handleSettingChange(
-										"VisibilitySettings",
-										"playersSeeDMRolls",
-										e.target.checked
-									)
-								}
-								className="toggle toggle-primary"
-							/>
-						</FormField>
-
-						<FormField label="Players can see other players' rolls">
-							<input
-								type="checkbox"
-								checked={settings.VisibilitySettings.playersSeePeerRolls}
-								onChange={(e) =>
-									handleSettingChange(
-										"VisibilitySettings",
-										"playersSeePeerRolls",
-										e.target.checked
-									)
-								}
-								className="toggle toggle-primary"
-							/>
-						</FormField>
-
-						<FormField label="Players can see entities' max health">
-							<input
-								type="checkbox"
-								checked={settings.VisibilitySettings.playersSeeEntityHealth}
-								onChange={(e) =>
-									handleSettingChange(
-										"VisibilitySettings",
-										"playersSeeEntityHealth",
-										e.target.checked
-									)
-								}
-								className="toggle toggle-primary"
-							/>
-						</FormField>
-
-						<FormField label="Players can see entity descriptions">
-							<input
-								type="checkbox"
-								checked={
-									settings.VisibilitySettings.playersSeeEntityDescriptions !==
-									false
-								}
-								onChange={(e) =>
-									handleSettingChange(
-										"VisibilitySettings",
-										"playersSeeEntityDescriptions",
-										e.target.checked
-									)
-								}
-								className="toggle toggle-primary"
-							/>
-						</FormField>
-
-						<FormField label="Players can see entity attributes">
-							<input
-								type="checkbox"
-								checked={
-									settings.VisibilitySettings.playersSeeEntityAttributes !==
-									false
-								}
-								onChange={(e) =>
-									handleSettingChange(
-										"VisibilitySettings",
-										"playersSeeEntityAttributes",
-										e.target.checked
-									)
-								}
-								className="toggle toggle-primary"
-							/>
-						</FormField>
-
-						<FormField label="Players can see entity actions">
-							<input
-								type="checkbox"
-								checked={
-									settings.VisibilitySettings.playersSeeEntityActions !== false
-								}
-								onChange={(e) =>
-									handleSettingChange(
-										"VisibilitySettings",
-										"playersSeeEntityActions",
-										e.target.checked
-									)
-								}
-								className="toggle toggle-primary"
-							/>
-						</FormField>
-
-						<FormField label="Players can see entities and items out of their line of sight">
-							<input
-								type="checkbox"
-								checked={
-									settings.VisibilitySettings.playersSeeOutOfSightEntities !==
-									false
-								}
-								onChange={(e) =>
-									handleSettingChange(
-										"VisibilitySettings",
-										"playersSeeOutOfSightEntities",
-										e.target.checked
-									)
-								}
-								className="toggle toggle-primary"
-							/>
-						</FormField>
-
-						<FormField label="Players can see party members out of their line of sight">
-							<input
-								type="checkbox"
-								disabled={
-									settings.VisibilitySettings.playersSeeOutOfSightEntities !==
-									false
-								}
-								checked={
-									settings.VisibilitySettings.playersSeeOutOfSightPartyMembers !==
-									false
-								}
-								onChange={(e) =>
-									handleSettingChange(
-										"VisibilitySettings",
-										"playersSeeOutOfSightPartyMembers",
-										e.target.checked
-									)
-								}
-								className="toggle toggle-primary"
-							/>
-						</FormField>
-					</FormGrid>
+					<div className="divide-y divide-base-300">
+						{(
+							[
+								["playersSeeDMRolls", "Players can see DM rolls", false],
+								["playersSeePeerRolls", "Players can see other players' rolls", false],
+								["playersSeeEntityHealth", "Players can see entities' max health", false],
+								["playersSeeEntityDescriptions", "Players can see entity descriptions", true],
+								["playersSeeEntityAttributes", "Players can see entity attributes", true],
+								["playersSeeEntityActions", "Players can see entity actions", true],
+								["playersSeeOutOfSightEntities", "Players can see entities and items out of their line of sight", true],
+								["playersSeeOutOfSightPartyMembers", "Players can see party members out of their line of sight", true],
+							] as const
+						).map(([field, label, defaultOn]) => {
+							const value = settings.VisibilitySettings[field];
+							// Party members are only hideable once out-of-sight entities are.
+							return (
+								<ToggleRow
+									key={field}
+									className="py-3"
+									label={label}
+									checked={defaultOn ? value !== false : !!value}
+									disabled={
+										field === "playersSeeOutOfSightPartyMembers" &&
+										settings.VisibilitySettings.playersSeeOutOfSightEntities !== false
+									}
+									onChange={(checked) =>
+										handleSettingChange("VisibilitySettings", field, checked)
+									}
+								/>
+							);
+						})}
+					</div>
 				</FormSection>
 			);
 
@@ -734,6 +612,34 @@ function renderCategory(category: SettingsCategory, args: CategoryRenderArgs) {
 				</>
 			);
 	}
+}
+
+// ============================================================================
+// TOGGLE ROW (label left, toggle right; wraps the label instead of overflowing)
+// ============================================================================
+
+interface ToggleRowProps {
+	label: string;
+	checked: boolean;
+	onChange: (checked: boolean) => void;
+	disabled?: boolean;
+	className?: string;
+}
+
+function ToggleRow({ label, checked, onChange, disabled, className = "" }: ToggleRowProps) {
+	const readOnly = useFormReadOnly();
+	return (
+		<label className={`flex cursor-pointer items-center justify-between gap-4 ${className}`}>
+			<span className="font-medium">{label}</span>
+			<input
+				type="checkbox"
+				checked={checked}
+				onChange={(e) => onChange(e.target.checked)}
+				disabled={readOnly || disabled}
+				className="toggle toggle-primary shrink-0"
+			/>
+		</label>
+	);
 }
 
 // ============================================================================

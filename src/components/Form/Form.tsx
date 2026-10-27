@@ -535,11 +535,18 @@ interface FormFieldProps {
 
 export function FormField({ label, hint, children, span = 1 }: FormFieldProps) {
 	const { readOnly } = useFormContext();
+	const generatedId = useId();
+	const child = children as ReactElement<any>;
+	// Tie the label to native inputs only; custom components may not forward `id`.
+	const isNativeInput =
+		child.type === "input" || child.type === "select" || child.type === "textarea";
+	const inputId = isNativeInput ? (child.props.id ?? generatedId) : undefined;
 
 	// Clone the child element and inject readonly/disabled props
-	const childWithReadOnly = cloneElement(children as ReactElement<any>, {
-		disabled: readOnly || (children as ReactElement<any>).props.disabled,
-		readOnly: readOnly || (children as ReactElement<any>).props.readOnly,
+	const childWithReadOnly = cloneElement(child, {
+		disabled: readOnly || child.props.disabled,
+		readOnly: readOnly || child.props.readOnly,
+		...(inputId ? { id: inputId } : {}),
 	});
 
 	// Map span to Tailwind class (must be explicit for Tailwind to detect)
@@ -553,13 +560,15 @@ export function FormField({ label, hint, children, span = 1 }: FormFieldProps) {
 
 	return (
 		<div className={`flex items-center gap-4 ${colSpanClass}`}>
-			<label className="shrink-0 min-w-[200px] font-medium">
+			{/* Label prefers 200px for alignment but may shrink and wrap so a long
+			    label never pushes its control past the card edge. */}
+			<label htmlFor={inputId} className="basis-[200px] shrink min-w-0 font-medium">
 				{label}
 				{hint && (
 					<span className="text-sm opacity-70 ml-2">{hint}</span>
 				)}
 			</label>
-			<div className="flex-1">{childWithReadOnly}</div>
+			<div className="flex-1 min-w-0">{childWithReadOnly}</div>
 		</div>
 	);
 }

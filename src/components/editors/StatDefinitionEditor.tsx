@@ -50,7 +50,7 @@ export function StatDefinitionsEditor({
 				<table className="table table-sm">
 					<thead>
 						<tr>
-							<th>Name</th>
+							<th className="w-full">Name</th>
 							<th>Color</th>
 							<th>Max</th>
 							<th>Regen Rate</th>
@@ -70,7 +70,7 @@ export function StatDefinitionsEditor({
 												handleChange(stat.Id, { Name: e.target.value })
 											}
 											disabled={readOnly}
-											className="input input-bordered input-sm w-full"
+											className="input input-bordered input-sm w-full min-w-32"
 											placeholder="Stat Name"
 										/>
 									</td>
@@ -82,7 +82,7 @@ export function StatDefinitionsEditor({
 												handleChange(stat.Id, { Color: e.target.value })
 											}
 											disabled={readOnly}
-											className="input input-bordered input-sm w-20"
+											className="input input-bordered input-sm w-14"
 										/>
 									</td>
 									<td>

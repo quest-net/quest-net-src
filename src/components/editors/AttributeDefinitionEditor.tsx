@@ -41,7 +41,7 @@ export function AttributeDefinitionEditor({
 			{attributes.length === 0 ? (
 				<EmptyState compact>No attributes defined.</EmptyState>
 			) : (
-				<div className="grid grid-cols-2 gap-x-6 gap-y-2">
+				<div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
 					{attributes.map((attribute) => (
 						<div key={attribute.Id} className="flex items-center gap-2">
 							<input

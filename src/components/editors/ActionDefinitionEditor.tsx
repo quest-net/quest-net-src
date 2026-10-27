@@ -44,7 +44,7 @@ export function ActionDefinitionEditor({
 				<table className="table table-sm">
 					<thead>
 						<tr>
-							<th>Name</th>
+							<th className="w-full">Name</th>
 							<th>Color</th>
 							<th>Max</th>
 							{!readOnly && <th className="w-12"></th>}
@@ -61,7 +61,7 @@ export function ActionDefinitionEditor({
 											handleChange(action.Id, { Name: e.target.value })
 										}
 										disabled={readOnly}
-										className="input input-bordered input-sm w-full"
+										className="input input-bordered input-sm w-full min-w-32"
 										placeholder="Action Name"
 									/>
 								</td>
@@ -73,7 +73,7 @@ export function ActionDefinitionEditor({
 											handleChange(action.Id, { Color: e.target.value })
 										}
 										disabled={readOnly}
-										className="input input-bordered input-sm w-20"
+										className="input input-bordered input-sm w-14"
 									/>
 								</td>
 								<td>

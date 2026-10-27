@@ -182,7 +182,7 @@ export function InitiativeSettingsEditor({
 			{sources.map((source, index) => {
 				const isPrimary = index === 0;
 				return (
-					<div key={index} className="flex items-center gap-2">
+					<div key={index} className="flex flex-wrap items-center gap-2">
 						<div className="text-sm opacity-70 w-24 shrink-0">
 							{isPrimary ? "Primary" : `Tiebreaker ${index}`}
 						</div>
@@ -190,7 +190,7 @@ export function InitiativeSettingsEditor({
 							value={encodeSource(source)}
 							onChange={(e) => updateSource(index, e.target.value)}
 							disabled={readOnly}
-							className="select select-bordered select-sm flex-1"
+							className="select select-bordered select-sm flex-1 min-w-40"
 						>
 							{options.map((opt) => (
 								<option key={opt.value} value={opt.value}>

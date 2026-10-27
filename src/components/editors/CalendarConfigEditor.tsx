@@ -91,28 +91,28 @@ export function CalendarConfigEditor({
 	}, [cfg, showWeeks]);
 
 	return (
-		<div className="space-y-6">
+		<div className="@container space-y-6">
 			{/* Core numbers */}
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-				<label className="form-control">
-					<span className="label-text font-semibold">Days per Week (0 = no weeks)</span>
+			<div className="grid grid-cols-1 @xl:grid-cols-3 gap-4">
+				<label className="flex flex-col gap-1">
+					<span className="text-sm font-semibold">Days per Week (0 = no weeks)</span>
 					<input
 						type="number"
-						className="input input-bordered"
+						className="input input-bordered w-full"
 						value={cfg.daysPerWeek}
 						min={0}
 						max={64}
 						disabled={readOnly}
 						onChange={(e) => update({ daysPerWeek: Number(e.target.value) || 0 })}
 					/>
-					<span className="label-text-alt">Set to 0 to disable weekday names and week math</span>
+					<span className="text-xs opacity-70">Set to 0 to disable weekday names and week math</span>
 				</label>
 
-				<label className="form-control">
-					<span className="label-text font-semibold">Days per Month</span>
+				<label className="flex flex-col gap-1">
+					<span className="text-sm font-semibold">Days per Month</span>
 					<input
 						type="number"
-						className="input input-bordered"
+						className="input input-bordered w-full"
 						value={cfg.daysPerMonth}
 						min={1}
 						max={366}
@@ -121,11 +121,11 @@ export function CalendarConfigEditor({
 					/>
 				</label>
 
-				<label className="form-control">
-					<span className="label-text font-semibold">Months per Year</span>
+				<label className="flex flex-col gap-1">
+					<span className="text-sm font-semibold">Months per Year</span>
 					<input
 						type="number"
-						className="input input-bordered"
+						className="input input-bordered w-full"
 						value={cfg.monthsPerYear}
 						min={1}
 						max={64}
@@ -136,25 +136,25 @@ export function CalendarConfigEditor({
 			</div>
 
 			{/* Labels */}
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-				<label className="form-control">
-					<span className="label-text font-semibold">Week Label (optional)</span>
+			<div className="grid grid-cols-1 @xl:grid-cols-3 gap-4">
+				<label className="flex flex-col gap-1">
+					<span className="text-sm font-semibold">Week Label (optional)</span>
 					<input
 						type="text"
-						className="input input-bordered"
+						className="input input-bordered w-full"
 						value={cfg.weekLabel ?? ""}
 						disabled={readOnly}
 						placeholder="e.g., week, tenday"
 						onChange={(e) => update({ weekLabel: e.target.value })}
 					/>
-					<span className="label-text-alt">Leave empty if your world doesn’t use weeks</span>
+					<span className="text-xs opacity-70">Leave empty if your world doesn’t use weeks</span>
 				</label>
 
-				<label className="form-control">
-					<span className="label-text font-semibold">Month Label (optional)</span>
+				<label className="flex flex-col gap-1">
+					<span className="text-sm font-semibold">Month Label (optional)</span>
 					<input
 						type="text"
-						className="input input-bordered"
+						className="input input-bordered w-full"
 						value={cfg.monthLabel ?? ""}
 						disabled={readOnly}
 						placeholder="e.g., month"
@@ -162,11 +162,11 @@ export function CalendarConfigEditor({
 					/>
 				</label>
 
-				<label className="form-control">
-					<span className="label-text font-semibold">Year Label (optional)</span>
+				<label className="flex flex-col gap-1">
+					<span className="text-sm font-semibold">Year Label (optional)</span>
 					<input
 						type="text"
-						className="input input-bordered"
+						className="input input-bordered w-full"
 						value={cfg.yearLabel ?? ""}
 						disabled={readOnly}
 						placeholder="e.g., Year, Solar Cycle"
@@ -181,12 +181,12 @@ export function CalendarConfigEditor({
 					<h4 className="font-semibold">Day Names ({cfg.daysPerWeek})</h4>
 					{!showWeeks && <span className="text-xs opacity-70">Weeks disabled</span>}
 				</div>
-				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+				<div className="grid grid-cols-1 @xs:grid-cols-2 @xl:grid-cols-3 gap-2">
 					{(showWeeks ? cfg.dayNames : []).map((name, i) => (
 						<input
 							key={i}
 							type="text"
-							className="input input-bordered"
+							className="input input-bordered w-full"
 							value={name}
 							disabled={readOnly}
 							placeholder={`Day ${i + 1}`}
@@ -206,12 +206,12 @@ export function CalendarConfigEditor({
 			{/* Month names */}
 			<div className="space-y-2">
 				<h4 className="font-semibold">Month Names ({cfg.monthsPerYear})</h4>
-				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+				<div className="grid grid-cols-1 @xs:grid-cols-2 @xl:grid-cols-3 gap-2">
 					{cfg.monthNames.map((name, i) => (
 						<input
 							key={i}
 							type="text"
-							className="input input-bordered"
+							className="input input-bordered w-full"
 							value={name}
 							disabled={readOnly}
 							placeholder={`Month ${i + 1}`}
