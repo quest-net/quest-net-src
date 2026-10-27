@@ -579,6 +579,7 @@ function ActorInfoTab({
 			{canManage ? (
 				<div className="flex items-center justify-center">
 					<ImagePicker
+						tall
 						value={actor.Image}
 						onChange={(imageId) => {
 							handleFieldChange("Image", imageId);

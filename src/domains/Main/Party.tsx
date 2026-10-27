@@ -221,7 +221,7 @@ export function Party({ onInspectActor }: PartyProps) {
 									<div className="w-32 h-32 bg-base-200 rounded-lg overflow-hidden flex items-center justify-center">
 										<ImageDisplay
 											imageId={character.Image}
-											className="w-full h-full object-cover"
+											className="w-full h-full object-cover object-top"
 											alt={character.Name}
 										/>
 									</div>

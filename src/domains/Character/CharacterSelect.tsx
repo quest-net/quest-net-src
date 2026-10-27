@@ -106,7 +106,7 @@ export function CharacterSelect({ peers }: CharacterSelectProps) {
 											{character.Image ? (
 												<ImageDisplay
 													imageId={character.Image}
-													className="w-full h-full object-cover"
+													className="w-full h-full object-cover object-top"
 													style={{ overflowClipMargin: "unset" }}
 													alt={character.Name}
 												/>

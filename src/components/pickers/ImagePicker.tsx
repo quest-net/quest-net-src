@@ -13,6 +13,11 @@ interface ImagePickerProps {
 	value?: string;
 	onChange: (imageId: string | undefined) => void;
 	readOnly?: boolean;
+	/**
+	 * Show the chosen image at its own aspect ratio, up to 24rem tall, instead
+	 * of letterboxed in the fixed 12rem box (for full character art).
+	 */
+	tall?: boolean;
 	generationContext?: {
 		objectType?: string;
 		name?: string;
@@ -24,6 +29,7 @@ export function ImagePicker({
 	value,
 	onChange,
 	readOnly,
+	tall = false,
 	generationContext,
 }: ImagePickerProps) {
 	const context = useQuestContext();
@@ -193,7 +199,7 @@ export function ImagePicker({
 										<div className="w-full h-32 bg-base-200 rounded-lg overflow-hidden flex items-center justify-center">
 											<ImageDisplay
 												imageId={image.Id}
-												className="w-full h-full object-contain"
+												className="w-full h-full object-cover object-top"
 												alt={image.Name}
 											/>
 										</div>
@@ -277,8 +283,12 @@ export function ImagePicker({
 		</Modal>
 	) : null;
 
+	// Tall mode sizes the button to the image itself (no letterbox bars); an
+	// empty slot still uses the standard box so there's something to click.
+	const natural = tall && !!value;
+
 	return (
-		<div className="space-y-2 min-w-48">
+		<div className={`space-y-2 ${tall ? "" : "min-w-48"}`}>
 			{/* Clickable Image Container */}
 			<button
 				type="button"
@@ -288,8 +298,9 @@ export function ImagePicker({
 				disabled={readOnly}
 				aria-label={value ? "Change selected image" : "Choose image"}
 				className={`
-					relative w-full h-48 bg-base-200 rounded-lg overflow-hidden 
-					flex appearance-none items-center justify-center border-0 p-0 text-inherit
+					relative rounded-lg overflow-hidden
+					${natural ? "block mx-auto max-w-full" : `${tall ? "w-48 max-w-full" : "w-full"} h-48 bg-base-200 flex items-center justify-center`}
+					appearance-none border-0 p-0 text-inherit
 					${!readOnly ? "cursor-pointer" : "cursor-default"}
 					transition-all
 					${!readOnly && isHovered ? "brightness-90" : ""}
@@ -298,24 +309,17 @@ export function ImagePicker({
 				{value ? (
 					<ImageDisplay
 						imageId={value}
-						className="w-full h-full object-contain"
+						className={natural ? "block max-h-96 max-w-full w-auto" : "w-full h-full object-contain"}
 						alt="Selected image"
 					/>
 				) : (
-					<>
+					// Always say the slot is clickable, not only on hover.
+					<div className="flex flex-col items-center gap-2 opacity-70">
 						<span
-							className={`icon-[mdi--image-off] w-24 h-24 opacity-70 ${isHovered && !readOnly ? "invisible" : ""
-								}`}
+							className={`${readOnly ? "icon-[mdi--image-off]" : "icon-[mdi--image-plus]"} w-16 h-16`}
 						/>
-						{isHovered && !readOnly && (
-							<div className="absolute inset-0 flex items-center justify-center">
-								<div className="btn btn-primary">
-									<span className="icon-[mdi--image-plus] w-5 h-5 mr-2" />
-									Choose Image
-								</div>
-							</div>
-						)}
-					</>
+						{!readOnly && <span className="text-sm font-medium">Choose image</span>}
+					</div>
 				)}
 			</button>
 

@@ -223,11 +223,11 @@ export function ObjectPicker({
 												{item.Image ? (
 													<ImageDisplay
 														imageId={item.Image}
-														className="w-full h-full object-contain"
+														className="w-full h-full object-cover object-top"
 														alt={item.Name}
 													/>
 												) : (
-													<span className="icon-[mdi--package-variant] w-12 h-12 opacity-70" />
+													<span className="icon-[mdi--image-off] w-12 h-12 opacity-70" />
 												)}
 											</div>
 										</figure>

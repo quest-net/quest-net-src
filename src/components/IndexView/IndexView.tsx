@@ -924,7 +924,7 @@ function ItemCard({
 						{item.imageId ? (
 							<ImageDisplay
 								imageId={item.imageId}
-								className="w-full h-full object-cover"
+								className="w-full h-full object-cover object-top"
 								style={{ overflowClipMargin: "unset" }}
 								alt={item.label}
 							/>
@@ -934,7 +934,7 @@ function ItemCard({
 								style={item.iconColor ? { color: item.iconColor } : undefined}
 							/>
 						) : (
-							<span className="icon-[mdi--help-circle-outline] w-12 h-12 opacity-70"></span>
+							<span className="icon-[mdi--image-off] w-12 h-12 opacity-70"></span>
 						)}
 					</div>
 				</figure>

@@ -224,7 +224,7 @@ export function SlotDisplay({ isOpen, onClose, config }: SlotDisplayProps) {
 							<ImageThumb className="w-full aspect-square">
 								<ImageDisplay
 									imageId={image.imageId}
-									className="w-full h-full object-cover"
+									className="w-full h-full object-cover object-top"
 									alt={image.alt}
 								/>
 							</ImageThumb>
