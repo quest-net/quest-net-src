@@ -256,7 +256,7 @@ export function ObjectPicker({
 					{/* Left: Clear */}
 					<button
 						onClick={handleClear}
-						className="btn btn-neutral btn-sm"
+						className="btn btn-ghost btn-sm"
 						disabled={localSelectedIds.length === 0}
 					>
 						Clear Selection
@@ -321,7 +321,7 @@ export function ObjectPicker({
 								{extraAction.label}
 							</button>
 						)}
-						<button onClick={handleCancel} className="btn btn-sm">
+						<button onClick={handleCancel} className="btn btn-neutral btn-sm">
 							Cancel
 						</button>
 						<button

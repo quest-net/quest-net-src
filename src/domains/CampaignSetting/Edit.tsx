@@ -862,23 +862,23 @@ function TerrainEnvironmentPresetsEditor({
 								<span>{Math.round(preset.Lighting.Elevation)} deg</span>
 							</div>
 						</div>
-						<button
-							type="button"
-							className={`btn btn-square btn-sm ${
-								confirming ? "btn-warning" : "btn-error btn-outline"
-							}`}
-							onClick={() => deletePreset(preset.Id)}
-							disabled={readOnly}
-							title={confirming ? "Click again to delete preset" : "Delete preset"}
-						>
-							<span
-								className={`h-4 w-4 ${
-									confirming
-										? "icon-[mdi--alert]"
-										: "icon-[mdi--trash-can-outline]"
+						{!readOnly && (
+							<button
+								type="button"
+								className={`btn btn-ghost btn-sm btn-square shrink-0 ${
+									confirming ? "text-warning" : ""
 								}`}
-							/>
-						</button>
+								onClick={() => deletePreset(preset.Id)}
+								title={confirming ? "Click again to delete preset" : "Delete preset"}
+								aria-label={confirming ? "Click again to delete preset" : "Delete preset"}
+							>
+								<span
+									className={`h-5 w-5 ${
+										confirming ? "icon-[mdi--alert]" : "icon-[mdi--close]"
+									}`}
+								/>
+							</button>
+						)}
 					</div>
 				);
 			})}

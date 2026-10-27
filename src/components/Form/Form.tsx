@@ -463,6 +463,8 @@ function FormHeader({
 	const title =
 		mode === "create" ? createTitle : mode === "edit" ? editTitle : viewTitle;
 
+	// Button order matches the bottom row and dialogs: secondary actions, then
+	// Cancel, with the primary action last (rightmost).
 	return (
 		<div className="flex justify-between items-center">
 			<h2 className="text-2xl font-bold">{title}</h2>
@@ -477,14 +479,14 @@ function FormHeader({
 						Clone
 					</button>
 				)}
-				{!readOnly && showSave &&(
-					<button onClick={onSave} className="btn btn-primary">
-						{mode === "create" ? "Create" : "Save Changes"}
-					</button>
-				)}
 				{showCancel && (
 					<button onClick={onClose} className="btn btn-neutral">
 						{readOnly ? "Close" : "Cancel"}
+					</button>
+				)}
+				{!readOnly && showSave && (
+					<button onClick={onSave} className="btn btn-primary">
+						{mode === "create" ? "Create" : "Save Changes"}
 					</button>
 				)}
 			</div>

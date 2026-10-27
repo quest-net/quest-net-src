@@ -550,23 +550,24 @@ function ActorInfoTab({
 							<span className="icon-[mdi--gift] w-4 h-4" />
 							Give
 						</button>
-						<button
-							onClick={handleDespawn}
-							className="btn btn-sm btn-error gap-1"
-							disabled={!actionService}
-							title="Despawn actor"
-						>
-							<span className="icon-[mdi--close-circle] w-4 h-4" />
-							Despawn
-						</button>
+						{/* Neutral actions outlined, the destructive one last. */}
 						<button
 							onClick={() => setShowTerrainPicker(true)}
-							className="btn btn-sm btn-secondary gap-1"
+							className="btn btn-sm btn-outline gap-1"
 							disabled={!actionService}
 							title="Move actor to another terrain"
 						>
 							<span className="icon-[mdi--account-arrow-right] w-4 h-4" />
 							Move
+						</button>
+						<button
+							onClick={handleDespawn}
+							className="btn btn-sm btn-outline btn-error gap-1"
+							disabled={!actionService}
+							title="Despawn actor"
+						>
+							<span className="icon-[mdi--close-circle] w-4 h-4" />
+							Despawn
 						</button>
 					</div>
 				)}

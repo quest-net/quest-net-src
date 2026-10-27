@@ -75,7 +75,7 @@ export function AddPlaylistModal({
 				<>
 					<button
 						onClick={handleClose}
-						className="btn btn-ghost"
+						className="btn btn-neutral"
 						disabled={isImporting}
 					>
 						Cancel

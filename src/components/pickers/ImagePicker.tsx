@@ -228,7 +228,7 @@ export function ImagePicker({
 					{/* Left: Clear */}
 					<button
 						onClick={handleClear}
-						className="btn btn-neutral btn-sm"
+						className="btn btn-ghost btn-sm"
 						disabled={!selectedImageId}
 					>
 						Clear Selection
@@ -268,7 +268,7 @@ export function ImagePicker({
 
 					{/* Right: Cancel / Confirm */}
 					<div className="flex gap-2">
-						<button onClick={handleCancel} className="btn btn-sm">
+						<button onClick={handleCancel} className="btn btn-neutral btn-sm">
 							Cancel
 						</button>
 						<button

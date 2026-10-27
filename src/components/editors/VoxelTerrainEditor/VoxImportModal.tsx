@@ -39,12 +39,12 @@ export function VoxImportModal({
 			size="sm"
 			actions={
 				state.kind === "error" ? (
-					<button type="button" className="btn" onClick={onClose}>
+					<button type="button" className="btn btn-neutral" onClick={onClose}>
 						Close
 					</button>
 				) : (
 					<>
-						<button type="button" className="btn btn-ghost" onClick={onClose}>
+						<button type="button" className="btn btn-neutral" onClick={onClose}>
 							Cancel
 						</button>
 						<button

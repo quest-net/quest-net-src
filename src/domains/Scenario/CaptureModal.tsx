@@ -129,7 +129,7 @@ export function CaptureModal({ isOpen, onClose }: CaptureModalProps) {
 			onClose={handleClose}
 			actions={
 				<>
-					<button onClick={handleClose} className="btn btn-ghost">
+					<button onClick={handleClose} className="btn btn-neutral">
 						Cancel
 					</button>
 					<button
