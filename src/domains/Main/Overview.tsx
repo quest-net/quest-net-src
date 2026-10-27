@@ -40,12 +40,14 @@ interface OverviewActorEntry {
 
 interface OverviewProps {
 	onInspectActor: (actorId: string) => void;
+	/** Called before a single-click selection so Main keeps the current tab. */
+	onSelectActor: (actorId: string) => void;
 }
 
-export function Overview({ onInspectActor }: OverviewProps) {
+export function Overview({ onInspectActor, onSelectActor }: OverviewProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const { selectActor } = useMapState();
+	const { selectActor, selectedActor } = useMapState();
 	const { viewedTerrainId } = useViewedTerrain();
 	const campaign = CampaignUtils.getActiveCampaign(context);
 	const [filter, setFilter] = useState<OverviewFilter>("all");
@@ -174,13 +176,26 @@ export function Overview({ onInspectActor }: OverviewProps) {
 		setSelectedActorIds([]);
 	};
 
-	const inspectActor = (entry: OverviewActorEntry) => {
+	const selectOnMap = (entry: OverviewActorEntry) =>
 		selectActor({
 			id: entry.actor.Id,
 			kind: entry.kind,
 			moveSpeed: entry.actor.MoveSpeed,
 		});
+
+	const inspectActor = (entry: OverviewActorEntry) => {
+		selectOnMap(entry);
 		onInspectActor(entry.actor.Id);
+	};
+
+	// Single click selects on the map; double click also opens the Inspector.
+	const handleCardClick = (
+		event: MouseEvent<HTMLDivElement>,
+		entry: OverviewActorEntry
+	) => {
+		if (isInteractiveCardTarget(event.target, event.currentTarget)) return;
+		onSelectActor(entry.actor.Id);
+		selectOnMap(entry);
 	};
 
 	const handleCardDoubleClick = (
@@ -486,12 +501,15 @@ export function Overview({ onInspectActor }: OverviewProps) {
 							key={`${entry.kind}:${entry.actor.Id}`}
 							role="button"
 							tabIndex={0}
+							onClick={(event) => handleCardClick(event, entry)}
 							onDoubleClick={(event) => handleCardDoubleClick(event, entry)}
 							onKeyDown={(event) => handleCardKeyDown(event, entry)}
-							title="Double-click to inspect"
-							className={`card bg-base-100 border-2 relative transition-all cursor-pointer hover:border-primary focus:outline-none focus:ring-2 focus:ring-primary ${selectedActorIds.includes(entry.actor.Id)
+							title="Click to select, double-click to inspect"
+							className={`card bg-base-100 border-2 relative transition-all cursor-pointer hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${selectedActorIds.includes(entry.actor.Id)
 								? "border-primary ring-2 ring-primary"
-								: "border-base-300"
+								: selectedActor?.id === entry.actor.Id
+									? "border-primary"
+									: "border-base-300"
 								}`}
 						>
 							{renderInitiativeBadge(entry)}

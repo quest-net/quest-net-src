@@ -30,12 +30,14 @@ import { useOutOfSightActorIds } from "../../components/Map/useOutOfSightActorId
 
 interface PartyProps {
 	onInspectActor: (actorId: string) => void;
+	/** Called before a single-click selection so Main keeps the current tab. */
+	onSelectActor: (actorId: string) => void;
 }
 
-export function Party({ onInspectActor }: PartyProps) {
+export function Party({ onInspectActor, onSelectActor }: PartyProps) {
 	const context = useQuestContext();
 	const { actionService } = useActionService();
-	const { selectActor } = useMapState();
+	const { selectActor, selectedActor } = useMapState();
 	const campaign = CampaignUtils.getActiveCampaign(context);
 	// The party is the characters plus the entities they own (owned actors fight
 	// on the party side). The player controls their own character and what it owns.
@@ -121,13 +123,26 @@ export function Party({ onInspectActor }: PartyProps) {
 		})
 		: characters;
 
-	const inspectCharacter = (character: Actor) => {
+	const selectOnMap = (character: Actor) =>
 		selectActor({
 			id: character.Id,
 			kind: characterIds.has(character.Id) ? "character" : "entity",
 			moveSpeed: character.MoveSpeed,
 		});
+
+	const inspectCharacter = (character: Actor) => {
+		selectOnMap(character);
 		onInspectActor(character.Id);
+	};
+
+	// Single click selects on the map; double click also opens the Inspector.
+	const handleCardClick = (
+		event: MouseEvent<HTMLDivElement>,
+		character: Actor
+	) => {
+		if (isInteractiveCardTarget(event.target, event.currentTarget)) return;
+		onSelectActor(character.Id);
+		selectOnMap(character);
 	};
 
 	const handleCardDoubleClick = (
@@ -206,10 +221,11 @@ export function Party({ onInspectActor }: PartyProps) {
 						key={character.Id}
 						role="button"
 						tabIndex={0}
+						onClick={(event) => handleCardClick(event, character)}
 						onDoubleClick={(event) => handleCardDoubleClick(event, character)}
 						onKeyDown={(event) => handleCardKeyDown(event, character)}
-						title="Double-click to inspect"
-						className="card bg-base-100 border-2 border-base-300 relative transition-all cursor-pointer hover:border-primary focus:outline-none focus:ring-2 focus:ring-primary"
+						title="Click to select, double-click to inspect"
+						className={`card bg-base-100 border-2 relative transition-all cursor-pointer hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary ${selectedActor?.id === character.Id ? "border-primary" : "border-base-300"}`}
 					>
 						{renderInitiativeBadge(character)}
 						<div className="card-body p-4">

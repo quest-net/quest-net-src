@@ -20,7 +20,9 @@ Party/Overview panels to guard the first inspect landing on the Inspector tab,
 landing beside it rather than at the map center,
 `qvx-import.mjs` (`--players 0`) checks the `.qvx` reader and round-trips one
 through the terrain editor's Import and Export buttons,
-`late-join.mjs` (~2 min) guards players reaching a DM who has sat alone in
+`ux-fixes.mjs` (`--players 0`) clicks the DM Overview (single click selects,
+double click inspects) and gives an item and a skill from two Give-dialog tabs
+at once, `late-join.mjs` (~2 min) guards players reaching a DM who has sat alone in
 the room for over a minute, and `pose-room.mjs` checks live poses reach every
 peer.
 A scenario can `export const options`

@@ -457,12 +457,26 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 		[isDM, selectedCharacterId]
 	);
 
+	// A single click on a Party/Overview card selects the actor on the map but
+	// stays on the current tab; it marks that one selection here so the mirror
+	// below skips routing for it. (Double-click routes via routeToActorTab.)
+	const quietSelectRef = useRef<string | null>(null);
+	const markQuietSelect = useCallback(
+		(actorId: string) => {
+			// Re-selecting the current actor fires no selection change to consume it.
+			quietSelectRef.current = actorId === selectedActorId ? null : actorId;
+		},
+		[selectedActorId]
+	);
+
 	// Mirror the map selection into Main; route to a tab on a fresh selection.
 	// The guard effect above handles falling back when the selection goes away.
 	const handleSelectionChange = useCallback(
 		(actorId: string | null) => {
 			setSelectedActorId(actorId);
-			if (actorId) routeToActorTab(actorId);
+			const quiet = actorId !== null && quietSelectRef.current === actorId;
+			quietSelectRef.current = null;
+			if (actorId && !quiet) routeToActorTab(actorId);
 		},
 		[routeToActorTab]
 	);
@@ -706,10 +720,16 @@ export function Main({ active = true }: { active?: boolean } = {}) {
 								<StatusCollection actor={selectedCharacter} />
 							)}
 							{!isDM && activeBottomTab === "party" && (
-								<Party onInspectActor={routeToActorTab} />
+								<Party
+									onInspectActor={routeToActorTab}
+									onSelectActor={markQuietSelect}
+								/>
 							)}
 							{isDM && activeBottomTab === "overview" && (
-								<Overview onInspectActor={routeToActorTab} />
+								<Overview
+									onInspectActor={routeToActorTab}
+									onSelectActor={markQuietSelect}
+								/>
 							)}
 							{activeBottomTab === "notes" && <NoteDisplay />}
 							{activeBottomTab === "inspector" && <Inspector />}

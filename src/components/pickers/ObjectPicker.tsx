@@ -102,7 +102,6 @@ export function ObjectPicker({
 		setActiveTypeIndex(index);
 		setCurrentPage(0);
 		setSearchQuery("");
-		setLocalSelectedIds([]); // Clear selection when switching types
 	};
 
 	const handleSearchChange = (query: string) => {
@@ -121,7 +120,13 @@ export function ObjectPicker({
 	};
 
 	const handleConfirm = () => {
-		onConfirm(localSelectedIds, currentType.typeKey, count);
+		// Selection spans tabs: report each type's picks as its own onConfirm call.
+		for (const type of types) {
+			const ids = localSelectedIds.filter((id) =>
+				type.items.some((item: PickableObject) => item.Id === id)
+			);
+			if (ids.length > 0) onConfirm(ids, type.typeKey, count);
+		}
 		setLocalSelectedIds([]);
 		setSearchQuery("");
 		setCurrentPage(0);
@@ -160,17 +165,26 @@ export function ObjectPicker({
 				{/* Type Tabs */}
 				{types.length > 1 && (
 					<div className="tabs tabs-boxed mb-4">
-						{types.map((type, index) => (
-							<button
-								key={index}
-								className={`tab gap-2 ${index === activeTypeIndex ? "tab-active" : ""
-									}`}
-								onClick={() => handleTypeChange(index)}
-							>
-								{type.icon && <span className={`${type.icon} w-4 h-4`} />}
-								{type.label}
-							</button>
-						))}
+						{types.map((type, index) => {
+							// Selections persist across tabs, so show each tab's pick count.
+							const picked = localSelectedIds.filter((id) =>
+								type.items.some((item: PickableObject) => item.Id === id)
+							).length;
+							return (
+								<button
+									key={index}
+									className={`tab gap-2 ${index === activeTypeIndex ? "tab-active" : ""
+										}`}
+									onClick={() => handleTypeChange(index)}
+								>
+									{type.icon && <span className={`${type.icon} w-4 h-4`} />}
+									{type.label}
+									{picked > 0 && (
+										<span className="badge badge-primary badge-xs">{picked}</span>
+									)}
+								</button>
+							);
+						})}
 					</div>
 				)}
 
