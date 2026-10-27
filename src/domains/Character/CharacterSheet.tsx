@@ -347,7 +347,11 @@ export function CharacterSheet() {
 
 			{/* Critical Success Message - Last and smaller */}
 			<div className="pt-4 border-t border-base-300">
+				<label className="label" htmlFor="crit-message">
+					<span className="label-text">Crit Message</span>
+				</label>
 				<input
+					id="crit-message"
 					type="text"
 					value={localCritMessage}
 					onChange={(e) => handleCritMessageChange(e.target.value)}

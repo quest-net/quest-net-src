@@ -225,10 +225,10 @@ function CharacterForm({ data, onChange }: CharacterFormProps) {
 
 					<FormField label="Size">
 						<select defaultValue="small" className="select" onChange={(e) => handleFieldChange("Size", e.target.value)}>
-							<option>extra-small</option>
-							<option>small</option>
-							<option>medium</option>
-							<option>large</option>
+							<option value="extra-small">Extra Small</option>
+							<option value="small">Small</option>
+							<option value="medium">Medium</option>
+							<option value="large">Large</option>
 						</select>
 					</FormField>
 

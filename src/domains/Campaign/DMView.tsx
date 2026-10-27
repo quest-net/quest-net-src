@@ -108,6 +108,7 @@ export function DMView() {
 											activeTab === item.id ? "menu-active" : ""
 										}`}
 										data-tip={item.label}
+										aria-label={item.label}
 										onClick={() => setActiveTab(item.id)}
 									>
 										<span className={`${item.icon} w-6 h-8`} />

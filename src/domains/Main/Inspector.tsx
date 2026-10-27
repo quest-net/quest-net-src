@@ -722,10 +722,10 @@ function ActorInfoTab({
 				<div className="space-y-2">
 					<div className="grid grid-cols-4 gap-x-8 text-sm justify-items-center">
 						{/* Labels row */}
-						<div className="font-medium">Pos:</div>
-						<div className="font-medium">Size:</div>
-						<div className="font-medium">Speed:</div>
-						<div className="font-medium">Flying:</div>
+						<div className="font-medium">Position</div>
+						<div className="font-medium">Size</div>
+						<div className="font-medium">Move Speed</div>
+						<div className="font-medium">Can Fly</div>
 
 						{/* Inputs row */}
 						<div className="opacity-70 text-sm mt-1">
@@ -777,7 +777,7 @@ function ActorInfoTab({
 					<div>
 						Position: ({actor.Position.x}, {actor.Position.y},{" "}
 						{actor.Position.h}) •{" Size: "}
-						{actor.Size || "small"}
+						<span className="capitalize">{actor.Size || "small"}</span>
 					</div>
 				</div>
 			)}

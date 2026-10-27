@@ -160,7 +160,8 @@ export default function CalendarDisplay() {
             {dayName ?? `Day ${parts.day}`}
           </button>
         )}
-        {showWeeks ? <span className="opacity-70">, </span> : <span className="opacity-70">The </span>}
+        {/* -ml-1.5 cancels the weekday token's right padding so the comma sits flush against the name */}
+        {showWeeks ? <span className="opacity-70 -ml-1.5">, </span> : <span className="opacity-70">The </span>}
         <button
           type="button"
           className={tokenClass(open === "day")}

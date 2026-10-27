@@ -209,10 +209,10 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 							className="select select-bordered w-full"
 							onChange={(e) => handleFieldChange("Size", e.target.value)}
 						>
-							<option>extra-small</option>
-							<option>small</option>
-							<option>medium</option>
-							<option>large</option>
+							<option value="extra-small">Extra Small</option>
+							<option value="small">Small</option>
+							<option value="medium">Medium</option>
+							<option value="large">Large</option>
 						</select>
 					</FormField>
 
@@ -307,7 +307,8 @@ function EntityForm({ data, onChange }: EntityFormProps) {
 										className="input input-bordered input-sm w-24"
 										min={0}
 										max={stat.Max}
-										placeholder={stat.Current === null ? "unset" : "same as max"}
+										placeholder={stat.Current === null ? "unset" : "= max"}
+										title={stat.Current === null ? undefined : "Leave blank to stay equal to max"}
 									/>
 									<button
 										type="button"

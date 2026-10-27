@@ -67,9 +67,9 @@ export function CampaignStats({ campaign, variant = "panel" }: CampaignStatsProp
 							At a Glance
 						</h3>
 						<div className="flex flex-wrap items-center gap-3 text-sm opacity-70">
-							{createdLabel && <span>Created {createdLabel}</span>}
-							{ageLabel && (
-								<span className="badge badge-ghost">{ageLabel} old</span>
+							{ageLabel && <span>Created {ageLabel}</span>}
+							{createdLabel && (
+								<span className="badge badge-ghost">{createdLabel}</span>
 							)}
 						</div>
 					</div>
@@ -131,14 +131,8 @@ export function CampaignStats({ campaign, variant = "panel" }: CampaignStatsProp
 						<span className="font-mono">{formatCount(totalAssets)}</span>
 					</div>
 					{createdLabel && (
-						<div className="flex justify-between gap-2">
+						<div className="flex justify-between gap-2" title={createdLabel}>
 							<span>Created</span>
-							<span>{createdLabel}</span>
-						</div>
-					)}
-					{ageLabel && (
-						<div className="flex justify-between gap-2">
-							<span>Age</span>
 							<span>{ageLabel}</span>
 						</div>
 					)}
@@ -163,15 +157,16 @@ function formatCreated(createdAt: number): string | null {
 	});
 }
 
+// Relative phrase that reads after "Created": "today", "3 days ago", ...
 function formatAge(createdAt: number): string | null {
 	if (!createdAt) return null;
 	const days = Math.floor((Date.now() - createdAt) / (1000 * 60 * 60 * 24));
 	if (days < 1) return "today";
-	if (days === 1) return "1 day";
-	if (days < 30) return `${days} days`;
+	if (days === 1) return "yesterday";
+	if (days < 30) return `${days} days ago`;
 	const months = Math.floor(days / 30);
-	if (months === 1) return "1 month";
-	if (months < 12) return `${months} months`;
-	const years = Math.floor(days / 365);
-	return years === 1 ? "1 year" : `${years} years`;
+	if (months === 1) return "1 month ago";
+	if (months < 12) return `${months} months ago`;
+	const years = Math.max(1, Math.floor(days / 365)); // days 360-364 land here as 12 months
+	return years === 1 ? "1 year ago" : `${years} years ago`;
 }

@@ -243,10 +243,17 @@ function ItemForm({ data, onChange }: ItemFormProps) {
 				title="Restore Rules"
 				description="Configure how this item's uses restore after rests"
 			>
-				<RestoreRuleEditor
-					value={data.RestoreRule}
-					onChange={(rule) => handleFieldChange("RestoreRule", rule)}
-				/>
+				{/* Hidden, not cleared: the stored rule comes back if Max Uses is set again. */}
+				{data.MaxUses == null ? (
+					<p className="text-sm opacity-70">
+						Not needed while Max Uses is unlimited.
+					</p>
+				) : (
+					<RestoreRuleEditor
+						value={data.RestoreRule}
+						onChange={(rule) => handleFieldChange("RestoreRule", rule)}
+					/>
+				)}
 			</FormSection>
 
 			{/* Tags */}

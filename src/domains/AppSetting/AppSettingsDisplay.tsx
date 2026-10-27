@@ -219,20 +219,25 @@ export function AppSettingsDisplay() {
 							/>
 						</div>
 
-						<div className="flex items-center justify-between gap-4 border-t border-base-300/40 py-2">
-							<div className="flex items-center gap-2">
-								<span className="icon-[mdi--feather] w-5 h-5 opacity-70" />
-								<span className="font-medium">Keep Flying Height</span>
+						<div className="space-y-1 border-t border-base-300/40 py-2">
+							<div className="flex items-center justify-between gap-4">
+								<div className="flex items-center gap-2">
+									<span className="icon-[mdi--feather] w-5 h-5 opacity-70" />
+									<span className="font-medium">Keep Flying Height</span>
+								</div>
+								<input
+									type="checkbox"
+									className="toggle toggle-primary toggle-sm"
+									checked={preserveFlyingHeightOnTileMove}
+									onChange={(event) =>
+										handlePreserveFlyingHeightChange(event.target.checked)
+									}
+									aria-label="Keep flying height"
+								/>
 							</div>
-							<input
-								type="checkbox"
-								className="toggle toggle-primary toggle-sm"
-								checked={preserveFlyingHeightOnTileMove}
-								onChange={(event) =>
-									handlePreserveFlyingHeightChange(event.target.checked)
-								}
-								aria-label="Keep flying height"
-							/>
+							<p className="text-xs opacity-70">
+								Flying actors moved to lower ground stay at their current height.
+							</p>
 						</div>
 
 						<div className="flex items-center justify-between gap-4 border-t border-base-300/40 py-2">

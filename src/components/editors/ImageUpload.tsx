@@ -400,7 +400,7 @@ export function ImageUpload({
 						</p>
 						{!compact && (
 							<p className="text-sm opacity-70">
-								Any image type + GIFs under 1 MB supported.
+								Any image type. Large images are shrunk automatically; GIFs stay animated but must be under 1 MB and 2048 px.
 							</p>
 						)}
 					</>

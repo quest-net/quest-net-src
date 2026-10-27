@@ -188,6 +188,9 @@ export function FormWrapper<T extends Record<string, any>>({
 	// State management
 	const [data, setDataState] = useState<T>(initialData);
 	const [isDirty, setDirty] = useState(mode === "create");
+	// A fresh create form counts as dirty (so idle refresh won't discard it), but
+	// the "unsaved changes" hint should only appear once the user actually edits.
+	const [hasEdits, setHasEdits] = useState(false);
 	const [saveError, setSaveError] = useState<string | null>(null);
 	const dataRef = useRef<T>(initialData);
 	const saveResolverRef = useRef<(() => T) | null>(null);
@@ -237,6 +240,7 @@ export function FormWrapper<T extends Record<string, any>>({
 			setSaveError(null);
 			if (mode !== "view") {
 				setDirty(true);
+				setHasEdits(true);
 			}
 		},
 		[mode]
@@ -340,6 +344,7 @@ export function FormWrapper<T extends Record<string, any>>({
 		<FormContext.Provider value={contextValue}>
 			<div className={`space-y-6 ${fullWidth ? "w-full" : "max-w-4xl"}`}>
 				<FormHeader
+					showUnsaved={isDirty && hasEdits && !readOnly}
 					createTitle={createTitle}
 					editTitle={editTitle}
 					viewTitle={viewTitle}
@@ -434,6 +439,7 @@ export function FormWrapper<T extends Record<string, any>>({
 // ============================================================================
 
 interface FormHeaderProps {
+	showUnsaved: boolean;
 	createTitle: string;
 	editTitle: string;
 	viewTitle: string;
@@ -447,6 +453,7 @@ interface FormHeaderProps {
 }
 
 function FormHeader({
+	showUnsaved,
 	createTitle,
 	editTitle,
 	viewTitle,
@@ -458,7 +465,7 @@ function FormHeader({
 	showSave,
 	buttonsRef,
 }: FormHeaderProps) {
-	const { mode, readOnly, isDirty } = useFormContext();
+	const { mode, readOnly } = useFormContext();
 
 	const title =
 		mode === "create" ? createTitle : mode === "edit" ? editTitle : viewTitle;
@@ -469,7 +476,7 @@ function FormHeader({
 		<div className="flex justify-between items-center">
 			<h2 className="text-2xl font-bold">{title}</h2>
 			<div ref={buttonsRef} className="flex items-center gap-4">
-				{isDirty && !readOnly && (
+				{showUnsaved && (
 					<span className="text-sm text-warning italic">
 						You have unsaved changes
 					</span>
