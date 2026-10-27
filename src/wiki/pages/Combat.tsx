@@ -140,8 +140,11 @@ const combatPage: WikiPageDefinition = {
 					<p>
 						Once combat is running, the Combat panel shows the round counter and
 						the active initiative side (party mode) or all actors (individual mode).
-						The banner reads <em>"It is now [Name]'s turn"</em> for the
-						lowest-ranked actor who hasn't acted yet.
+						In individual mode the turn card reads <em>"[Name]'s turn"</em> for
+						the lowest-ranked actor who hasn't acted yet. In party mode it reads
+						<em> "Party's turn"</em> (or <em>"Enemies' turn"</em>), with the actors
+						who can act now listed underneath. When it's one of your actors' turn,
+						a <em>"Your turn"</em> badge appears.
 					</p>
 					<WikiDiagram title="Party mode round cycle">
 						<div className="grid gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr_auto_1fr]">

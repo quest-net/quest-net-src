@@ -15,6 +15,7 @@ import { Modal } from "../../components/ui/Modal";
 import { isItemEntity } from "../Item/ItemDropUtils";
 import { getSideActors } from "./CombatUtils";
 import { isActorVisibleToUser, redactActorName } from "../Actor/ActorVisibilityUtils";
+import { userControlsActorId } from "../Actor/ActorOwnershipUtils";
 import { useOutOfSightActorIds } from "../../components/Map/useOutOfSightActorIds";
 
 export function CombatDisplay() {
@@ -58,33 +59,102 @@ export function CombatDisplay() {
 		...campaign.GameState.Characters,
 		...campaign.GameState.Entities,
 	];
-	const activeActorNames =
+	const activeActorIds =
 		activeOrder !== null
 			? initiativeEntries
 				.filter((e) => e.Order === activeOrder)
-				.map((e) => {
-					const actor = allActors.find((a) => a.Id === e.ActorId);
-					if (!actor) return "Unknown";
-					// Actors a player can't see (hidden or out of sight) still take
-					// turns; players see a redacted name of the same length.
-					return isActorVisibleToUser(actor, context.User, campaign.RoomCode, outOfSight)
-						? actor.Name
-						: redactActorName(actor.Name);
-				})
+				.map((e) => e.ActorId)
 			: [];
-	// When many actors share the same initiative order, the "A or B or C or D
-	// or E..." banner gets unwieldy. Cap the list at three names and append
-	// "etc." to keep the banner readable.
+	const activeActorNames = activeActorIds.map((id) => {
+		const actor = allActors.find((a) => a.Id === id);
+		if (!actor) return "Unknown";
+		// Actors a player can't see (hidden or out of sight) still take
+		// turns; players see a redacted name of the same length.
+		return isActorVisibleToUser(actor, context.User, campaign.RoomCode, outOfSight)
+			? actor.Name
+			: redactActorName(actor.Name);
+	});
+	// Many actors can share an order (a whole party often does): show three
+	// names, then "and N more".
 	const ACTIVE_NAME_DISPLAY_LIMIT = 3;
-	const activeActorNamesDisplay =
+	const shownNames =
 		activeActorNames.length > ACTIVE_NAME_DISPLAY_LIMIT
-			? activeActorNames.slice(0, ACTIVE_NAME_DISPLAY_LIMIT).join(" or ") + ", etc."
-			: activeActorNames.join(" or ");
+			? [
+				...activeActorNames.slice(0, ACTIVE_NAME_DISPLAY_LIMIT),
+				`${activeActorNames.length - ACTIVE_NAME_DISPLAY_LIMIT} more`,
+			]
+			: activeActorNames;
+	// "A", "A and B", "A, B and C", "A, B, C and 2 more"
+	const activeActorNamesDisplay =
+		shownNames.length > 1
+			? `${shownNames.slice(0, -1).join(", ")} and ${shownNames[shownNames.length - 1]}`
+			: (shownNames[0] ?? "");
 	// Banner is shown whenever there's an initiative chain for the current
 	// acting pool. In party mode that's the party (party round) or entities
 	// (enemy round); in individual mode it's the whole group.
 	const showActiveBanner =
 		combatState.isActive && initiativeEntries.length > 0;
+	// The DM controls everyone, so the cue is for players only.
+	const isMyTurn =
+		!isDM &&
+		showActiveBanner &&
+		activeActorIds.some((id) => userControlsActorId(context.User, campaign, id));
+	const isPartySide = combatState.initiativeSide === "party";
+
+	// Turn card, shared by the DM and player views: a full-width strip whose
+	// accent colour and icon carry the side, so no separate side badge is needed.
+	const turnHeadline = isIndividualMode
+		? activeActorNames.length === 1
+			? `${activeActorNamesDisplay}'s turn`
+			: "Tied turn"
+		: isPartySide
+			? "Party's turn"
+			: "Enemies' turn";
+	const turnDetail = !showActiveBanner
+		? "No one has an initiative value yet."
+		: activeActorNames.length === 0
+			? isIndividualMode
+				? "Everyone has acted this round."
+				: isPartySide
+					? "All party members have acted this round."
+					: "All enemies have acted this round."
+			: isIndividualMode && activeActorNames.length === 1
+				? null
+				: `Up now: ${activeActorNamesDisplay}`;
+	const accent = isIndividualMode
+		? "border-base-content/30"
+		: isPartySide
+			? "border-primary"
+			: "border-error";
+	const turnCard = (
+		<div
+			className={`flex items-center gap-3 rounded-lg border-l-4 bg-base-200 px-4 py-3 text-left ${accent}`}
+		>
+			<span
+				className={`w-7 h-7 shrink-0 ${
+					isIndividualMode
+						? "icon-[mdi--sword-cross]"
+						: isPartySide
+							? "icon-[mdi--shield-account] text-primary"
+							: "icon-[mdi--skull] text-error"
+				}`}
+			/>
+			<div className="min-w-0 flex-1">
+				<div className="text-lg font-semibold leading-tight">{turnHeadline}</div>
+				{turnDetail && (
+					<div className="text-sm opacity-70 truncate" title={turnDetail}>
+						{turnDetail}
+					</div>
+				)}
+			</div>
+			{isMyTurn && (
+				<span className="badge badge-success gap-1 font-semibold shrink-0">
+					<span className="icon-[mdi--account-arrow-right] w-4 h-4" />
+					Your turn
+				</span>
+			)}
+		</div>
+	);
 
 	const handleSaveInitiative = (
 		next: CampaignSettings["InitiativeSettings"]
@@ -131,36 +201,10 @@ export function CombatDisplay() {
 		}
 
 		return (
-			<div className="h-full flex items-center justify-center">
-				<div className="text-center space-y-3">
-					<div className="text-3xl font-bold">Round {combatState.currentRound}</div>
-					{!isIndividualMode && (
-						<div>
-							<span
-								className={`badge badge-lg ${
-									combatState.initiativeSide === "party"
-										? "badge-primary"
-										: "badge-error"
-								}`}
-							>
-								{combatState.initiativeSide === "party" ? "Party" : "Enemies"} Initiative
-							</span>
-						</div>
-					)}
-					{showActiveBanner && activeActorNames.length > 0 && (
-						<div className="text-lg">
-							It is now <span className="font-semibold">{activeActorNamesDisplay}</span>'s turn
-						</div>
-					)}
-					{showActiveBanner && activeActorNames.length === 0 && (
-						<div className="text-sm opacity-70">
-							{isIndividualMode
-								? "All actors have acted this round."
-								: combatState.initiativeSide === "enemies"
-									? "All enemies have acted this round."
-									: "All party members have acted this round."}
-						</div>
-					)}
+			<div className="h-full flex items-center justify-center p-4">
+				<div className="w-full max-w-xl space-y-3">
+					<div className="text-2xl font-bold">Round {combatState.currentRound}</div>
+					{turnCard}
 				</div>
 			</div>
 		);
@@ -173,18 +217,25 @@ export function CombatDisplay() {
 	// before combat starts, so initiative can be configured up front. The
 	// inner content switches between the "not active" prompt and the active
 	// combat controls.
+	const settingsButton = (
+		<button
+			onClick={() => setShowInitiativeModal(true)}
+			disabled={!isInteractive}
+			className="btn btn-circle btn-sm btn-ghost"
+			title="Initiative settings"
+			aria-label="Initiative settings"
+		>
+			<span className="icon-[mdi--cog] w-5 h-5" />
+		</button>
+	);
+
 	return (
-		<div className="h-full flex items-center justify-center relative">
-			{/* Floating gear: opens the inline initiative settings modal.
-			    Positioned absolutely so it doesn't shift the centered controls. */}
-			<button
-				onClick={() => setShowInitiativeModal(true)}
-				disabled={!isInteractive}
-				className="absolute top-2 right-2 btn btn-circle btn-sm btn-ghost"
-				title="Initiative settings"
-			>
-				<span className="icon-[mdi--cog] w-5 h-5" />
-			</button>
+		<div className="h-full flex items-center justify-center relative p-4">
+			{/* Before combat the gear floats so the centered prompt stays centered;
+			    during combat it sits in the header row with End. */}
+			{!combatState.isActive && (
+				<div className="absolute top-2 right-2">{settingsButton}</div>
+			)}
 
 			{!combatState.isActive ? (
 				<div className="text-center space-y-4">
@@ -226,77 +277,47 @@ export function CombatDisplay() {
 					</div>
 				</div>
 			) : (
-				<div className="text-center space-y-4">
-					{/* Round counter with controls on sides */}
-					<div className="flex items-center justify-center gap-3">
-						<button
-							onClick={handleDecrementRound}
-							disabled={!isInteractive || combatState.currentRound <= 1}
-							className="btn btn-circle btn-sm"
-							title="Previous round"
-						>
-							<span className="icon-[mdi--chevron-left] w-5 h-5" />
-						</button>
-						<div className="text-4xl font-bold min-w-32">
-							Round {combatState.currentRound}
-						</div>
-						<button
-							onClick={handleIncrementRound}
-							disabled={!isInteractive}
-							className="btn btn-circle btn-sm"
-							title="Next round"
-						>
-							<span className="icon-[mdi--chevron-right] w-5 h-5" />
-						</button>
-					</div>
-
-					{/* Active actor banner -- lowest-order actor not yet done. */}
-					{showActiveBanner && activeActorNames.length > 0 && (
-						<div className="text-lg">
-							It is now <span className="font-semibold">{activeActorNamesDisplay}</span>'s turn
-						</div>
-					)}
-					{showActiveBanner && activeActorNames.length === 0 && (
-						<div className="text-sm opacity-70">
-							{isIndividualMode
-								? "All actors have acted this round."
-								: combatState.initiativeSide === "enemies"
-									? "All enemies have acted this round."
-									: "All party members have acted this round."}
-						</div>
-					)}
-
-					{/* Current side and combat controls. The side badge is meaningless
-					    in individual mode (no sides) so we hide it there. */}
-					<div className="flex gap-2 justify-center items-center">
-						{!isIndividualMode && (
-							<span
-								className={`badge badge-lg gap-1 ${
-									combatState.initiativeSide === "party"
-										? "badge-primary"
-										: "badge-error"
-								}`}
+				<div className="w-full max-w-xl space-y-3">
+					{/* Header: round stepper left, combat controls right. */}
+					<div className="flex items-center justify-between gap-3">
+						<div className="flex items-center gap-2">
+							<button
+								onClick={handleDecrementRound}
+								disabled={!isInteractive || combatState.currentRound <= 1}
+								className="btn btn-circle btn-sm"
+								title="Previous round"
+								aria-label="Previous round"
 							>
-								<span
-									className={`w-4 h-4 ${
-										combatState.initiativeSide === "party"
-											? "icon-[mdi--shield-account]"
-											: "icon-[mdi--skull]"
-									}`}
-								/>
-								{combatState.initiativeSide === "party" ? "Party" : "Enemies"} Initiative
-							</span>
-						)}
-						<button
-							onClick={handleEndCombat}
-							className="btn btn-sm btn-neutral gap-1"
-							disabled={!isInteractive}
-							title="End combat"
-						>
-							<span className="icon-[mdi--stop] w-4 h-4" />
-							End
-						</button>
+								<span className="icon-[mdi--chevron-left] w-5 h-5" />
+							</button>
+							<div className="text-2xl font-bold whitespace-nowrap">
+								Round {combatState.currentRound}
+							</div>
+							<button
+								onClick={handleIncrementRound}
+								disabled={!isInteractive}
+								className="btn btn-circle btn-sm"
+								title="Next round"
+								aria-label="Next round"
+							>
+								<span className="icon-[mdi--chevron-right] w-5 h-5" />
+							</button>
+						</div>
+						<div className="flex items-center gap-1">
+							<button
+								onClick={handleEndCombat}
+								className="btn btn-sm btn-neutral gap-1"
+								disabled={!isInteractive}
+								title="End combat"
+							>
+								<span className="icon-[mdi--stop] w-4 h-4" />
+								End
+							</button>
+							{settingsButton}
+						</div>
 					</div>
+
+					{turnCard}
 				</div>
 			)}
 
