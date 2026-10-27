@@ -46,7 +46,7 @@ export const EntityActions = {
 				category: "combat",
 				level: "info",
 				visibility: ["dm"],
-				actorId: params.entity.Id,
+				targetId: params.entity.Id,
 			},
 			context
 		);
@@ -179,7 +179,7 @@ export const EntityActions = {
 				category: "combat",
 				level: "important",
 				visibility: ["all"],
-				actorId: instance.Id,
+				targetId: instance.Id,
 			},
 			context
 		);
@@ -225,7 +225,7 @@ export const EntityActions = {
 				category: "combat",
 				level: "important",
 				visibility: ["all"],
-				actorId: params.entityId,
+				targetId: params.entityId,
 			},
 			context
 		);

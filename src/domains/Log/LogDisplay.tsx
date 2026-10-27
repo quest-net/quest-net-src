@@ -16,6 +16,7 @@ import { LogUtils } from "./LogUtils";
 import { getMentionTargets, parseMentions } from "./MentionUtils";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { redactActorNames } from "../Actor/ActorVisibilityUtils";
+import { getAllActors } from "../Actor/ActorUtils";
 import { useUnseenLogActors } from "./useUnseenLogActors";
 
 // ============================================================================
@@ -309,15 +310,44 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 		}
 	};
 
+	// The label is who acted: the entry's ActorId (any character or entity, on
+	// the field or not), else the DM, who applies every action without one.
 	const getEntryLabel = (entry: LogEntry): string => {
-		if (entry.ActorId) {
-			const character = campaign.GameState.Characters.find(
-				(c) => c.Id === entry.ActorId
-			);
-			return redact(entry, character?.Name || "Player");
+		const actor = entry.ActorId
+			? getAllActors(campaign).find((a) => a.Id === entry.ActorId)
+			: undefined;
+		if (actor) return redact(entry, actor.Name);
+		// A message or roll whose character has since been deleted.
+		if (entry.ActorId && (entry.Category === "chat" || entry.Category === "dice"))
+			return "Player";
+		return "DM";
+	};
+
+	// Row text after the label. Sentence-style lines ("Rin rolled 1d20: 17")
+	// drop the leading name the label already shows; title-style lines ("Item
+	// created") get their Details ("Sword added to item templates") so the row
+	// says which thing it was about.
+	const renderEntryText = (entry: LogEntry, label: string): React.ReactNode => {
+		if (entry.Category === "chat") return renderMessageBody(entry);
+		let text = redact(entry, entry.Action);
+		if (text.startsWith(`${label} `)) {
+			text = text.slice(label.length + 1);
+			// Legacy roll lines were "Name Rolled ..."; lowercase reads naturally.
+			if (text.startsWith("Rolled ")) text = `r${text.slice(1)}`;
 		}
-		if (entry.Category === "dice" || entry.Category === "chat") return "DM";
-		return "System";
+		const showDetails =
+			entry.Details &&
+			entry.Category !== "dice" &&
+			entry.Category !== "ping" &&
+			entry.Category !== "sticker";
+		return (
+			<>
+				{text}
+				{showDetails && (
+					<span className="opacity-70"> · {redact(entry, entry.Details!)}</span>
+				)}
+			</>
+		);
 	};
 
 	// Lowercased mentionable names, for deciding whether a sender label is
@@ -330,7 +360,6 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 	// Render a chat message with its @mentions highlighted; the chip for a
 	// mention that targets the current viewer is filled rather than tinted.
 	const renderMessageBody = (entry: LogEntry): React.ReactNode => {
-		if (entry.Category !== "chat") return redact(entry, entry.Action);
 		const { matches } = parseMentions(entry.Action, mentionTargets);
 		if (matches.length === 0) return entry.Action;
 
@@ -514,7 +543,7 @@ export function LogDisplay({ isFloating = false, onClose }: LogDisplayProps) {
 									</span>
 								)}
 								<span className="wrap-break-word text-base-content">
-									{renderMessageBody(entry)}
+									{renderEntryText(entry, label)}
 								</span>
 							</div>
 						);

@@ -349,16 +349,18 @@ export function isValidDiceFormula(formula: string): boolean {
   }
 }
 
-/** Convenience: build your log line with stats */
+/** Convenience: build your log line with stats. Lowercase "rolled" because callers
+ *  prefix the roller's name ("Rin rolled 1d20: 17"). Nothing parses this text:
+ *  crits come from LogEntry.RollOutcome. */
 export function makeRollLogText(result: DiceRollResult): string {
 	// Only show highest/lowest stats if more than 1 die was kept
 	if (result.stats.numKept <= 1) {
-	  return `Rolled ${result.formula}: ${result.total}`;
+	  return `rolled ${result.formula}: ${result.total}`;
 	}
-	
+
 	const hi = result.stats.highestDie ?? "-";
 	const lo = result.stats.lowestDie ?? "-";
-	return `Rolled ${result.formula}: ${result.total} [highest: ${hi} | lowest: ${lo}]`;
+	return `rolled ${result.formula}: ${result.total} (highest ${hi}, lowest ${lo})`;
   }
 
 /*** Crit / fumble detection ***/

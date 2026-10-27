@@ -43,7 +43,7 @@ export const CharacterActions = {
 				category: "character",
 				level: "info",
 				visibility: ["dm", "owner"],
-				actorId: character.Id,
+				targetId: character.Id,
 			},
 			context
 		);
@@ -163,7 +163,7 @@ export const CharacterActions = {
 				category: "character",
 				level: "important",
 				visibility: ["all"],
-				actorId: character.Id,
+				targetId: character.Id,
 			},
 			context
 		);
@@ -222,7 +222,7 @@ export const CharacterActions = {
 				category: "character",
 				level: "important",
 				visibility: ["all"],
-				actorId: params.characterId,
+				targetId: params.characterId,
 			},
 			context
 		);

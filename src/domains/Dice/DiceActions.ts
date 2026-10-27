@@ -33,7 +33,7 @@ export const DiceActions = {
 			? ActorUtils.getActiveActors(campaign).find((a) => a.Id === params.actorId)
 			: undefined;
 
-		const who = actor ? `${actor.Name} rolled` : "Rolled";
+		const who = actor ? `${actor.Name} rolled` : "DM rolled";
 		const tagSuffix =
 			params.tags && params.tags.length > 0 ? ` [${params.tags.join(", ")}]` : "";
 

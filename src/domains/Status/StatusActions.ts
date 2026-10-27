@@ -270,7 +270,7 @@ export const StatusActions = {
 					category: "combat",
 					level: "info",
 					visibility: ["all"],
-					actorId: params.actorId,
+					targetId: params.actorId,
 				},
 				context
 			);
