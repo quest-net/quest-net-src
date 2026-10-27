@@ -1,6 +1,6 @@
 // domains/Character/CharacterSheet.tsx
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useQuestContext } from "../Context/ContextProvider";
 import { useDebouncedCallback } from "../../hooks/useDebounced";
 import { useActionService } from "../../services/Actions/ActionServiceProvider";
@@ -163,83 +163,133 @@ export function CharacterSheet() {
 		});
 	};
 
+	const resolvedStats = resolveStats(
+		character.Stats,
+		campaign.Settings.StatDefinitions
+	);
+	// With 1-2 stats the column beside the art has room to spare, so the
+	// description fills it; with more it goes full-width below. Stat count is
+	// a campaign setting, so a given campaign's layout never shifts.
+	const descriptionBeside = resolvedStats.length <= 2;
+	// Short art (square or wide) leaves a gap under it beside the stats; the
+	// actions move into that gap when they fit on one line there. Only the art
+	// and the name+stats block are compared, neither of which changes when the
+	// actions move, so the placement can't flip back and forth.
+	const artRef = useRef<HTMLDivElement>(null);
+	const statsRef = useRef<HTMLDivElement>(null);
+	const actionsRef = useRef<HTMLDivElement>(null);
+	const [actionsUnderArt, setActionsUnderArt] = useState(false);
+	const hasActions = !!character.Actions && character.Actions.length > 0;
+	useLayoutEffect(() => {
+		const art = artRef.current;
+		const stats = statsRef.current;
+		if (!art || !stats) return;
+		const update = () => {
+			const actions = actionsRef.current;
+			if (!actions) return setActionsUnderArt(false);
+			const gap = stats.offsetHeight - art.offsetHeight - 8;
+			setActionsUnderArt(
+				gap >= actions.offsetHeight && actions.offsetWidth <= art.offsetWidth
+			);
+		};
+		const observer = new ResizeObserver(update);
+		observer.observe(art);
+		observer.observe(stats);
+		if (actionsRef.current) observer.observe(actionsRef.current);
+		update();
+		return () => observer.disconnect();
+		// actionsUnderArt: moving the actions remounts them, so re-observe.
+	}, [hasActions, actionsUnderArt]);
+	const actionBubbles = hasActions && (
+		// w-max keeps the row on one line under the art; max-w-full lets it wrap
+		// beside the stats. Its offsetWidth is then the natural width in both
+		// places unless it wrapped, which only happens in the wider column.
+		<div ref={actionsRef} className={actionsUnderArt ? "w-max" : "w-max max-w-full pt-1"}>
+			<ActionBubbles
+				actions={resolveActions(
+					character.Actions!,
+					campaign.Settings.ActionDefinitions
+				)}
+				onChange={handleActionsChange}
+			/>
+		</div>
+	);
+
+	const description = (
+		<textarea
+			value={localDescription}
+			onChange={(e) => handleDescriptionChange(e.target.value)}
+			className={`textarea textarea-bordered w-full ${descriptionBeside ? "flex-1 min-h-20" : ""}`}
+			rows={3}
+			placeholder="Character description..."
+		/>
+	);
+
 	return (
-		<div className="space-y-1">
-			{/* Image & Name */}
-			<div className="flex gap-4 items-start">
-				<div className="max-w-60">
-					<ImagePicker
-						value={character.Image}
-						onChange={(imageId) => {
-							handleFieldChange("Image", imageId);
-						}}></ImagePicker>
+		<div className="space-y-3">
+			{/* Full art beside what players touch every turn (name, stats,
+			    actions), so the controls stay near the top of the panel. */}
+			<div className={`flex gap-4 ${descriptionBeside ? "items-stretch" : "items-start"}`}>
+				{/* Column sizes to the art: up to 320px tall, at most 45% wide, so
+				    tall art stays narrow and square/wide art isn't shrunk to a strip. */}
+				<div className="shrink-0 max-w-[45%] self-start space-y-2">
+					<div ref={artRef} className="[&_img]:max-h-80">
+						<ImagePicker
+							tall
+							value={character.Image}
+							onChange={(imageId) => {
+								handleFieldChange("Image", imageId);
+							}}></ImagePicker>
+					</div>
+					{actionsUnderArt && actionBubbles}
 				</div>
-				<div className="flex-1 space-y-2">
-					<input
-						type="text"
-						value={localName}
-						onChange={(e) => handleNameChange(e.target.value)}
-						className="input input-bordered text-2xl font-bold w-full"
-						placeholder="Character Name"
-					/>
-					{/* Description */}
-					<textarea
-						value={localDescription}
-						onChange={(e) => handleDescriptionChange(e.target.value)}
-						className="textarea textarea-bordered w-full"
-						rows={6}
-						placeholder="Character description..."
-					/>
-				</div>
-			</div>
-
-			{/* Stats */}
-			<div className="space-y-2">
-				<div className="flex items-center justify-between">
-					<div></div>
-					<ToggleButton
-						active={editingMaxStats}
-						kind="independent"
-						quiet
-						className="btn-sm btn-circle"
-						onClick={() => setEditingMaxStats(!editingMaxStats)}
-						title={editingMaxStats ? "Hide max stat controls" : "Edit max stats"}
-					>
-						<span className="icon-[mdi--cog] w-4 h-4" />
-					</ToggleButton>
-				</div>
-
-				<div className="space-y-3">
-					{resolveStats(
-						character.Stats,
-						campaign.Settings.StatDefinitions
-					).map((stat) => (
-						<StatBar
-							key={stat.Id}
-							stat={stat}
-							editingMax={editingMaxStats}
-							onCurrentChange={(value) =>
-								handleStatChange(stat.Id, "Current", value)
-							}
-							onMaxChange={(value) => handleStatChange(stat.Id, "Max", value)}
-							onTransfer={() => setTransferStat(stat)}
+				<div className="flex-1 min-w-0 flex flex-col gap-2">
+					<div ref={statsRef} className="flex flex-col gap-2">
+					<div className="flex items-center gap-2">
+						<input
+							type="text"
+							value={localName}
+							onChange={(e) => handleNameChange(e.target.value)}
+							className="input input-bordered text-2xl font-bold flex-1 min-w-0"
+							placeholder="Character Name"
 						/>
-					))}
+						<ToggleButton
+							active={editingMaxStats}
+							kind="independent"
+							quiet
+							className="btn-sm btn-circle shrink-0"
+							onClick={() => setEditingMaxStats(!editingMaxStats)}
+							title={editingMaxStats ? "Hide max stat controls" : "Edit max stats"}
+						>
+							<span className="icon-[mdi--cog] w-4 h-4" />
+						</ToggleButton>
+					</div>
+
+					{/* Stats */}
+					<div className="space-y-3">
+						{resolvedStats.map((stat) => (
+							<StatBar
+								key={stat.Id}
+								stat={stat}
+								editingMax={editingMaxStats}
+								onCurrentChange={(value) =>
+									handleStatChange(stat.Id, "Current", value)
+								}
+								onMaxChange={(value) => handleStatChange(stat.Id, "Max", value)}
+								onTransfer={() => setTransferStat(stat)}
+							/>
+						))}
+					</div>
+					</div>
+
+					{!actionsUnderArt && actionBubbles}
+
+					{descriptionBeside && description}
 				</div>
 			</div>
 
-			{/* Actions */}
-			{character.Actions && character.Actions.length > 0 && (
-				<div className="pt-2">
-					<ActionBubbles
-						actions={resolveActions(
-							character.Actions,
-							campaign.Settings.ActionDefinitions
-						)}
-						onChange={handleActionsChange}
-					/>
-				</div>
-			)}
+			{/* Description: flavor text, read now and then, rarely edited. */}
+			{!descriptionBeside && description}
 
 			{/* Token details */}
 			<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
