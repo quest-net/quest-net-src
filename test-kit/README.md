@@ -23,8 +23,14 @@ through the terrain editor's Import and Export buttons,
 `ux-fixes.mjs` (`--players 0`) clicks the DM Overview (single click selects,
 double click inspects) and gives an item and a skill from two Give-dialog tabs
 at once, `late-join.mjs` (~2 min) guards players reaching a DM who has sat alone in
-the room for over a minute, and `pose-room.mjs` checks live poses reach every
-peer.
+the room for over a minute, `pose-room.mjs` checks live poses reach every
+peer, `walk-trial.mjs` walks in first person and follow with real input,
+`stress.mjs` is the movement stress test (see below), `move-revert.mjs`
+guards a DM broadcast that predates a player's move not
+bouncing that move back, `state-order.mjs --race` guards state updates
+being applied in the order the DM sent them, and `pose-stall.mjs` guards a
+walker whose poses stall mid-walk holding on other screens instead of sliding
+back.
 A scenario can `export const options`
 for `startKit`, e.g. `{ characters: ["Beast Tamer", null] }` to choose which
 character each player claims (`null` leaves that player on character select).
@@ -68,6 +74,48 @@ Screenshots land in `test-kit/out/` (gitignored).
 | Other | 14 images (tokens + scenes), 2 YouTube audio tracks, environment and focus scene images, attribute definitions, a shared inventory, calendar day 3, a note, a sticker, a dice roll, log history, and the "Opening positions" scenario. |
 
 Combat is **off** in the fixture, so scenarios can start it.
+
+## Stress testing movement
+
+`scenarios/stress.mjs` has every player move at once and records visible
+jumps on every peer. See the header of that file for its flags.
+
+```
+node test-kit/run.mjs test-kit/scenarios/stress.mjs --players 6 --chaos --net bad --split
+node test-kit/run.mjs test-kit/scenarios/stress.mjs --players 4 --seconds 20 --self-check
+```
+
+The tools live in `stress.mjs`:
+
+- **Walkers** (first person, follow) hold the right button and W. They turn
+  25-75° at a time, spread over frames like a real mouse, and pause now and
+  then so the body settles and commits. Real controls only work while the
+  pointer is locked, so `kit.mjs` fakes the Pointer Lock API in every peer.
+- **Click movers** (ortho, perspective) dispatch the same `actor:move` a map
+  click does, 1-3 tiles every 2-3.5s.
+- **Chaos** (DM): spawn/despawn goblins on both terrains, move NPCs (sometimes
+  to the other terrain), statuses, combat rounds (fires the Poisoned and Cursed
+  Ring scripts), Raise Dead, dice rolls.
+- **Network impairment** delays a peer's poses, state sync and action
+  requests, in order, with jitter and occasional stalls. Trystero channels are
+  reliable, so a stall holds traffic back instead of dropping it.
+- **Recorder** reads where tokens, the camera and the walker's own body are
+  drawn each frame, through dev-only hooks (`window.__qnActorLayer`,
+  `window.__qnMapController`). It flags `snap` (more than 0.75 tile in one
+  frame), `backtrack` (out and back more than 0.75 tile within 1s, returning
+  faster than walking speed), `bodySnap`/`bodyBacktrack` for the walker's own
+  capsule, and `cameraSnap`. Each jump comes with the events before it: poses,
+  state updates, commits, sends, live-pose start/end, long frames.
+
+`node test-kit/matrix.mjs` runs 12 configurations (calm/chaos × clean/mild/bad
+network × one terrain/split, 6 players), then `node test-kit/analyze.mjs`
+sorts every flag into a likely cause: revert, pose expiry, walker body, DM move,
+other.
+
+Reports land in `test-kit/out/stress-<label>.json`. `--self-check` proves that
+the recorder catches a real reset and an injected jump. A DM move of a
+character that is *still walking* doesn't count as a check: the walker's next
+commit overrides it.
 
 ## Writing a scenario
 

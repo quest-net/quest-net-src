@@ -244,6 +244,7 @@ export default function MapScene({
 			setActiveCamera
 		);
 		controllerRef.current = controller;
+		if (import.meta.env.DEV) (window as any).__qnMapController = controller; // test kit's jump recorder
 		// Through the rig rather than onto `controls` directly, so the value is
 		// recorded and survives a follow excursion (follow releases the clamp).
 		controller.rig.setOrthoPanLimit(THREE_D_MAP_CONTROLS.MIN_PAN_LIMIT_RADIUS);

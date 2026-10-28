@@ -64,6 +64,14 @@ const ACTOR_LIVE_POSE_SMOOTHING = 14;
 const ACTOR_LIVE_POSE_SNAP_DISTANCE_SQ = 0.000001;
 // Clamp follower dt so a long-throttled tab doesn't teleport tokens on resume.
 const ACTOR_LIVE_POSE_MAX_DT_S = 0.1;
+// When a walker's poses stop with its committed tile unchanged and more than
+// this far behind the token, the sender's link stalled mid-walk: hold the token
+// instead of sliding it back to a tile it already left (it chased forward again
+// when poses resumed). Within this distance it is an ordinary settle.
+const ACTOR_LIVE_POSE_HOLD_DISTANCE = 1;
+// How long a held token waits for poses or a commit before it gives up and
+// returns to its committed tile (e.g. the sender really left).
+const ACTOR_LIVE_POSE_HOLD_MS = 4000;
 
 interface ThreeDActorLayerProps {
 	resources: ThreeDSceneResources;
@@ -965,6 +973,14 @@ export function ThreeDActorLayer({
 		createDescriptorMap(characters, entities, cutoutImageIds)
 	);
 	const { actionService } = useActionService();
+	// Test kit's jump recorder reads where each token is drawn (installRecorder in test-kit/stress.mjs).
+	if (import.meta.env.DEV) {
+		(window as any).__qnActorLayer = {
+			groups: actorGroupsRef.current,
+			liveTargets: livePoseTargetsRef.current,
+			animations: moveAnimationsRef.current,
+		};
+	}
 
 	trackedActorKeyRef.current = trackedActor
 		? getActorKey(trackedActor.kind, trackedActor.id)
@@ -1190,11 +1206,22 @@ export function ThreeDActorLayer({
 	// Imperative live-pose subscription. Each pose packet only retargets the
 	// affected follower vector and lets the rAF chase do the motion; when a pose
 	// disappears (expiry, peer loss), the token eases back to its authoritative
-	// position. Reads descriptors/terrain through refs so the subscription never
-	// needs to be re-established per render.
+	// position -- unless the sender stalled mid-walk (see
+	// ACTOR_LIVE_POSE_HOLD_DISTANCE), in which case it holds. Reads
+	// descriptors/terrain through refs so the subscription never needs to be
+	// re-established per render.
 	useEffect(() => {
 		const service = actionService?.actorPoseService;
 		if (!service) return;
+		// Committed tile as of each follower's latest pose, by actorKey.
+		const tileAtLastPose = new Map<string, string>();
+		const holdTimers = new Map<string, ReturnType<typeof setTimeout>>();
+		const tileKeyOf = (p: ActorTokenDescriptor["position"]) =>
+			`${p.terrainId}|${p.x},${p.y},${p.h}`;
+		const releaseHold = (actorKey: string) => {
+			clearTimeout(holdTimers.get(actorKey));
+			holdTimers.delete(actorKey);
+		};
 
 		const syncPoseTargets = () => {
 			const currentTerrain = terrainRef.current;
@@ -1206,10 +1233,12 @@ export function ThreeDActorLayer({
 				const pose = poses.get(descriptor.id);
 				if (!pose) continue;
 				seen.add(actorKey);
+				tileAtLastPose.set(actorKey, tileKeyOf(descriptor.position));
 				let target = targets.get(actorKey);
 				if (!target) {
 					target = new THREE.Vector3();
 					targets.set(actorKey, target);
+					releaseHold(actorKey);
 					// The follower takes over from any in-flight ease animation.
 					moveAnimationsRef.current.delete(actorKey);
 				}
@@ -1218,10 +1247,33 @@ export function ThreeDActorLayer({
 			for (const actorKey of Array.from(targets.keys())) {
 				if (seen.has(actorKey)) continue;
 				targets.delete(actorKey);
+				const lastTile = tileAtLastPose.get(actorKey);
+				tileAtLastPose.delete(actorKey);
 				const descriptor = descriptorsByKeyRef.current.get(actorKey);
-				if (descriptor) {
-					animateActorToPosition(actorKey, descriptor, descriptor.position);
+				const group = actorGroupsRef.current.get(actorKey);
+				if (!descriptor) continue;
+				const committed = getActorGroundPosition(descriptor, currentTerrain);
+				const stalledMidWalk =
+					!!group &&
+					lastTile === tileKeyOf(descriptor.position) &&
+					group.position.distanceTo(committed) > ACTOR_LIVE_POSE_HOLD_DISTANCE;
+				if (stalledMidWalk) {
+					// A resumed pose picks up from here. Recording the committed tile as
+					// this token's target means the descriptor effect only moves it once
+					// a NEW commit arrives, not on every unrelated campaign update.
+					targetPositionsRef.current.set(actorKey, committed.clone());
+					holdTimers.set(
+						actorKey,
+						setTimeout(() => {
+							holdTimers.delete(actorKey);
+							if (livePoseTargetsRef.current.has(actorKey)) return;
+							const latest = descriptorsByKeyRef.current.get(actorKey);
+							if (latest) animateActorToPosition(actorKey, latest, latest.position);
+						}, ACTOR_LIVE_POSE_HOLD_MS)
+					);
+					continue;
 				}
+				animateActorToPosition(actorKey, descriptor, descriptor.position);
 			}
 			if (targets.size > 0) {
 				scheduleMoveAnimationTick();
@@ -1229,7 +1281,11 @@ export function ThreeDActorLayer({
 		};
 
 		syncPoseTargets();
-		return service.subscribeLiveActorPoses(syncPoseTargets);
+		const unsubscribe = service.subscribeLiveActorPoses(syncPoseTargets);
+		return () => {
+			unsubscribe();
+			for (const timer of holdTimers.values()) clearTimeout(timer);
+		};
 	}, [actionService]);
 
 	const clearFlightGuide = () => {

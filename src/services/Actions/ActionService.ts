@@ -14,6 +14,8 @@ import { snapshot } from "valtio";
 import { RoomService } from "../../domains/Room/RoomService";
 import { LogUtils } from "../../domains/Log/LogUtils";
 import { User } from "../../domains/User/User";
+import type { Position } from "../../domains/Actor/Actor";
+import { roundVoxelPosition } from "../../domains/VoxelTerrain/VoxelTerrainQueries";
 import { CampaignLoadingService } from "../CampaignLoadingService";
 import { TerrainStorageService } from "../TerrainStorageService";
 import { TerrainTransferService } from "../TerrainTransferService";
@@ -26,6 +28,7 @@ const PING_INTERVAL_MS = 3000;
 // ping shares one ordered data channel with bulk terrain/image transfers.
 const PING_TIMEOUT_MS = 15000;
 const PEER_RECONCILE_INTERVAL_MS = 2000;
+const PENDING_MOVE_TTL_MS = 5000;
 
 export class ActionService {
 	private context: Context;
@@ -59,6 +62,15 @@ export class ActionService {
 	// campaign writes while awaiting terrain/IDB work. Always resolved (never
 	// rejects) so a failed action can't wedge the queue.
 	private mutationChain: Promise<unknown> = Promise.resolve();
+	// Player only: incoming DM states land one at a time, in order.
+	private playerApplyChain: Promise<void> = Promise.resolve();
+	// Player only: moves applied optimistically that no DM update has
+	// acknowledged yet, by actorId. A DM broadcast built before the DM handled
+	// a move would otherwise put the actor back until the echo arrived -- the
+	// "snap back, then forward" teleport, worse with more players in the room.
+	private pendingMoves = new Map<string, { seq: number; position: Position; sentAt: number }>();
+	// Request numbers; time-based so they keep rising across reconnects.
+	private lastRequestSeq = 0;
 
 	constructor(context: Context, room: Room) {
 		this.context = context;
@@ -204,20 +216,31 @@ export class ActionService {
 			// State arrives sanitized by the DM, so campaign.Id has been
 			// replaced with the public RoomCode — that's the key we use to
 			// match against the player's CampaignInfo entries.
-			this.stateSync.onUpdate((campaign) => {
-				void this.applyPlayerStateUpdate(campaign).catch((error) => {
-					console.error("[ActionService] Error applying player state:", error);
-				});
+			// Chained: applying awaits terrain prep, which takes longer for some
+			// updates than others, so parallel applies could land out of order.
+			// ISOLATION: cloned now, not when its turn comes -- StateSync patches
+			// `campaign` in place, so a later clone would pair newer state with
+			// this update's acks. The clone also keeps UI optimistic writes out of
+			// StateSync's baseline.
+			this.stateSync.onUpdate((campaign, acks) => {
+				const isolatedCampaign = structuredClone(campaign);
+				this.playerApplyChain = this.playerApplyChain
+					.then(() => this.applyPlayerStateUpdate(isolatedCampaign, acks))
+					.catch((error) => {
+						console.error("[ActionService] Error applying player state:", error);
+					});
 			});
 		}
 	}
 
-	private async applyPlayerStateUpdate(campaign: Campaign): Promise<void> {
-		// ISOLATION: clone so the UI can mutate optimistically without
-		// polluting StateSync's internal baseline. Prepare the plain clone
-		// before it lands on the proxy so terrain hydration doesn't pay the
-		// proxy-tracking cost.
-		const isolatedCampaign = structuredClone(campaign);
+	/** `isolatedCampaign` is a private plain clone (see setupStateSync). */
+	private async applyPlayerStateUpdate(
+		isolatedCampaign: Campaign,
+		acks: Record<string, number> | undefined
+	): Promise<void> {
+		// Prepare the plain clone before it lands on the proxy so terrain
+		// hydration doesn't pay the proxy-tracking cost.
+		this.reapplyPendingMoves(isolatedCampaign, acks?.[this.context.User.Id] ?? 0);
 		await TerrainStorageService.prepareCampaignAfterLoad(isolatedCampaign);
 		const refreshedInfo =
 			CampaignLoadingService.buildPlayerInfo(isolatedCampaign);
@@ -546,12 +569,66 @@ export class ActionService {
 			this.context.IsOptimistic = false;
 		}
 
+		const seq = (this.lastRequestSeq = Math.max(this.lastRequestSeq + 1, Date.now()));
+		if (actionKey === "actor:move") this.trackPendingMove(params, seq);
+
 		// Send request to DM (fire and forget)
 		this.sendActionRequest({
 			actionKey,
 			params,
 			playerId: this.context.User.Id,
+			seq,
 		});
+	}
+
+	/**
+	 * Remembers a move sent to the DM, normalized the way ActorUtils.moveActor
+	 * applies it. Built from the params, not read back from the campaign: a DM
+	 * update can replace the campaign while the local apply awaits storage.
+	 */
+	private trackPendingMove(
+		params: { actorId?: unknown; position?: Position } | undefined,
+		seq: number
+	): void {
+		const actorId = params?.actorId;
+		const position = params?.position;
+		if (typeof actorId !== "string" || !position) return;
+		if (!ActorUtils.isValidPosition(position)) return;
+		const gameState = this.context.ActiveCampaign?.GameState;
+		const actor =
+			gameState?.Characters.find((a) => a.Id === actorId) ??
+			gameState?.Entities.find((a) => a.Id === actorId);
+		if (!actor) return;
+		this.pendingMoves.set(actorId, {
+			seq,
+			position: roundVoxelPosition({
+				...position,
+				terrainId: position.terrainId ?? actor.Position.terrainId,
+			}),
+			sentAt: Date.now(),
+		});
+	}
+
+	/**
+	 * Keeps still-unacknowledged moves on an incoming DM state. `acked` is the
+	 * highest request of ours the DM had handled when it built that state; moves
+	 * up to it are already in (or were rejected by) the state and are dropped.
+	 * Only the position is restored: the move's log line arrives with the echo.
+	 */
+	private reapplyPendingMoves(campaign: Campaign, acked: number): void {
+		const now = Date.now();
+		for (const [actorId, move] of this.pendingMoves) {
+			// The timeout only guards a request the DM never answered (e.g. lost
+			// while reconnecting); normally the ack arrives within one round trip.
+			if (move.seq <= acked || now - move.sentAt > PENDING_MOVE_TTL_MS) {
+				this.pendingMoves.delete(actorId);
+				continue;
+			}
+			const actor =
+				campaign.GameState.Characters.find((a) => a.Id === actorId) ??
+				campaign.GameState.Entities.find((a) => a.Id === actorId);
+			if (actor) actor.Position = { ...move.position };
+		}
 	}
 
 	/**
@@ -562,12 +639,21 @@ export class ActionService {
 	}
 
 	private async handlePlayerRequestAsync(data: any, peerId?: string): Promise<void> {
+		// Every exit marks the request handled, so the next broadcast tells the
+		// player to stop re-applying its optimistic move (applied or refused).
+		const ack = () => {
+			if (typeof data?.playerId === "string" && typeof data?.seq === "number") {
+				this.stateSync.ackRequest(data.playerId, data.seq);
+			}
+		};
+
 		// While the DM is in secret mode, drop player requests on the floor.
 		// Applying them would corrupt the prep state (e.g. a move request
 		// scoped to the player's stale terrain). The full sync that fires when
 		// secret mode is turned off reconciles the player's optimistic state.
 		const activeCampaign = CampaignUtils.getActiveCampaign(this.context);
 		if (this.context.SecretModes?.[activeCampaign.Id]) {
+			ack();
 			return;
 		}
 
@@ -576,6 +662,7 @@ export class ActionService {
 			console.warn(
 				`Player ${requestingUser.Id} cannot perform action: ${data?.actionKey}`
 			);
+			ack();
 			return;
 		}
 
@@ -597,32 +684,39 @@ export class ActionService {
 			console.warn(
 				`Player ${requestingUser.Id} cannot target ${data?.params?.actorId} with ${data?.actionKey}`
 			);
+			ack();
 			return;
 		}
 
 		try {
 			await this.mutateCampaign(async () => {
-				// Before-phase: "before" scripts may rewrite the request's params or
-				// veto it. On veto we skip the handler/reactions; the broadcast below
-				// still fires and resets the player's optimistic update.
-				const before = await ScriptEngine.beforeAction(
-					data.actionKey,
-					data.params,
-					this.context
-				);
-				if (before.cancelled) return;
-				data.params = before.params;
-				// Snapshot script hosts before the action (so onRemove cleanup still binds).
-				const scriptSnapshot = ScriptEngine.beginAction(data.actionKey, this.context);
-				await this.runDomainAction(data.actionKey, data.params);
-				// Reactions run as the DM (authoritative), atomic with the request.
-				await ScriptEngine.onAction(
-					data.actionKey,
-					data.params,
-					undefined,
-					this.context,
-					scriptSnapshot
-				);
+				// Acked inside the mutation (not after it) so no broadcast can carry
+				// this request's effects without its ack. Mutations are serialized.
+				try {
+					// Before-phase: "before" scripts may rewrite the request's params or
+					// veto it. On veto we skip the handler/reactions; the broadcast below
+					// still fires and resets the player's optimistic update.
+					const before = await ScriptEngine.beforeAction(
+						data.actionKey,
+						data.params,
+						this.context
+					);
+					if (before.cancelled) return;
+					data.params = before.params;
+					// Snapshot script hosts before the action (so onRemove cleanup still binds).
+					const scriptSnapshot = ScriptEngine.beginAction(data.actionKey, this.context);
+					await this.runDomainAction(data.actionKey, data.params);
+					// Reactions run as the DM (authoritative), atomic with the request.
+					await ScriptEngine.onAction(
+						data.actionKey,
+						data.params,
+						undefined,
+						this.context,
+						scriptSnapshot
+					);
+				} finally {
+					ack();
+				}
 			});
 		} catch (error) {
 			console.error("[ActionService] Error executing player request:", error);

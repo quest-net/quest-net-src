@@ -18,14 +18,27 @@ export interface StateUpdate {
 	patches?: Operation[]; // For 'delta' updates
 	version?: number; // Current version carried by full updates
 	baseVersion?: number; // Version number for patch tracking
+	// Per player (User.Id): the highest action-request seq the DM had handled
+	// when it built this update. Lets a player drop optimistic moves the update
+	// already includes and keep the ones it doesn't (see ActionService).
+	acks?: Record<string, number>;
 }
+
+export type StateUpdateCallback = (
+	campaign: Campaign,
+	acks: Record<string, number> | undefined
+) => void;
 
 export class StateSync {
 	private room: Room;
 	private sendState!: ActionSend;
-	private onUpdateCallback?: (campaign: Campaign) => void;
+	private onUpdateCallback?: StateUpdateCallback;
 	private actionExecute: (actionKey: string, params: any) => void;
 	private sendQueue: Promise<void> = Promise.resolve();
+	// Players unpack incoming updates one at a time, in arrival order (see receive).
+	private receiveQueue: Promise<void> = Promise.resolve();
+	// DM only: highest handled request seq per player, stamped on every update.
+	private acks: Record<string, number> = {};
 
 	// Operation-based deltas (DM only): the recorder buffers Valtio mutation ops
 	// and translates them to JSON Patch at broadcast time, so we never diff two
@@ -72,9 +85,24 @@ export class StateSync {
 
 		// Listen for incoming state updates. We only need the data and the
 		// transport metadata (compression flags) from the message context.
-		stateSync.onMessage = (data, { metadata }) => {
-			void this.handleIncomingStateTransport(data, metadata);
-		};
+		stateSync.onMessage = (data, { metadata }) => this.receive(data, metadata);
+	}
+
+	/**
+	 * Queues an incoming update. Full updates are always gzip'd and small deltas
+	 * aren't, so unpacking them in parallel let a delta overtake the full sent
+	 * just before it -- the older full then overwrote the delta's change, and the
+	 * versions happened to line up, so nothing noticed.
+	 */
+	private receive(data: unknown, metadata?: unknown): void {
+		this.receiveQueue = this.receiveQueue.then(() =>
+			this.handleIncomingStateTransport(data, metadata)
+		);
+	}
+
+	/** DM: records that `playerId`'s request `seq` has been handled. */
+	ackRequest(playerId: string, seq: number): void {
+		if (seq > (this.acks[playerId] ?? 0)) this.acks[playerId] = seq;
 	}
 
 	private triggerFullSyncRequest(): void {
@@ -126,6 +154,7 @@ export class StateSync {
 			timestamp: Date.now(),
 			data: sanitized,
 			version: targetPeerId ? this.version : 0,
+			acks: { ...this.acks },
 		};
 
 		this.queueStateSend(update, targetPeerId);
@@ -177,6 +206,7 @@ export class StateSync {
 			timestamp: Date.now(),
 			patches,
 			baseVersion: this.version,
+			acks: { ...this.acks },
 		};
 
 		this.queueStateSend(update);
@@ -200,7 +230,7 @@ export class StateSync {
 	/**
 	 * Registers a callback to be called when state updates are received
 	 */
-	onUpdate(callback: (campaign: Campaign) => void): void {
+	onUpdate(callback: StateUpdateCallback): void {
 		this.onUpdateCallback = callback;
 	}
 
@@ -255,7 +285,7 @@ export class StateSync {
 		this.currentState = update.data;
 		this.version = update.version ?? 0;
 		if (this.onUpdateCallback) {
-			this.onUpdateCallback(update.data);
+			this.onUpdateCallback(update.data, update.acks);
 		}
 	}
 
@@ -296,7 +326,7 @@ export class StateSync {
 			this.version = (update.baseVersion ?? 0) + 1;
 
 			if (this.onUpdateCallback) {
-				this.onUpdateCallback(result.newDocument);
+				this.onUpdateCallback(result.newDocument, update.acks);
 			}
 		} else {
 			console.error("[StateSync] Failed to apply patches");

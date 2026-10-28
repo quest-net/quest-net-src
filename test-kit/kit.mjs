@@ -109,8 +109,33 @@ class Peer {
 	}
 }
 
+// Headless Chrome can't take real pointer lock, and first person / follow only
+// read WASD while locked. This fakes the lock API so a held right button plus
+// keyboard input drives the real controls. Mouse look: dispatch a synthetic
+// `mousemove` with movementX/Y on window (see Peer.look).
+function fakePointerLock() {
+	let locked = null;
+	const changed = () =>
+		setTimeout(() => document.dispatchEvent(new Event("pointerlockchange")), 0);
+	Object.defineProperty(Document.prototype, "pointerLockElement", {
+		configurable: true,
+		get: () => locked,
+	});
+	Element.prototype.requestPointerLock = function () {
+		locked = this;
+		changed();
+		return Promise.resolve();
+	};
+	Document.prototype.exitPointerLock = function () {
+		if (!locked) return;
+		locked = null;
+		changed();
+	};
+}
+
 export async function openPeer(kit, name) {
 	const context = await kit.browser.newContext({ viewport: { width: 1400, height: 900 } });
+	await context.addInitScript(fakePointerLock);
 	const page = await context.newPage();
 	const peer = new Peer(kit, name, context, page);
 	await page.goto(`${kit.baseUrl}/#/`);
