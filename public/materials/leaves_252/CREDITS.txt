@@ -1,0 +1,8 @@
+leaves_256x256.png
+
+Based on "oak_leaves.png" from Faithful 64x (Java Edition) by the Faithful Resource Pack team.
+https://faithfulpack.net
+Source: https://github.com/Faithful-Resource-Pack/Faithful-64x-Java (branch java-latest, assets/minecraft/textures/block/oak_leaves.png)
+License: Faithful License, https://faithfulpack.net/license
+
+Modified for Quest-Net: tinted green (#48b518) and upscaled 4x with nearest-neighbour sampling.

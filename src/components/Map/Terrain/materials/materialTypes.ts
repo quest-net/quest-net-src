@@ -87,6 +87,8 @@ export interface MaterialFactoryResult {
 	onAnimationFrame?: (timeMs: number) => void;
 	castShadow: boolean;
 	receiveShadow: boolean;
+	/** Shadow-pass material for alpha-cutout surfaces, so their shadows keep the holes. */
+	customDepthMaterial?: THREE.Material;
 	/**
 	 * Three.js renderOrder for the mesh. Transparent meshes (e.g. water) use
 	 * renderOrder > 0 so they draw after all opaque terrain meshes.

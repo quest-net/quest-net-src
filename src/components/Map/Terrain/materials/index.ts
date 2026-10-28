@@ -46,6 +46,7 @@ import gold247Material from './gold247Material';
 import grass242Material from './grass242Material';
 import ironBars249Material from './ironBars249Material';
 import lava245Material from './lava245Material';
+import leaves252Material from './leaves252Material';
 import light243Material from './light243Material';
 import silver248Material from './silver248Material';
 import stoneBricks240Material from './stoneBricks240Material';
@@ -75,6 +76,7 @@ export const TERRAIN_MATERIALS: readonly TerrainMaterial[] = [
 	ironBars249Material,
 	flesh250Material,
 	fog251Material,
+	leaves252Material,
 ];
 
 type SpecialTerrainMaterial = TerrainMaterial & {

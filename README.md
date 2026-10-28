@@ -101,3 +101,7 @@ src/
 ## Documentation
 
 Quest-Net includes an in-app wiki covering campaign setup, networking, combat, terrains, scripting, data structures, and DM/player workflows. Development-specific notes live in `src/DEVELOPMENT_NOTES.md`.
+
+## Credits
+
+- Leaves terrain texture: based on oak leaves from [Faithful 64x](https://faithfulpack.net) by the Faithful Resource Pack team, used under the [Faithful License](https://faithfulpack.net/license). See `public/materials/leaves_252/CREDITS.txt`.

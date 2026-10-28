@@ -30,7 +30,7 @@ import {
 interface TerrainRenderResources {
 	meshes: THREE.Mesh[];
 	geometries: THREE.BufferGeometry[];
-	materials: THREE.MeshStandardMaterial[];
+	materials: THREE.Material[];
 	voxelAo: VoxelAoTexture;
 	fogTexture: FogVolumeTexture | null;
 	// null in FP mode -- that view never paints movement range, so the scene's
@@ -136,7 +136,7 @@ export function useTerrainMeshes(
 
 		const meshes: THREE.Mesh[] = [];
 		const geometries: THREE.BufferGeometry[] = [];
-		const materials: THREE.MeshStandardMaterial[] = [];
+		const materials: THREE.Material[] = [];
 		const animationFrameCallbacks: ((timeMs: number) => void)[] = [];
 
 		for (const [bucketKey, geometry] of terrainGeometry.buckets) {
@@ -160,6 +160,10 @@ export function useTerrainMeshes(
 			mesh.castShadow = result.castShadow;
 			mesh.receiveShadow = result.receiveShadow;
 			mesh.renderOrder = result.renderOrder ?? 0;
+			if (result.customDepthMaterial) {
+				mesh.customDepthMaterial = result.customDepthMaterial;
+				materials.push(result.customDepthMaterial);
+			}
 			meshes.push(mesh);
 			geometries.push(geometry);
 			materials.push(result.material);
