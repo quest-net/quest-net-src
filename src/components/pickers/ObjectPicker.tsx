@@ -115,7 +115,11 @@ export function ObjectPicker({
 				prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
 			);
 		} else {
-			setLocalSelectedIds([id]);
+			// Single-select: the click is the choice, no confirm step.
+			onConfirm([id], currentType.typeKey, count);
+			setSearchQuery("");
+			setCurrentPage(0);
+			setCount(1);
 		}
 	};
 
@@ -268,13 +272,17 @@ export function ObjectPicker({
 				{/* Footer Actions + Pagination */}
 				<div className="mt-2 flex items-center justify-between gap-2">
 					{/* Left: Clear */}
-					<button
-						onClick={handleClear}
-						className="btn btn-ghost btn-sm"
-						disabled={localSelectedIds.length === 0}
-					>
-						Clear Selection
-					</button>
+					{multiSelect ? (
+						<button
+							onClick={handleClear}
+							className="btn btn-ghost btn-sm"
+							disabled={localSelectedIds.length === 0}
+						>
+							Clear Selection
+						</button>
+					) : (
+						<div />
+					)}
 
 					{/* Middle: Page controls and Count input */}
 					<div className="flex flex-col items-center gap-1">
@@ -306,10 +314,10 @@ export function ObjectPicker({
 							</div>
 						)}
 					</div>
-					{/* Count Input. Shown once an item is selected, or whenever an
-					    extra action exists (so the amount can be set before picking
-					    on the map, which needs no list selection). */}
-					{showCount && (localSelectedIds.length > 0 || !!extraAction) && (
+					{/* Count Input. Shown once an item is selected, or up front in
+					    single-select / extra-action mode (the click or the map pick
+					    applies at once, so the amount must be set first). */}
+					{showCount && (localSelectedIds.length > 0 || !!extraAction || !multiSelect) && (
 						<div className="flex items-center gap-2 text-sm">
 							<label className="font-medium">{countLabel}:</label>
 							<input
@@ -338,14 +346,16 @@ export function ObjectPicker({
 						<button onClick={handleCancel} className="btn btn-neutral btn-sm">
 							Cancel
 						</button>
-						<button
-							onClick={handleConfirm}
-							className="btn btn-primary btn-sm"
-							disabled={localSelectedIds.length === 0}
-						>
-							Confirm
-							{localSelectedIds.length > 0 && ` (${localSelectedIds.length})`}
-						</button>
+						{multiSelect && (
+							<button
+								onClick={handleConfirm}
+								className="btn btn-primary btn-sm"
+								disabled={localSelectedIds.length === 0}
+							>
+								Confirm
+								{localSelectedIds.length > 0 && ` (${localSelectedIds.length})`}
+							</button>
+						)}
 					</div>
 				</div>
 		</Modal>

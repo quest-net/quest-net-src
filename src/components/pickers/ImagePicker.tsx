@@ -36,9 +36,6 @@ export function ImagePicker({
 	const campaign = CampaignUtils.getActiveCampaign(context);
 
 	const [isOpen, setIsOpen] = useState(false);
-	const [selectedImageId, setSelectedImageId] = useState<string | undefined>(
-		value
-	);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [showUpload, setShowUpload] = useState(false);
 	const [isHovered, setIsHovered] = useState(false);
@@ -80,39 +77,24 @@ export function ImagePicker({
 
 	const handleOpen = () => {
 		if (readOnly) return;
-		setSelectedImageId(value);
 		setSearchQuery("");
 		setShowUpload(false);
 		setPage(1);
 		setIsOpen(true);
 	};
 
-	const handleConfirm = () => {
-		onChange(selectedImageId);
+	// Single choice: picking (clicking, uploading, generating, removing) applies at once and closes.
+	const handlePick = (imageId: string | undefined) => {
+		onChange(imageId);
 		setIsOpen(false);
 	};
 
 	const handleCancel = () => {
-		setSelectedImageId(value);
 		setIsOpen(false);
-	};
-
-	const handleClear = () => {
-		setSelectedImageId(undefined);
 	};
 
 	const handleUploadComplete = (imageId: string | undefined) => {
-		if (imageId) {
-			setSelectedImageId(imageId);
-			setShowUpload(false);
-		}
-	};
-
-	// When AI generator selects an image, immediately apply it and close the picker
-	const handleGeneratedSelect = (imageId: string) => {
-		setSelectedImageId(imageId);
-		onChange(imageId);
-		setIsOpen(false);
+		if (imageId) handlePick(imageId);
 	};
 
 	// Create the modal content
@@ -145,7 +127,7 @@ export function ImagePicker({
 				{/* AI Generator */}
 				<ImageGenerator
 					contextInfo={generationContext}
-					onSelectImage={handleGeneratedSelect}
+					onSelectImage={handlePick}
 				/>
 
 				{/* Search */}
@@ -186,10 +168,10 @@ export function ImagePicker({
 							{pageItems.map((image) => (
 								<div
 									key={image.Id}
-									onClick={() => setSelectedImageId(image.Id)}
+									onClick={() => handlePick(image.Id)}
 									className={`
 										card bg-base-100 border-2 cursor-pointer transition-all
-										${selectedImageId === image.Id
+										${value === image.Id
 											? "border-primary ring-2 ring-primary"
 											: "border-base-300 hover:border-primary"
 										}
@@ -211,9 +193,9 @@ export function ImagePicker({
 										>
 											{image.Name}
 										</h4>
-										{selectedImageId === image.Id && (
+										{value === image.Id && (
 											<div className="badge badge-primary badge-xs">
-												Selected
+												Current
 											</div>
 										)}
 									</div>
@@ -225,13 +207,13 @@ export function ImagePicker({
 
 				{/* Footer Actions + Pagination */}
 				<div className="mt-2 flex items-center justify-between gap-2">
-					{/* Left: Clear */}
+					{/* Left: Remove */}
 					<button
-						onClick={handleClear}
+						onClick={() => handlePick(undefined)}
 						className="btn btn-ghost btn-sm"
-						disabled={!selectedImageId}
+						disabled={!value}
 					>
-						Clear Selection
+						Remove Image
 					</button>
 
 					{/* Middle: Page controls */}
@@ -266,19 +248,10 @@ export function ImagePicker({
 						</div>
 					)}
 
-					{/* Right: Cancel / Confirm */}
-					<div className="flex gap-2">
-						<button onClick={handleCancel} className="btn btn-neutral btn-sm">
-							Cancel
-						</button>
-						<button
-							onClick={handleConfirm}
-							className="btn btn-primary btn-sm"
-							disabled={selectedImageId === value}
-						>
-							Confirm
-						</button>
-					</div>
+					{/* Right: Cancel */}
+					<button onClick={handleCancel} className="btn btn-neutral btn-sm">
+						Cancel
+					</button>
 				</div>
 		</Modal>
 	) : null;

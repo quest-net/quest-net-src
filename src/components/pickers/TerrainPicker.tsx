@@ -24,8 +24,6 @@ interface TerrainPickerProps {
 	onConfirm: (terrainId: string) => void;
 	onCancel: () => void;
 	title?: string;
-	/** Label for the confirm button. Defaults to "Move Here". */
-	confirmLabel?: string;
 	/** Terrain to mark as the current location (rendered with a "Current" badge). */
 	currentTerrainId?: string;
 }
@@ -37,7 +35,6 @@ export function TerrainPicker({
 	onConfirm,
 	onCancel,
 	title = "Select Terrain",
-	confirmLabel = "Move Here",
 	currentTerrainId,
 }: TerrainPickerProps) {
 	const context = useQuestContext();
@@ -45,7 +42,6 @@ export function TerrainPicker({
 	const { viewedTerrainIds } = useViewedTerrain();
 
 	const [searchQuery, setSearchQuery] = useState("");
-	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [currentPage, setCurrentPage] = useState(0);
 
 	// Real terrains only, ordered: occupied (most first), then recently-viewed
@@ -98,16 +94,13 @@ export function TerrainPicker({
 		setCurrentPage(0);
 	};
 
-	const handleConfirm = () => {
-		if (!selectedId) return;
-		onConfirm(selectedId);
-		setSelectedId(null);
+	const handlePick = (terrainId: string) => {
+		onConfirm(terrainId);
 		setSearchQuery("");
 		setCurrentPage(0);
 	};
 
 	const handleCancel = () => {
-		setSelectedId(null);
 		setSearchQuery("");
 		setCurrentPage(0);
 		onCancel();
@@ -147,20 +140,13 @@ export function TerrainPicker({
 					) : (
 						<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
 							{paginatedTerrains.map(({ terrain, occupants }) => {
-								const isSelected = selectedId === terrain.Id;
 								const isCurrent = terrain.Id === currentTerrainId;
 
 								return (
 									<div
 										key={terrain.Id}
-										onClick={() => setSelectedId(terrain.Id)}
-										className={`
-											card bg-base-100 border-2 cursor-pointer transition-all
-											${isSelected
-												? "border-primary ring-2 ring-primary"
-												: "border-base-300 hover:border-primary"
-											}
-										`}
+										onClick={() => handlePick(terrain.Id)}
+										className="card bg-base-100 border-2 cursor-pointer transition-all border-base-300 hover:border-primary"
 									>
 										<figure className="border-b">
 											<div
@@ -192,11 +178,6 @@ export function TerrainPicker({
 														Current
 													</span>
 												)}
-												{isSelected && (
-													<span className="badge badge-primary badge-xs">
-														Selected
-													</span>
-												)}
 											</div>
 										</div>
 									</div>
@@ -208,14 +189,7 @@ export function TerrainPicker({
 
 				{/* Footer Actions + Pagination */}
 				<div className="mt-2 flex items-center justify-between gap-2">
-					{/* Left: Clear */}
-					<button
-						onClick={() => setSelectedId(null)}
-						className="btn btn-ghost btn-sm"
-						disabled={!selectedId}
-					>
-						Clear Selection
-					</button>
+					<div />
 
 					{/* Middle: Pagination */}
 					<div className="flex flex-col items-center gap-1">
@@ -249,19 +223,10 @@ export function TerrainPicker({
 						)}
 					</div>
 
-					{/* Right: Cancel / Confirm */}
-					<div className="flex gap-2">
-						<button onClick={handleCancel} className="btn btn-neutral btn-sm">
-							Cancel
-						</button>
-						<button
-							onClick={handleConfirm}
-							className="btn btn-primary btn-sm"
-							disabled={!selectedId}
-						>
-							{confirmLabel}
-						</button>
-					</div>
+					{/* Right: Cancel */}
+					<button onClick={handleCancel} className="btn btn-neutral btn-sm">
+						Cancel
+					</button>
 				</div>
 		</Modal>
 	);

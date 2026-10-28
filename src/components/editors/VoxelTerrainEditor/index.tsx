@@ -2118,7 +2118,6 @@ const VoxelTerrainEditor = forwardRef<VoxelTerrainEditorHandle, VoxelTerrainEdit
 							<TerrainPicker
 								isOpen={linkPickerOpen}
 								title="Link leads to..."
-								confirmLabel="Select"
 								currentTerrainId={terrain.Id}
 								onConfirm={(terrainId) => void handleLinkDestinationTerrain(terrainId)}
 								onCancel={exitLinkMode}
