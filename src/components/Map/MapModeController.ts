@@ -34,12 +34,15 @@ import {
 	ACTOR_CONTROL_KEY_CODES,
 } from "./ActorCamera/constants";
 import type { ActorLocomotionFrameInput } from "./ActorCamera/types";
+import type { Position } from "../../domains/Actor/Actor";
 import type { MapSceneController } from "./Terrain/hooks/useMapSceneCore";
 import type { TrackedActorVisual } from "./Actors3D/actorTokenTypes";
 
 export interface ActorLocomotionHandlers {
 	onFrame: (now: number, dt: number, input: ActorLocomotionFrameInput) => void;
 	onControlReleased: () => void;
+	/** The controlled actor was just sent to `destination` (link travel). */
+	onTraversed: (destination: Position) => void;
 }
 
 interface CameraPose {
@@ -247,6 +250,10 @@ export class MapModeController implements MapSceneController {
 
 	setActorLocomotionHandlers(handlers: ActorLocomotionHandlers | null): void {
 		this.actorLocomotionHandlers = handlers;
+	}
+
+	notifyControlledActorTraversed(destination: Position): void {
+		this.actorLocomotionHandlers?.onTraversed(destination);
 	}
 
 	setTerrain(terrain: TerrainDims | null): void {

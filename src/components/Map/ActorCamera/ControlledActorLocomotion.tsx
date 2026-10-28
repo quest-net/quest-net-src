@@ -735,11 +735,22 @@ export default function ControlledActorLocomotion({
 		]
 	);
 
+	// Link travel supersedes the walk that reached the link: drop the pending
+	// commit (else it lands after the travel and pulls the actor back) and treat
+	// the destination as our in-flight move, so its echo is adopted, not fought.
+	const handleTraversed = useCallback((destination: Position) => {
+		pendingSyncPositionRef.current = null;
+		lastSentPositionRef.current = roundVoxelPosition(destination);
+		lastSentAtRef.current = Date.now();
+		lastSentKeyRef.current = "";
+	}, []);
+
 	// Plug the shared capsule sim and commit handlers into the map controller.
 	useEffect(() => {
 		controller.setActorLocomotionHandlers({
 			onFrame: handleFrame,
 			onControlReleased: commitCurrentPosition,
+			onTraversed: handleTraversed,
 		});
 		return () => {
 			controller.setControlledActorPose(null);
@@ -749,6 +760,7 @@ export default function ControlledActorLocomotion({
 		controller,
 		handleFrame,
 		commitCurrentPosition,
+		handleTraversed,
 	]);
 
 	// Mirror the controller's pointer-lock state for the HUD.

@@ -43,7 +43,7 @@ const CLICK_DRAG_THRESHOLD_PX = 5;
 /** The link currently hovered (world) or centered in view (first person). */
 export interface TerrainLinkInteractionFocus {
 	linkId: string;
-	/** Destination terrain name, or null when concealed (locked & not the DM). */
+	/** Destination terrain name, or null for a same-terrain link (a doorway, not a trip). */
 	destinationName: string | null;
 	locked: boolean;
 	/** Whether the controlled actor can traverse it right now (adjacent + unlocked, unless DM). */
@@ -209,6 +209,11 @@ export function ThreeDTerrainLinkLayer({
 		const raycaster = new THREE.Raycaster();
 		const pointer = new THREE.Vector2();
 
+		const destinationNameOf = (data: LinkBoxData): string | null =>
+			data.destination.terrainId === data.anchor.terrainId
+				? null
+				: terrainNamesRef.current.get(data.destination.terrainId) ?? "another area";
+
 		const buildFocus = (
 			box: THREE.Mesh,
 			screen: { x: number; y: number } | null
@@ -218,9 +223,7 @@ export function ThreeDTerrainLinkLayer({
 			if (authoring) {
 				return {
 					linkId: data.linkId,
-					destinationName:
-						terrainNamesRef.current.get(data.destination.terrainId) ??
-						"another area",
+					destinationName: destinationNameOf(data),
 					locked: data.locked,
 					usable: false,
 					authoring: true,
@@ -244,8 +247,7 @@ export function ThreeDTerrainLinkLayer({
 
 			return {
 				linkId: data.linkId,
-				destinationName:
-					terrainNamesRef.current.get(data.destination.terrainId) ?? "another area",
+				destinationName: destinationNameOf(data),
 				locked: false,
 				usable: interaction.usable,
 				screen,

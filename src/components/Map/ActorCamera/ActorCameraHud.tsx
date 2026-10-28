@@ -134,7 +134,7 @@ export function ActorCameraHud({
 							<kbd className="kbd kbd-sm text-neutral">E</kbd>
 							{linkFocus.destinationName
 								? `Travel to ${linkFocus.destinationName}`
-								: "Use link"}
+								: "Go through"}
 						</span>
 					</div>
 				</div>

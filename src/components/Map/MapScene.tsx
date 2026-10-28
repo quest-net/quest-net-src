@@ -591,6 +591,7 @@ export default function MapScene({
 			if (!isWorld) {
 				liveActorRulesPositionRef.current = destination;
 			}
+			controllerRef.current?.notifyControlledActorTraversed(destination);
 			actionService.execute("actor:move", {
 				actorId: actor.id,
 				position: destination,
@@ -933,7 +934,7 @@ export default function MapScene({
 							<span className="icon-[mdi--link-variant] h-3.5 w-3.5" />
 							{linkFocus.destinationName
 								? `To ${linkFocus.destinationName}`
-								: "Terrain link"}
+								: "Passage"}
 							{linkFocus.usable && (
 								<span className="opacity-70">- click to enter</span>
 							)}
