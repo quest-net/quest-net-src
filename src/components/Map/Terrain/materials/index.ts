@@ -39,6 +39,7 @@ import type {
 } from './materialTypes';
 
 import defaultMaterial from './defaultMaterial';
+import fire253Material from './fire253Material';
 import flesh250Material from './flesh250Material';
 import fog251Material from './fog251Material';
 import glass246Material from './glass246Material';
@@ -77,6 +78,7 @@ export const TERRAIN_MATERIALS: readonly TerrainMaterial[] = [
 	flesh250Material,
 	fog251Material,
 	leaves252Material,
+	fire253Material,
 ];
 
 type SpecialTerrainMaterial = TerrainMaterial & {

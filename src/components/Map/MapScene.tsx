@@ -52,6 +52,7 @@ import { ThreeDActorLayer } from './Actors3D/ThreeDActorLayer';
 import { ThreeDMovementLayer } from './Movement3D/ThreeDMovementLayer';
 import { ThreeDStickerLayer } from './Stickers3D/ThreeDStickerLayer';
 import { ThreeDPingLayer } from './Pings3D/ThreeDPingLayer';
+import { ThreeDFireLayer } from './Fire3D/ThreeDFireLayer';
 import { ThreeDTargetingLayer } from './Targeting/ThreeDTargetingLayer';
 import { cancelTargeting, targetingStore } from './Targeting/targetingStore';
 import { ThreeDTerrainLinkLayer, type TerrainLinkInteractionFocus } from './TerrainLinks3D/ThreeDTerrainLinkLayer';
@@ -837,6 +838,11 @@ export default function MapScene({
 						entities={visibleEntities}
 						cutoutImageIds={cutoutImageIds}
 						activeStickers={activeStickers}
+					/>
+					<ThreeDFireLayer
+						resources={sceneResources}
+						terrainVoxels={terrainVoxels}
+						terrainIndex={terrainIndex}
 					/>
 					<ThreeDPingLayer
 						resources={sceneResources}

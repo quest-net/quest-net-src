@@ -30,7 +30,9 @@ guards a DM broadcast that predates a player's move not
 bouncing that move back, `state-order.mjs --race` guards state updates
 being applied in the order the DM sent them, and `pose-stall.mjs` guards a
 walker whose poses stall mid-walk holding on other screens instead of sliding
-back.
+back. `fire-look.mjs` (`--players 0`) paints fire into Forest Clearing and
+screenshots it by day and night, close up and from low cameras, with tokens
+in front of and behind the flames (look check only, no asserts).
 A scenario can `export const options`
 for `startKit`, e.g. `{ characters: ["Beast Tamer", null] }` to choose which
 character each player claims (`null` leaves that player on character select).
