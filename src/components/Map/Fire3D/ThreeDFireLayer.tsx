@@ -14,39 +14,14 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import type { VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import { voxelCenterToWorld } from "../../../utils/terrain/data/VoxelTerrainIndex";
-import { decodeVoxels } from "../../../utils/terrain/data/VoxelDataUtils";
+import { decodeVoxelBuffers, unpackVoxel } from "../../../utils/terrain/data/VoxelDataUtils";
 import type { ThreeDSceneResources } from "../Actors3D/actorTokenTypes";
-import { ACTOR_TOKEN_RENDER_ORDER } from "../Actors3D/actorTokenConstants";
+import { THREE_D_FIRE } from "../threeDMapConstants";
+import fire253Material from "../Terrain/materials/fire253Material";
 
-export const FIRE_PALETTE_INDEX = 253;
+// Read from the material record so the slot is defined in one place.
+const FIRE_PALETTE_INDEX = fire253Material.special!.paletteIndex;
 
-const FIRE = {
-	/** Flame width as a multiple of the voxel edge (overlap hides gaps). */
-	WIDTH: 1.9,
-	/** Extra flame height above the painted run, in voxels. */
-	OVERSHOOT: 0.9,
-	/** Flame base sinks this far (in voxels) into what it stands on. */
-	SINK: 0.2,
-	/** Contact glow diameter, in voxels. */
-	GLOW_SIZE: 3.2,
-	/** Embers per flame, and how high they rise above the flame top (voxels). */
-	EMBERS_PER_FLAME: 3,
-	EMBER_RISE: 2.5,
-	/** Point lights: fixed pool size (a changing count recompiles every shader). */
-	LIGHT_COUNT: 8,
-	/** Light cluster cell edge, in tactical tiles. */
-	LIGHT_CELL_TILES: 3,
-	LIGHT_COLOR: 0xff8a3a,
-	LIGHT_INTENSITY: 12,
-	LIGHT_DISTANCE: 8,
-	LIGHT_DECAY: 1.4,
-	/**
-	 * Fire writes no depth, so it must draw AFTER actor tokens (which write
-	 * depth); otherwise a token behind a flame is painted over it. Above
-	 * ACTOR_TOKEN_RENDER_ORDER.PICK, below X_RAY (x-ray tokens stay on top).
-	 */
-	RENDER_ORDER: ACTOR_TOKEN_RENDER_ORDER.PICK + 3,
-} as const;
 
 interface FireRun {
 	/** World-space bottom center of the run. */
@@ -69,10 +44,14 @@ function collectFire(voxels: Uint8Array, index: VoxelTerrainIndex): FireData {
 	const byColumn = new Map<number, number[]>();
 	const clusters = new Map<string, { sum: THREE.Vector3; count: number }>();
 	const res = index.resolution;
-	const cellVoxels = FIRE.LIGHT_CELL_TILES * res;
+	const cellVoxels = THREE_D_FIRE.LIGHT_CELL_TILES * res;
 
-	for (const voxel of decodeVoxels(voxels)) {
-		if (voxel.color !== FIRE_PALETTE_INDEX) continue;
+	// Scan the raw typed arrays: this runs on every terrain change, and most
+	// voxels are not fire, so build no per-voxel objects.
+	const { positions, colors } = decodeVoxelBuffers(voxels);
+	for (let i = 0; i < colors.length; i++) {
+		if (colors[i] !== FIRE_PALETTE_INDEX) continue;
+		const voxel = unpackVoxel(positions[i], colors[i]);
 		const key = voxel.x + voxel.z * 65536;
 		let ys = byColumn.get(key);
 		if (!ys) byColumn.set(key, (ys = []));
@@ -109,7 +88,7 @@ function collectFire(voxels: Uint8Array, index: VoxelTerrainIndex): FireData {
 
 	const lights = Array.from(clusters.values())
 		.sort((a, b) => b.count - a.count)
-		.slice(0, FIRE.LIGHT_COUNT)
+		.slice(0, THREE_D_FIRE.LIGHT_COUNT)
 		.map((cluster) => cluster.sum.divideScalar(cluster.count).add(new THREE.Vector3(0, 0.6, 0)));
 
 	return { runs, voxelSize: index.voxelSize, lights };
@@ -127,10 +106,10 @@ function getFlameTransform(run: FireRun, voxelSize: number) {
 	const widthScale = 0.85 + 0.35 * rand(run.x, run.z, 2);
 	return {
 		x: run.x + (rand(run.x, run.z, 3) - 0.5) * 0.3 * voxelSize,
-		y: run.y - FIRE.SINK * voxelSize,
+		y: run.y - THREE_D_FIRE.SINK * voxelSize,
 		z: run.z + (rand(run.x, run.z, 4) - 0.5) * 0.3 * voxelSize,
-		width: FIRE.WIDTH * widthScale * voxelSize,
-		height: (run.voxels + FIRE.OVERSHOOT) * heightScale * voxelSize,
+		width: THREE_D_FIRE.WIDTH * widthScale * voxelSize,
+		height: (run.voxels + THREE_D_FIRE.OVERSHOOT) * heightScale * voxelSize,
 	};
 }
 
@@ -229,7 +208,7 @@ void main() {
 	float heat = body * (0.6 + 0.6 * (1.0 - q.y)) - max(0.0, n2) * 0.5 * q.y - q.y * 0.15;
 	// Rounded base, fixed in voxels: it starts where the card meets the
 	// surface (SINK) and is solid half a voxel later at every card height.
-	float baseFade = smoothstep(${(FIRE.SINK * 0.5).toFixed(2)}, ${(FIRE.SINK + 0.4).toFixed(2)}, yv - 0.3 * q.x * q.x);
+	float baseFade = smoothstep(${(THREE_D_FIRE.SINK * 0.5).toFixed(2)}, ${(THREE_D_FIRE.SINK + 0.4).toFixed(2)}, yv - 0.3 * q.x * q.x);
 	float alpha = smoothstep(0.0, 0.12, heat) * baseFade;
 	if (alpha <= 0.001) discard;
 	// Premultiplied: partly covers what is behind, partly adds to it.
@@ -350,9 +329,10 @@ export function ThreeDFireLayer({ resources, terrainVoxels, terrainIndex }: Thre
 			cards.setMatrixAt(i, matrix);
 		});
 		cards.frustumCulled = false; // the vertex shader moves the cards; the bounds are wrong
-		cards.renderOrder = FIRE.RENDER_ORDER;
+		cards.renderOrder = THREE_D_FIRE.RENDER_ORDER;
 		group.add(cards);
-		disposables.push(cardGeometry, cardMaterial);
+		// The mesh itself owns the instance-matrix GPU buffer.
+		disposables.push(cards, cardGeometry, cardMaterial);
 
 		// Contact glow under grounded flames.
 		const grounded = runs.filter((run) => run.grounded);
@@ -370,27 +350,27 @@ export function ThreeDFireLayer({ resources, terrainVoxels, terrainIndex }: Thre
 				polygonOffsetUnits: -4,
 			});
 			const glows = new THREE.InstancedMesh(glowGeometry, glowMaterial, grounded.length);
-			const size = FIRE.GLOW_SIZE * voxelSize;
+			const size = THREE_D_FIRE.GLOW_SIZE * voxelSize;
 			grounded.forEach((run, i) => {
 				matrix.makeScale(size, 1, size);
 				matrix.setPosition(run.x, run.y + 0.002, run.z);
 				glows.setMatrixAt(i, matrix);
 			});
-			glows.renderOrder = FIRE.RENDER_ORDER - 1;
+			glows.renderOrder = THREE_D_FIRE.RENDER_ORDER - 1;
 			group.add(glows);
-			disposables.push(glowGeometry, glowMaterial);
+			disposables.push(glows, glowGeometry, glowMaterial);
 		}
 
 		// Embers.
-		const emberCount = runs.length * FIRE.EMBERS_PER_FLAME;
+		const emberCount = runs.length * THREE_D_FIRE.EMBERS_PER_FLAME;
 		const emberData = new Float32Array(emberCount * 4);
 		const emberRise = new Float32Array(emberCount);
 		runs.forEach((run, i) => {
 			const f = getFlameTransform(run, voxelSize);
-			for (let k = 0; k < FIRE.EMBERS_PER_FLAME; k++) {
-				const j = i * FIRE.EMBERS_PER_FLAME + k;
+			for (let k = 0; k < THREE_D_FIRE.EMBERS_PER_FLAME; k++) {
+				const j = i * THREE_D_FIRE.EMBERS_PER_FLAME + k;
 				emberData.set([f.x, f.y, f.z, rand(run.x, run.z, 10 + k)], j * 4);
-				emberRise[j] = f.height + FIRE.EMBER_RISE * voxelSize;
+				emberRise[j] = f.height + THREE_D_FIRE.EMBER_RISE * voxelSize;
 			}
 		});
 		const emberGeometry = new THREE.BufferGeometry();
@@ -412,21 +392,27 @@ export function ThreeDFireLayer({ resources, terrainVoxels, terrainIndex }: Thre
 		});
 		const embers = new THREE.Points(emberGeometry, emberMaterial);
 		embers.frustumCulled = false;
-		embers.renderOrder = FIRE.RENDER_ORDER + 1;
+		embers.renderOrder = THREE_D_FIRE.RENDER_ORDER + 1;
 		group.add(embers);
 		disposables.push(emberGeometry, emberMaterial);
 
-		const lights = fire.lights.map((position) => {
+		// Always the full pool while any fire exists: three.js bakes the light
+		// count into every shader, so a count that followed the cluster count
+		// would recompile all terrain materials on each fire edit. Spare lights
+		// sit at intensity 0.
+		const lights = Array.from({ length: THREE_D_FIRE.LIGHT_COUNT }, (_, i) => {
+			const position = fire.lights[i];
 			const light = new THREE.PointLight(
-				FIRE.LIGHT_COLOR,
-				FIRE.LIGHT_INTENSITY,
-				FIRE.LIGHT_DISTANCE,
-				FIRE.LIGHT_DECAY
+				THREE_D_FIRE.LIGHT_COLOR,
+				position ? THREE_D_FIRE.LIGHT_INTENSITY : 0,
+				THREE_D_FIRE.LIGHT_DISTANCE,
+				THREE_D_FIRE.LIGHT_DECAY
 			);
-			light.position.copy(position);
+			if (position) light.position.copy(position);
 			group.add(light);
 			return light;
 		});
+		const litCount = fire.lights.length;
 
 		resources.scene.add(group);
 		if (import.meta.env.DEV) (window as any).__qnFireLayer = group; // test kit's fire-look scenario
@@ -435,9 +421,10 @@ export function ThreeDFireLayer({ resources, terrainVoxels, terrainIndex }: Thre
 			timeUniform.value = t;
 			viewportHeightUniform.value = resources.domElement.height;
 			lights.forEach((light, i) => {
+				if (i >= litCount) return;
 				const flicker =
 					0.8 + 0.12 * Math.sin(t * 9.1 + i * 2.3) + 0.08 * Math.sin(t * 23.7 + i * 5.1);
-				light.intensity = FIRE.LIGHT_INTENSITY * flicker;
+				light.intensity = THREE_D_FIRE.LIGHT_INTENSITY * flicker;
 			});
 		};
 		resources.animationCallbacks.add(tick);

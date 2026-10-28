@@ -6,6 +6,13 @@
 // In a --serve session, rerun with:
 //   node test-kit/send.mjs "return (await import('file:///<repo>/test-kit/scenarios/fire-look.mjs?' + Date.now())).default(kit)"
 
+import assert from "node:assert/strict";
+
+// Flame runs painted below: campfire 1, brazier 1, wall 7, blaze 9, block 16,
+// column 1, torch 1. Every one stands on a solid voxel, so each gets a glow.
+const EXPECTED_RUNS = 36;
+const LIGHT_POOL = 8;
+
 export default async function fireLook(kit) {
 	const { dm } = kit;
 
@@ -103,6 +110,24 @@ export default async function fireLook(kit) {
 	await frame(1, [0, 0, 0]);
 	await settle();
 	shots.push(await mapShot("fire-day"));
+
+	// The layer built what was painted, and its shaders compiled.
+	const layer = await dm.eval(() => {
+		const group = window.__qnFireLayer;
+		if (!group?.parent) return null;
+		const meshes = group.children.filter((o) => o.isInstancedMesh);
+		return {
+			instanceCounts: meshes.map((m) => m.count),
+			lights: group.children.filter((o) => o.isPointLight).length,
+			embers: group.children.some((o) => o.isPoints),
+		};
+	});
+	assert.ok(layer, "fire layer is in the scene");
+	assert.deepEqual(layer.instanceCounts, [EXPECTED_RUNS, EXPECTED_RUNS], "one card and one glow per flame run");
+	assert.equal(layer.lights, LIGHT_POOL, "full light pool");
+	assert.ok(layer.embers, "embers present");
+	const shaderErrors = dm.logs.filter((line) => /Shader Error|not compiled/i.test(line));
+	assert.deepEqual(shaderErrors, [], "no shader compile errors");
 	await perspective([4, 1.6, -3.5], [4, 2.2, 4]);
 	await settle();
 	shots.push(await mapShot("fire-day-tall-perspective"));

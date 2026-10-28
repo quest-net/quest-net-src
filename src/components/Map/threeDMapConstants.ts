@@ -277,3 +277,32 @@ export const THREE_D_PING_MARKER = {
 export const THREE_D_PING_INPUT = {
 	CLICK_DRAG_THRESHOLD_PX: 5,
 } as const;
+
+// Fire layer (Fire3D/ThreeDFireLayer.tsx). Sizes are in voxels unless noted.
+export const THREE_D_FIRE = {
+	/** Flame width as a multiple of the voxel edge (overlap hides gaps). */
+	WIDTH: 1.9,
+	/** Extra flame height above the painted run, in voxels. */
+	OVERSHOOT: 0.9,
+	/** Flame base sinks this far (in voxels) into what it stands on. */
+	SINK: 0.2,
+	/** Contact glow diameter, in voxels. */
+	GLOW_SIZE: 3.2,
+	/** Embers per flame, and how high they rise above the flame top (voxels). */
+	EMBERS_PER_FLAME: 3,
+	EMBER_RISE: 2.5,
+	/** Point lights: fixed pool size (a changing count recompiles every shader). */
+	LIGHT_COUNT: 8,
+	/** Light cluster cell edge, in tactical tiles. */
+	LIGHT_CELL_TILES: 3,
+	LIGHT_COLOR: 0xff8a3a,
+	LIGHT_INTENSITY: 12,
+	LIGHT_DISTANCE: 8,
+	LIGHT_DECAY: 1.4,
+	/**
+	 * Fire writes no depth, so it must draw AFTER actor tokens (which write
+	 * depth); otherwise a token behind a flame is painted over it. Above
+	 * ACTOR_TOKEN_RENDER_ORDER.PICK (102), below X_RAY (110) so x-ray tokens stay on top.
+	 */
+	RENDER_ORDER: 105,
+} as const;
