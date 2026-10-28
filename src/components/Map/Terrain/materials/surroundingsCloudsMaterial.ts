@@ -28,7 +28,8 @@
 //     ghosts through as broken cover.
 //
 // Not registered in TERRAIN_MATERIALS: it has no palette index, no bucket, and
-// must never be greedy-meshed. Because it bypasses the registry's cache-key
+// must never be greedy-meshed. It is reached through
+// fog251Material.surroundingsFactory. Because it bypasses the registry's cache-key
 // wrapper, it stamps its own customProgramCacheKey -- the surroundings mesh is
 // rebuilt (new material instance) on every voxel edit, and the stable key is
 // what keeps three.js from recompiling the program each time.

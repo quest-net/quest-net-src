@@ -467,6 +467,24 @@ export const TERRAIN_MATERIAL_REGISTRY: ReadonlyMap<string, MaterialFactory> = n
 		.map((m) => [m.bucketKey, wrapFactoryWithCacheKey(m)] as const)
 );
 
+const SURROUNDINGS_FACTORY_BY_PALETTE_INDEX: ReadonlyMap<number, MaterialFactory> = new Map(
+	SPECIAL_TERRAIN_MATERIALS
+		.filter((m) => m.surroundingsFactory !== undefined)
+		.map((m) => [m.special.paletteIndex, m.surroundingsFactory!] as const)
+);
+
+/**
+ * Factory for the decorative surroundings plane: the material's own
+ * surroundings-only factory when it has one (fog -> sea of clouds, fire ->
+ * smoldering ground), else its terrain factory, else the default material.
+ * Surroundings-only factories stamp their own program cache keys.
+ */
+export function getSurroundingsMaterialFactory(colorIndex: number): MaterialFactory {
+	return SURROUNDINGS_FACTORY_BY_PALETTE_INDEX.get(colorIndex)
+		?? TERRAIN_MATERIAL_REGISTRY.get(getMaterialBucket(colorIndex))
+		?? TERRAIN_MATERIAL_REGISTRY.get('default')!;
+}
+
 // ---------------------------------------------------------------------------
 // Movement-highlight 3D texture (shared resource consumed by world-view factories)
 //

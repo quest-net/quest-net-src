@@ -21,6 +21,7 @@
 // (color, density shaping, animation) lives in the volumetric pass.
 
 import type { TerrainMaterial } from './materialTypes';
+import { createSurroundingsCloudsMaterial } from './surroundingsCloudsMaterial';
 
 /** Editor swatch + the tint the volumetric pass uses as a starting point. */
 const FOG_SWATCH = '#cfd4dc';
@@ -37,6 +38,9 @@ const fog251Material: TerrainMaterial = {
 	passable: true,
 	// Rendered by the volumetric fog pass, not as a surface mesh.
 	volumetric: true,
+	// The raymarch pass cannot draw a sheet outside the terrain volume, so the
+	// surroundings plane gets a "sea of clouds" shader instead.
+	surroundingsFactory: createSurroundingsCloudsMaterial,
 	special: {
 		paletteIndex: 251,
 		label: 'Fog',

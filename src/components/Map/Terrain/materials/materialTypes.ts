@@ -188,6 +188,13 @@ export interface TerrainMaterial {
 	 */
 	factory?: MaterialFactory;
 	/**
+	 * Factory the surroundings plane uses instead of `factory`, for materials
+	 * whose terrain rendering cannot work as one flat endless sheet (fog is
+	 * raymarched inside the terrain volume; fire's surface is invisible and its
+	 * flames come from the Fire3D layer). Omit to reuse `factory`.
+	 */
+	surroundingsFactory?: MaterialFactory;
+	/**
 	 * Present iff this material is a special palette entry (240-255). The default
 	 * material has no palette index. Special materials show as a swatch in the
 	 * voxel editor and dispatch via getMaterialBucket(paletteIndex).

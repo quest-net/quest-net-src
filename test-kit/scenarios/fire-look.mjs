@@ -184,5 +184,33 @@ export default async function fireLook(kit) {
 	shots.push(await mapShot("fire-night-tokens-perspective"));
 	await ortho();
 
+	// Fire as the surroundings material ("smoldering ground"), level with the
+	// grass top (ground voxels are y 0..1, so 2 tactical units above the base).
+	await dm.eval(async (qn) => {
+		const terrain = qn.campaign.VoxelTerrains.find((t) => t.Name === "Forest Clearing");
+		await qn.actions.executeAndWait("terrain:edit", {
+			terrainId: terrain.Id,
+			updates: { Surroundings: { Height: 2, ColorIndex: 253 } },
+		});
+	});
+	await dm.eval(() => {
+		const scene = window.__qnFireLayer?.parent;
+		scene?.traverse((o) => { if (o.isHemisphereLight) o.intensity = 0.25; });
+	});
+	await frame(0.55, [0, 0, 0]);
+	await settle();
+	shots.push(await mapShot("fire-night-surroundings"));
+	await perspective([-14, 2.5, 14], [-24, 1, 24]);
+	await settle();
+	shots.push(await mapShot("fire-night-surroundings-low"));
+	await ortho();
+	await setLighting({ Intensity: 1.15, Color: "#ffffff" }, {});
+	await frame(0.55, [0, 0, 0]);
+	await settle();
+	shots.push(await mapShot("fire-day-surroundings"));
+
+	const lateShaderErrors = dm.logs.filter((line) => /Shader Error|not compiled/i.test(line));
+	assert.deepEqual(lateShaderErrors, [], "no shader compile errors (incl. surroundings)");
+
 	return shots;
 }

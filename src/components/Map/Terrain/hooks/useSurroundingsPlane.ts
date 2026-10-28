@@ -7,13 +7,11 @@ import { terrainPaletteIndexToVoxelColor } from "../../../../utils/terrain/edito
 import type { VoxelTerrainOccupancy } from "../geometry/VoxelTerrainGeometryUtils";
 import {
 	createPlaceholderVoxelAoTexture,
-	getMaterialBucket,
 	getMaterialDeformsSurface,
+	getSurroundingsMaterialFactory,
 	isVolumetricMaterial,
-	TERRAIN_MATERIAL_REGISTRY,
 	type VoxelAoTexture,
 } from "../materials";
-import { createSurroundingsCloudsMaterial } from "../materials/surroundingsCloudsMaterial";
 
 // ---------------------------------------------------------------------------
 // Decorative "surroundings" plane for the map scene.
@@ -598,13 +596,9 @@ export function useSurroundingsPlane(
 			deformingMaterial
 		);
 
-		// Volumetric materials (fog) have no surface shader -- the raymarched fog
-		// pass cannot draw a sheet outside the terrain volume -- so they get the
-		// dedicated "sea of clouds" surroundings material instead.
-		const factory = isVolumetricMaterial(surroundingsColorIndex)
-			? createSurroundingsCloudsMaterial
-			: TERRAIN_MATERIAL_REGISTRY.get(getMaterialBucket(surroundingsColorIndex)) ??
-				TERRAIN_MATERIAL_REGISTRY.get("default")!;
+		// Materials that cannot draw as one flat sheet (fog, fire) supply their own
+		// surroundings-only factory; everything else reuses its terrain factory.
+		const factory = getSurroundingsMaterialFactory(surroundingsColorIndex);
 		const voxelAo = createPlaceholderVoxelAoTexture();
 		// No movementHighlight -> the skirt shares the terrain program with the
 		// overlay disabled.
