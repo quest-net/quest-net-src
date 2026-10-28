@@ -73,7 +73,9 @@ export function useHeroOcclusion({
 	useEffect(() => {
 		if (!resources) return;
 		const hero = resources.heroOcclusion;
+		if (import.meta.env.DEV) (window as any).__qnHeroOcclusion = hero; // test kit's see-through scenario
 		const camPos = new THREE.Vector3();
+		const viewDir = new THREE.Vector3();
 		// The camera moves every frame; the actor rarely does. Cache the derived
 		// torso point and recompute it (which touches the LRU-cached terrain index
 		// and allocates) only when the actor's tile position or the terrain changes.
@@ -96,7 +98,15 @@ export function useHeroOcclusion({
 			// Rendering and pointer picking both read this shared uniform holder, so
 			// changing the preference updates the visible and clickable cutout together.
 			hero.radius.value = state.radius;
-			if (!state.enabled || !state.isWorld || !state.terrain || !pos) {
+			// The focused actor may stand on another terrain than the one being viewed
+			// (DM browsing terrains, inspector selection elsewhere): nothing to reveal.
+			if (
+				!state.enabled ||
+				!state.isWorld ||
+				!state.terrain ||
+				!pos ||
+				pos.terrainId !== state.terrain.Id
+			) {
 				hero.enabled.value = 0;
 				lastTerrain = null;
 				return;
@@ -137,6 +147,18 @@ export function useHeroOcclusion({
 			}
 			hero.actorPos.value.copy(torso);
 			resources.camera.getWorldPosition(camPos);
+			// Ortho view rays are parallel, so a cone aimed from the camera's position
+			// misses an actor away from the screen centre. Aim along the view direction
+			// through the actor instead, at the same distance.
+			const isOrtho = (resources.camera as THREE.OrthographicCamera).isOrthographicCamera;
+			if (isOrtho) {
+				resources.camera.getWorldDirection(viewDir);
+				const dist = camPos.distanceTo(torso);
+				camPos.copy(torso).addScaledVector(viewDir, -dist);
+			}
+			// Perspective already widens the hole on screen as geometry nears the
+			// lens; flaring the cone on top of that cuts things that hide nothing.
+			hero.coneScale.value = isOrtho ? THREE_D_HERO_OCCLUSION.CONE_SCALE : 1;
 			hero.camPos.value.copy(camPos);
 			// Cut only the half-space between the camera and the actor's height: from
 			// above, discard geometry above the feet; from below, below the head.

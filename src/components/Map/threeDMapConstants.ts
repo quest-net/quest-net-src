@@ -152,7 +152,8 @@ export const THREE_D_HERO_OCCLUSION = {
 	RADIUS: HERO_OCCLUSION_RADIUS_SETTING.DEFAULT,
 	// How much wider the cone is near the camera than at the actor. 1 = a straight
 	// cylinder; >1 flares toward the camera so a wall right in front of the lens is
-	// cut generously while the hole stays tight around the actor.
+	// cut generously while the hole stays tight around the actor. Iso only:
+	// perspective uses a straight cylinder (see useHeroOcclusion).
 	CONE_SCALE: 2.6,
 	// Width (world units) of the dithered fade band just outside the solid cone
 	// radius, so the cutout edge dissolves instead of hard-cutting.

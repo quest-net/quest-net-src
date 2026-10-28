@@ -33,6 +33,11 @@ walker whose poses stall mid-walk holding on other screens instead of sliding
 back. `fire-look.mjs` (`--players 0`) paints fire into Forest Clearing and
 screenshots it by day and night, close up and from low cameras, with tokens
 in front of and behind the flames (look check only, no asserts).
+`see-through.mjs` (`--players 0`, ~2 min) guards the see-through cutout
+switching off when the DM views a terrain the selected actor isn't on, then
+stands the actor in a lab of walls, roofs, a pit and an upper floor and sweeps
+~450 iso/perspective cameras, asserting the cutout always reveals the token
+(report in `test-kit/out/see-through.json`).
 A scenario can `export const options`
 for `startKit`, e.g. `{ characters: ["Beast Tamer", null] }` to choose which
 character each player claims (`null` leaves that player on character select).
