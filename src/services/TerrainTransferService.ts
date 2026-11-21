@@ -118,20 +118,17 @@ export class TerrainTransferService {
 	}
 
 	private setupChannels(): void {
-		const terrainFetch = this.room.makeAction<any, any>("terrainFetch", {
-			kind: "request",
-			onRequest: this.isDM
-				? (terrainId) => this.serveTerrain(terrainId as string)
-				: undefined,
-		});
+		const terrainFetch = this.room.makeAction<any, any>("terrainFetch", { kind: "request" });
 		this.requestTerrainData = terrainFetch.request;
 
 		const terrainDelta = this.room.makeAction<any>("terrainDelta");
 		this.sendDelta = terrainDelta.send;
-		if (!this.isDM) {
-			terrainDelta.onMessage = (data: any, { metadata }: any) => {
-				this.enqueueDelta(data, metadata as TerrainDeltaMetadata);
-			};
+		if (this.isDM) {
+			terrainFetch.onRequest((terrainId) => this.serveTerrain(terrainId as string));
+		} else {
+			terrainDelta.onMessage((data, { metadata }) => {
+				this.enqueueDelta(data, metadata as unknown as TerrainDeltaMetadata);
+			});
 		}
 	}
 
@@ -301,10 +298,10 @@ export class TerrainTransferService {
 		metadata: TerrainDeltaMetadata
 	): Promise<void> {
 		const { terrainId, baseHash, newHash } = metadata ?? ({} as TerrainDeltaMetadata);
-		// Binary arrives as a raw ArrayBuffer (same as ImageService); anything else
-		// isn't a delta -- ignore it and let the ContentHash-mismatch path full-fetch.
-		if (!terrainId || !baseHash || !newHash || !(deltaData instanceof ArrayBuffer)) return;
-		const deltaBytes = new Uint8Array(deltaData);
+		// Binary arrives as a Uint8Array (Trystero 0.27+); anything else isn't a
+		// delta -- ignore it and let the ContentHash-mismatch path full-fetch.
+		if (!terrainId || !baseHash || !newHash || !(deltaData instanceof Uint8Array)) return;
+		const deltaBytes = deltaData;
 
 		const campaign = this.getCampaign();
 		if (!campaign) return;

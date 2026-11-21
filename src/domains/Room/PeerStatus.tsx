@@ -5,9 +5,8 @@ import { useQuestContext } from "../Context/ContextProvider";
 import { CampaignUtils } from "../Campaign/CampaignUtils";
 
 /**
- * Room presence badge. Players join passively, so their mesh is a single edge
- * to the DM — there's nothing to list and no headcount worth showing, just
- * "connected or not". The DM is the only peer that sees everyone, so the peer
+ * Room presence badge. For players it only answers "is the DM connected", not
+ * a headcount. The DM is the one peer guaranteed to see everyone, so the peer
  * panel is theirs alone.
  */
 export function PeerStatus() {

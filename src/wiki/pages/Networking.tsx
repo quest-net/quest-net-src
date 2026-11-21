@@ -29,11 +29,10 @@ export const networkingPage: WikiPage = {
 					<p>
 						Quest-Net uses Trystero rooms with app ID{" "}
 						<WikiCode>quest-net</WikiCode>. The transport is peer-to-peer after
-						signaling, but the required campaign room is an authority star. The{" "}
+						signaling, and every peer joins the campaign room as an active peer. The{" "}
 						<WikiHighlight tone="primary">DM</WikiHighlight> owns the canonical
-						campaign state and joins as an active peer. Players join with
-						Trystero's <WikiCode>passive</WikiCode> option, so they listen for the
-						DM without connecting to one another.
+						campaign state; players also link to one another, but ignore each
+						other's requests and only take state from the DM.
 					</p>
 					<WikiDiagram title="Connection shape">
 						<div className="grid items-stretch gap-3 md:grid-cols-[1fr_auto_1fr_auto_1fr]">
@@ -45,15 +44,15 @@ export const networkingPage: WikiPage = {
 								-&gt;
 							</div>
 							<WikiDiagramNode title="Trystero room" tone="accent">
-								Nostr handles signaling. Trystero passive mode prevents player-player
-								campaign connections and produces a DM-centered star.
+								Nostr handles signaling. Peers announce on join, so a late player
+								reaches the DM in about a second.
 							</WikiDiagramNode>
 							<div className="flex items-center justify-center font-mono text-2xl font-black opacity-70">
 								&lt;-
 							</div>
 							<WikiDiagramNode title="Player route" tone="secondary">
-								Public URL uses the room code. A passive player activates after hearing
-								the DM and ignores other passive players.
+								Public URL uses the room code. The player announces itself and the DM
+								answers with a full campaign snapshot.
 							</WikiDiagramNode>
 						</div>
 					</WikiDiagram>
@@ -90,8 +89,9 @@ export const networkingPage: WikiPage = {
 							with no local campaign until the first DM state broadcast arrives.
 						</WikiFlowStep>
 						<WikiFlowStep number="3" title="Exchange User payloads" tone="accent">
-							<WikiCode>onPeerHandshake</WikiCode> performs a symmetrical user
-							exchange before peer metadata is visible through normal room APIs.
+							Each peer publishes its User to a Trystero user-state slot. Trystero
+							signs it with the peer's verified user id, hands every slot to late
+							joiners, and clears it when that user leaves.
 						</WikiFlowStep>
 						<WikiFlowStep number="4" title="Install service channels" tone="success">
 							<WikiCode>ActionService</WikiCode>, <WikiCode>StateSync</WikiCode>, and{" "}
@@ -158,10 +158,10 @@ export const networkingPage: WikiPage = {
 									"Optional direct-mesh traffic. Ephemeral live token pose packets smooth movement before authoritative state lands.",
 							},
 							{
-								name: "userUpdate / userReq",
+								name: "user (user state)",
 								tone: "info",
 								detail:
-									"Runtime user metadata repair. Used for selected character changes and missing peer details.",
+									"Each peer's User (name, role, selected characters), synced by Trystero's makeUserState. Republished on every change.",
 							},
 						]}
 					/>
@@ -323,16 +323,16 @@ export const networkingPage: WikiPage = {
 					<WikiFieldGrid
 						items={[
 							{
-								name: "Handshake",
+								name: "User state",
 								tone: "primary",
 								detail:
-									"Initial User payload exchange happens before the peer is visible to getPeers or action receivers.",
+									"Peer Users arrive through Trystero user state, signed per verified user id; a peer may show as connected a moment before its User lands.",
 							},
 							{
 								name: "Runtime metadata",
 								tone: "info",
 								detail:
-									"userUpdate rebroadcasts local User changes; userReq repairs missing metadata for peers that connected before details arrived.",
+									"Local User changes republish the user-state slot; Trystero's anti-entropy delivers them to every peer, including ones that join later.",
 							},
 							{
 								name: "Non-destructive waiting",
@@ -341,10 +341,10 @@ export const networkingPage: WikiPage = {
 									"After 20 seconds the player sees clearer status text, but Quest-Net leaves the original room untouched so Trystero can continue discovery and ICE.",
 							},
 							{
-								name: "Passive topology",
+								name: "Active players",
 								tone: "success",
 								detail:
-									"The DM is active and players are passive. Trystero wakes passive players for the DM while preventing player-only campaign-room meshes.",
+									"Players join active so the DM hears them on join. A passive player would wait up to a minute for the DM's next Nostr announce.",
 							},
 							{
 								name: "Display-only pings",
@@ -409,7 +409,7 @@ export const networkingPage: WikiPage = {
 		},
 	],
 	searchText:
-		"networking trystero webrtc nostr state sync delta patch full state action request user metadata relay room code dm authority actionReq stateSync imgFetch imgUpload terrainFetch actorPose userUpdate userReq request response compression version mismatch optimistic secret mode handshake reconnect",
+		"networking trystero webrtc nostr state sync delta patch full state action request user metadata relay room code dm authority actionReq stateSync imgFetch imgUpload terrainFetch actorPose user state makeUserState request response compression version mismatch optimistic secret mode handshake reconnect",
 };
 
 export default networkingPage;

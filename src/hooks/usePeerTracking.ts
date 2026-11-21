@@ -1,7 +1,6 @@
 // hooks/usePeerTracking.ts
 import { useEffect } from "react";
 import { useSnapshot } from "valtio";
-import { selfId } from "trystero";
 import { useActionService } from "../services/Actions/ActionServiceProvider";
 import { useQuestContext } from "../domains/Context/ContextProvider";
 import { presenceStore } from "../domains/Context/contextStore";
@@ -16,8 +15,8 @@ export interface PeerInfo {
 
 export interface PeerTrackingData {
 	/**
-	 * Remote peers only — does not include the local user. Players join
-	 * passively, so for them this is the DM and nobody else.
+	 * Remote peers only — does not include the local user. For players this
+	 * is the DM plus any other players they have linked to.
 	 */
 	peers: PeerInfo[];
 	/** The local user as a PeerInfo, for display alongside peers. */
@@ -30,7 +29,7 @@ export interface PeerTrackingData {
 /**
  * Reads peer presence and ping data from ActionService and re-broadcasts the
  * local User when it changes. Peer state is owned by ActionService — see
- * `recordPeerUser` / `broadcastSelf` there.
+ * `getPeerUser` / `broadcastSelf` there.
  *
  * `ActiveCampaign` is read as nullable: it can be null mid-navigation between
  * campaigns, so the actor helpers degrade to "no actor" rather than throwing.
@@ -52,20 +51,20 @@ export function usePeerTracking(): PeerTrackingData {
 		actionService?.broadcastSelf();
 	}, [userJson, actionService]);
 
-	const peerUsersMap = actionService?.peerUsers ?? new Map<string, User>();
 	const peerPingsMap = actionService?.peerPings ?? new Map<string, number>();
 	const connectedPeerIds = actionService?.connectedPeerIds ?? new Set<string>();
 
 	const peers: PeerInfo[] = Array.from(connectedPeerIds).map(
 		(peerId) => ({
 			peerId,
-			user: peerUsersMap.get(peerId) ?? null,
+			user: actionService?.getPeerUser(peerId) ?? null,
 			ping: peerPingsMap.get(peerId) ?? null,
 		})
 	);
 
 	const selfPeer: PeerInfo = {
-		peerId: selfId as string,
+		// Trystero 0.27 dropped the sync `selfId`; nothing reads our own peerId.
+		peerId: "self",
 		user: context.User,
 		ping: null,
 	};

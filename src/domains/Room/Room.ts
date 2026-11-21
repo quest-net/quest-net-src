@@ -1,7 +1,5 @@
 // domains/Room/Room.ts
 
-import { joinRoom } from "trystero";
-
 /**
  * Re-export the Room type from Trystero
  * This is the live connection object with WebSocket channels
@@ -9,9 +7,16 @@ import { joinRoom } from "trystero";
  * Usage:
  *   const room = RoomService.join('room-code');
  *   const peers = room.getPeers(); // Direct access to Trystero methods
- *   room.onPeerJoin = peerId => ...;
+ *   const off = room.onPeerJoin(({ peerId }) => ...);
  */
-export type Room = ReturnType<typeof joinRoom>;
+export type { Room } from "trystero";
+
+/**
+ * Catch handler for a targeted send. Trystero 0.27 rejects `send(data,
+ * { target })` when that peer already left; onPeerLeave handles the
+ * departure, so the failed send needs nothing more.
+ */
+export const ignoreGonePeer = (): void => {};
 
 /**
  * Send function for a Trystero message action (the `.send` returned by

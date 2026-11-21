@@ -1,7 +1,7 @@
 // services/ImageService.ts
 
 import { IndexedDBUtilities } from "../utils/IndexedDBUtilities";
-import { Room, type ActionRequest } from "../domains/Room/Room";
+import { type Room, type ActionRequest } from "../domains/Room/Room";
 import { compressImage } from "../utils/ImageUtils";
 import { Image } from "../domains/Image/Image";
 
@@ -61,26 +61,22 @@ export class ImageService {
 
 	private setupChannels() {
 		// Download: player requests an image by id, DM serves the bytes.
-		const imgFetch = this.room.makeAction<any, any>("imgFetch", {
-			kind: "request",
-			onRequest: this.isDM
-				? (imageId) => this.serveImage(imageId as string)
-				: undefined,
-		});
+		const imgFetch = this.room.makeAction<any, any>("imgFetch", { kind: "request" });
 		this.requestImage = imgFetch.request;
 
 		// Upload: player sends bytes + metadata, DM stores and returns the Image.
-		const imgUpload = this.room.makeAction<any, any>("imgUpload", {
-			kind: "request",
-			onRequest: this.isDM
-				? (data, { metadata }) =>
-						this.storeUpload(
-							data as ArrayBuffer,
-							metadata as unknown as ImageUploadMetadata
-						)
-				: undefined,
-		});
+		const imgUpload = this.room.makeAction<any, any>("imgUpload", { kind: "request" });
 		this.requestUpload = imgUpload.request;
+
+		if (this.isDM) {
+			imgFetch.onRequest((imageId) => this.serveImage(imageId as string));
+			imgUpload.onRequest((data, { metadata }) =>
+				this.storeUpload(
+					data as Uint8Array<ArrayBuffer>,
+					metadata as unknown as ImageUploadMetadata
+				)
+			);
+		}
 	}
 
 	/**
@@ -131,7 +127,7 @@ export class ImageService {
 	 * propagate back to the uploading player as a rejected request().
 	 */
 	private async storeUpload(
-		data: ArrayBuffer,
+		data: Uint8Array<ArrayBuffer>,
 		metadata: ImageUploadMetadata
 	): Promise<Image> {
 		const image: Image = {
@@ -199,11 +195,11 @@ export class ImageService {
 		}
 
 		try {
-			const arrayBuffer = (await this.requestImage(imageId, {
+			const bytes = (await this.requestImage(imageId, {
 				target: dmPeerId,
 				timeoutMs: IMAGE_REQUEST_TIMEOUT_MS,
-			})) as ArrayBuffer;
-			const blob = new Blob([arrayBuffer]);
+			})) as Uint8Array<ArrayBuffer>;
+			const blob = new Blob([bytes]);
 			await IndexedDBUtilities.save(imageId, blob);
 			return blob;
 		} catch (error) {

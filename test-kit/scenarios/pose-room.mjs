@@ -1,7 +1,6 @@
-// Pose room: players join the active `<roomCode>:pose:v1` room as soon as the
-// campaign view mounts (that is what makes late joins fast, see late-join.mjs).
-// Guards that a player's live pose reaches the DM and the other player, and
-// logs the campaign-room peer count per player.
+// Pose room: everyone joins the `<roomCode>:pose:v1` room as soon as the
+// campaign view mounts. Guards that a player's live pose reaches the DM and
+// the other player, and logs the campaign-room peer count per player.
 //   node test-kit/run.mjs test-kit/scenarios/pose-room.mjs
 import assert from "node:assert/strict";
 import { waitForDm } from "../kit.mjs";
@@ -11,9 +10,8 @@ export default async function poseRoom(kit) {
 	const [p1, p2] = players;
 	for (const p of players) await waitForDm(p);
 
-	// Known, not asserted: a Trystero shared peer formed in the pose room also
-	// links players to each other in the passive campaign room (true before
-	// players joined the pose room early, too), so this logs 2, not 1.
+	// Not asserted: players join the campaign room active, so they link to
+	// each other too and this logs 2 (the DM + the other player).
 	await new Promise((resolve) => setTimeout(resolve, 3000));
 	for (const p of players) {
 		const n = await p.eval((qn) => Object.keys(qn.actions.room.getPeers()).length);

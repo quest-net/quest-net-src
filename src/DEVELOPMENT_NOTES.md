@@ -17,41 +17,42 @@
 - **Strategy**: Nostr (root `trystero` package, defaults to Nostr in 0.24+)
 - **App ID**: Hardcoded as `'quest-net'`
 - **Room code**: Max 32 characters (anything longer is treated as GUID for DM)
-- **Campaign-room topology**: DM joins active; players use Trystero's documented
-  `passive` mode. Passive players listen for the active DM and do not connect to
-  one another, so the required room is an authority-centered star rather than a
-  full mesh.
+- **Campaign-room topology**: everyone joins active, so the room is a full mesh
+  (players link to each other too). Authority still lives only in the DM:
+  players ignore each other's `actionReq`, and only the DM serves state, images
+  and terrain. Players used to be `passive`, but on Trystero 0.27 a passive
+  player waits up to a minute for the DM's next Nostr announce (see below).
 
 ### Architecture
 
 - **DM = Authority**: Processes all actions and broadcasts state
 - **Players = Requesters**: Send action requests to DM via `actionReq` channel
-- **Initial peer state**: `User` payloads are exchanged via `onPeerHandshake`
-  (passed to `joinRoom` callbacks in `CampaignView`). Peers are NOT visible
-  to `getPeers()`, `onPeerJoin`, or any action receiver until their handshake
-  succeeds. Runtime presence is therefore tracked from Trystero's active peer
-  map (`ActionService.connectedPeerIds`), while `ActionService.peerUsers`
-  remains optional display metadata.
-- **Runtime user updates**: After handshake, character selection changes
-  flow through the small `userUpdate` action (`ActionService.broadcastSelf`).
-  Missing metadata is repaired with the `userReq` action.
+- **Peer users**: each peer's `User` lives in a Trystero user-state slot
+  (`room.makeUserState("user")`). A peer publishes its own on join and on every
+  change (`ActionService.broadcastSelf`); Trystero signs it with the writer's
+  verified `userId`, delivers every slot to late joiners and clears a slot when
+  its user leaves, so there is no hand-rolled exchange or repair channel.
+  Runtime presence is tracked from Trystero's active peer map
+  (`ActionService.connectedPeerIds`); a peer's User (`getPeerUser`) remains
+  optional display metadata. (This replaced `onPeerHandshake` + the
+  `userUpdate`/`userReq` actions in the Trystero 0.27 upgrade.)
 - **Initial campaign state**: On `onPeerJoin`, the DM sends one targeted full
   snapshot to the newly admitted player. Existing players keep their current
   baseline and receive no redundant full state.
 - **Live pose mesh**: `actorPose` uses the optional active room
   `<roomCode>:pose:v1`, separate from the required campaign star. Everyone opens
   it alongside the campaign room and stays in it for the life of the campaign
-  view, including after a player loses the DM. It is also what makes late joins
-  fast (see below). Pose-room failures never affect campaign readiness or
-  presence.
+  view, including after a player loses the DM. It keeps live poses from queuing
+  behind bulk campaign traffic. Pose-room failures never affect campaign
+  readiness or presence.
 
 ### Connection error surface
 
-- `onJoinError` is wired in `CampaignView`. Trystero fires it per peer for bad
-  passwords, admission-handshake failures/timeouts, and SDP exchanges that do
-  not establish WebRTC. Quest-Net does not currently configure a room password
-  or reject admission, so player join errors are treated as retryable network
-  attempts while the original Trystero room remains mounted.
+- `room.onError` is wired in `CampaignView` (via `RoomService.join`). Trystero
+  emits typed codes (`peer-connect-failed`, `handshake-failed`,
+  `decrypt-failed`, `relay-failed`, ...). Quest-Net does not configure a room
+  password or reject admission, so player errors other than `relay-failed` are
+  shown as retryable network attempts while the original room stays mounted.
 
 ### Connection recovery: a slow link is not a dead link
 
@@ -64,20 +65,18 @@ loops made sessions strictly worse the worse the network got.
 **Peer liveness is Trystero's job** (`onPeerJoin` / `onPeerLeave` /
 `getPeers()`), re-synced by `reconcilePeerConnections` every 2s.
 
-**Late joins go through the pose room (Trystero 0.26.0+).** Before 0.26.0, a DM
-alone in the room for over 57s re-used a stale offer and late players often never
+**Late joins need active players (Trystero 0.27).** Before 0.26.0, a DM alone in
+the room for over 57s re-used a stale offer and late players often never
 connected until the DM refreshed (dmotz/trystero#204). Since 0.25.4, Nostr
 re-announces only every 60s after a ~7s startup burst, and a passive player stays
-silent until it hears one, so a late player in the campaign room alone waits up
-to a minute (~56s measured). Players therefore open the active pose room at
-mount: the DM meets them in its startup burst, and Trystero's shared peer then
-advertises the DM's campaign room, which attaches and wakes the player's passive
-campaign room (`shared-peer.mjs` `attachRoom` -> `onPeer`). Measured 0.5s.
-`test-kit/scenarios/late-join.mjs` guards it. The same shared peer also links
-players to each other in the campaign room (pre-existing, see
-`pose-room.mjs`), so player broadcasts on it reach other players too. 0.26.0 also
-changed the wire format, so peers on different builds cannot connect: deploy
-between sessions, or players must refresh.
+silent until it hears one, so a passive late player waits up to a minute (~56s
+measured). On 0.26 the pose room hid this: Trystero shared one connection across
+rooms, so meeting the DM in the pose room woke the passive campaign room
+(0.5s). 0.27 removed that sharing (`shared-peer.mjs` is gone), so players now
+join the campaign room active: they announce on join and the DM answers at once
+(0.8s measured). `test-kit/scenarios/late-join.mjs` guards it. Each Trystero
+minor so far (0.26, 0.27) changed the wire format, so peers on different builds
+cannot connect: deploy between sessions, or players must refresh.
 
 What we still do:
 
@@ -90,8 +89,8 @@ What we still do:
   The optional pose room follows the same lifecycle.
 - Pings are **display-only** (RTT in `PeerStatus`); a missed pong does nothing.
 - `usePeerTracking` retains its `partial` state defensively for missing or
-  unexpected metadata, but a normal passive player cannot form a player-only
-  campaign-room mesh.
+  unexpected metadata. Players do link to each other, so "has peers" never
+  means "has the DM": check `getDmPeerId()` / `isDmConnected` instead.
 
 What was removed, and why it must not come back in the same shape:
 
@@ -120,8 +119,7 @@ What was removed, and why it must not come back in the same shape:
 - **`requireDmConnection`.** Made players recycle when the DM was unreachable.
   `getDmPeerId()` is undefined until the handshake lands, so a slow DM read as
   "no DM" and every player tore down their room every ~20s, starving the very
-  link they were waiting for. Passive topology removes the need for this custom
-  role-metadata watchdog: Trystero itself prevents passive player-player links.
+  link they were waiting for.
 
 ### Relay warning suppression
 

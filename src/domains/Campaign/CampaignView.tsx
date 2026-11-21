@@ -7,14 +7,12 @@ import { useActionService } from "../../services/Actions/ActionServiceProvider";
 import { CampaignUtils } from "./CampaignUtils";
 import { ContextService } from "../Context/ContextService";
 import { RoomService } from "../Room/RoomService";
-import type { RoomCallbacks } from "../Room/RoomService";
-import type { DataPayload } from "trystero";
+import type { RoomError } from "trystero";
 import { ActionService } from "../../services/Actions/ActionService";
 import { isGUID } from "../../utils/UrlParser";
 import { DMView } from "./DMView";
 import { PlayerView } from "./PlayerView";
 import { CampaignConnectionScreen } from "./CampaignConnectionScreen";
-import type { User } from "../User/User";
 import { UserUtils } from "../User/UserUtils";
 
 type ViewStatus = "loading" | "ready" | "waiting-for-dm" | "error";
@@ -95,14 +93,12 @@ export function CampaignView() {
 
 			try {
 				poseRoom = RoomService.join(`${campaignRoomCode}${POSE_ROOM_SUFFIX}`, {
-					passive: false,
-					callbacks: {
-						onJoinError: (details) => {
-							console.warn(
-								"[PoseRoom] Optional pose connection failed:",
-								details.error
-							);
-						},
+					onError: (error) => {
+						console.warn(
+							"[PoseRoom] Optional pose connection failed:",
+							error.code,
+							error.message
+						);
 					},
 				});
 				service.actorPoseService.attachRoom(poseRoom);
@@ -221,50 +217,26 @@ export function CampaignView() {
 					: identifier;
 				campaignRoomCode = roomCode!;
 
-				// Build joinRoom callbacks BEFORE constructing the room.
-				// The handshake closure references `service` (declared above as
-				// `let service`); by the time a peer actually connects and the
-				// handshake fires, `service` will already have been assigned.
-				const callbacks: RoomCallbacks = {
-					onPeerHandshake: async (peerId, send, receive, isInitiator) => {
-						// Symmetrical User exchange. `isInitiator` is set
-						// deterministically by Trystero to avoid deadlocks: the
-						// initiator sends first, the other side receives first.
-						const myUser = context.User;
-						let theirUser: User;
-						if (isInitiator) {
-							await send(myUser as unknown as DataPayload);
-							const { data } = await receive();
-							theirUser = data as unknown as User;
-						} else {
-							const { data } = await receive();
-							await send(myUser as unknown as DataPayload);
-							theirUser = data as unknown as User;
-						}
-						service?.recordPeerUser(peerId, theirUser);
-					},
-					onJoinError: (details) => {
-						console.warn("[CampaignView] onJoinError:", details);
-						if (!isSubscribed || isDM) return;
-						// Trystero reports this per peer for handshake failures and
-						// for SDP exchanges that fail to establish WebRTC. Quest-Net
-						// does not currently reject admission or configure a room
-						// password, so these are recoverable network-attempt failures.
-						// Keep the original room alive so Trystero can continue its
-						// own discovery, signaling, and ICE recovery.
-						setState((cur) => {
-							const isJoinInProgress =
-								cur.status === "waiting-for-dm" ||
-								(cur.status === "error" && !!cur.retryable);
-							if (!isJoinInProgress) return cur;
-							const message = details.error || "unknown";
-							return {
-								status: "error",
-								retryable: true,
-								errorMessage: `The last connection attempt failed (${message}). Trystero is still listening for the DM.`,
-							};
-						});
-					},
+				// Peer Users sync through Trystero user state (ActionService), so
+				// the room needs no handshake.
+				const onError = (error: RoomError) => {
+					console.warn("[CampaignView] room error:", error.code, error.message);
+					// Public relays fail routinely; that isn't a failed DM connection.
+					if (!isSubscribed || isDM || error.code === "relay-failed") return;
+					// Peer connection/handshake failures are recoverable network
+					// attempts. Keep the original room alive so Trystero can
+					// continue its own discovery, signaling, and ICE recovery.
+					setState((cur) => {
+						const isJoinInProgress =
+							cur.status === "waiting-for-dm" ||
+							(cur.status === "error" && !!cur.retryable);
+						if (!isJoinInProgress) return cur;
+						return {
+							status: "error",
+							retryable: true,
+							errorMessage: `The last connection attempt failed (${error.code}). Trystero is still listening for the DM.`,
+						};
+					});
 				};
 
 				// Everything above this point awaits (IndexedDB campaign load, OPFS
@@ -276,13 +248,13 @@ export function CampaignView() {
 				// broadcasting state. Bail instead; the next effect run joins.
 				if (!isSubscribed) return;
 
-				// Trystero's documented passive mode gives the authoritative room
-				// its intended star topology: the DM announces as the sole active
-				// peer, while players listen for the DM and ignore other players.
-				room = RoomService.join(roomCode!, {
-					callbacks,
-					passive: !isDM,
-				});
+				// Everyone joins active. A passive player only hears the DM's
+				// announces, which Nostr repeats every 60s, so a late player
+				// waited ~56s (Trystero 0.27 no longer shares connections across
+				// rooms, which used to let the pose room wake the campaign room).
+				// Active players announce on join and the DM answers at once; the
+				// cost is that players also link to each other here.
+				room = RoomService.join(roomCode!, { onError });
 
 				// =====================================================================
 				// STEP 3: Create ActionService
@@ -290,12 +262,8 @@ export function CampaignView() {
 				service = new ActionService(context, room);
 				setActionService(service);
 
-				// Players join the active pose room right away too: the DM finds
-				// them in its quick startup announces, and the shared peer wakes
-				// the passive campaign room. Otherwise a late player waits for the
-				// DM's next Nostr announce (every 60s). Players also stay in it
-				// when the DM drops, since an active room re-announces right after
-				// a disconnect and a passive one does not.
+				// Live poses get their own room so they never queue behind bulk
+				// campaign traffic. Everyone stays in it for the whole view.
 				openPoseRoom();
 				if (!isDM) service.onFirstUpdate(handlePlayerStateReady);
 

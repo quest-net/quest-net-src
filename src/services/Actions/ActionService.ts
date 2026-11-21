@@ -8,7 +8,8 @@ import { ActorUtils } from "../../domains/Actor/ActorUtils";
 import { StateSync } from "../StateSync";
 import { CampaignMutationRecorder } from "../CampaignMutationRecorder";
 import { ImageService } from "../ImageService";
-import { Room, type ActionSend } from "../../domains/Room/Room";
+import { type Room, type ActionSend } from "../../domains/Room/Room";
+import type { UserState } from "trystero";
 import { bumpPresence, markCampaignUpdated } from "../../domains/Context/contextStore";
 import { snapshot } from "valtio";
 import { RoomService } from "../../domains/Room/RoomService";
@@ -45,14 +46,14 @@ export class ActionService {
 	// Trystero channel send functions. Target a specific peer via the
 	// `{ target }` option; omit it to broadcast to every peer.
 	private sendActionRequest!: ActionSend;
-	private sendUserUpdate!: ActionSend;
-	private sendUserRequest!: ActionSend;
+	// Every peer's User, synced by Trystero: signed per userId, delivered to
+	// late joiners, cleared when a user leaves (see setupChannels).
+	private userState!: UserState<User | null>;
 
 	// Peer state is split into transport presence and app-level metadata.
-	// `connectedPeerIds` mirrors Trystero's active peer map. `peerUsers` is
-	// optional display metadata populated by handshake/userUpdate traffic.
+	// `connectedPeerIds` mirrors Trystero's active peer map; each peer's User
+	// (optional display metadata) comes from `getPeerUser`.
 	public connectedPeerIds: Set<string> = new Set();
-	public peerUsers: Map<string, User> = new Map();
 	public peerPings: Map<string, number> = new Map();
 	private pingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
 	private peerReconcileInterval?: ReturnType<typeof setInterval>;
@@ -113,62 +114,45 @@ export class ActionService {
 	}
 
 	/**
-	 * Records a peer's User payload (called from the room handshake).
-	 * Handshake runs before Trystero marks the peer active, so transport
-	 * presence is reconciled separately through onPeerJoin/getPeers().
-	 */
-	recordPeerUser(peerId: string, user: User) {
-		const didChangeUser = this.setPeerUser(peerId, user);
-		const didChangeConnection = this.isPeerActive(peerId)
-			? this.addConnectedPeer(peerId)
-			: false;
-
-		if (didChangeUser || didChangeConnection) {
-			// Presence-only re-render (transient, separate non-persisted store).
-			bumpPresence();
-		}
-	}
-
-	/**
 	 * Drops all local state for a peer that is no longer transport-active.
 	 * Returns true when something was actually dropped, so a caller batching
-	 * several removals can bump presence once.
+	 * several removals can bump presence once. (Its User slot is cleared by
+	 * Trystero when the user leaves.)
 	 */
 	private forgetPeer(peerId: string): boolean {
 		const hadConnection = this.connectedPeerIds.delete(peerId);
-		const hadUser = this.peerUsers.delete(peerId);
-		if (hadUser) this.syncClaimedCharacters();
 		this.stopPinging(peerId);
 		this.actorPoseService.clearForPeer(peerId);
-		return hadConnection || hadUser;
+		return hadConnection;
+	}
+
+	/** A connected peer's User, or undefined until its user state has synced. */
+	getPeerUser(peerId: string): User | undefined {
+		return this.userState.get(peerId) ?? undefined;
 	}
 
 	/**
-	 * Re-broadcasts the local User to peers if it has changed since the
-	 * last broadcast. Safe to call from multiple components — only the
-	 * actual changes are sent.
+	 * Publishes the local User if it has changed since the last publish. Safe
+	 * to call from multiple components — only actual changes are sent.
 	 */
-	broadcastSelf(peerId?: string): void {
-		if (!this.sendUserUpdate) return;
+	broadcastSelf(): void {
 		const json = JSON.stringify(this.context.User);
-		if (peerId) {
-			this.sendUserUpdate(this.context.User, { target: peerId });
-			return;
-		}
 		if (json === this.lastBroadcastUserJson) return;
 		this.lastBroadcastUserJson = json;
-		this.sendUserUpdate(this.context.User);
+		this.userState.set(JSON.parse(json)).catch((error) => {
+			console.warn("[ActionService] Could not publish user:", error);
+		});
 	}
 
 	/**
-	 * Resolves the connected DM's peerId by scanning recorded peer Users.
+	 * Resolves the connected DM's peerId by scanning connected peers' Users.
 	 * Players target on-demand image and terrain requests at the DM (the sole
-	 * authority that serves them). Returns undefined until the DM's User
-	 * payload has been recorded via the handshake / userUpdate.
+	 * authority that serves them). Returns undefined until the DM's User has
+	 * synced.
 	 */
 	getDmPeerId(): string | undefined {
-		for (const [peerId, user] of this.peerUsers) {
-			if (user.Role === "dm") return peerId;
+		for (const peerId of Object.keys(this.room.getPeers())) {
+			if (this.getPeerUser(peerId)?.Role === "dm") return peerId;
 		}
 		return undefined;
 	}
@@ -181,33 +165,21 @@ export class ActionService {
 
 		if (this.context.User.Role === "dm") {
 			// DM listens for action requests from players
-			actionReq.onMessage = (data, { peerId }) =>
-				this.handlePlayerRequest(data, peerId);
+			actionReq.onMessage((data, { peerId }) =>
+				this.handlePlayerRequest(data, peerId)
+			);
 		}
 
-		// Runtime user updates (e.g., character selection mid-session).
-		// Initial user exchange is handled by the joinRoom handshake.
-		const userUpdate = this.room.makeAction<any>("userUpdate");
-		this.sendUserUpdate = userUpdate.send;
-		userUpdate.onMessage = (data, { peerId }) => {
-			if (data && typeof data === "object") {
-				const didChangeUser = this.setPeerUser(peerId, data as unknown as User);
-				const didChangeConnection = this.isPeerActive(peerId)
-					? this.addConnectedPeer(peerId)
-					: false;
-
-				if (didChangeUser || didChangeConnection) {
-					// Presence-only re-render (transient, separate non-persisted store).
-					bumpPresence();
-				}
-			}
-		};
-
-		const userReq = this.room.makeAction<any>("userReq");
-		this.sendUserRequest = userReq.send;
-		userReq.onMessage = (_data, { peerId }) => {
-			this.broadcastSelf(peerId);
-		};
+		// Each peer's User lives in a Trystero user-state slot: our own is
+		// published here and on every change (broadcastSelf), Trystero hands
+		// every slot to late joiners and clears a user's slot when they leave.
+		this.userState = this.room.makeUserState("user") as unknown as UserState<User | null>;
+		this.userState.onChange(() => {
+			this.syncClaimedCharacters();
+			// Presence-only re-render (transient, separate non-persisted store).
+			bumpPresence();
+		});
+		this.broadcastSelf();
 	}
 
 	private setupStateSync() {
@@ -273,7 +245,7 @@ export class ActionService {
 	}
 
 	private setupPeerHandlers() {
-		this.room.onPeerJoin = (peerId) => {
+		this.room.onPeerJoin(({ peerId }) => {
 			const didChangeConnection = this.addConnectedPeer(peerId);
 
 			if (this.context.User.Role === "dm") {
@@ -286,14 +258,14 @@ export class ActionService {
 				// Presence-only re-render (transient, separate non-persisted store).
 				bumpPresence();
 			}
-		};
+		});
 
-		this.room.onPeerLeave = (peerId) => {
+		this.room.onPeerLeave(({ peerId }) => {
 			if (this.forgetPeer(peerId)) {
 				// Presence-only re-render (transient, separate non-persisted store).
 				bumpPresence();
 			}
-		};
+		});
 
 		this.peerReconcileInterval = setInterval(
 			() => this.reconcilePeerConnections(),
@@ -302,33 +274,22 @@ export class ActionService {
 		this.reconcilePeerConnections();
 	}
 
-	private setPeerUser(peerId: string, user: User): boolean {
-		const previous = this.peerUsers.get(peerId);
-		this.peerUsers.set(peerId, user);
-		this.syncClaimedCharacters();
-		return JSON.stringify(previous) !== JSON.stringify(user);
-	}
-
 	/**
-	 * DM only. Players join the room passively, so they never connect to each
-	 * other and can't see which characters their peers have claimed. The DM is
-	 * connected to everyone, so it republishes the claimed set on its own User;
-	 * CharacterSelect reads it off the DM peer to grey out taken characters.
+	 * DM only. The DM is the one peer guaranteed to be connected to everyone, so
+	 * it republishes the claimed set on its own User; CharacterSelect reads it
+	 * off the DM peer to grey out taken characters.
 	 */
 	private syncClaimedCharacters(): void {
 		if (this.context.User.Role !== "dm") return;
 		const roomCode = this.context.ActiveCampaign?.RoomCode;
 		if (!roomCode) return;
 
-		this.context.User.ClaimedCharacters = Array.from(this.peerUsers.values())
-			.map((user) => user.SelectedCharacters?.[roomCode])
+		// Includes the DM's own User, which never selects a character here.
+		this.context.User.ClaimedCharacters = Object.values(this.userState.getAll())
+			.map((user) => user?.SelectedCharacters?.[roomCode])
 			.filter((characterId): characterId is string => !!characterId);
 		// Deduped against the last broadcast, so an unchanged set costs nothing.
 		this.broadcastSelf();
-	}
-
-	private isPeerActive(peerId: string): boolean {
-		return Object.prototype.hasOwnProperty.call(this.room.getPeers(), peerId);
 	}
 
 	private addConnectedPeer(peerId: string): boolean {
@@ -339,19 +300,7 @@ export class ActionService {
 			this.startPinging(peerId);
 		}
 
-		if (!wasConnected) {
-			this.broadcastSelf(peerId);
-		}
-		if (!this.peerUsers.has(peerId)) {
-			this.requestPeerUser(peerId);
-		}
-
 		return !wasConnected;
-	}
-
-	private requestPeerUser(peerId: string) {
-		if (!this.sendUserRequest) return;
-		this.sendUserRequest({ userId: this.context.User.Id }, { target: peerId });
 	}
 
 	private reconcilePeerConnections() {
@@ -359,8 +308,6 @@ export class ActionService {
 		let didChange = false;
 
 		for (const peerId of activePeerIds) {
-			// addConnectedPeer already calls requestPeerUser when peerUsers is
-			// missing — no need to repeat the check here.
 			didChange = this.addConnectedPeer(peerId) || didChange;
 		}
 
@@ -667,7 +614,7 @@ export class ActionService {
 		}
 
 		// Authoritative ownership re-check. The DM already holds each player's
-		// selected characters (peerUsers, via requestingUser), so it validates the
+		// selected characters (user state, via requestingUser), so it validates the
 		// request against its own records here rather than running the action under
 		// the player's identity. The action itself then runs as the DM — we never
 		// write the player's identity onto the reactive store (doing so across the
@@ -742,7 +689,9 @@ export class ActionService {
 	}
 
 	private getRequestingPlayer(peerId?: string, playerId?: string): User {
-		const peerUser = peerId ? this.peerUsers.get(peerId) : undefined;
+		// Trystero signs each user-state record with the writer's userId, so this
+		// is the User that peer itself published, not one another peer forged.
+		const peerUser = peerId ? this.getPeerUser(peerId) : undefined;
 		return {
 			Id: peerUser?.Id ?? playerId ?? "unknown-player",
 			Name: peerUser?.Name ?? "Player",
@@ -799,7 +748,6 @@ export class ActionService {
 		this.pingIntervals.forEach(clearInterval);
 		this.pingIntervals.clear();
 		this.peerPings.clear();
-		this.peerUsers.clear();
 		this.connectedPeerIds.clear();
 		if (this.room) {
 			RoomService.leave(this.room);

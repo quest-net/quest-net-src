@@ -1,11 +1,7 @@
 // domains/Room/RoomService.ts
 
 import { joinRoom } from "trystero";
-import type {
-	JoinRoomCallbacks,
-	JoinRoomConfig,
-	TurnServerConfig,
-} from "trystero";
+import type { RoomErrorHandler, TurnServerConfig } from "trystero";
 import type { Room } from "./Room";
 
 const APP_ID = "quest-net";
@@ -50,26 +46,13 @@ const RELAY_URLS = (import.meta.env.VITE_RELAY_URLS as string | undefined)
 	.map((url) => url.trim())
 	.filter(Boolean);
 
-/**
- * Optional callbacks passed to `joinRoom` (Trystero 0.23+).
- *
- * - `onPeerHandshake` runs once per peer right after the transport connects
- *   and BEFORE the peer becomes visible to `getPeers()`, `onPeerJoin`, or
- *   any action receivers. Use it to exchange identity payloads. Throw/reject
- *   to deny the peer (the other side gets `onJoinError`).
- *
- * - `onJoinError` fires per peer for bad passwords, handshake denial/timeout,
- *   and SDP exchanges that do not establish a WebRTC connection.
- *
- * This is a direct re-export of trystero's `JoinRoomCallbacks` type so it
- * can never drift from the library's own definitions.
- */
-export type RoomCallbacks = JoinRoomCallbacks;
-
 /** Documented Trystero room options that Quest-Net varies per join. */
 export interface RoomJoinOptions {
-	callbacks?: RoomCallbacks;
-	passive?: JoinRoomConfig["passive"];
+	/**
+	 * Typed room errors (Trystero 0.27+): failed peer connections, relay
+	 * failures, decrypt/handshake failures. Replaces the old `onJoinError`.
+	 */
+	onError?: RoomErrorHandler;
 }
 
 /**
@@ -79,8 +62,8 @@ export interface RoomJoinOptions {
  * For connection info, use Room methods directly:
  *   - room.getPeers() → object with peer IDs as keys
  *   - Object.keys(room.getPeers()) → array of peer IDs
- *   - room.onPeerJoin = callback
- *   - room.onPeerLeave = callback
+ *   - room.onPeerJoin(({ peerId }) => ...) → returns an unsubscribe
+ *   - room.onPeerLeave(({ peerId }) => ...) → returns an unsubscribe
  */
 export const RoomService = {
 	/**
@@ -88,13 +71,10 @@ export const RoomService = {
 	 * Creates a new Trystero connection
 	 *
 	 * @param roomCode - The room code to join (e.g., "brave-dragon-42")
-	 * @param options - Documented Trystero callbacks and passive-room mode
+	 * @param options - Room error handler
 	 * @returns Room object with WebRTC connections
 	 */
-	join(
-		roomCode: string | undefined,
-		{ callbacks, passive = false }: RoomJoinOptions = {}
-	): Room {
+	join(roomCode: string | undefined, { onError }: RoomJoinOptions = {}): Room {
 		if (!roomCode) {
 			roomCode = "ROOMCODE";
 		}
@@ -102,32 +82,31 @@ export const RoomService = {
 		// `turnConfig` is APPENDED to Trystero's default STUN list (it does not
 		// replace it), so direct ICE still works and TURN is only a fallback.
 		// Omitted entirely rather than passed as undefined when unconfigured.
-		return joinRoom(
+		const room = joinRoom(
 			{
 				appId: APP_ID,
-				passive,
 				relayConfig: {
 					warnOnRelayFailure: WARN_ON_RELAY_FAILURE,
 					...(RELAY_URLS?.length ? { urls: RELAY_URLS } : {}),
 				},
 				...(TURN_CONFIG ? { turnConfig: TURN_CONFIG } : {}),
 			},
-			roomCode,
-			callbacks
+			roomCode
 		);
+		if (onError) room.onError(onError);
+		return room;
 	},
 
 	/**
-	 * Leave a room and clean up connections
+	 * Leave a room and clean up connections. Trystero frees the room slot
+	 * synchronously, so the same room can be joined again right away.
 	 *
 	 * @param room - The room to leave
 	 */
 	leave(room: Room): void {
-		try {
-			room.leave();
-		} catch (error) {
+		room.leave().catch((error) => {
 			console.error("[Room] Error leaving room:", error);
-		}
+		});
 	},
 
 	/**

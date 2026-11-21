@@ -2,8 +2,8 @@
 // join at once. Guards "players can't reach a DM who has been waiting unless the
 // DM refreshes" (dmotz/trystero#204, fixed in 0.26.0). Each player has ~50%
 // odds of hitting that bug, so four make a reliable check. Takes ~2 minutes.
-// Players should connect in about a second via the pose room; ~56s means they
-// fell back to waiting for the DM's next campaign announce (Nostr, every 60s).
+// Players should connect in about a second (they join the campaign room active);
+// ~56s means they fell back to waiting for the DM's next announce (Nostr, every 60s).
 //   node test-kit/run.mjs test-kit/scenarios/late-join.mjs
 import assert from "node:assert/strict";
 import { openPeer, waitForDm, ROOM_CODE } from "../kit.mjs";

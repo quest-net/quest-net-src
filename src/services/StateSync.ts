@@ -1,7 +1,7 @@
 // services/StateSync.ts
 
 import { Campaign } from "../domains/Campaign/Campaign";
-import { Room, type ActionSend } from "../domains/Room/Room";
+import { type Room, type ActionSend, ignoreGonePeer } from "../domains/Room/Room";
 import { applyPatch } from "fast-json-patch";
 import type { Operation } from "fast-json-patch";
 import { sanitizeCampaignForPlayers } from "./StateSyncSanitize";
@@ -85,7 +85,7 @@ export class StateSync {
 
 		// Listen for incoming state updates. We only need the data and the
 		// transport metadata (compression flags) from the message context.
-		stateSync.onMessage = (data, { metadata }) => this.receive(data, metadata);
+		stateSync.onMessage((data, { metadata }) => this.receive(data, metadata));
 	}
 
 	/**
@@ -223,7 +223,7 @@ export class StateSync {
 				this.sendState(transportUpdate.data, {
 					metadata: transportUpdate.metadata,
 					...(targetPeerId ? { target: targetPeerId } : {}),
-				});
+				}).catch(ignoreGonePeer);
 			});
 	}
 

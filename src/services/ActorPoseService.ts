@@ -41,22 +41,14 @@ export class ActorPoseService {
 
 		const actorPose = room.makeAction<any>("actorPose");
 		this.sendActorPosePacket = actorPose.send;
-		actorPose.onMessage = (data, { peerId }) => {
+		const offPose = actorPose.onMessage((data, { peerId }) => {
 			this.handleActorPose(data, peerId);
-		};
-
-		const previousOnPeerLeave = room.onPeerLeave;
-		const onPeerLeave = (peerId: string) => {
-			previousOnPeerLeave?.(peerId);
-			this.clearForPeer(peerId);
-		};
-		room.onPeerLeave = onPeerLeave;
+		});
+		const offLeave = room.onPeerLeave(({ peerId }) => this.clearForPeer(peerId));
 
 		this.detachPoseRoom = () => {
-			actorPose.onMessage = null;
-			if (room.onPeerLeave === onPeerLeave) {
-				room.onPeerLeave = previousOnPeerLeave;
-			}
+			offPose();
+			offLeave();
 			this.sendActorPosePacket = undefined;
 			this.clearLiveActorPoses();
 		};
