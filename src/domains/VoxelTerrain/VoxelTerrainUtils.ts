@@ -133,41 +133,6 @@ function validateActorPositionForTerrain(
 	};
 }
 
-function getOccupiedActorPositionKeys(
-	campaign: Campaign,
-	terrain: VoxelTerrain,
-	index: VoxelTerrainIndex,
-	excludeActorId?: string
-): Set<string> {
-	const occupied = new Set<string>();
-	const actors = [
-		...campaign.GameState.Entities,
-		...campaign.GameState.Characters,
-	];
-
-	for (const actor of actors) {
-		if (actor.Id === excludeActorId || isItemEntity(actor)) continue;
-		// Only actors that actually live on this terrain occupy its tiles.
-		if (actor.Position.terrainId !== terrain.Id) continue;
-
-		const validation = validateActorPositionForTerrain(
-			actor,
-			actor.Position,
-			terrain,
-			index
-		);
-		const position =
-			validation.ok
-				? validation.position
-				: normalizePositionForValidation(actor.Position, terrain);
-		if (position) {
-			occupied.add(positionKey(position));
-		}
-	}
-
-	return occupied;
-}
-
 function returnCharacterToRoster(
 	campaign: Campaign,
 	character: Character,
@@ -433,57 +398,6 @@ export const VoxelTerrainUtils = {
 				reason
 			);
 		}
-	},
-
-	validateActorMove(
-		actor: Actor,
-		position: Position,
-		campaign: Campaign
-	): ActorPositionValidationResult {
-		// Moves are intra-terrain: validate against the actor's OWN terrain, never
-		// a global "active" one. The target keeps the actor's terrainId.
-		const terrainId = actor.Position.terrainId;
-		const terrain = getVoxelTerrainById(campaign, terrainId);
-
-		// If this client does not have the terrain hydrated (e.g. the DM
-		// validating a player on a terrain it is not viewing and that is not
-		// tactically loaded), trust the submitted position -- the originating
-		// client validated it locally against its own fully-hydrated terrain.
-		if (!terrain || !TerrainStorageService.isHydrated(terrain)) {
-			if (
-				!Number.isFinite(position.x) ||
-				!Number.isFinite(position.y) ||
-				!Number.isFinite(position.h)
-			) {
-				return { ok: false, reason: "position is not finite" };
-			}
-			return {
-				ok: true,
-				position: {
-					terrainId,
-					x: position.x,
-					y: position.y,
-					h: position.h,
-				},
-				mode: isItemEntity(actor) ? "item" : "standing",
-			};
-		}
-
-		const index = getVoxelTerrainIndex(terrain);
-		const occupiedTiles = getOccupiedActorPositionKeys(
-			campaign,
-			terrain,
-			index,
-			actor.Id
-		);
-
-		return validateActorPositionForTerrain(
-			actor,
-			position,
-			terrain,
-			index,
-			occupiedTiles
-		);
 	},
 
 	findValidPosition(

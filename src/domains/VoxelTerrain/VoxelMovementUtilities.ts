@@ -13,7 +13,8 @@ import {
 import { roundVoxelPosition } from "./VoxelTerrainQueries";
 import {
 	getVoxelMovementAdjacency,
-	isCellStandable,
+	isAirCellOpen,
+	isSurfaceTransitionReachable,
 	VOXEL_MOVEMENT_DIRECTIONS,
 	type VoxelMovementAdjacency,
 } from "./VoxelMovementAdjacency";
@@ -128,31 +129,29 @@ export function shouldRestrictPlayerMovementToRange(
 // keeping them separate is what makes flyer-standable a superset of
 // walker-standable by construction:
 //
-//   - SURFACE (`allSurfaces`): a walkable surface exists at rules-height h. This
-//     is where a non-flyer can put its feet. It is detected per voxel sub-column
-//     (an exposed top, floored to rules height), so it can report a surface in a
-//     tactical tile even when a taller neighbouring sub-column fills the rest of
-//     that rules cell.
-//   - CLEARANCE (`isCellStandable`): the rules cell is not *fully* solid across
-//     the whole res*res footprint. This is the strict PASSAGE predicate -- it is
-//     what stops actors tunnelling through a wall via a one-voxel gap -- and it
-//     also serves as the flyer's open-air hover test.
+//   - SURFACE (`allSurfaces`): footing at rules-height h -- at least half the
+//     tile's sub-columns have an exposed top there with a full body
+//     (ACTOR_BODY_HEIGHT_TILES) of headroom. This is where a non-flyer can put
+//     its feet.
+//   - AIR (`isAirCellOpen`): at least half the tile's sub-columns are clear for a
+//     full body from h up. The flyer's open-air hover test.
 //
 // Standing rule:
-//   - non-flyer: SURFACE(h)                  (a detected surface is always standable)
-//   - flyer:     CLEARANCE(h) OR SURFACE(h)  (open air, or anywhere a walker can stand)
+//   - non-flyer: SURFACE(h)
+//   - flyer:     AIR(h) OR SURFACE(h)  (open air, or anywhere a walker can stand)
 //
 // Because SURFACE(h) appears in the flyer clause, every tile a walker can stand
-// on a flyer can stand on too. Actor size plays no part here -- it is purely
-// visual.
+// on a flyer can stand on too. Moving between tiles additionally needs the body
+// to fit through the crossing (`isSurfaceTransitionReachable`). Actor size plays no part
+// here -- it is purely visual.
 // ---------------------------------------------------------------------------
 
 /**
  * Whether a flyer may occupy the rules cell at (x, y, h): true in open air
- * (`isCellStandable`) OR on any walkable surface (`allSurfaces`). The surface
- * clause is what guarantees flyer-standable >= walker-standable even on rugged
- * sub-tactical terrain where a surface cell is not whole-tile-clear. Callers in
- * the Dijkstra hot loop must have already bounds/height-checked (x, y, h).
+ * (`isAirCellOpen`) OR on any walkable surface (`allSurfaces`). The surface
+ * clause is what guarantees flyer-standable >= walker-standable even where a
+ * fractional floor pokes into the air cell. Callers in the Dijkstra hot loop
+ * must have already bounds/height-checked (x, y, h).
  */
 function isFlyerStandableCell(
 	index: VoxelTerrainIndex,
@@ -160,7 +159,7 @@ function isFlyerStandableCell(
 	y: number,
 	h: number
 ): boolean {
-	if (isCellStandable(index, x, y, h)) return true;
+	if (isAirCellOpen(index, x, y, h)) return true;
 	return (index.allSurfaces.get(tileKey(x, y)) ?? []).includes(h);
 }
 
@@ -179,9 +178,8 @@ export function getMaxActorHeight(
  * The single standing authority. A non-flyer stands exactly on detected
  * surfaces (`allSurfaces`); a flyer stands on those surfaces OR hovers in any
  * open cell (`isFlyerStandableCell`). Flyer-standable is therefore a superset of
- * walker-standable by construction. (The strict whole-tile clearance rule lives
- * in `isCellStandable` and governs PASSAGE -- climbing through, tunnel
- * prevention -- not standing.)
+ * walker-standable by construction. (Moving between tiles is governed
+ * separately by `isSurfaceTransitionReachable` in VoxelMovementAdjacency.)
  */
 export function canStandVoxel(
 	terrain: VoxelTerrain,
@@ -360,7 +358,10 @@ export function calculateVoxelMovementRange(
 				const nx = current.x + dx;
 				const ny = current.y + dy;
 				if (!isVoxelTileInBounds(terrain, nx, ny)) continue;
-				if (isFlyerStandableCell(index, nx, ny, current.h)) {
+				if (
+					isFlyerStandableCell(index, nx, ny, current.h) &&
+					isSurfaceTransitionReachable(index, current.x, current.y, current.h, nx, ny, current.h)
+				) {
 					relax(nx, ny, current.h, currentCost + 1);
 				}
 			}

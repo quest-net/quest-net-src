@@ -50,7 +50,9 @@ export const ACTOR_CAPSULE_PHYSICS = {
 	GROUND_SNAP_DISTANCE: 0.16,
 	MAX_SUBSTEP_DISTANCE: 0.055,
 	MAX_SUBSTEPS: 24,
-	CAPSULE_HEAD_CLEARANCE: 0.24,
+	// Capsule height is ACTOR_BODY_HEIGHT_TILES minus this, so it still clears a
+	// doorway exactly that tall.
+	CAPSULE_HEADROOM_GAP: 0.05,
 	COLLISION_EPSILON: 0.000001,
 	SETTLED_SPEED: 0.045,
 	// Hard floor for the capsule feet (position.y). This is the voxel-grid base

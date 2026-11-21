@@ -414,6 +414,12 @@ export const terrainsAndVoxelsPage: WikiPage = {
 									"Climbing can add cost from the campaign movement settings lookup table.",
 							},
 							{
+								title: "Body size",
+								tone: "secondary",
+								body:
+									"Every actor moves as a 1 x 1 x 2 tile body. A tile is somewhere to stand when at least half of it is floor with 2 tiles of headroom. A step between tiles needs a gap at least half a tile wide and 2 tiles tall, so walls block even when thinner than a tile, while bumps under half a tile are just steps.",
+							},
+							{
 								title: "Flying extras",
 								tone: "info",
 								body:

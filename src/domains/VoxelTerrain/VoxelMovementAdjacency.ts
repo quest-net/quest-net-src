@@ -16,8 +16,8 @@
 // What's in the graph:
 //   For each surface tile (x, y, h), the list of neighboring surface tiles
 //   (nx, ny, nh) directly reachable in one cardinal step, where the edge is
-//   "isSurfaceTransitionReachable" (i.e. no voxel column blocks the climb /
-//   descent between the two exact surface heights).
+//   "isSurfaceTransitionReachable": the body (see "Body rules" below) can climb
+//   or drop in the right tile and fits through the crossing between the tiles.
 //
 // What's NOT in the graph:
 //   - Flier-over-non-empty-tile shortcuts that let the actor preserve its
@@ -31,7 +31,7 @@
 // is gone, the adjacency for that revision is also useless -- but we keep them
 // independent to avoid coupling the modules.
 
-import type { VoxelTerrain } from "./VoxelTerrain";
+import { ACTOR_BODY_HEIGHT_TILES, type VoxelTerrain } from "./VoxelTerrain";
 import {
 	createTerrainRevision,
 	getVoxelTerrainIndex,
@@ -84,46 +84,148 @@ const EMPTY_NEIGHBORS_BY_DIRECTION: readonly (readonly VoxelMovementNeighbor[])[
 		VOXEL_MOVEMENT_DIRECTIONS.map(() => EMPTY_DIRECTION_BUCKET)
 	);
 
+// ---------------------------------------------------------------------------
+// Body rules. Every actor is a 1 x 1 x ACTOR_BODY_HEIGHT_TILES box for grid
+// movement (size is visual only):
+//   - AIR (`isAirCellOpen`): a flyer can hover at rules-height h when at least
+//     half of the tile's sub-columns are clear for a full body from h up.
+//   - PASSAGE (`canPassBetweenTiles`): a step between two neighbouring tiles
+//     needs an open lane at least half a tile wide, clear for a full body, along
+//     the strip from one tile's centre to the other's. This is what makes walls
+//     thinner than a tile (and one-voxel gaps in them) block movement, matching
+//     first-person collision and line of sight. Voxels less than half a tile
+//     above the body's base are steps, not obstacles.
+// Walking footing (half a tile of floor with a full body of headroom) is
+// computed by the terrain index itself (`allSurfaces`).
+// ---------------------------------------------------------------------------
+
+const passageCache = new WeakMap<VoxelTerrainIndex, Map<number, boolean>>();
+const airCache = new WeakMap<VoxelTerrainIndex, Map<number, boolean>>();
+
+function cacheFor(
+	caches: WeakMap<VoxelTerrainIndex, Map<number, boolean>>,
+	index: VoxelTerrainIndex
+): Map<number, boolean> {
+	let cache = caches.get(index);
+	if (!cache) caches.set(index, (cache = new Map()));
+	return cache;
+}
+
 /**
- * PASSAGE / clearance predicate: whether the tactical cell at rules-height `h`
- * over (x, y) is open enough to pass through -- clear unless the cell is *fully*
- * covered by solid voxels across the whole res*res footprint. This strictness is
- * deliberate: it is what stops actors tunnelling through a wall via a one-voxel
- * gap. It governs the non-flyer climb/step clearance below and the flyer's
- * open-air hover test, but it is NOT the standing authority -- a walkable surface
- * (`allSurfaces`) can exist in a cell this rejects (a low surface beside a taller
- * sub-column pillar), and such surfaces are standable. See `canStandVoxel` in
- * VoxelMovementUtilities for the single standing rule. "Not fully covered" rather
- * than "no solid voxel" is what lets actors rest or pass just above terrain whose
- * exact surface height is fractional -- the integer rules-height plane falls
- * inside the straddling surface voxel.
+ * Exact height (tactical units) an actor's feet rest at in rules cell (x, y, h):
+ * the highest footing at that rules height, or the cell floor `h` when the tile
+ * has none there (a flyer in open air).
  */
-export function isCellStandable(
+function getCellBaseHeight(
+	index: VoxelTerrainIndex,
+	x: number,
+	y: number,
+	h: number
+): number {
+	let base = h;
+	for (const exact of index.allSurfaceHeights.get(tileKey(x, y)) ?? []) {
+		if (Math.floor(exact) === h && exact > base) base = exact;
+	}
+	return base;
+}
+
+/** Whether a flyer's body fits at rules-height h over (x, y) in open air. */
+export function isAirCellOpen(
 	index: VoxelTerrainIndex,
 	x: number,
 	y: number,
 	h: number
 ): boolean {
 	if (h < 0) return false;
-	const { resolution } = index;
-	const startVoxelY = Math.max(0, Math.floor(h * resolution));
-	const endVoxelY = Math.max(startVoxelY, Math.floor((h + 1) * resolution) - 1);
-	for (let voxelY = startVoxelY; voxelY <= endVoxelY; voxelY++) {
-		if (!index.isVoxelOccupiedAtTile(x, y, voxelY)) return true;
+	const key = x + index.width * (y + index.length * h);
+	const cache = cacheFor(airCache, index);
+	const cached = cache.get(key);
+	if (cached !== undefined) return cached;
+
+	const res = index.resolution;
+	const open = isHalfTileClear(index, x, y, h * res, (h + ACTOR_BODY_HEIGHT_TILES) * res);
+	cache.set(key, open);
+	return open;
+}
+
+/** Whether at least half of tile (x, y)'s sub-columns have no solid voxel in [vy0, vy1). */
+function isHalfTileClear(
+	index: VoxelTerrainIndex,
+	x: number,
+	y: number,
+	vy0: number,
+	vy1: number
+): boolean {
+	const res = index.resolution;
+	let clearColumns = 0;
+	for (let vz = y * res; vz < (y + 1) * res; vz++) {
+		for (let vx = x * res; vx < (x + 1) * res; vx++) {
+			let clear = true;
+			for (let vy = vy0; vy < vy1 && clear; vy++) {
+				if (index.hasVoxel(vx, vy, vz)) clear = false;
+			}
+			if (clear) clearColumns++;
+		}
 	}
-	return false;
+	return clearColumns * 2 >= res * res;
 }
 
 /**
- * Whether a non-flyer can step from surface (fromX, fromY, fromH) onto neighbor
- * surface (toX, toY, toH). Climbing, the actor rises through its own column;
- * stepping down, it descends through the destination column -- and every cell it
- * passes through must be standable, the SAME occupancy rule a flyer uses. Pure
- * function of terrain geometry, used only during the adjacency build; once the
- * graph exists, callers read precomputed neighbor heights via
- * getNeighborsByDirection() instead.
+ * Whether a body standing at `baseHeight` (exact tactical units) fits through
+ * from tile (ax, ay) to its cardinal neighbour (bx, by). Symmetric in a and b.
  */
-function isSurfaceTransitionReachable(
+function canPassBetweenTiles(
+	index: VoxelTerrainIndex,
+	ax: number,
+	ay: number,
+	bx: number,
+	by: number,
+	baseHeight: number
+): boolean {
+	const res = index.resolution;
+	const baseVoxel = Math.round(baseHeight * res);
+	const alongX = ay === by;
+	const lo = Math.min(alongX ? ax : ay, alongX ? bx : by);
+	const across = alongX ? ay : ax;
+	const span = Math.max(index.width, index.length);
+	const key = ((lo + span * across) * 2 + (alongX ? 0 : 1)) * 4096 + baseVoxel;
+	const cache = cacheFor(passageCache, index);
+	const cached = cache.get(key);
+	if (cached !== undefined) return cached;
+
+	// The strip from the near tile's centre to the far tile's centre.
+	const u0 = lo * res + Math.floor(res / 2);
+	const u1 = (lo + 1) * res + Math.ceil(res / 2) - 1;
+	const vy0 = baseVoxel + Math.floor(res / 2);
+	const vy1 = baseVoxel + ACTOR_BODY_HEIGHT_TILES * res;
+	const minLane = Math.ceil(res / 2);
+	let lane = 0;
+	let open = false;
+	for (let w = across * res; w < (across + 1) * res && !open; w++) {
+		let clear = true;
+		for (let u = u0; u <= u1 && clear; u++) {
+			for (let vy = vy0; vy < vy1 && clear; vy++) {
+				if (alongX ? index.hasVoxel(u, vy, w) : index.hasVoxel(w, vy, u)) clear = false;
+			}
+		}
+		lane = clear ? lane + 1 : 0;
+		if (lane >= minLane) open = true;
+	}
+	cache.set(key, open);
+	return open;
+}
+
+/**
+ * Whether a body can step from rules cell (fromX, fromY, fromH) to the
+ * neighbouring cell (toX, toY, toH). Climbing, the body rises in its own tile,
+ * then moves across above both floors; stepping down, it moves across, then
+ * drops in the destination tile. The rise or drop needs half the tile clear
+ * from just above the lower floor (minus the step allowance) to a full body
+ * above the higher one, which stops climbing up through a thin ceiling.
+ * Walkers use it through the cached adjacency graph; flyers call it directly
+ * for same-altitude steps.
+ */
+export function isSurfaceTransitionReachable(
 	index: VoxelTerrainIndex,
 	fromX: number,
 	fromY: number,
@@ -132,21 +234,17 @@ function isSurfaceTransitionReachable(
 	toY: number,
 	toH: number
 ): boolean {
-	if (toH === fromH) return true;
-
-	if (toH > fromH) {
-		// Climb: rise through the from-column from just above fromH up to toH.
-		for (let h = fromH + 1; h <= toH; h++) {
-			if (!isCellStandable(index, fromX, fromY, h)) return false;
-		}
-		return true;
+	const fromBase = getCellBaseHeight(index, fromX, fromY, fromH);
+	const toBase = getCellBaseHeight(index, toX, toY, toH);
+	const top = Math.max(fromBase, toBase);
+	if (fromBase !== toBase) {
+		const [x, y, low] = toBase > fromBase ? [fromX, fromY, fromBase] : [toX, toY, toBase];
+		const res = index.resolution;
+		const vy0 = Math.round(low * res) + Math.floor(res / 2);
+		const vy1 = Math.round(top * res) + ACTOR_BODY_HEIGHT_TILES * res;
+		if (!isHalfTileClear(index, x, y, vy0, vy1)) return false;
 	}
-
-	// Step down: descend through the to-column from just above toH up to fromH.
-	for (let h = toH + 1; h <= fromH; h++) {
-		if (!isCellStandable(index, toX, toY, h)) return false;
-	}
-	return true;
+	return canPassBetweenTiles(index, fromX, fromY, toX, toY, top);
 }
 
 /**

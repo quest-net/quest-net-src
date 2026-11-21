@@ -4,7 +4,6 @@
 // bytes once per revision and exposes the queries used by collision, geometry
 // building, movement, actor placement, and the editor:
 //   - hasVoxel(x, y, z)               -- collision / face culling / AO
-//   - isVoxelOccupiedAtTile(...)      -- actor flight clearance
 //   - allSurfaces / allSurfaceHeights -- per-tactical-tile walkable surfaces
 //   - maxSurfaceHeight                -- global ceiling for framing / spawning
 //
@@ -16,6 +15,7 @@
 // keying never depends on the multi-megabyte voxel buffer.
 
 import {
+	ACTOR_BODY_HEIGHT_TILES,
 	DEFAULT_TERRAIN_RESOLUTION,
 	type EditableVoxelTerrain,
 	type Voxel,
@@ -70,9 +70,10 @@ export interface VoxelTerrainIndex {
 	// Size of one voxel in tactical units (= 1 / resolution).
 	readonly voxelSize: number;
 	readonly maxSurfaceHeight: number;
-	// Per-tactical-tile walkable surfaces. Keys: `${tileX},${tileY}`.
+	// Per-tactical-tile walkable surfaces ("footing": headroom for a full body
+	// over at least half the tile -- see buildVoxelTerrainIndex). Keys: `${tileX},${tileY}`.
 	// `allSurfaces`       -- rules-height integers (Math.floor of exact).
-	// `allSurfaceHeights` -- exact sub-tactical heights, for rendering.
+	// `allSurfaceHeights` -- exact sub-tactical heights of those footings, for rendering.
 	readonly allSurfaces: ReadonlyMap<string, readonly number[]>;
 	readonly allSurfaceHeights: ReadonlyMap<string, readonly number[]>;
 	/** Whether (vx, vy, vz) is inside the voxel grid. The single bounds authority. */
@@ -80,7 +81,6 @@ export interface VoxelTerrainIndex {
 	hasVoxel(vx: number, vy: number, vz: number): boolean;
 	/** hasVoxel minus see-through materials (glass, bars): what blocks line of sight. */
 	blocksSight(vx: number, vy: number, vz: number): boolean;
-	isVoxelOccupiedAtTile(tileX: number, tileY: number, voxelY: number): boolean;
 }
 
 /**
@@ -254,50 +254,61 @@ export function buildVoxelTerrainIndex(
 		if (voxel.y > maxVoxelY) maxVoxelY = voxel.y;
 	}
 
-	// Walkable surfaces by tactical tile: a voxel is a top surface if nothing
-	// sits directly above it in the same sub-column. Collect both rules-height
-	// (floor) and exact heights so renderers can step sub-tactically.
-	const rulesSets = new Map<string, Set<number>>();
-	const exactSets = new Map<string, Set<number>>();
+	// Passable materials (e.g. water) are invisible to collision / raycast / FP
+	// capsule, and never bury the solid voxel beneath them.
+	const isSolidAt = (vx: number, vy: number, vz: number): boolean => {
+		const color = colorAt(vx, vy, vz);
+		return color !== 0 && !isPassableMaterial(color - 1);
+	};
+
+	// Walkable surfaces by tactical tile ("footing"). A solid voxel top is footing
+	// when nothing solid sits in the ACTOR_BODY_HEIGHT_TILES of its sub-column
+	// above it (air above the grid counts as clear). A rules height is standable
+	// in a tile only when footing covers at least half of the tile's res*res
+	// sub-columns, so posts, fence tops and crawlspaces are never somewhere to
+	// stand. Collect both rules-height (floor) and exact heights so renderers can
+	// step sub-tactically.
+	const bodyVoxels = ACTOR_BODY_HEIGHT_TILES * resolution;
+	const minFootingColumns = (resolution * resolution) / 2;
+	const footings = new Map<string, Map<number, { columns: number; exact: Set<number> }>>();
 	for (const voxel of decoded) {
-		if (!inVoxelBounds(voxel.x, voxel.y, voxel.z)) {
-			continue;
+		if (!inVoxelBounds(voxel.x, voxel.y, voxel.z)) continue;
+		if (isPassableMaterial(voxel.color & 0xff)) continue;
+
+		let clear = true;
+		const clearTop = Math.min(voxel.y + bodyVoxels, voxelHeight - 1);
+		for (let vy = voxel.y + 1; vy <= clearTop && clear; vy++) {
+			if (isSolidAt(voxel.x, vy, voxel.z)) clear = false;
 		}
-		// Passable materials (e.g. water) are never a walkable surface.
-		if (isPassableMaterial(voxel.color & 0xff)) {
-			continue;
-		}
-		// A voxel is a surface only if no *solid* voxel sits directly above it.
-		// A passable voxel above (e.g. water resting on ground) does not bury
-		// the solid voxel beneath -- the ground stays walkable.
-		const aboveColor =
-			voxel.y + 1 < voxelHeight
-				? colorAt(voxel.x, voxel.y + 1, voxel.z)
-				: 0;
-		if (aboveColor !== 0 && !isPassableMaterial(aboveColor - 1)) continue;
+		if (!clear) continue;
 
 		const key = tileKey(
 			Math.floor(voxel.x / resolution),
 			Math.floor(voxel.z / resolution)
 		);
-
-		let rules = rulesSets.get(key);
-		if (!rules) rulesSets.set(key, (rules = new Set()));
-		rules.add(voxelTopToRulesHeight(voxel.y, resolution));
-
-		let exact = exactSets.get(key);
-		if (!exact) exactSets.set(key, (exact = new Set()));
-		exact.add(voxelTopToTacticalHeight(voxel.y, resolution));
+		const rulesH = voxelTopToRulesHeight(voxel.y, resolution);
+		let byRules = footings.get(key);
+		if (!byRules) footings.set(key, (byRules = new Map()));
+		let footing = byRules.get(rulesH);
+		if (!footing) byRules.set(rulesH, (footing = { columns: 0, exact: new Set() }));
+		footing.columns++;
+		footing.exact.add(voxelTopToTacticalHeight(voxel.y, resolution));
 	}
 
 	const sortAsc = (a: number, b: number) => a - b;
 	const allSurfaces = new Map<string, readonly number[]>();
-	for (const [key, set] of rulesSets) {
-		allSurfaces.set(key, [...set].sort(sortAsc));
-	}
 	const allSurfaceHeights = new Map<string, readonly number[]>();
-	for (const [key, set] of exactSets) {
-		allSurfaceHeights.set(key, [...set].sort(sortAsc));
+	for (const [key, byRules] of footings) {
+		const rules: number[] = [];
+		const exact: number[] = [];
+		for (const [rulesH, footing] of byRules) {
+			if (footing.columns < minFootingColumns) continue;
+			rules.push(rulesH);
+			exact.push(...footing.exact);
+		}
+		if (rules.length === 0) continue;
+		allSurfaces.set(key, rules.sort(sortAsc));
+		allSurfaceHeights.set(key, exact.sort(sortAsc));
 	}
 
 	const width = terrain.Width;
@@ -318,10 +329,7 @@ export function buildVoxelTerrainIndex(
 		allSurfaceHeights,
 		inVoxelBounds,
 		hasVoxel(vx, vy, vz) {
-			if (!inVoxelBounds(vx, vy, vz)) return false;
-			const color = colorAt(vx, vy, vz);
-			// Passable materials are invisible to collision / raycast / FP capsule.
-			return color !== 0 && !isPassableMaterial(color - 1);
+			return inVoxelBounds(vx, vy, vz) && isSolidAt(vx, vy, vz);
 		},
 		blocksSight(vx, vy, vz) {
 			if (!inVoxelBounds(vx, vy, vz)) return false;
@@ -331,26 +339,6 @@ export function buildVoxelTerrainIndex(
 				!isPassableMaterial(color - 1) &&
 				!isSeeThroughMaterial(color - 1)
 			);
-		},
-		isVoxelOccupiedAtTile(tileX, tileY, voxelY) {
-			if (voxelY < 0 || voxelY >= voxelHeight) return false;
-			const startX = tileX * resolution;
-			const endX = startX + resolution;
-			const startZ = tileY * resolution;
-			const endZ = startZ + resolution;
-			if (
-				startX < 0 || startZ < 0 ||
-				startX >= voxelWidth || startZ >= voxelLength
-			) {
-				return false;
-			}
-			for (let vz = startZ; vz < endZ; vz++) {
-				for (let vx = startX; vx < endX; vx++) {
-					const color = colorAt(vx, voxelY, vz);
-					if (color !== 0 && !isPassableMaterial(color - 1)) return true;
-				}
-			}
-			return false;
 		},
 	};
 }

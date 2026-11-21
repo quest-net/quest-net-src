@@ -60,6 +60,13 @@ export const MAX_HEIGHT = 64;
  */
 export const DEFAULT_TERRAIN_RESOLUTION = 1;
 
+/**
+ * Height of the body grid movement reserves for every actor (an actor is a
+ * 1 x 1 x ACTOR_BODY_HEIGHT_TILES box): standing needs this much headroom, and
+ * so does every step between tiles. Actor size stays visual only.
+ */
+export const ACTOR_BODY_HEIGHT_TILES = 2;
+
 /** Tactical units above the surface a flyer spawns at. */
 export const FLYING_SPAWN_ELEVATION = 2;
 

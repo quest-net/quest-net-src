@@ -1,12 +1,12 @@
 import * as THREE from "three";
 import type { Position } from "../../../domains/Actor/Actor";
-import type { VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
+import { ACTOR_BODY_HEIGHT_TILES, type VoxelTerrain } from "../../../domains/VoxelTerrain/VoxelTerrain";
 import { tileKey, type VoxelTerrainIndex } from "../../../utils/terrain/data/VoxelTerrainIndex";
 import {
 	ACTOR_TOKEN_DESCRIPTOR_DEFAULTS,
 	ACTOR_TOKEN_PLACEMENT,
 } from "../Actors3D/actorTokenConstants";
-import { actorToGroundWorld, getEyeHeight } from "./actor";
+import { actorToGroundWorld } from "./actor";
 import {
 	ACTOR_CONTROLS,
 	ACTOR_CAPSULE_PHYSICS,
@@ -88,10 +88,9 @@ function pointIntervalDistance(value: number, min: number, max: number): number 
 function getCapsuleDimensions(actor: LocomotionActor): CapsuleDimensions {
 	const size = actor.actor.Size ?? ACTOR_TOKEN_DESCRIPTOR_DEFAULTS.SIZE;
 	const radius = ACTOR_CAPSULE_PHYSICS.RADIUS_BY_SIZE[size];
-	const height = Math.max(
-		radius * 2 + 0.05,
-		getEyeHeight(actor.actor) + ACTOR_CAPSULE_PHYSICS.CAPSULE_HEAD_CLEARANCE
-	);
+	// As tall as the grid movement body, so first person never fits where the
+	// grid can't stand (repairActors would later move the actor out).
+	const height = ACTOR_BODY_HEIGHT_TILES - ACTOR_CAPSULE_PHYSICS.CAPSULE_HEADROOM_GAP;
 	return { radius, height };
 }
 
