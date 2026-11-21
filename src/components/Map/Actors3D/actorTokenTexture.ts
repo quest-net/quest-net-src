@@ -36,8 +36,8 @@ export function getActorTokenWorldSize(
 
 interface TextureLoaderOptions {
 	imageService?: ImageService | null;
-	// When true, all tokens rasterize at BASE_SIZE. When false, character
-	// tokens use the higher resolution (see resolveActorTokenResolution).
+	// When true, all tokens rasterize at BASE_SIZE, otherwise at HIGH_RES_SIZE
+	// (see resolveActorTokenResolution).
 	performanceMode?: boolean;
 }
 
@@ -272,7 +272,7 @@ export async function createActorTokenTexture(
 	actor: ActorTokenDescriptor,
 	options: TextureLoaderOptions
 ): Promise<THREE.Texture> {
-	const size = resolveActorTokenResolution(actor.kind, options.performanceMode ?? false);
+	const size = resolveActorTokenResolution(options.performanceMode ?? false);
 	const canvas = document.createElement("canvas");
 	canvas.width = size;
 	canvas.height = size;

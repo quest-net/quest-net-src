@@ -38,6 +38,10 @@ switching off when the DM views a terrain the selected actor isn't on, then
 stands the actor in a lab of walls, roofs, a pit and an upper floor and sweeps
 ~450 iso/perspective cameras, asserting the cutout always reveals the token
 (report in `test-kit/out/see-through.json`).
+`token-res-bench.mjs` (~4 min, headed, vsync off) benchmarks token texture
+resolution (512 / 1024 / 2048) with 35 tokens and 2048px portraits:
+load blocking, frame times and texture memory (report in
+`test-kit/out/token-res-bench.json`).
 A scenario can `export const options`
 for `startKit`, e.g. `{ characters: ["Beast Tamer", null] }` to choose which
 character each player claims (`null` leaves that player on character select).

@@ -157,12 +157,14 @@ export async function openPeer(kit, name) {
  *   fixture   path to a CampaignExportData JSON, or null to start with no campaign
  *   headed    show the browser windows
  *   port      Vite port (default 3100, so it never collides with `npm run dev`)
+ *   chromeArgs  extra Chrome flags (e.g. uncapped frame rate for benchmarks)
  */
 export async function startKit({
 	players = 2,
 	characters: characterNames,
 	fixture = FIXTURE_PATH,
 	headed = false,
+	chromeArgs = [],
 	port = 3100,
 	relayPort = 7777,
 	verbose = false,
@@ -184,7 +186,7 @@ export async function startKit({
 		headless: !headed,
 		// Without this, WebRTC hides host candidates behind mDNS names that
 		// often fail to resolve between local contexts.
-		args: ["--disable-features=WebRtcHideLocalIpsWithMdns"],
+		args: ["--disable-features=WebRtcHideLocalIpsWithMdns", ...chromeArgs],
 	});
 
 	kit.dm = await openPeer(kit, "DM");

@@ -1,5 +1,4 @@
 import type { ActorSize, Position } from "../../../domains/Actor/Actor";
-import type { ActorKind } from "./actorTokenTypes";
 
 export const ACTOR_TOKEN_DESCRIPTOR_DEFAULTS = {
 	POSITION: { terrainId: "", x: 0, y: 0, h: 0 } satisfies Position,
@@ -14,28 +13,21 @@ export const ACTOR_TOKEN_TEXTURE = {
 	// (renderSize / BASE_SIZE), so a token looks identical regardless of the
 	// canvas resolution it was rasterized at.
 	BASE_SIZE: 512,
-	// Higher resolution used for character tokens when performance mode is off.
-	// Characters carry the player-facing portraits that get inspected up close,
-	// so the extra detail is worth the GPU memory (~4x the texture footprint).
-	// Entities always render at BASE_SIZE -- see resolveActorTokenResolution.
-	CHARACTER_HIGH_RES_SIZE: 1024,
+	// Resolution for every token when performance mode is off. 2048 was
+	// benchmarked (test-kit/scenarios/token-res-bench.mjs): no frame-time gain
+	// over 1024 but ~4x the memory (~21 MB VRAM per token) and ~2s of load stutter.
+	HIGH_RES_SIZE: 1024,
 	TEXT_FILL: "#ffffff",
 } as const;
 
 /**
- * Resolves the canvas resolution to rasterize an actor token at. Entities are
- * always BASE_SIZE; characters get CHARACTER_HIGH_RES_SIZE unless performance
- * mode is on. The source portrait may be up to 2048px (see Image upload), so
- * the higher resolution recovers real detail that BASE_SIZE would discard.
+ * Resolves the canvas resolution to rasterize an actor token at: HIGH_RES_SIZE,
+ * or BASE_SIZE in performance mode. The source portrait may be up to 2048px
+ * (see Image upload), so the higher resolution recovers real detail that
+ * BASE_SIZE would discard.
  */
-export function resolveActorTokenResolution(
-	kind: ActorKind,
-	performanceMode: boolean
-): number {
-	if (kind === "entity" || performanceMode) {
-		return ACTOR_TOKEN_TEXTURE.BASE_SIZE;
-	}
-	return ACTOR_TOKEN_TEXTURE.CHARACTER_HIGH_RES_SIZE;
+export function resolveActorTokenResolution(performanceMode: boolean): number {
+	return performanceMode ? ACTOR_TOKEN_TEXTURE.BASE_SIZE : ACTOR_TOKEN_TEXTURE.HIGH_RES_SIZE;
 }
 
 export const ACTOR_TOKEN_PLACEHOLDER = {

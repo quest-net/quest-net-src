@@ -83,8 +83,8 @@ interface ThreeDActorLayerProps {
 	terrainIndex: VoxelTerrainIndex;
 	isDM: boolean;
 	// Gates token texture resolution: when true all tokens use BASE_SIZE; when
-	// false character tokens rasterize at higher resolution for crisper
-	// close-up portraits. See resolveActorTokenResolution.
+	// false they rasterize at HIGH_RES_SIZE for crisper close-ups. See
+	// resolveActorTokenResolution.
 	performanceMode: boolean;
 	xRayActors?: boolean;
 	imageService?: ImageService | null;
