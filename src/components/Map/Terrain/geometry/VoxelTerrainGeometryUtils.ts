@@ -60,8 +60,21 @@ export interface VoxelTerrainOccupancy {
 	worldSizeZ: number;
 	/** One TRUE voxel in world units (= 1 / resolution), not the grid-cell size. */
 	voxelSize: number;
-	/** RGBA light field on the same grid (rgb = glow, a = sky). Occupancy only. */
-	light?: Uint8Array;
+	/**
+	 * Light field on the same grid, cropped to where it varies (see
+	 * wasm/voxel-mesher/src/light.rs). A missing volume means its constant:
+	 * open sky / no glow. Occupancy only; absent in performance mode.
+	 */
+	light?: {
+		sky: VoxelLightVolume<Uint8Array> | null;
+		glow: VoxelLightVolume<Uint16Array> | null;
+	};
+}
+
+/** Cropped light volume: `data` covers `region` = [x0, y0, z0, w, h, l] grid cells. */
+export interface VoxelLightVolume<T extends Uint8Array | Uint16Array> {
+	data: T;
+	region: Uint32Array;
 }
 
 /**

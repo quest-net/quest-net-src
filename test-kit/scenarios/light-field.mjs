@@ -92,7 +92,8 @@ export default async function lightField(kit) {
 	const anchorWarnings = dm.logs.filter((line) => line.includes("Voxel light: shader anchor missing"));
 	assert.deepEqual(anchorWarnings, [], "light field patch applied to every terrain shader");
 
-	// Mesher cost (median of 5): this map, then a synthetic 64x16x64 @ res 3.
+	// Mesher cost (median of 5) and light-field size: this map, a synthetic
+	// 64x16x64 @ res 3, and a max-size 64x64x64 @ res 3.
 	const timings = await dm.eval(async (qn) => {
 		const { encodeVoxels } = await qn.import("utils/terrain/data/VoxelDataUtils.ts");
 		const { MATERIAL_LOOKUP } = await qn.import("components/Map/Terrain/materials/index.ts");
@@ -120,16 +121,27 @@ export default async function lightField(kit) {
 			if (z % 30 === 0) big.push({ x, y: 2, z, color: 245 });
 		}
 		const bigSvo = encodeVoxels(big);
-		// Performance mode passes sky radius 0: no light field at all.
-		const perfBuild = mesher.build_from_svo(bigSvo, 64, 16, 64, 3, 1, 0, 5);
-		const perfLightBytes = perfBuild.take_light().length;
-		perfBuild.free();
+		// Max-size map (64^3 tiles @ res 3): the same layout plus towers to near
+		// the top, so the sky volume has to span the full height.
+		const cap = [...big];
+		for (let x = 24; x < 192; x += 48) for (let z = 24; z < 192; z += 48) for (let y = 3; y < 180; y++) cap.push({ x, y, z, color: 240 });
+		const capSvo = encodeVoxels(cap);
+		// Light-field bytes the worker would ship (works on the old RGBA8 API too).
+		const lightBytes = (svo, w, h, l, skyRadius = 3) => {
+			const b = mesher.build_from_svo(svo, w, h, l, 3, 1, skyRadius, 5);
+			const bytes = b.take_light ? b.take_light().length : b.take_sky().byteLength + b.take_glow().byteLength;
+			b.free();
+			return bytes;
+		};
 		return {
 			forestMs: time(resolveTerrainVoxels(forest), forest.Width, forest.Height, forest.Length, forest.Resolution ?? 1),
 			big64Res3Ms: time(bigSvo, 64, 16, 64, 3),
 			big64Res3PerfModeMs: time(bigSvo, 64, 16, 64, 3, 0),
-			perfLightBytes,
-			big64Res3Voxels: big.length,
+			big64Res3LightBytes: lightBytes(bigSvo, 64, 16, 64),
+			cap64Res3Ms: time(capSvo, 64, 64, 64, 3),
+			cap64Res3LightBytes: lightBytes(capSvo, 64, 64, 64),
+			// Performance mode passes sky radius 0: no light field at all.
+			perfLightBytes: lightBytes(bigSvo, 64, 16, 64, 0),
 		};
 	});
 	console.log("timings:", JSON.stringify(timings));

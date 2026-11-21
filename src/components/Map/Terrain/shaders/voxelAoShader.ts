@@ -13,7 +13,7 @@
 // same darkest-stop the old per-vertex curve used.
 
 import * as THREE from 'three';
-import type { VoxelTerrainOccupancy } from '../geometry/VoxelTerrainGeometryUtils';
+import type { VoxelLightVolume, VoxelTerrainOccupancy } from '../geometry/VoxelTerrainGeometryUtils';
 
 /** World-space radius of the AO falloff kernel, in tactical units. */
 export const VOXEL_AO_FALLOFF_RADIUS = 0.25;
@@ -35,13 +35,24 @@ export const VOXEL_LIGHT = {
 } as const;
 
 /**
+ * One cropped light volume as a texture plus the world-space box it covers.
+ * Outside the box the shader uses the volume's constant (sky 1, glow 0).
+ */
+export interface VoxelLightBox {
+	texture: THREE.Data3DTexture;
+	origin: THREE.Vector3;
+	size: THREE.Vector3;
+}
+
+/**
  * Main-thread wrapper around the worker's voxel-occupancy snapshot, ready to
- * bind as the AO sampler uniform. `light` is the RGBA light field on the same
- * grid (rgb = glow, a = sky), or a 1x1x1 "open sky, no glow" placeholder.
+ * bind as the AO sampler uniform. `sky` (R8) and `glow` (RGBA4) are the
+ * cropped light field volumes, or 1x1x1 neutral placeholders (open sky, no glow).
  */
 export interface VoxelAoTexture {
 	texture: THREE.Data3DTexture;
-	light: THREE.Data3DTexture;
+	sky: VoxelLightBox;
+	glow: VoxelLightBox;
 	origin: THREE.Vector3;
 	size: THREE.Vector3;
 	voxelSize: number;
@@ -49,18 +60,18 @@ export interface VoxelAoTexture {
 
 export function disposeVoxelAoTexture(ao: VoxelAoTexture): void {
 	ao.texture.dispose();
-	ao.light.dispose();
+	ao.sky.texture.dispose();
+	ao.glow.texture.dispose();
 }
 
-function createLightFieldTexture(
-	data: Uint8Array,
-	width: number,
-	height: number,
-	length: number
+function createLightTexture(
+	data: Uint8Array | Uint16Array,
+	[width, height, length]: Iterable<number>,
+	glow: boolean
 ): THREE.Data3DTexture {
 	const texture = new THREE.Data3DTexture(data, width, height, length);
-	texture.format = THREE.RGBAFormat;
-	texture.type = THREE.UnsignedByteType;
+	texture.format = glow ? THREE.RGBAFormat : THREE.RedFormat;
+	texture.type = glow ? THREE.UnsignedShort4444Type : THREE.UnsignedByteType;
 	texture.magFilter = THREE.LinearFilter;
 	texture.minFilter = THREE.LinearFilter;
 	texture.wrapS = THREE.ClampToEdgeWrapping;
@@ -71,8 +82,32 @@ function createLightFieldTexture(
 	return texture;
 }
 
-const createOpenSkyLightTexture = () =>
-	createLightFieldTexture(new Uint8Array([0, 0, 0, 255]), 1, 1, 1);
+const neutralLightBox = (glow: boolean): VoxelLightBox => ({
+	texture: createLightTexture(glow ? new Uint16Array([0]) : new Uint8Array([255]), [1, 1, 1], glow),
+	origin: new THREE.Vector3(0, 0, 0),
+	size: new THREE.Vector3(1, 1, 1),
+});
+
+function createLightBox(
+	volume: VoxelLightVolume<Uint8Array | Uint16Array> | null | undefined,
+	occupancy: VoxelTerrainOccupancy,
+	glow: boolean
+): VoxelLightBox {
+	if (!volume) return neutralLightBox(glow);
+	const [x0, y0, z0, w, h, l] = volume.region;
+	const cell = new THREE.Vector3(
+		occupancy.worldSizeX / occupancy.voxelWidth,
+		occupancy.worldSizeY / occupancy.voxelHeight,
+		occupancy.worldSizeZ / occupancy.voxelLength
+	);
+	return {
+		texture: createLightTexture(volume.data, [w, h, l], glow),
+		origin: new THREE.Vector3(x0, y0, z0)
+			.multiply(cell)
+			.add(new THREE.Vector3(occupancy.worldOriginX, occupancy.worldOriginY, occupancy.worldOriginZ)),
+		size: new THREE.Vector3(w, h, l).multiply(cell),
+	};
+}
 
 function configureOccupancyTexture(
 	texture: THREE.Data3DTexture,
@@ -106,19 +141,12 @@ export function createVoxelAoTexture(
 		occupancy.voxelLength
 	);
 	configureOccupancyTexture(texture, options.performanceMode ?? false);
-	// Performance mode skips the light field (its shader patch is off too).
-	const light =
-		occupancy.light && !options.performanceMode
-			? createLightFieldTexture(
-					occupancy.light,
-					occupancy.voxelWidth,
-					occupancy.voxelHeight,
-					occupancy.voxelLength
-			  )
-			: createOpenSkyLightTexture();
+	// Performance mode has no light field (the worker skips it, so does the shader).
+	const light = options.performanceMode ? undefined : occupancy.light;
 	return {
 		texture,
-		light,
+		sky: createLightBox(light?.sky, occupancy, false),
+		glow: createLightBox(light?.glow, occupancy, true),
 		origin: new THREE.Vector3(
 			occupancy.worldOriginX,
 			occupancy.worldOriginY,
@@ -144,7 +172,8 @@ export function createPlaceholderVoxelAoTexture(): VoxelAoTexture {
 	configureOccupancyTexture(texture);
 	return {
 		texture,
-		light: createOpenSkyLightTexture(),
+		sky: neutralLightBox(false),
+		glow: neutralLightBox(true),
 		origin: new THREE.Vector3(0, 0, 0),
 		size: new THREE.Vector3(1, 1, 1),
 		voxelSize: 1,
@@ -264,22 +293,42 @@ export function applyVoxelLightPatch(
 		console.warn('Voxel light: shader anchor missing; light field is off');
 		return;
 	}
-	shader.uniforms.voxelLightField = { value: ao.light };
+	shader.uniforms.voxelSkyField = { value: ao.sky.texture };
+	shader.uniforms.voxelSkyOrigin = { value: ao.sky.origin };
+	shader.uniforms.voxelSkySize = { value: ao.sky.size };
+	shader.uniforms.voxelGlowField = { value: ao.glow.texture };
+	shader.uniforms.voxelGlowOrigin = { value: ao.glow.origin };
+	shader.uniforms.voxelGlowSize = { value: ao.glow.size };
 	shader.fragmentShader = shader.fragmentShader
 		.replace(
 			'void main() {',
 			[
-				'uniform highp sampler3D voxelLightField;',
+				'uniform highp sampler3D voxelSkyField;',
+				'uniform vec3 voxelSkyOrigin;',
+				'uniform vec3 voxelSkySize;',
+				'uniform highp sampler3D voxelGlowField;',
+				'uniform vec3 voxelGlowOrigin;',
+				'uniform vec3 voxelGlowSize;',
+				'bool voxelLightInBox(vec3 uvw) {',
+				'	return all(greaterThanEqual(uvw, vec3(0.0))) && all(lessThanEqual(uvw, vec3(1.0)));',
+				'}',
 				'vec4 sampleVoxelLight(vec3 worldPos, vec3 normal) {',
 				// Same half-voxel step into the open cell in front of the face as AO.
-				'	vec3 uvw = (worldPos + normal * (voxelAoVoxelSize * 0.5) - voxelAoOrigin) / voxelAoSize;',
-				'	if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0)))) return vec4(0.0, 0.0, 0.0, 1.0);',
+				'	vec3 p = worldPos + normal * (voxelAoVoxelSize * 0.5);',
+				'	vec3 uvw = (p - voxelAoOrigin) / voxelAoSize;',
+				'	if (!voxelLightInBox(uvw)) return vec4(0.0, 0.0, 0.0, 1.0);',
+				// Each volume is cropped to where it varies; outside its box sky is
+				// open (1) and glow is 0. textureLod: these reads sit in branches.
+				'	vec3 skyUvw = (p - voxelSkyOrigin) / voxelSkySize;',
+				'	float sky = voxelLightInBox(skyUvw) ? textureLod(voxelSkyField, skyUvw, 0.0).r : 1.0;',
+				'	vec3 glowUvw = (p - voxelGlowOrigin) / voxelGlowSize;',
+				'	vec3 glow = voxelLightInBox(glowUvw) ? textureLod(voxelGlowField, glowUvw, 0.0).rgb : vec3(0.0);',
 				// Solid cells hold no light, so filtering next to a wall would pull
 				// the value toward 0. Re-weight over the open cells (occupancy is on
 				// the same grid); clamp because glass/lava count as solid there yet
 				// carry light.
-				'	float openShare = max(1.0 - texture(voxelAoOccupancy, uvw).r, 0.25);',
-				'	return min(texture(voxelLightField, uvw) / openShare, vec4(1.0));',
+				'	float openShare = max(1.0 - textureLod(voxelAoOccupancy, uvw, 0.0).r, 0.25);',
+				'	return min(vec4(glow, sky) / openShare, vec4(1.0));',
 				'}',
 				'void main() {',
 			].join('\n')

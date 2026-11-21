@@ -167,7 +167,7 @@ function buildAndPost(
 	const buckets: BucketMessageEntry[] = [];
 	const transferList: Transferable[] = [];
 	let occupancyData: Uint8Array;
-	let lightData: Uint8Array;
+	let light: VoxelTerrainOccupancy['light'];
 	let fogData: Uint8Array | null;
 	let occWidth: number;
 	let occHeight: number;
@@ -205,7 +205,16 @@ function buildAndPost(
 		}
 
 		occupancyData = build.take_occupancy();
-		lightData = build.take_light();
+		if (!performanceMode) {
+			const sky = build.take_sky();
+			const glow = build.take_glow();
+			light = {
+				sky: sky.length > 0 ? { data: sky, region: build.sky_region() } : null,
+				glow: glow.length > 0 ? { data: glow, region: build.glow_region() } : null,
+			};
+			if (light.sky) transferList.push(getTransferableBuffer(light.sky.data));
+			if (light.glow) transferList.push(getTransferableBuffer(light.glow.data));
+		}
 		fogData = build.take_fog() ?? null;
 		// Texture dimensions of the occupancy/fog volume (downsampled when
 		// occFactor > 1). Read from the kernel so JS never re-derives the factor.
@@ -235,17 +244,12 @@ function buildAndPost(
 		voxelSize: 1 / resolution,
 	} as const;
 
-	const occupancy: VoxelTerrainOccupancy = {
-		data: occupancyData,
-		light: lightData.length > 0 ? lightData : undefined,
-		...worldBounds,
-	};
+	const occupancy: VoxelTerrainOccupancy = { data: occupancyData, light, ...worldBounds };
 	const fogVolume: VoxelTerrainOccupancy | null = fogData
 		? { data: fogData, ...worldBounds }
 		: null;
 
 	transferList.push(getTransferableBuffer(occupancy.data));
-	transferList.push(getTransferableBuffer(lightData));
 	if (fogVolume) transferList.push(getTransferableBuffer(fogVolume.data));
 
 	(self as unknown as Worker).postMessage(

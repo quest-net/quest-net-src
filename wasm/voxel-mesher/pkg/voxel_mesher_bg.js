@@ -32,6 +32,15 @@ export class MeshBuild {
         return ret >>> 0;
     }
     /**
+     * @returns {Uint32Array}
+     */
+    glow_region() {
+        const ret = wasm.meshbuild_glow_region(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
      * @returns {number}
      */
     occupancy_height() {
@@ -53,6 +62,16 @@ export class MeshBuild {
     occupancy_width() {
         const ret = wasm.meshbuild_occupancy_width(this.__wbg_ptr);
         return ret >>> 0;
+    }
+    /**
+     * [x0, y0, z0, w, h, l] in occupancy-grid cells.
+     * @returns {Uint32Array}
+     */
+    sky_region() {
+        const ret = wasm.meshbuild_sky_region(this.__wbg_ptr);
+        var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
     }
     /**
      * @param {number} i
@@ -80,6 +99,16 @@ export class MeshBuild {
         return v1;
     }
     /**
+     * RGBA4 glow inside `glow_region` (empty when nothing glows).
+     * @returns {Uint16Array}
+     */
+    take_glow() {
+        const ret = wasm.meshbuild_take_glow(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
      * @param {number} i
      * @returns {Float32Array}
      */
@@ -97,15 +126,6 @@ export class MeshBuild {
         const ret = wasm.meshbuild_take_indices(this.__wbg_ptr, i);
         var v1 = getArrayU32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
-        return v1;
-    }
-    /**
-     * @returns {Uint8Array}
-     */
-    take_light() {
-        const ret = wasm.meshbuild_take_light(this.__wbg_ptr);
-        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
-        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
     }
     /**
@@ -135,6 +155,16 @@ export class MeshBuild {
         const ret = wasm.meshbuild_take_positions(this.__wbg_ptr, i);
         var v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        return v1;
+    }
+    /**
+     * Sky levels inside `sky_region` (empty when nothing blocks light).
+     * @returns {Uint8Array}
+     */
+    take_sky() {
+        const ret = wasm.meshbuild_take_sky(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
     }
     /**
@@ -376,6 +406,11 @@ function getArrayF32FromWasm0(ptr, len) {
     return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
 }
 
+function getArrayU16FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint16ArrayMemory0().subarray(ptr / 2, ptr / 2 + len);
+}
+
 function getArrayU32FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
@@ -404,6 +439,14 @@ function getFloat32ArrayMemory0() {
 
 function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
+}
+
+let cachedUint16ArrayMemory0 = null;
+function getUint16ArrayMemory0() {
+    if (cachedUint16ArrayMemory0 === null || cachedUint16ArrayMemory0.byteLength === 0) {
+        cachedUint16ArrayMemory0 = new Uint16Array(wasm.memory.buffer);
+    }
+    return cachedUint16ArrayMemory0;
 }
 
 let cachedUint32ArrayMemory0 = null;

@@ -161,8 +161,8 @@ pub struct MeshBuild {
     buckets: Vec<Bucket>,
     occupancy: Vec<u8>,
     fog: Option<Vec<u8>>,
-    // RGBA light field on the occupancy grid (rgb = block glow, a = sky).
-    light: Vec<u8>,
+    // Light field on the occupancy grid, cropped: sky (R8) and glow (RGBA4).
+    light: light::LightField,
     // Occupancy/fog grid dimensions. These equal the voxel dims when occ_factor
     // is 1, and are the coarsened (downsampled) dims otherwise. JS reads them
     // back to size the Data3DTexture rather than re-deriving the factor.
@@ -226,8 +226,20 @@ impl MeshBuild {
     pub fn take_fog(&mut self) -> Option<Vec<u8>> {
         self.fog.take()
     }
-    pub fn take_light(&mut self) -> Vec<u8> {
-        std::mem::take(&mut self.light)
+    /// Sky levels inside `sky_region` (empty when nothing blocks light).
+    pub fn take_sky(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.light.sky)
+    }
+    /// [x0, y0, z0, w, h, l] in occupancy-grid cells.
+    pub fn sky_region(&self) -> Vec<u32> {
+        self.light.sky_region.to_vec()
+    }
+    /// RGBA4 glow inside `glow_region` (empty when nothing glows).
+    pub fn take_glow(&mut self) -> Vec<u16> {
+        std::mem::take(&mut self.light.glow)
+    }
+    pub fn glow_region(&self) -> Vec<u32> {
+        self.light.glow_region.to_vec()
     }
 }
 
@@ -382,7 +394,7 @@ impl VoxelMesher {
                 light::step_for_radius(glow_radius * cells_per_tile),
             )
         } else {
-            Vec::new()
+            light::LightField::default()
         };
 
         // --- Pass 2: greedy mesh, SPARSE over occupied voxels -----------------

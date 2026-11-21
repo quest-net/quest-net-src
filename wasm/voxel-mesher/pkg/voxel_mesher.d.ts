@@ -10,6 +10,7 @@ export class MeshBuild {
      * Interned bucket id (maps to bucketKeyById JS-side).
      */
     bucket_id(i: number): number;
+    glow_region(): Uint32Array;
     occupancy_height(): number;
     occupancy_length(): number;
     /**
@@ -17,14 +18,25 @@ export class MeshBuild {
      * occupancy and fog volumes share these dims.
      */
     occupancy_width(): number;
+    /**
+     * [x0, y0, z0, w, h, l] in occupancy-grid cells.
+     */
+    sky_region(): Uint32Array;
     take_colors(i: number): Float32Array | undefined;
     take_fog(): Uint8Array | undefined;
+    /**
+     * RGBA4 glow inside `glow_region` (empty when nothing glows).
+     */
+    take_glow(): Uint16Array;
     take_highlights(i: number): Float32Array;
     take_indices(i: number): Uint32Array;
-    take_light(): Uint8Array;
     take_normals(i: number): Float32Array;
     take_occupancy(): Uint8Array;
     take_positions(i: number): Float32Array;
+    /**
+     * Sky levels inside `sky_region` (empty when nothing blocks light).
+     */
+    take_sky(): Uint8Array;
     take_surface_deform(i: number): Float32Array | undefined;
     take_tile_heights(i: number): Float32Array;
     voxel_count(): number;
