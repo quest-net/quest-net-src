@@ -94,6 +94,22 @@ export function createThreeDMapPostProcessing(
 				bokehScale: THREE_D_MAP_DOF.BOKEH_SCALE,
 				resolutionScale: THREE_D_MAP_DOF.RESOLUTION_SCALE,
 		  });
+	// X-ray actor tokens write depth 0 (near plane) so the fog pass skips them
+	// (see attachFogDepthOverride in ThreeDActorLayer). Treat that sentinel as
+	// in focus here too, or DoF reads the token as maximally near and blurs it.
+	if (dofEffect) {
+		const coc = dofEffect.cocMaterial;
+		const anchor = 'void main(){float depth=readDepth(vUv);';
+		if (coc.fragmentShader.includes(anchor)) {
+			coc.fragmentShader = coc.fragmentShader.replace(
+				anchor,
+				`${anchor}if(depth<=0.0){gl_FragColor.rg=vec2(0.0);return;}`
+			);
+			coc.needsUpdate = true;
+		} else {
+			console.warn('DoF: CoC shader changed; x-ray tokens will blur');
+		}
+	}
 	// The CoC material stores the focus range normalized against the active
 	// camera's near/far slab, which differs between the ortho world camera and
 	// the perspective/first-person cameras. Track the range in world units so
