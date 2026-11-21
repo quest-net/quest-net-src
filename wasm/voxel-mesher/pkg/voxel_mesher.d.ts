@@ -21,6 +21,7 @@ export class MeshBuild {
     take_fog(): Uint8Array | undefined;
     take_highlights(i: number): Float32Array;
     take_indices(i: number): Uint32Array;
+    take_light(): Uint8Array;
     take_normals(i: number): Float32Array;
     take_occupancy(): Uint8Array;
     take_positions(i: number): Float32Array;
@@ -45,15 +46,15 @@ export class VoxelMesher {
      * is the palette index. width/height/length are TACTICAL units; voxel dims
      * = tactical * resolution.
      */
-    build(positions: Uint32Array, colors: Uint8Array, width: number, height: number, length: number, resolution: number, occ_factor: number): MeshBuild;
+    build(positions: Uint32Array, colors: Uint8Array, width: number, height: number, length: number, resolution: number, occ_factor: number, sky_radius: number, glow_radius: number): MeshBuild;
     /**
      * Fused decode + mesh: decodes the base64-free SVO byte payload in WASM and
      * runs the same greedy mesher as `build`. This keeps the SVO decode off the
      * JS side entirely and avoids marshalling the positions/colors arrays across
      * the JS<->WASM boundary on the gameplay terrain build path.
      */
-    build_from_svo(svo_bytes: Uint8Array, width: number, height: number, length: number, resolution: number, occ_factor: number): MeshBuild;
-    constructor(bucket_id: Int32Array, occlusion_id: Int32Array, uses_vertex_colors: Uint8Array, deforms_surface: Uint8Array, preserves_faces: Uint8Array, is_volumetric: Uint8Array, rgb: Float32Array);
+    build_from_svo(svo_bytes: Uint8Array, width: number, height: number, length: number, resolution: number, occ_factor: number, sky_radius: number, glow_radius: number): MeshBuild;
+    constructor(bucket_id: Int32Array, occlusion_id: Int32Array, uses_vertex_colors: Uint8Array, deforms_surface: Uint8Array, preserves_faces: Uint8Array, is_volumetric: Uint8Array, rgb: Float32Array, light_blocks: Uint8Array, light_emission: Uint8Array);
 }
 
 export function decode_svo_wasm(svo_bytes: Uint8Array): SvoDecode;

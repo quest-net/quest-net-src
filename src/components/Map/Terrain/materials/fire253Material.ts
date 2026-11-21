@@ -24,6 +24,7 @@ const fire253Material: TerrainMaterial = {
 	geometry: { vertexColors: false },
 	// Actors walk into fire; it never blocks movement, raycasts or sight.
 	passable: true,
+	lightEmission: '#ff7a26',
 	factory: createInvisibleFireMaterial,
 	// The flames come from the Fire3D layer, which only sees fire voxels, so the
 	// surroundings plane gets a "smoldering ground" shader instead.

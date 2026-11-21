@@ -28,6 +28,7 @@ import type {
 } from './VoxelTerrainGeometryUtils';
 import { chooseOccupancyDownsampleFactor } from './VoxelTerrainGeometryConstants';
 import { MATERIAL_LOOKUP } from '../materials';
+import { VOXEL_LIGHT } from '../shaders/voxelAoShader';
 import { getVoxelTerrainResolution } from '../../../../utils/terrain/data/VoxelTerrainIndex';
 import {
 	normalizeVoxelPaletteIndex,
@@ -75,7 +76,9 @@ function getMesher(): Promise<VoxelMesherType> {
 				MATERIAL_LOOKUP.deformsSurface,
 				MATERIAL_LOOKUP.preservesVoxelFaces,
 				MATERIAL_LOOKUP.isVolumetric,
-				rgb
+				rgb,
+				MATERIAL_LOOKUP.lightBlocks,
+				MATERIAL_LOOKUP.lightEmission
 			);
 		})();
 		mesherPromise = pendingMesher.catch((error) => {
@@ -107,9 +110,9 @@ function postBuildError(buildId: number, phase: string, error: unknown): void {
 }
 
 self.onmessage = async (
-	event: MessageEvent<{ buildId: number; terrain: VoxelTerrain; voxels: Uint8Array }>
+	event: MessageEvent<{ buildId: number; terrain: VoxelTerrain; voxels: Uint8Array; performanceMode: boolean }>
 ) => {
-	const { buildId, terrain, voxels } = event.data;
+	const { buildId, terrain, voxels, performanceMode } = event.data;
 
 	let mesher: VoxelMesherType;
 	try {
@@ -121,7 +124,7 @@ self.onmessage = async (
 	}
 
 	try {
-		buildAndPost(mesher, buildId, terrain, voxels);
+		buildAndPost(mesher, buildId, terrain, voxels, performanceMode);
 	} catch (e) {
 		console.error('[voxel-build] WASM build FAILED:', e);
 		postBuildError(buildId, 'build the terrain geometry', e);
@@ -132,7 +135,8 @@ function buildAndPost(
 	mesher: VoxelMesherType,
 	buildId: number,
 	terrain: VoxelTerrain,
-	voxels: Uint8Array
+	voxels: Uint8Array,
+	performanceMode: boolean
 ): void {
 	const resolution = getVoxelTerrainResolution(terrain);
 
@@ -152,7 +156,10 @@ function buildAndPost(
 		terrain.Height,
 		terrain.Length,
 		resolution,
-		occFactor
+		occFactor,
+		// Radius 0 = no light field: performance mode never renders it.
+		performanceMode ? 0 : VOXEL_LIGHT.SKY_RADIUS_TILES,
+		VOXEL_LIGHT.GLOW_RADIUS_TILES
 	);
 
 	// Reshape the kernel output into the worker message + transfer list. Each
@@ -160,6 +167,7 @@ function buildAndPost(
 	const buckets: BucketMessageEntry[] = [];
 	const transferList: Transferable[] = [];
 	let occupancyData: Uint8Array;
+	let lightData: Uint8Array;
 	let fogData: Uint8Array | null;
 	let occWidth: number;
 	let occHeight: number;
@@ -197,6 +205,7 @@ function buildAndPost(
 		}
 
 		occupancyData = build.take_occupancy();
+		lightData = build.take_light();
 		fogData = build.take_fog() ?? null;
 		// Texture dimensions of the occupancy/fog volume (downsampled when
 		// occFactor > 1). Read from the kernel so JS never re-derives the factor.
@@ -226,12 +235,17 @@ function buildAndPost(
 		voxelSize: 1 / resolution,
 	} as const;
 
-	const occupancy: VoxelTerrainOccupancy = { data: occupancyData, ...worldBounds };
+	const occupancy: VoxelTerrainOccupancy = {
+		data: occupancyData,
+		light: lightData.length > 0 ? lightData : undefined,
+		...worldBounds,
+	};
 	const fogVolume: VoxelTerrainOccupancy | null = fogData
 		? { data: fogData, ...worldBounds }
 		: null;
 
 	transferList.push(getTransferableBuffer(occupancy.data));
+	transferList.push(getTransferableBuffer(lightData));
 	if (fogVolume) transferList.push(getTransferableBuffer(fogVolume.data));
 
 	(self as unknown as Worker).postMessage(

@@ -182,6 +182,12 @@ export interface TerrainMaterial {
 	 */
 	volumetric?: boolean;
 	/**
+	 * Glow color (hex) this material spreads onto nearby surfaces through the
+	 * voxel light field (see compute_light_field in wasm/voxel-mesher). Brighter
+	 * colors reach further. Omit for materials that do not glow.
+	 */
+	lightEmission?: string;
+	/**
 	 * Factory that builds the THREE.MeshStandardMaterial for this bucket. Omitted
 	 * for `volumetric` materials (fog), which never emit a render bucket and so
 	 * are never instantiated as a surface mesh or pre-warmed.

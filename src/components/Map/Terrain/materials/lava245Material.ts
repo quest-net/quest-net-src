@@ -386,6 +386,7 @@ const lava245Material: TerrainMaterial = {
 	// walkable surface. (It no longer blocks movement on its own -- add hazard
 	// logic separately if lava should damage or stop actors.)
 	passable: true,
+	lightEmission: '#ff5a10',
 	factory: createLava245Material,
 	special: {
 		paletteIndex: 245,

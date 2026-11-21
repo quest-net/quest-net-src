@@ -15,6 +15,7 @@ import {
 	createMovementHighlightTexture,
 	createDummyTerrainGeometry,
 	createPlaceholderVoxelAoTexture,
+	disposeVoxelAoTexture,
 	TERRAIN_MATERIAL_REGISTRY,
 } from "../materials";
 import { createHeroOcclusionUniforms } from "../shaders/heroOcclusionShader";
@@ -262,13 +263,13 @@ export function useMapSceneCore(
 			await renderer.compileAsync(scene, camera);
 			if (cancelled) {
 				dummyHighlight.texture.dispose();
-				dummyVoxelAo.texture.dispose();
+				disposeVoxelAoTexture(dummyVoxelAo);
 				return;
 			}
 			for (const warmMesh of warmMeshes) scene.remove(warmMesh);
 			warmMeshesRef.current = [];
 			dummyHighlight.texture.dispose();
-			dummyVoxelAo.texture.dispose();
+			disposeVoxelAoTexture(dummyVoxelAo);
 			// Warm geometry and materials are intentionally left undisposed so the
 			// compiled WebGL programs stay resident in the driver cache.
 			resourcesRef.current = resources;

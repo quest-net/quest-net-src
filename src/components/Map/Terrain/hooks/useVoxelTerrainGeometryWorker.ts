@@ -187,7 +187,8 @@ function getSharedGeometryWorker(): Worker {
 export function useVoxelTerrainGeometryWorker(
 	terrain: VoxelTerrain | null | undefined,
 	terrainSignature: string,
-	enabled: boolean
+	enabled: boolean,
+	performanceMode: boolean
 ): VoxelTerrainGeometryWorkerResult {
 	const [result, setResult] = useState<VoxelTerrainGeometryResult | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -214,7 +215,9 @@ export function useVoxelTerrainGeometryWorker(
 		const width = terrain.Width;
 		const length = terrain.Length;
 		const height = terrain.Height;
-		const cachedPayload = getCachedGeometryBuffers(terrainSignature);
+		// Performance-mode builds carry no light field, so they cache separately.
+		const cacheKey = performanceMode ? `${terrainSignature}|perf` : terrainSignature;
+		const cachedPayload = getCachedGeometryBuffers(cacheKey);
 		if (cachedPayload) {
 			setResult({
 				buckets: createGeometryFromPayload(cachedPayload),
@@ -242,7 +245,7 @@ export function useVoxelTerrainGeometryWorker(
 			}
 			try {
 				const payload = payloadFromWorkerResponse(data);
-				cacheGeometryBuffers(terrainSignature, payload);
+				cacheGeometryBuffers(cacheKey, payload);
 				setResult({
 					buckets: createGeometryFromPayload(payload),
 					occupancy: payload.occupancy,
@@ -264,7 +267,7 @@ export function useVoxelTerrainGeometryWorker(
 			// postMessage's structured clone throws on proxies, so unwrap to plain.
 			// `voxels` is raw SVO bytes; structured clone copies it, so the
 			// payload-store buffer stays intact (not transferred).
-			worker.postMessage({ buildId, terrain: toPlain(terrain), voxels });
+			worker.postMessage({ buildId, terrain: toPlain(terrain), voxels, performanceMode });
 		} catch (postError) {
 			const handler = pendingBuildHandlers.get(buildId);
 			pendingBuildHandlers.delete(buildId);
@@ -283,7 +286,7 @@ export function useVoxelTerrainGeometryWorker(
 		// terrain is intentionally represented by terrainSignature; peers can
 		// replace the terrain object without changing its voxel content.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [enabled, terrainSignature, retryRevision]);
+	}, [enabled, terrainSignature, retryRevision, performanceMode]);
 
 	return { geometry: result, error, retry };
 }

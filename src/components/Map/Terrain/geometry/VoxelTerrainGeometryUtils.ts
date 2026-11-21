@@ -60,6 +60,8 @@ export interface VoxelTerrainOccupancy {
 	worldSizeZ: number;
 	/** One TRUE voxel in world units (= 1 / resolution), not the grid-cell size. */
 	voxelSize: number;
+	/** RGBA light field on the same grid (rgb = glow, a = sky). Occupancy only. */
+	light?: Uint8Array;
 }
 
 /**

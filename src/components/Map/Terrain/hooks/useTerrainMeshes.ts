@@ -6,6 +6,7 @@ import { createFogVolumeTexture, type FogVolumeTexture } from "../../mapVolumetr
 import {
 	createMovementHighlightTexture,
 	createVoxelAoTexture,
+	disposeVoxelAoTexture,
 	TERRAIN_MATERIAL_REGISTRY,
 	type MovementHighlightTexture,
 	type VoxelAoTexture,
@@ -42,7 +43,7 @@ interface TerrainRenderResources {
 function disposeTerrainResources(resources: TerrainRenderResources): void {
 	for (const geo of resources.geometries) geo.dispose();
 	for (const mat of resources.materials) mat.dispose();
-	resources.voxelAo.texture.dispose();
+	disposeVoxelAoTexture(resources.voxelAo);
 	resources.fogTexture?.texture.dispose();
 	resources.movementHighlight?.texture.dispose();
 }

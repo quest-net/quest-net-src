@@ -455,7 +455,8 @@ export default function MapScene({
 	} = useVoxelTerrainGeometryWorker(
 		terrain,
 		terrainSignature,
-		sceneResources !== null
+		sceneResources !== null,
+		performanceMode
 	);
 
 	// Memo deps read primitives from Position/TurnStartPosition rather than the

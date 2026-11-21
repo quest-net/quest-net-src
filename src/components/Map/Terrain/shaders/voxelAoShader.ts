@@ -19,15 +19,60 @@ import type { VoxelTerrainOccupancy } from '../geometry/VoxelTerrainGeometryUtil
 export const VOXEL_AO_FALLOFF_RADIUS = 0.25;
 
 /**
+ * Voxel light field tuning (flood fill in wasm/voxel-mesher/src/light.rs).
+ * Radii are in tactical tiles; the shader scales the ambient (hemisphere)
+ * light by sky and adds glow as extra ambient irradiance.
+ */
+export const VOXEL_LIGHT = {
+	/** How far sky light reaches sideways under an overhang before it is gone. */
+	SKY_RADIUS_TILES: 3,
+	/** How far a full-brightness glow (lava, fire, light block) reaches. */
+	GLOW_RADIUS_TILES: 5,
+	/** Ambient left in fully enclosed spaces (0 = pitch black). */
+	SKY_FLOOR: 0.15,
+	/** Glow irradiance at full level, comparable to the hemisphere's ~1.9. */
+	GLOW_INTENSITY: 2.5,
+} as const;
+
+/**
  * Main-thread wrapper around the worker's voxel-occupancy snapshot, ready to
- * bind as the AO sampler uniform.
+ * bind as the AO sampler uniform. `light` is the RGBA light field on the same
+ * grid (rgb = glow, a = sky), or a 1x1x1 "open sky, no glow" placeholder.
  */
 export interface VoxelAoTexture {
 	texture: THREE.Data3DTexture;
+	light: THREE.Data3DTexture;
 	origin: THREE.Vector3;
 	size: THREE.Vector3;
 	voxelSize: number;
 }
+
+export function disposeVoxelAoTexture(ao: VoxelAoTexture): void {
+	ao.texture.dispose();
+	ao.light.dispose();
+}
+
+function createLightFieldTexture(
+	data: Uint8Array,
+	width: number,
+	height: number,
+	length: number
+): THREE.Data3DTexture {
+	const texture = new THREE.Data3DTexture(data, width, height, length);
+	texture.format = THREE.RGBAFormat;
+	texture.type = THREE.UnsignedByteType;
+	texture.magFilter = THREE.LinearFilter;
+	texture.minFilter = THREE.LinearFilter;
+	texture.wrapS = THREE.ClampToEdgeWrapping;
+	texture.wrapT = THREE.ClampToEdgeWrapping;
+	texture.wrapR = THREE.ClampToEdgeWrapping;
+	texture.generateMipmaps = false;
+	texture.needsUpdate = true;
+	return texture;
+}
+
+const createOpenSkyLightTexture = () =>
+	createLightFieldTexture(new Uint8Array([0, 0, 0, 255]), 1, 1, 1);
 
 function configureOccupancyTexture(
 	texture: THREE.Data3DTexture,
@@ -61,8 +106,19 @@ export function createVoxelAoTexture(
 		occupancy.voxelLength
 	);
 	configureOccupancyTexture(texture, options.performanceMode ?? false);
+	// Performance mode skips the light field (its shader patch is off too).
+	const light =
+		occupancy.light && !options.performanceMode
+			? createLightFieldTexture(
+					occupancy.light,
+					occupancy.voxelWidth,
+					occupancy.voxelHeight,
+					occupancy.voxelLength
+			  )
+			: createOpenSkyLightTexture();
 	return {
 		texture,
+		light,
 		origin: new THREE.Vector3(
 			occupancy.worldOriginX,
 			occupancy.worldOriginY,
@@ -88,6 +144,7 @@ export function createPlaceholderVoxelAoTexture(): VoxelAoTexture {
 	configureOccupancyTexture(texture);
 	return {
 		texture,
+		light: createOpenSkyLightTexture(),
 		origin: new THREE.Vector3(0, 0, 0),
 		size: new THREE.Vector3(1, 1, 1),
 		voxelSize: 1,
@@ -184,4 +241,60 @@ export function applyVoxelAoUniforms(
 	shader.uniforms.voxelAoSize = { value: ao.size };
 	shader.uniforms.voxelAoRadius = { value: VOXEL_AO_FALLOFF_RADIUS };
 	shader.uniforms.voxelAoVoxelSize = { value: ao.voxelSize };
+}
+
+/**
+ * Applies the voxel light field to a terrain shader that already carries the
+ * AO chunks (it reuses their uniforms and world-position varyings). Runs after
+ * the material's own onBeforeCompile; see wrapFactoryWithCacheKey. Sky scales
+ * the ambient irradiance (outdoors = 1, unchanged), glow adds to it.
+ * Materials without the AO chunks or standard lighting are left untouched.
+ */
+export function applyVoxelLightPatch(
+	shader: THREE.WebGLProgramParametersWithUniforms,
+	ao: VoxelAoTexture
+): void {
+	// Self-lit / see-through materials (glass, light, fire) skip the AO chunks.
+	if (!shader.fragmentShader.includes('uniform vec3 voxelAoOrigin;')) return;
+	// Both anchors come from three's stock shader; a rename would silently drop the light.
+	if (
+		!shader.fragmentShader.includes('void main() {') ||
+		!shader.fragmentShader.includes('#include <lights_fragment_maps>')
+	) {
+		console.warn('Voxel light: shader anchor missing; light field is off');
+		return;
+	}
+	shader.uniforms.voxelLightField = { value: ao.light };
+	shader.fragmentShader = shader.fragmentShader
+		.replace(
+			'void main() {',
+			[
+				'uniform highp sampler3D voxelLightField;',
+				'vec4 sampleVoxelLight(vec3 worldPos, vec3 normal) {',
+				// Same half-voxel step into the open cell in front of the face as AO.
+				'	vec3 uvw = (worldPos + normal * (voxelAoVoxelSize * 0.5) - voxelAoOrigin) / voxelAoSize;',
+				'	if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0)))) return vec4(0.0, 0.0, 0.0, 1.0);',
+				// Solid cells hold no light, so filtering next to a wall would pull
+				// the value toward 0. Re-weight over the open cells (occupancy is on
+				// the same grid); clamp because glass/lava count as solid there yet
+				// carry light.
+				'	float openShare = max(1.0 - texture(voxelAoOccupancy, uvw).r, 0.25);',
+				'	return min(texture(voxelLightField, uvw) / openShare, vec4(1.0));',
+				'}',
+				'void main() {',
+			].join('\n')
+		)
+		.replace(
+			'#include <lights_fragment_maps>',
+			[
+				'#include <lights_fragment_maps>',
+				'#if defined( RE_IndirectDiffuse )',
+				'{',
+				'	vec4 voxelLight = sampleVoxelLight(vVoxelAoWorldPosition, vVoxelAoWorldNormal);',
+				`	irradiance *= mix(${VOXEL_LIGHT.SKY_FLOOR.toFixed(3)}, 1.0, voxelLight.a);`,
+				`	irradiance += voxelLight.rgb * voxelLight.rgb * ${VOXEL_LIGHT.GLOW_INTENSITY.toFixed(3)};`,
+				'}',
+				'#endif',
+			].join('\n')
+		);
 }

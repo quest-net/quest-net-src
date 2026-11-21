@@ -30,6 +30,7 @@
 import * as THREE from 'three';
 
 import { registerTerrainMaterialRules } from '../../../../utils/terrain/materials/terrainMaterialRules';
+import { applyVoxelLightPatch } from '../shaders/voxelAoShader';
 import type {
 	MaterialCategory,
 	MaterialFactory,
@@ -107,6 +108,7 @@ export type {
 export {
 	createPlaceholderVoxelAoTexture,
 	createVoxelAoTexture,
+	disposeVoxelAoTexture,
 	type VoxelAoTexture,
 } from '../shaders/voxelAoShader';
 
@@ -307,6 +309,10 @@ export interface MaterialLookupTables {
 	readonly isVolumetric: Uint8Array;
 	/** palette index -> 1 if passable (non-colliding), else 0. */
 	readonly isPassable: Uint8Array;
+	/** palette index -> 1 if it stops light (not passable/see-through/volumetric). */
+	readonly lightBlocks: Uint8Array;
+	/** 256 * 3 glow seed levels (0-255 per channel), from `lightEmission`. */
+	readonly lightEmission: Uint8Array;
 	/** interned bucket id -> bucket key string. */
 	readonly bucketKeyById: readonly string[];
 }
@@ -341,6 +347,13 @@ function buildMaterialLookupTables(): MaterialLookupTables {
 	const preservesVoxelFaces = new Uint8Array(256);
 	const isVolumetric = new Uint8Array(256);
 	const isPassable = new Uint8Array(256);
+	const lightBlocks = new Uint8Array(256);
+	const lightEmission = new Uint8Array(256 * 3);
+	for (const m of SPECIAL_TERRAIN_MATERIALS) {
+		if (!m.lightEmission) continue;
+		const hex = parseInt(m.lightEmission.slice(1), 16);
+		lightEmission.set([hex >> 16, (hex >> 8) & 0xff, hex & 0xff], m.special.paletteIndex * 3);
+	}
 
 	for (let i = 0; i < 256; i++) {
 		bucketId[i] = internBucket(getMaterialBucket(i));
@@ -350,6 +363,8 @@ function buildMaterialLookupTables(): MaterialLookupTables {
 		preservesVoxelFaces[i] = getMaterialPreservesVoxelFaces(i) ? 1 : 0;
 		isVolumetric[i] = isVolumetricMaterial(i) ? 1 : 0;
 		isPassable[i] = isPassableMaterial(i) ? 1 : 0;
+		lightBlocks[i] =
+			isPassable[i] || isVolumetric[i] || SEE_THROUGH_PALETTE_INDICES.has(i) ? 0 : 1;
 	}
 
 	return {
@@ -360,6 +375,8 @@ function buildMaterialLookupTables(): MaterialLookupTables {
 		preservesVoxelFaces,
 		isVolumetric,
 		isPassable,
+		lightBlocks,
+		lightEmission,
 		bucketKeyById,
 	};
 }
@@ -429,6 +446,14 @@ function wrapFactoryWithCacheKey(
 			params.performanceMode ? 'perf' : 'full',
 		].join('-');
 		result.material.customProgramCacheKey = () => key;
+		// Voxel light field (sky + glow) rides on every terrain shader's ambient term.
+		if (!params.performanceMode) {
+			const ownPatch = result.material.onBeforeCompile;
+			result.material.onBeforeCompile = (shader, renderer) => {
+				ownPatch.call(result.material, shader, renderer);
+				applyVoxelLightPatch(shader, params.voxelAo);
+			};
+		}
 		result.material.needsUpdate = true;
 		return result;
 	};

@@ -21,6 +21,7 @@
 
 use wasm_bindgen::prelude::*;
 
+mod light;
 mod svo;
 
 // ---------------------------------------------------------------------------
@@ -160,6 +161,8 @@ pub struct MeshBuild {
     buckets: Vec<Bucket>,
     occupancy: Vec<u8>,
     fog: Option<Vec<u8>>,
+    // RGBA light field on the occupancy grid (rgb = block glow, a = sky).
+    light: Vec<u8>,
     // Occupancy/fog grid dimensions. These equal the voxel dims when occ_factor
     // is 1, and are the coarsened (downsampled) dims otherwise. JS reads them
     // back to size the Data3DTexture rather than re-deriving the factor.
@@ -223,6 +226,9 @@ impl MeshBuild {
     pub fn take_fog(&mut self) -> Option<Vec<u8>> {
         self.fog.take()
     }
+    pub fn take_light(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.light)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -240,6 +246,8 @@ pub struct VoxelMesher {
     is_volumetric: Vec<u8>,
     rgb: Vec<f32>,             // 256 * 3, row-major (r,g,b per index)
     bucket_capacity: usize,    // max interned bucket id + 1
+    light_blocks: Vec<u8>,     // palette index -> 1 if it stops light
+    light_emission: Vec<u8>,   // 256 * 3 glow seed levels (0 = no glow)
 }
 
 #[wasm_bindgen]
@@ -253,6 +261,8 @@ impl VoxelMesher {
         preserves_faces: &[u8],
         is_volumetric: &[u8],
         rgb: &[f32],
+        light_blocks: &[u8],
+        light_emission: &[u8],
     ) -> VoxelMesher {
         console_error_panic_hook::set_once();
         let bucket_capacity = bucket_id.iter().copied().max().unwrap_or(-1) as usize + 1;
@@ -265,6 +275,8 @@ impl VoxelMesher {
             is_volumetric: is_volumetric.to_vec(),
             rgb: rgb.to_vec(),
             bucket_capacity,
+            light_blocks: light_blocks.to_vec(),
+            light_emission: light_emission.to_vec(),
         }
     }
 
@@ -280,6 +292,8 @@ impl VoxelMesher {
         length: u32,
         resolution: u32,
         occ_factor: u32,
+        sky_radius: f32,
+        glow_radius: f32,
     ) -> MeshBuild {
         let voxel_width = (width * resolution) as usize;
         let voxel_height = (height * resolution) as usize;
@@ -308,6 +322,9 @@ impl VoxelMesher {
         let occ_len = occ_width * occ_height * occ_length;
         let mut occupancy: Vec<u8> = vec![0; occ_len];
         let mut fog: Option<Vec<u8>> = None;
+        // Light blockers + glow emitters on the same (coarsened) grid.
+        let mut light_blocks: Vec<u8> = vec![0; occ_len];
+        let mut emitters: Vec<light::Emitter> = Vec::new();
         let mut voxel_count: u32 = 0;
         // Unique, in-bounds occupied cells (packed x | y<<8 | z<<16, same as the
         // input positions). The sparse mesher iterates these instead of scanning
@@ -344,7 +361,29 @@ impl VoxelMesher {
             } else {
                 occupancy[cell_index] = 255;
             }
+            if self.light_blocks[color_idx] == 1 {
+                light_blocks[cell_index] = 1;
+            }
+            let glow = &self.light_emission[color_idx * 3..color_idx * 3 + 3];
+            if glow != [0, 0, 0] {
+                emitters.push(light::Emitter { cell: cell_index, rgb: [glow[0], glow[1], glow[2]] });
+            }
         }
+
+        // Radii are in tactical tiles; one grid cell is occ_factor voxels.
+        // A zero sky radius (performance mode) skips the light field entirely.
+        let cells_per_tile = resolution as f32 / occ_factor as f32;
+        let light = if sky_radius > 0.0 {
+            light::compute_light_field(
+                &light_blocks,
+                &emitters,
+                (occ_width, occ_height, occ_length),
+                light::step_for_radius(sky_radius * cells_per_tile),
+                light::step_for_radius(glow_radius * cells_per_tile),
+            )
+        } else {
+            Vec::new()
+        };
 
         // --- Pass 2: greedy mesh, SPARSE over occupied voxels -----------------
         // The grid is typically <5% full, so scanning the whole volume 6x wastes
@@ -606,6 +645,7 @@ impl VoxelMesher {
             buckets,
             occupancy,
             fog,
+            light,
             occ_width,
             occ_height,
             occ_length,
@@ -625,11 +665,13 @@ impl VoxelMesher {
         length: u32,
         resolution: u32,
         occ_factor: u32,
+        sky_radius: f32,
+        glow_radius: f32,
     ) -> MeshBuild {
         let (positions, colors) = svo::decode_svo(svo_bytes);
         // `build` keeps its native Rust signature under wasm-bindgen, so it is
         // callable directly here with real slices (no JS round-trip).
-        self.build(&positions, &colors, width, height, length, resolution, occ_factor)
+        self.build(&positions, &colors, width, height, length, resolution, occ_factor, sky_radius, glow_radius)
     }
 }
 

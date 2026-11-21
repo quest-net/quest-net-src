@@ -7,6 +7,7 @@ import { terrainPaletteIndexToVoxelColor } from "../../../../utils/terrain/edito
 import type { VoxelTerrainOccupancy } from "../geometry/VoxelTerrainGeometryUtils";
 import {
 	createPlaceholderVoxelAoTexture,
+	disposeVoxelAoTexture,
 	getMaterialDeformsSurface,
 	getSurroundingsMaterialFactory,
 	isVolumetricMaterial,
@@ -106,7 +107,7 @@ function removeSurroundings(
 	}
 	built.geometry.dispose();
 	built.material.dispose();
-	built.voxelAo.texture.dispose();
+	disposeVoxelAoTexture(built.voxelAo);
 	ref.current = null;
 	return true;
 }

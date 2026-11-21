@@ -100,6 +100,15 @@ export class MeshBuild {
         return v1;
     }
     /**
+     * @returns {Uint8Array}
+     */
+    take_light() {
+        const ret = wasm.meshbuild_take_light(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
      * @param {number} i
      * @returns {Float32Array}
      */
@@ -221,14 +230,16 @@ export class VoxelMesher {
      * @param {number} length
      * @param {number} resolution
      * @param {number} occ_factor
+     * @param {number} sky_radius
+     * @param {number} glow_radius
      * @returns {MeshBuild}
      */
-    build(positions, colors, width, height, length, resolution, occ_factor) {
+    build(positions, colors, width, height, length, resolution, occ_factor, sky_radius, glow_radius) {
         const ptr0 = passArray32ToWasm0(positions, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArray8ToWasm0(colors, wasm.__wbindgen_malloc);
         const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.voxelmesher_build(this.__wbg_ptr, ptr0, len0, ptr1, len1, width, height, length, resolution, occ_factor);
+        const ret = wasm.voxelmesher_build(this.__wbg_ptr, ptr0, len0, ptr1, len1, width, height, length, resolution, occ_factor, sky_radius, glow_radius);
         return MeshBuild.__wrap(ret);
     }
     /**
@@ -242,12 +253,14 @@ export class VoxelMesher {
      * @param {number} length
      * @param {number} resolution
      * @param {number} occ_factor
+     * @param {number} sky_radius
+     * @param {number} glow_radius
      * @returns {MeshBuild}
      */
-    build_from_svo(svo_bytes, width, height, length, resolution, occ_factor) {
+    build_from_svo(svo_bytes, width, height, length, resolution, occ_factor, sky_radius, glow_radius) {
         const ptr0 = passArray8ToWasm0(svo_bytes, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
-        const ret = wasm.voxelmesher_build_from_svo(this.__wbg_ptr, ptr0, len0, width, height, length, resolution, occ_factor);
+        const ret = wasm.voxelmesher_build_from_svo(this.__wbg_ptr, ptr0, len0, width, height, length, resolution, occ_factor, sky_radius, glow_radius);
         return MeshBuild.__wrap(ret);
     }
     /**
@@ -258,8 +271,10 @@ export class VoxelMesher {
      * @param {Uint8Array} preserves_faces
      * @param {Uint8Array} is_volumetric
      * @param {Float32Array} rgb
+     * @param {Uint8Array} light_blocks
+     * @param {Uint8Array} light_emission
      */
-    constructor(bucket_id, occlusion_id, uses_vertex_colors, deforms_surface, preserves_faces, is_volumetric, rgb) {
+    constructor(bucket_id, occlusion_id, uses_vertex_colors, deforms_surface, preserves_faces, is_volumetric, rgb, light_blocks, light_emission) {
         const ptr0 = passArray32ToWasm0(bucket_id, wasm.__wbindgen_malloc);
         const len0 = WASM_VECTOR_LEN;
         const ptr1 = passArray32ToWasm0(occlusion_id, wasm.__wbindgen_malloc);
@@ -274,7 +289,11 @@ export class VoxelMesher {
         const len5 = WASM_VECTOR_LEN;
         const ptr6 = passArrayF32ToWasm0(rgb, wasm.__wbindgen_malloc);
         const len6 = WASM_VECTOR_LEN;
-        const ret = wasm.voxelmesher_new(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6);
+        const ptr7 = passArray8ToWasm0(light_blocks, wasm.__wbindgen_malloc);
+        const len7 = WASM_VECTOR_LEN;
+        const ptr8 = passArray8ToWasm0(light_emission, wasm.__wbindgen_malloc);
+        const len8 = WASM_VECTOR_LEN;
+        const ret = wasm.voxelmesher_new(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6, ptr7, len7, ptr8, len8);
         this.__wbg_ptr = ret;
         VoxelMesherFinalization.register(this, this.__wbg_ptr, this);
         return this;
