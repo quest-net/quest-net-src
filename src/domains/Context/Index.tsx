@@ -98,7 +98,8 @@ export function Home() {
 					<ASCIIText
 						text={isNarrow ? "QUEST\nNET" : "QUEST-NET"}
 						enableWaves={false}
-						asciiFontSize={isNarrow ? 10 : 12}
+						// Finer cells on small screens: at 10px each letter was only ~6 cells wide and broke up.
+						asciiFontSize={isNarrow ? 6 : 12}
 						planeBaseHeight={isNarrow ? 6 : 4}
 						textColor={asciiTextColor}
 					/>
